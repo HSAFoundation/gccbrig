@@ -1,0 +1,6 @@
+set -x
+hsail=simple
+rm /home/visit0r/src/HSAIL-Tools/libHSAIL/tests/$hsail.*{gimple,s}
+~/local/bin/HSAILasm /home/visit0r/src/HSAIL-Tools/libHSAIL/tests/$hsail.hsail || exit 1
+gcc/brig1 /home/visit0r/src/HSAIL-Tools/libHSAIL/tests/$hsail.brig -O0 -fdump-tree-all 2>&1
+cat /home/visit0r/src/HSAIL-Tools/libHSAIL/tests/$hsail.*{gimple,s} | most
