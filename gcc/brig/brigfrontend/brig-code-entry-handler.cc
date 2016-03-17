@@ -790,7 +790,7 @@ brig_code_entry_handler::build_address_operand (
 	  if (arg_symbol->type & BRIG_TYPE_ARRAY)
 	    {
 	      if (POINTER_TYPE_P (TREE_TYPE (arg_var_decl)))
-		symbol_base = convert (ptype, arg_var_decl);
+		symbol_base = build_reinterpret_cast (ptype, arg_var_decl);
 	      else
 		{
 		  // In case we are referring to an array (the argument in
