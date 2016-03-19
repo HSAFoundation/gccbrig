@@ -577,27 +577,13 @@ brig_basic_inst_handler::operator()(const BrigBase *base)
 	{
 	  tree goto_stmt = build1 (GOTO_EXPR, void_type_node,
 				   parent_.m_cf->exit_label);
-	  parent_.append_statement (goto_stmt);
+	  parent_.m_cf->append_statement (goto_stmt);
 	  return base->byteCount;
 	}
       else
 	{
 	  // TO CLEANUP: move to brig_function
-	  if (parent_.m_cf->ret_value != NULL_TREE)
-	    {
-	      tree result_assign = build2
-		(MODIFY_EXPR, TREE_TYPE (parent_.m_cf->ret_value),
-		 parent_.m_cf->ret_value, parent_.m_cf->ret_value);
-
-	      tree return_expr =
-		build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);
-	      append_statement (return_expr);
-	    }
-	  else
-	    {
-	      tree return_stmt = build_stmt (RETURN_EXPR, NULL);
-	      parent_.append_statement (return_stmt);
-	    }
+	  parent_.m_cf->append_return_stmt ();
 	  return base->byteCount;
 	}
     }
@@ -715,7 +701,7 @@ brig_basic_inst_handler::operator()(const BrigBase *base)
       tree new_value = create_tmp_var (TREE_TYPE (instr_expr), "new_output");
       tree assign = build2
 	(MODIFY_EXPR, TREE_TYPE (instr_expr), new_value, instr_expr);
-      parent_.append_statement (assign);
+      parent_.m_cf->append_statement (assign);
 
       instr_expr = build3
 	(VEC_PERM_EXPR, arith_type, old_value, new_value, mask);
@@ -723,14 +709,14 @@ brig_basic_inst_handler::operator()(const BrigBase *base)
       tree lower_output = create_tmp_var (TREE_TYPE (instr_expr), "s_output");
       tree assign_lower = build2
 	(MODIFY_EXPR, TREE_TYPE (instr_expr), lower_output, instr_expr);
-      parent_.append_statement (assign_lower);
+      parent_.m_cf->append_statement (assign_lower);
       instr_expr = lower_output;
     }
 
   if (output_count == 1)
     build_output_assignment (*brig_inst, operands[0], instr_expr);
   else
-    parent_.append_statement (instr_expr);
+    parent_.m_cf->append_statement (instr_expr);
   return base->byteCount;
 }
 

@@ -1,21 +1,21 @@
 /* brig-copy-move-inst-handler.cc -- brig copy/move instruction handling
    Copyright (C) 2015 Free Software Foundation, Inc.
 
-This file is part of GCC.
+   This file is part of GCC.
 
-GCC is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 3, or (at your option) any later
-version.
+   GCC is free software; you can redistribute it and/or modify it under
+   the terms of the GNU General Public License as published by the Free
+   Software Foundation; either version 3, or (at your option) any later
+   version.
 
-GCC is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-for more details.
+   GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+   WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+   for more details.
 
-You should have received a copy of the GNU General Public License
-along with GCC; see the file COPYING3.  If not see
-<http://www.gnu.org/licenses/>.  */
+   You should have received a copy of the GNU General Public License
+   along with GCC; see the file COPYING3.  If not see
+   <http://www.gnu.org/licenses/>.  */
 /**
  * @author pekka.jaaskelainen@parmance.com for General Processor Tech. 2015
  */
@@ -28,30 +28,30 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_copy_move_inst_handler::operator() (const BrigBase *base)
 {
-	const BrigInstBase *brig_inst =
+  const BrigInstBase *brig_inst =
     (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
-	const BrigInstSourceType *inst_src_type = (const BrigInstSourceType*) base;
+  const BrigInstSourceType *inst_src_type = (const BrigInstSourceType*) base;
 
-	tree source_type = get_tree_type_for_hsa_type (inst_src_type->sourceType);
-	tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree source_type = get_tree_type_for_hsa_type (inst_src_type->sourceType);
+  tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
 
-	tree input = build_tree_operand_from_brig (brig_inst, source_type, 1);
-	tree output = build_tree_operand_from_brig (brig_inst, dest_type, 0);
-	if (brig_inst->opcode == BRIG_OPCODE_COMBINE)
-		{
-			// For Combine, a simple reinterpret cast from the array constructor
-			// works.
-			tree casted = build_reinterpret_cast	(dest_type, input);
-			tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
-			parent_.append_statement (assign);
-		}
-	else if (brig_inst->opcode == BRIG_OPCODE_LDA ||
-					 brig_inst->opcode == BRIG_OPCODE_EXPAND)
-		build_output_assignment (*brig_inst, output, input);
-	else
-		{
-			brig_basic_inst_handler basic (parent_);
-			return basic (base);
-		}
-	return base->byteCount;
+  tree input = build_tree_operand_from_brig (brig_inst, source_type, 1);
+  tree output = build_tree_operand_from_brig (brig_inst, dest_type, 0);
+  if (brig_inst->opcode == BRIG_OPCODE_COMBINE)
+    {
+      // For Combine, a simple reinterpret cast from the array constructor
+      // works.
+      tree casted = build_reinterpret_cast	(dest_type, input);
+      tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
+      parent_.m_cf->append_statement (assign);
+    }
+  else if (brig_inst->opcode == BRIG_OPCODE_LDA ||
+	   brig_inst->opcode == BRIG_OPCODE_EXPAND)
+    build_output_assignment (*brig_inst, output, input);
+  else
+    {
+      brig_basic_inst_handler basic (parent_);
+      return basic (base);
+    }
+  return base->byteCount;
 }

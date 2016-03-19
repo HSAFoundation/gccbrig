@@ -32,7 +32,7 @@ brig_directive_label_handler::operator() (const BrigBase *base)
   std::string label_str ((const char*) (label_name->bytes),
 												 label_name->byteCount);
 
-  parent_.append_statement
-		(build_stmt (LABEL_EXPR, parent_.m_cf->label (label_str)));
+  parent_.m_cf->append_statement
+    (build_stmt (LABEL_EXPR, parent_.m_cf->label (label_str)));
   return base->byteCount;
 }

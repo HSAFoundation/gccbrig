@@ -65,10 +65,11 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase* brig_inst,
     }
   else
     {
-      return parent_.append_statement
+      return parent_.m_cf->append_statement
 	(build2
 	 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data));
     }
+  return mem_ref;
 }
 
 size_t
@@ -76,6 +77,28 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 {
   const BrigInstBase *brig_inst =
     (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
+
+  if (brig_inst->opcode == BRIG_OPCODE_ALLOCA)
+    {
+      tree_stl_vec operands = build_operands (*brig_inst);
+      size_t alignment = 1;
+      const BrigInstMem* mem_inst = (const BrigInstMem*)brig_inst;
+      if (mem_inst->align != BRIG_ALIGNMENT_NONE)
+	{
+	  alignment = 1 << (mem_inst->align - 1);
+	}
+
+      tree align_opr = build_int_cstu (size_type_node, alignment);
+      tree_stl_vec inputs;
+      inputs.push_back (operands [1]);
+      inputs.push_back (align_opr);
+      tree builtin_call =
+	expand_or_call_builtin (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
+				uint32_type_node, inputs);
+      build_output_assignment (*brig_inst, operands [0], builtin_call);
+      parent_.m_cf->has_allocas = true;
+      return base->byteCount;
+    }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
 
@@ -114,7 +137,7 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 	(const BrigOperandAddress*)
 	parent_.get_brig_operand_entry (addr_operand_offset);
 
-      tree address_base =	build_address_operand (*brig_inst, *addr_operand);
+      tree address_base = build_address_operand (*brig_inst, *addr_operand);
 
       uint32_t address_offset = 0;
       while (bytes > 0)

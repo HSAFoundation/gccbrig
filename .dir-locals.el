@@ -26,3 +26,6 @@
         (c-basic-offset . 2)
 	    (indent-tabs-mode . t)))
 )
+
+(custom-set-variables
+ '(column-number-mode t))

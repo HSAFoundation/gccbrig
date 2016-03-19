@@ -43,14 +43,16 @@
 #include "tree-cfg.h"
 #include "errors.h"
 
+// TO CLEANUP: prepend m_ to all these member variables.
 brig_function::brig_function ()
   : is_kernel (false), is_finished (false), name (""),
     current_bind_expr (NULL_TREE), func_decl (NULL_TREE),
     context_arg (NULL_TREE), group_base_arg (NULL_TREE),
     private_base_arg (NULL_TREE), ret_value (NULL_TREE),
     next_kernarg_offset (0), kernarg_max_align (0), has_barriers (false),
-  has_function_calls_with_barriers (false), is_wg_function (false),
-  has_unexpanded_dp_builtins (false), generating_arg_block (false)
+    has_allocas (false), has_function_calls_with_barriers (false),
+    is_wg_function (false), has_unexpanded_dp_builtins (false),
+    generating_arg_block (false)
 {
   memset(regs_, 0, BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT *
 	 sizeof (BrigOperandRegister*));
@@ -378,7 +380,7 @@ brig_function::convert_to_wg_function ()
       // The previous loop has added a new label to the end of the function,
       // the next level loop should wrap around it also.
       tree_stmt_iterator function_exit = tsi_last (stmts);
-      add_wi_loop	(i, &kernel_entry, &function_exit);
+      add_wi_loop (i, &kernel_entry, &function_exit);
     }
 
   is_wg_function = true;
@@ -532,4 +534,113 @@ brig_function::build_launcher_and_metadata
   append_to_statement_list_force (metadata_asm, &stmt_list);
 
   return launcher;
+}
+
+tree
+brig_function::append_statement (tree stmt)
+{
+  gcc_assert (func_decl != NULL);
+
+  tree bind_expr = current_bind_expr;
+  tree stmts = BIND_EXPR_BODY (bind_expr);
+
+  append_to_statement_list_force (stmt, &stmts);
+  return stmt;
+}
+
+/**
+ * Creates a new "alloca frame" for the current function by
+ * injecting an alloca frame push in the beginning of the function
+ * and an alloca frame pop before all function exit points.
+ */
+void
+brig_function::create_alloca_frame ()
+{
+  tree_stmt_iterator entry;
+
+  // Adds the allocal push only after the ids have been initialized,
+  // in case of a kernel function.
+  if (is_kernel)
+    entry = kernel_entry;
+  else
+    {
+      tree bind_expr = current_bind_expr;
+      tree stmts = BIND_EXPR_BODY (bind_expr);
+      entry = tsi_start (stmts);
+    }
+
+  static tree push_frame_builtin = NULL_TREE;
+  tree push_frame_call = call_builtin
+    (&push_frame_builtin, "__phsa_builtin_alloca_push_frame",
+     1, void_type_node, ptr_type_node, context_arg);
+
+  tsi_link_before (&entry, push_frame_call, TSI_NEW_STMT);
+
+  static tree pop_frame_builtin = NULL_TREE;
+
+  do {
+    tree stmt = tsi_stmt (entry);
+    if (TREE_CODE (stmt) == RETURN_EXPR)
+      {
+	tree pop_frame_call = call_builtin
+	  (&pop_frame_builtin, "__phsa_builtin_alloca_pop_frame",
+	   1, void_type_node, ptr_type_node, context_arg);
+
+	tsi_link_before (&entry, pop_frame_call, TSI_SAME_STMT);
+      }
+    tsi_next (&entry);
+  } while (!tsi_end_p (entry));
+}
+
+// Finishes the currently built function. After calling this, no new
+// statements should be appeneded to the function.
+void
+brig_function::finish ()
+{
+  if (is_kernel)
+    {
+      // Kernel functions should have a single exit point.
+      // Let's create one. The return instructions should have
+      // been converted to branches to this label.
+      append_statement (build_stmt (LABEL_EXPR, exit_label));
+    }
+
+  if (is_kernel)
+    {
+      /* Attempt to convert the kernel to a work-group function that
+	 executes all work-items of the WG using a loop. */
+      convert_to_wg_function ();
+    }
+
+  append_return_stmt ();
+
+  // Currently assume single alloca frame per WG.
+  if (has_allocas)
+    create_alloca_frame ();
+}
+
+void
+brig_function::append_return_stmt ()
+{
+
+  tree bind_expr = current_bind_expr;
+  tree stmts = BIND_EXPR_BODY (bind_expr);
+  tree last_stmt = tsi_stmt (tsi_last (stmts));
+
+  if (TREE_CODE (last_stmt) == RETURN_EXPR) return;
+
+  if (ret_value != NULL_TREE)
+    {
+      tree result_assign = build2
+	(MODIFY_EXPR, TREE_TYPE (ret_value), ret_value, ret_value);
+
+      tree return_expr =
+	build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);
+      append_to_statement_list_force (return_expr, &stmts);
+    }
+  else
+    {
+      tree return_stmt = build_stmt (RETURN_EXPR, NULL);
+      append_to_statement_list_force (return_stmt, &stmts);
+    }
 }

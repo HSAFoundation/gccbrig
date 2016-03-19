@@ -153,12 +153,12 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic& parent)
   set_builtin_decl (BUILT_IN_TRUNCF, decl, true);
 
   decl = add_builtin_function ("__builtin_trunc", d_d_fn,
-			       BUILT_IN_TRUNC,	BUILT_IN_NORMAL,
+			       BUILT_IN_TRUNC, BUILT_IN_NORMAL,
 			       "trunc", NULL_TREE);
   set_builtin_decl (BUILT_IN_TRUNC, decl, true);
 
   decl = add_builtin_function ("__builtin_popcount", u_u_fn,
-			       BUILT_IN_POPCOUNT,	BUILT_IN_NORMAL,
+			       BUILT_IN_POPCOUNT, BUILT_IN_NORMAL,
 			       "popcount", NULL_TREE);
   set_builtin_decl (BUILT_IN_POPCOUNT, decl, true);
 
@@ -505,6 +505,9 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic& parent)
     (BRIG_OPCODE_KERNARGBASEPTR, BRIG_TYPE_U32,
      "__phsa_builtin_kernargbaseptr_u32", 1, u32_type, ptr_type_node);
 
+  add_custom_builtin
+    (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
+     "__phsa_builtin_alloca", 3, u32_type, u32_type, u32_type, ptr_type_node);
 }
 
 tree
@@ -864,7 +867,7 @@ brig_code_entry_handler::build_address_operand (
 	  tree assign = build2
 	    (MODIFY_EXPR, ptr_type, tmp,
 	     build_reinterpret_cast (ptr_type, conv));
-	  parent_.append_statement (assign);
+	  parent_.m_cf->append_statement (assign);
 	  ptr_base = tmp;
 	}
       else
@@ -1436,8 +1439,8 @@ brig_code_entry_handler::get_comparison_result_type (tree source_type)
 // In such case the context data is passed as a pointer to a work-item context
 // object, as the last argument in the builtin call.
 bool
-brig_code_entry_handler::needs_workitem_context_data (
-						      BrigOpcode16_t brig_opcode) const
+brig_code_entry_handler::needs_workitem_context_data
+(BrigOpcode16_t brig_opcode) const
 {
   switch (brig_opcode) {
   case BRIG_OPCODE_WORKITEMABSID:
@@ -1466,6 +1469,7 @@ brig_code_entry_handler::needs_workitem_context_data (
   case BRIG_OPCODE_DEBUGTRAP:
   case BRIG_OPCODE_GROUPBASEPTR:
   case BRIG_OPCODE_KERNARGBASEPTR:
+  case BRIG_OPCODE_ALLOCA:
     return true;
   default:
     return false;
@@ -1491,9 +1495,9 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
 }
 
 tree
-brig_code_entry_handler::expand_or_call_builtin (
-						 BrigOpcode16_t brig_opcode, BrigType16_t brig_type,	tree arith_type,
-						 tree_stl_vec& operands)
+brig_code_entry_handler::expand_or_call_builtin
+(BrigOpcode16_t brig_opcode, BrigType16_t brig_type, tree arith_type,
+ tree_stl_vec& operands)
 {
   if (parent_.m_cf->is_kernel && can_expand_builtin (brig_opcode))
     return expand_builtin (brig_opcode, arith_type, operands);
@@ -1552,18 +1556,18 @@ brig_code_entry_handler::expand_or_call_builtin (
 
       call_operands.resize (4, NULL_TREE);
       operand_types.resize (4, NULL_TREE);
-      return call_builtin	(&built_in, NULL, operand_count,
-				 TREE_TYPE (TREE_TYPE (built_in)),
-				 operand_types [0], call_operands [0],
-				 operand_types [1], call_operands [1],
-				 operand_types [2], call_operands [2],
-				 operand_types [3], call_operands [3]);
+      return call_builtin (&built_in, NULL, operand_count,
+			   TREE_TYPE (TREE_TYPE (built_in)),
+			   operand_types [0], call_operands [0],
+			   operand_types [1], call_operands [1],
+			   operand_types [2], call_operands [2],
+			   operand_types [3], call_operands [3]);
     }
 }
 
 tree
-brig_code_entry_handler::expand_builtin (
-					 BrigOpcode16_t brig_opcode, tree /*arith_type*/, tree_stl_vec& operands)
+brig_code_entry_handler::expand_builtin
+(BrigOpcode16_t brig_opcode, tree /*arith_type*/, tree_stl_vec& operands)
 {
   tree_stl_vec uint32_0 =
     tree_stl_vec (1, build_int_cst (uint32_type_node, 0));
@@ -1655,7 +1659,7 @@ brig_code_entry_handler::add_temp_var (std::string name, tree expr)
   tree temp_var = create_tmp_var (TREE_TYPE (expr), name.c_str());
   tree assign = build2
     (MODIFY_EXPR, TREE_TYPE (temp_var), temp_var, expr);
-  parent_.append_statement (assign);
+  parent_.m_cf->append_statement (assign);
   return temp_var;
 }
 
@@ -2012,8 +2016,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 }
 
 tree
-brig_code_entry_handler::build_output_assignment (
-						  const BrigInstBase &brig_inst, tree output, tree inst_expr)
+brig_code_entry_handler::build_output_assignment
+(const BrigInstBase &brig_inst, tree output, tree inst_expr)
 {
   // The destination type might be different from the output register
   // variable type (which is always an unsigned integer type).
@@ -2060,7 +2064,7 @@ brig_code_entry_handler::build_output_assignment (
       tree f2h_output = build_f2h_conversion (inst_expr);
       tree conv_int = convert_to_integer (output_type, f2h_output);
       tree assign = build2 (MODIFY_EXPR, output_type, output, conv_int);
-      parent_.append_statement (assign);
+      parent_.m_cf->append_statement (assign);
       return assign;
     }
   else if (VECTOR_TYPE_P (TREE_TYPE (output)))
@@ -2097,7 +2101,7 @@ brig_code_entry_handler::build_output_assignment (
 	  tree bitcast = build_reinterpret_cast	(output_type, inst_expr);
 	  tree assign = build2
 	    (MODIFY_EXPR, output_type, output, bitcast);
-	  parent_.append_statement (assign);
+	  parent_.m_cf->append_statement (assign);
 	  return assign;
 	}
       else
@@ -2112,7 +2116,7 @@ brig_code_entry_handler::build_output_assignment (
 
 	  tree conv_int = convert_to_integer (output_type, inst_expr);
 	  tree assign = build2 (MODIFY_EXPR, output_type, output, conv_int);
-	  parent_.append_statement (assign);
+	  parent_.m_cf->append_statement (assign);
 	  return assign;
 	}
     }
@@ -2122,7 +2126,7 @@ brig_code_entry_handler::build_output_assignment (
 void
 brig_code_entry_handler::append_statement (tree stmt)
 {
-  parent_.append_statement (stmt);
+  parent_.m_cf->append_statement (stmt);
 }
 
 void
@@ -2171,13 +2175,13 @@ brig_code_entry_handler::pack (tree_stl_vec& elements)
   tree tmp_var = create_tmp_var (vec_type, "vec_out");
   tree vec_tmp_assign = build2
     (MODIFY_EXPR, TREE_TYPE (tmp_var), tmp_var, vec);
-  parent_.append_statement (vec_tmp_assign);
+  parent_.m_cf->append_statement (vec_tmp_assign);
   return tmp_var;
 }
 
 tree
-tree_element_unary_visitor::operator() (
-					brig_code_entry_handler& handler, tree operand)
+tree_element_unary_visitor::operator()
+(brig_code_entry_handler& handler, tree operand)
 {
   if (VECTOR_TYPE_P (TREE_TYPE(operand)))
     {

@@ -305,18 +305,6 @@ build_reinterpret_cast (tree destination_type, tree source)
   return NULL_TREE;
 }
 
-tree
-brig_to_generic::append_statement (tree stmt)
-{
-  gcc_assert (m_cf->func_decl != NULL);
-
-  tree bind_expr = m_cf->current_bind_expr;
-  tree stmts = BIND_EXPR_BODY (bind_expr);
-
-  append_to_statement_list_force (stmt, &stmts);
-  return stmt;
-}
-
 // Returns a finished brig_function for the given generic FUNC_DECL,
 // or NULL, if not found.
 brig_function *
@@ -336,31 +324,7 @@ brig_to_generic::finish_current_function ()
   if (m_cf == NULL || m_cf->func_decl == NULL_TREE)
     return;
 
-  if (m_cf->is_kernel)
-    {
-      // Kernel functions should have a single exit point.
-      // Let's create one. The return instructions should have
-      // been converted to branches to this label.
-      append_statement (build_stmt (LABEL_EXPR, m_cf->exit_label));
-    }
-  else if (m_cf->ret_value != NULL_TREE)
-    {
-      // TO CLEANUP: move to brig_function
-      tree result_assign = build2
-	(MODIFY_EXPR, TREE_TYPE (m_cf->ret_value), m_cf->ret_value,
-	 m_cf->ret_value);
-
-      tree return_expr =
-	build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);
-      append_statement (return_expr);
-    }
-
-  if (m_cf->is_kernel)
-    {
-      /* Attempt to convert the kernel to a work-group function that
-	 executes all work-items of the WG using a loop. */
-      m_cf->convert_to_wg_function ();
-    }
+  m_cf->finish();
 
   //debug_function (m_cf->func_decl, TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
   gimplify_function_tree (m_cf->func_decl);
@@ -385,8 +349,8 @@ brig_to_generic::init_current_function (tree f)
 }
 
 void
-brig_to_generic::append_group_variable (
-					const BrigBase* var, size_t size, size_t alignment)
+brig_to_generic::append_group_variable
+(const BrigBase* var, size_t size, size_t alignment)
 {
   size_t align_padding = m_next_group_offset % alignment;
   m_next_group_offset += align_padding;
@@ -409,8 +373,8 @@ brig_to_generic::group_segment_size () const
 }
 
 void
-brig_to_generic::append_private_variable (
-					  const BrigDirectiveVariable* var, size_t size, size_t alignment)
+brig_to_generic::append_private_variable
+(const BrigDirectiveVariable* var, size_t size, size_t alignment)
 {
   size_t align_padding = m_next_private_offset % alignment;
   m_next_private_offset += align_padding;
@@ -420,8 +384,8 @@ brig_to_generic::append_private_variable (
 }
 
 size_t
-brig_to_generic::private_variable_segment_offset (
-						  const BrigDirectiveVariable* var) const
+brig_to_generic::private_variable_segment_offset
+(const BrigDirectiveVariable* var) const
 {
   var_offset_table::const_iterator i = m_private_offsets.find (var);
   gcc_assert (i != m_private_offsets.end());
