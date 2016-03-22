@@ -48,18 +48,19 @@
 
 struct reg_decl_index_entry;
 
-class brig_to_generic {
- public:
-  typedef std::map<const BrigDirectiveVariable*, tree> variable_index;
+class brig_to_generic
+{
+public:
+  typedef std::map<const BrigDirectiveVariable *, tree> variable_index;
 
- private:
+private:
   // Group variables can be either BrigDirectiveVariables or
   // BrigDirectiveFbarriers.
-  typedef std::map<const BrigBase*, size_t> group_var_offset_table;
-  typedef std::map<const BrigDirectiveVariable*, size_t> var_offset_table;
+  typedef std::map<const BrigBase *, size_t> group_var_offset_table;
+  typedef std::map<const BrigDirectiveVariable *, size_t> var_offset_table;
 
- public:
-  brig_to_generic (const char* brig_blob);
+public:
+  brig_to_generic (const char *brig_blob);
 
   // Generate all global declarations.
   void write_globals ();
@@ -75,11 +76,11 @@ class brig_to_generic {
 
   // Returns a function declaration with the given name. Assumes it has been
   // created previously via a DirectiveFunction or similar.
-  tree function_decl (const std::string& name);
-  void add_function_decl (const std::string& name, tree func_decl);
+  tree function_decl (const std::string &name);
+  void add_function_decl (const std::string &name, tree func_decl);
 
-  tree global_variable (const BrigDirectiveVariable* var) const;
-  void add_global_variable (const BrigDirectiveVariable* brig_var,
+  tree global_variable (const BrigDirectiveVariable *var) const;
+  void add_global_variable (const BrigDirectiveVariable *brig_var,
 			    tree tree_decl);
 
   // Initializes a new currently handled function.
@@ -90,22 +91,20 @@ class brig_to_generic {
 
   // Appends a new group variable (or an fbarrier) to the current kernel's
   // group segment.
-  void append_group_variable (const BrigBase* var, size_t size,
+  void append_group_variable (const BrigBase *var, size_t size,
 			      size_t alignment);
 
   // Appends a new group variable to the current kernel's
   // private segment.
-  void append_private_variable (const BrigDirectiveVariable* var, size_t size,
+  void append_private_variable (const BrigDirectiveVariable *var, size_t size,
 				size_t alignment);
 
-  size_t group_variable_segment_offset (const BrigBase* var)
-    const;
+  size_t group_variable_segment_offset (const BrigBase *var) const;
 
-  size_t private_variable_segment_offset (const BrigDirectiveVariable* var)
-    const;
+  size_t
+  private_variable_segment_offset (const BrigDirectiveVariable *var) const;
 
-  size_t private_variable_size (const BrigDirectiveVariable* var)
-    const;
+  size_t private_variable_size (const BrigDirectiveVariable *var) const;
 
   // The size of the group and private segments required by the currently
   // processed kernel. Private segment size must be multiplied by the
@@ -126,8 +125,7 @@ class brig_to_generic {
   // The currently built function.
   brig_function *m_cf;
 
- private:
-
+private:
   const char *m_brig;
   const char *m_data;
   size_t m_data_size;
@@ -141,7 +139,7 @@ class brig_to_generic {
   variable_index m_global_variables;
 
   // The size of each private variable, including the alignment padding.
-  std::map<const BrigDirectiveVariable*, size_t> m_private_data_sizes;
+  std::map<const BrigDirectiveVariable *, size_t> m_private_data_sizes;
 
   // The same for group variables.
   size_t m_next_group_offset;
@@ -155,28 +153,29 @@ class brig_to_generic {
   label_index m_function_index;
 
   // Stores all processed kernels in order.
-  std::vector<brig_function*> m_kernels;
+  std::vector<brig_function *> m_kernels;
 
   // Stores all already processed functions from the translation unit
   // for some interprocedural analysis.
-  std::map<tree, brig_function*> m_finished_functions;
+  std::map<tree, brig_function *> m_finished_functions;
 };
 
 /// An interface to organize the different types of BRIG element handlers.
-class brig_entry_handler {
- public:
- brig_entry_handler(brig_to_generic &parent) : parent_(parent) {}
+class brig_entry_handler
+{
+public:
+  brig_entry_handler (brig_to_generic &parent) : parent_ (parent) {}
   // Handles the brig_code data at the given pointer and adds it to the
   // currently built tree. Returns the number of consumed bytes;
-  virtual size_t operator()(const BrigBase *base) = 0;
- protected:
+  virtual size_t operator() (const BrigBase *base) = 0;
+
+protected:
   brig_to_generic &parent_;
 };
 
 // Build a call to a builtin function.
 // Stolen from gogo-tree.cc in the Go frontend.
-tree call_builtin (tree* pdecl, const char* name, int nargs,
-		   tree rettype, ...);
+tree call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...);
 
 // BRIG regs are untyped, but GENERIC is not. We need to
 // add implicit casts in case treating the operand with

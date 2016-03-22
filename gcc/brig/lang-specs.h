@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 /* This is the contribution to the `default_compilers' array in gcc.c
    for the BRIG (HSAIL) input.  */
 
-{".brig",  "@brig", 0, 1, 0},
-{"@brig",  "brig1 %i %(cc1_options) %{I*} %{L*} %D %{!fsyntax-only:%(invoke_as)}",
-    0, 1, 0},
+{".brig", "@brig", 0, 1, 0},
+  {"@brig",
+   "brig1 %i %(cc1_options) %{I*} %{L*} %D %{!fsyntax-only:%(invoke_as)}", 0, 1,
+   0},

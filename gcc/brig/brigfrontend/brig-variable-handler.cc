@@ -28,21 +28,20 @@
 #include "brig-util.h"
 
 tree
-brig_directive_variable_handler::build_variable
-(const BrigDirectiveVariable *brigVar, tree_code var_decl_type)
+brig_directive_variable_handler::build_variable (
+  const BrigDirectiveVariable *brigVar, tree_code var_decl_type)
 {
-  const BrigData *name_data =
-    parent_.get_brig_data_entry (brigVar->name);
+  const BrigData *name_data = parent_.get_brig_data_entry (brigVar->name);
 
   // TODO: Encountering a (global) variable should mean a possible
   // currently built function has ended in the BRIG. We should call
   // finish_current_function () to handle the previously
   // created function in that case.
 
-  std::string var_name ((const char*) (name_data->bytes + 1),
+  std::string var_name ((const char *) (name_data->bytes + 1),
 			name_data->byteCount - 1);
   // Strip & from the beginning of the name.
-  tree name_identifier = get_identifier (var_name.c_str());
+  tree name_identifier = get_identifier (var_name.c_str ());
 
   tree var_decl;
   tree t;
@@ -50,11 +49,11 @@ brig_directive_variable_handler::build_variable
   size_t var_size;
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
-      tree element_type = get_tree_type_for_hsa_type
-	(brigVar->type & ~BRIG_TYPE_ARRAY);
+      tree element_type
+	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
-	error("array variable size cannot be zero");
+	error ("array variable size cannot be zero");
       if (var_decl_type == PARM_DECL)
 	t = build_pointer_type (element_type);
       else
@@ -70,9 +69,9 @@ brig_directive_variable_handler::build_variable
       alignment = var_size;
     }
 
-  if (brigVar->segment == BRIG_SEGMENT_READONLY ||
-      brigVar->segment == BRIG_SEGMENT_KERNARG ||
-      (brigVar->modifier.allBits & BRIG_VARIABLE_CONST))
+  if (brigVar->segment == BRIG_SEGMENT_READONLY
+      || brigVar->segment == BRIG_SEGMENT_KERNARG
+      || (brigVar->modifier.allBits & BRIG_VARIABLE_CONST))
     {
       TYPE_READONLY (t) = 1;
     }
@@ -101,17 +100,17 @@ brig_directive_variable_handler::build_variable
 
   if (brigVar->init != 0)
     {
-      gcc_assert (brigVar->segment == BRIG_SEGMENT_READONLY ||
-		  brigVar->segment == BRIG_SEGMENT_GLOBAL);
+      gcc_assert (brigVar->segment == BRIG_SEGMENT_READONLY
+		  || brigVar->segment == BRIG_SEGMENT_GLOBAL);
 
-      const BrigBase *cst_operand_data =
-	parent_.get_brig_operand_entry (brigVar->init);
+      const BrigBase *cst_operand_data
+	= parent_.get_brig_operand_entry (brigVar->init);
 
       tree initializer = NULL_TREE;
       if (cst_operand_data->kind == BRIG_KIND_OPERAND_CONSTANT_BYTES)
 	{
-	  initializer = get_tree_cst_for_hsa_operand
-	    ((const BrigOperandConstantBytes*) cst_operand_data, t);
+	  initializer = get_tree_cst_for_hsa_operand (
+	    (const BrigOperandConstantBytes *) cst_operand_data, t);
 	}
       else
 	{
@@ -141,18 +140,17 @@ brig_directive_variable_handler::build_variable
 size_t
 brig_directive_variable_handler::operator() (const BrigBase *base)
 {
-  const BrigDirectiveVariable *brigVar =
-    (const BrigDirectiveVariable*) base;
+  const BrigDirectiveVariable *brigVar = (const BrigDirectiveVariable *) base;
 
   size_t var_size, alignment, natural_align;
   tree var_type;
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
-      tree element_type = get_tree_type_for_hsa_type
-	(brigVar->type & ~BRIG_TYPE_ARRAY);
+      tree element_type
+	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
-	error("array variable size cannot be zero");
+	error ("array variable size cannot be zero");
       var_type = build_array_type_nelts (element_type, element_count);
       size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
       natural_align = element_size / 8;
@@ -165,9 +163,9 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       natural_align = var_size;
     }
 
-  size_t def_alignment =
-    brigVar->align == BRIG_ALIGNMENT_NONE ?	0 :	1 << (brigVar->align - 1);
-  alignment = def_alignment > natural_align ?	def_alignment : natural_align;
+  size_t def_alignment
+    = brigVar->align == BRIG_ALIGNMENT_NONE ? 0 : 1 << (brigVar->align - 1);
+  alignment = def_alignment > natural_align ? def_alignment : natural_align;
 
   if (brigVar->segment == BRIG_SEGMENT_KERNARG)
     {
@@ -189,8 +187,8 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       parent_.append_group_variable (base, var_size, alignment);
       return base->byteCount;
     }
-  else if (brigVar->segment == BRIG_SEGMENT_PRIVATE ||
-	   brigVar->segment == BRIG_SEGMENT_SPILL)
+  else if (brigVar->segment == BRIG_SEGMENT_PRIVATE
+	   || brigVar->segment == BRIG_SEGMENT_SPILL)
     {
       /* Private variables are handled like group variables,
 	 except that their offsets are multiplied by the work-item
@@ -198,8 +196,8 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       parent_.append_private_variable (brigVar, var_size, alignment);
       return base->byteCount;
     }
-  else if (brigVar->segment == BRIG_SEGMENT_GLOBAL ||
-	   brigVar->segment == BRIG_SEGMENT_READONLY)
+  else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
+	   || brigVar->segment == BRIG_SEGMENT_READONLY)
     {
       tree var_decl = build_variable (brigVar);
       // Make all global variables program scope for now
@@ -232,8 +230,7 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
 	}
     }
   else
-    internal_error ("Unimplemented variable segment %x.",
-		    brigVar->segment);
+    internal_error ("Unimplemented variable segment %x.", brigVar->segment);
 
   return base->byteCount;
 }

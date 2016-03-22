@@ -40,18 +40,18 @@ gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum)
     case BRIG_OPCODE_SBR:
     case BRIG_OPCODE_CBR:
     case BRIG_OPCODE_ST:
-		case BRIG_OPCODE_ATOMICNORET:
-		case BRIG_OPCODE_SIGNALNORET:
-		case BRIG_OPCODE_INITFBAR:
-		case BRIG_OPCODE_JOINFBAR:
-		case BRIG_OPCODE_WAITFBAR:
-		case BRIG_OPCODE_ARRIVEFBAR:
-		case BRIG_OPCODE_LEAVEFBAR:
-		case BRIG_OPCODE_RELEASEFBAR:
-		case BRIG_OPCODE_DEBUGTRAP:
+    case BRIG_OPCODE_ATOMICNORET:
+    case BRIG_OPCODE_SIGNALNORET:
+    case BRIG_OPCODE_INITFBAR:
+    case BRIG_OPCODE_JOINFBAR:
+    case BRIG_OPCODE_WAITFBAR:
+    case BRIG_OPCODE_ARRIVEFBAR:
+    case BRIG_OPCODE_LEAVEFBAR:
+    case BRIG_OPCODE_RELEASEFBAR:
+    case BRIG_OPCODE_DEBUGTRAP:
       return false;
     default:
-     return opnum == 0;
+      return opnum == 0;
     }
 }
 
@@ -59,14 +59,14 @@ unsigned
 gccbrig_hsa_type_bit_size (BrigType16_t t)
 {
 
-	unsigned pack_type = t & ~0x01F;
+  unsigned pack_type = t & ~0x01F;
 
   if (pack_type == BRIG_TYPE_PACK_32)
-		return 32;
+    return 32;
   else if (pack_type == BRIG_TYPE_PACK_64)
-		return 64;
+    return 64;
   else if (pack_type == BRIG_TYPE_PACK_128)
-		return 128;
+    return 128;
 
   switch (t)
     {
@@ -134,13 +134,13 @@ gccbrig_hsa_type_bit_size (BrigType16_t t)
 // gcc-hsa borrowed code ENDS
 
 uint64_t
-gccbrig_to_uint64_t(const BrigUInt64& brig_type)
+gccbrig_to_uint64_t (const BrigUInt64 &brig_type)
 {
-  return (uint64_t(brig_type.hi) << 32) | uint64_t(brig_type.lo);
+  return (uint64_t (brig_type.hi) << 32) | uint64_t (brig_type.lo);
 }
 
 int
-gccbrig_reg_size(const BrigOperandRegister *brig_reg)
+gccbrig_reg_size (const BrigOperandRegister *brig_reg)
 {
   switch (brig_reg->regKind)
     {
@@ -159,9 +159,9 @@ gccbrig_reg_size(const BrigOperandRegister *brig_reg)
 }
 
 std::string
-gccbrig_reg_name (const BrigOperandRegister* reg)
+gccbrig_reg_name (const BrigOperandRegister *reg)
 {
-	std::ostringstream strstr;
+  std::ostringstream strstr;
   switch (reg->regKind)
     {
     case BRIG_REGISTER_KIND_CONTROL:
@@ -177,119 +177,143 @@ gccbrig_reg_name (const BrigOperandRegister* reg)
       strstr << 'q';
       break;
     default:
-			gcc_unreachable ();
-			return "";
+      gcc_unreachable ();
+      return "";
     }
-	strstr << reg->regNum;
-	return strstr.str();
+  strstr << reg->regNum;
+  return strstr.str ();
 }
 
 std::string
 gccbrig_type_name (BrigType16_t type)
 {
-	switch (type)
-		{
-		case BRIG_TYPE_U8:
-			return "u8";
-		case BRIG_TYPE_U16:
-			return "u16";
-		case BRIG_TYPE_U32:
-			return "u32";
-		case BRIG_TYPE_U64:
-			return "u64";
-		case BRIG_TYPE_S8:
-			return "s8";
-		case BRIG_TYPE_S16:
-			return "s16";
-		case BRIG_TYPE_S32:
-			return "s32";
-		case BRIG_TYPE_S64:
-			return "s64";
-		default:
-			internal_error ("Unsupported type %d.", type);
-			break;
-		}
+  switch (type)
+    {
+    case BRIG_TYPE_U8:
+      return "u8";
+    case BRIG_TYPE_U16:
+      return "u16";
+    case BRIG_TYPE_U32:
+      return "u32";
+    case BRIG_TYPE_U64:
+      return "u64";
+    case BRIG_TYPE_S8:
+      return "s8";
+    case BRIG_TYPE_S16:
+      return "s16";
+    case BRIG_TYPE_S32:
+      return "s32";
+    case BRIG_TYPE_S64:
+      return "s64";
+    default:
+      internal_error ("Unsupported type %d.", type);
+      break;
+    }
 }
 
 std::string
 gccbrig_segment_name (BrigSegment8_t segment)
 {
-	if (segment == BRIG_SEGMENT_GLOBAL)
-		return "global";
-	else if (segment == BRIG_SEGMENT_GROUP)
-		return "group";
-	else if (segment == BRIG_SEGMENT_PRIVATE)
-		return "private";
-	else
-		internal_error ("unknown segment %u", segment);
+  if (segment == BRIG_SEGMENT_GLOBAL)
+    return "global";
+  else if (segment == BRIG_SEGMENT_GROUP)
+    return "group";
+  else if (segment == BRIG_SEGMENT_PRIVATE)
+    return "private";
+  else
+    internal_error ("unknown segment %u", segment);
 }
 
 bool
 gccbrig_is_float_type (BrigType16_t type)
 {
-	return (type == BRIG_TYPE_F32 || type == BRIG_TYPE_F64 ||
-					type == BRIG_TYPE_F16);
+  return (type == BRIG_TYPE_F32 || type == BRIG_TYPE_F64
+	  || type == BRIG_TYPE_F16);
 }
 
 BrigType16_t
 gccbrig_tree_type_to_hsa_type (tree tree_type)
 {
-	if (INTEGRAL_TYPE_P (tree_type))
-		{
-			if (TYPE_UNSIGNED (tree_type))
-				{
-					switch (int_size_in_bytes (tree_type))
-						{
-						case 1: return BRIG_TYPE_U8;
-						case 2: return BRIG_TYPE_U16;
-						case 4: return BRIG_TYPE_U32;
-						case 8: return BRIG_TYPE_U64;
-						default: break;
-						}
-				}
-			else
-				{
-					switch (int_size_in_bytes (tree_type))
-						{
-						case 1: return BRIG_TYPE_S8;
-						case 2: return BRIG_TYPE_S16;
-						case 4: return BRIG_TYPE_S32;
-						case 8: return BRIG_TYPE_S64;
-						default: break;
-						}
-				}
-		}
-	else if (VECTOR_TYPE_P (tree_type))
-		{
-			tree element_type = TREE_TYPE (tree_type);
-			size_t element_size = int_size_in_bytes (element_type) * 8;
-			BrigType16_t brig_element_type;
-			switch (element_size)
-				{
-				case 8:	brig_element_type =
-						TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U8 : BRIG_TYPE_S8; break;
-				case 16: brig_element_type =
-						TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U16 : BRIG_TYPE_S16; break;
-				case 32: brig_element_type =
-						TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U32 : BRIG_TYPE_S32; break;
-				case 64: brig_element_type =
-						TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U64 : BRIG_TYPE_S64; break;
-				default:
-					internal_error ("Cannot convert the given type to HSA type.");
-				}
+  if (INTEGRAL_TYPE_P (tree_type))
+    {
+      if (TYPE_UNSIGNED (tree_type))
+	{
+	  switch (int_size_in_bytes (tree_type))
+	    {
+	    case 1:
+	      return BRIG_TYPE_U8;
+	    case 2:
+	      return BRIG_TYPE_U16;
+	    case 4:
+	      return BRIG_TYPE_U32;
+	    case 8:
+	      return BRIG_TYPE_U64;
+	    default:
+	      break;
+	    }
+	}
+      else
+	{
+	  switch (int_size_in_bytes (tree_type))
+	    {
+	    case 1:
+	      return BRIG_TYPE_S8;
+	    case 2:
+	      return BRIG_TYPE_S16;
+	    case 4:
+	      return BRIG_TYPE_S32;
+	    case 8:
+	      return BRIG_TYPE_S64;
+	    default:
+	      break;
+	    }
+	}
+    }
+  else if (VECTOR_TYPE_P (tree_type))
+    {
+      tree element_type = TREE_TYPE (tree_type);
+      size_t element_size = int_size_in_bytes (element_type) * 8;
+      BrigType16_t brig_element_type;
+      switch (element_size)
+	{
+	case 8:
+	  brig_element_type
+	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U8 : BRIG_TYPE_S8;
+	  break;
+	case 16:
+	  brig_element_type
+	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U16 : BRIG_TYPE_S16;
+	  break;
+	case 32:
+	  brig_element_type
+	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U32 : BRIG_TYPE_S32;
+	  break;
+	case 64:
+	  brig_element_type
+	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U64 : BRIG_TYPE_S64;
+	  break;
+	default:
+	  internal_error ("Cannot convert the given type to HSA type.");
+	}
 
-			BrigType16_t pack_type;
-			switch (int_size_in_bytes (tree_type)*8)
-				{
-				case 32: pack_type = BRIG_TYPE_PACK_32; break;
-				case 64: pack_type = BRIG_TYPE_PACK_64; break;
-				case 128: pack_type = BRIG_TYPE_PACK_128; break;
-				default:
-					internal_error ("Cannot convert the given type to HSA type.");
-				}
-			return brig_element_type | pack_type;
-		}
-	internal_error ("Cannot convert the given type to HSA type.");
+      BrigType16_t pack_type;
+      switch (int_size_in_bytes (tree_type) * 8)
+	{
+	case 32:
+	  pack_type = BRIG_TYPE_PACK_32;
+	  break;
+	case 64:
+	  pack_type = BRIG_TYPE_PACK_64;
+	  break;
+	case 128:
+	  pack_type = BRIG_TYPE_PACK_128;
+	  break;
+	default:
+	  internal_error ("Cannot convert the given type to HSA type.");
+	}
+      return brig_element_type | pack_type;
+    }
+  internal_error ("Cannot convert the given type to HSA type.");
 }
 
 // Returns true in case the operation is a "bit level" operation,
@@ -297,13 +321,8 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
 bool
 gccbrig_is_raw_operation (BrigOpcode16_t opcode)
 {
-	return
-		opcode == BRIG_OPCODE_CMOV ||
-		opcode == BRIG_OPCODE_SHUFFLE ||
-		opcode == BRIG_OPCODE_UNPACK ||
-		opcode == BRIG_OPCODE_UNPACKLO ||
-		opcode == BRIG_OPCODE_UNPACKHI ||
-		opcode == BRIG_OPCODE_ST ||
-		opcode == BRIG_OPCODE_PACK;
+  return opcode == BRIG_OPCODE_CMOV || opcode == BRIG_OPCODE_SHUFFLE
+	 || opcode == BRIG_OPCODE_UNPACK || opcode == BRIG_OPCODE_UNPACKLO
+	 || opcode == BRIG_OPCODE_UNPACKHI || opcode == BRIG_OPCODE_ST
+	 || opcode == BRIG_OPCODE_PACK;
 }
-

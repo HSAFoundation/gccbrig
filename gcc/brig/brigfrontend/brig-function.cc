@@ -54,8 +54,8 @@ brig_function::brig_function ()
     is_wg_function (false), has_unexpanded_dp_builtins (false),
     generating_arg_block (false)
 {
-  memset(regs_, 0, BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT *
-	 sizeof (BrigOperandRegister*));
+  memset (regs_, 0,
+	  BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT * sizeof (BrigOperandRegister *));
 }
 
 brig_function::~brig_function ()
@@ -63,21 +63,21 @@ brig_function::~brig_function ()
   for (size_t i = 0; i < BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT; ++i)
     {
       if (regs_[i] != NULL)
-        {
-          delete regs_[i];
-          regs_[i] = NULL;
-        }
+	{
+	  delete regs_[i];
+	  regs_[i] = NULL;
+	}
     }
 }
 
 tree
-brig_function::label (const std::string& name)
+brig_function::label (const std::string &name)
 {
   label_index::const_iterator i = m_label_index.find (name);
-  if (i == m_label_index.end())
+  if (i == m_label_index.end ())
     {
-      tree name_identifier =
-	get_identifier_with_length (name.c_str(), name.size());
+      tree name_identifier
+	= get_identifier_with_length (name.c_str (), name.size ());
 
       tree label_decl = build_decl (UNKNOWN_LOCATION, LABEL_DECL,
 				    name_identifier, void_type_node);
@@ -95,24 +95,25 @@ brig_function::label (const std::string& name)
 // Record an argument variable for later use. This includes both local variables
 // inside arg blocks and incoming function arguments.
 void
-brig_function::add_arg_variable
-(const BrigDirectiveVariable* brigVar, tree treeDecl)
+brig_function::add_arg_variable (const BrigDirectiveVariable *brigVar,
+				 tree treeDecl)
 {
   arg_variables[brigVar] = treeDecl;
 }
 
 tree
-brig_function::arg_variable
-(const BrigDirectiveVariable* var) const
+brig_function::arg_variable (const BrigDirectiveVariable *var) const
 {
   variable_index::const_iterator i = arg_variables.find (var);
-  if (i == arg_variables.end()) return NULL_TREE;
-  else return (*i).second;
+  if (i == arg_variables.end ())
+    return NULL_TREE;
+  else
+    return (*i).second;
 }
 
 void
-brig_function::append_kernel_arg
-(const BrigDirectiveVariable* var, size_t size, size_t alignment)
+brig_function::append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
+				  size_t alignment)
 {
 
   gcc_assert (func_decl != NULL_TREE);
@@ -122,16 +123,15 @@ brig_function::append_kernel_arg
   kernarg_offsets[var] = next_kernarg_offset;
   next_kernarg_offset += size;
 
-  kernarg_max_align =
-    kernarg_max_align < alignment ?
-			alignment : kernarg_max_align;
+  kernarg_max_align
+    = kernarg_max_align < alignment ? alignment : kernarg_max_align;
 }
 
 size_t
-brig_function::kernel_arg_offset (const BrigDirectiveVariable* var) const
+brig_function::kernel_arg_offset (const BrigDirectiveVariable *var) const
 {
-  var_offset_table::const_iterator i = kernarg_offsets.find(var);
-  gcc_assert (i != kernarg_offsets.end());
+  var_offset_table::const_iterator i = kernarg_offsets.find (var);
+  gcc_assert (i != kernarg_offsets.end ());
   return (*i).second;
 }
 
@@ -152,87 +152,82 @@ brig_function::add_id_variables ()
 
   for (int i = 0; i < 3; ++i)
     {
-      char dim_char = (char)((int)'x' + i);
+      char dim_char = (char) ((int) 'x' + i);
 
       // The local sizes are limited to 16b values, but let's still use 32b
       // to avoid unnecessary casts (the ID functions are 32b).
-      local_id_vars[i] =
-	add_local_variable
-	(std::string ("__local_") + dim_char, uint32_type_node);
+      local_id_vars[i]
+	= add_local_variable (std::string ("__local_") + dim_char,
+			      uint32_type_node);
 
-      tree workitemid_call = call_builtin
-	(&workitemid_builtin, "__phsa_builtin_workitemid",
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node,
-	 context_arg);
+      tree workitemid_call
+	= call_builtin (&workitemid_builtin, "__phsa_builtin_workitemid", 2,
+			uint32_type_node, uint32_type_node,
+			build_int_cst (uint32_type_node, i), ptr_type_node,
+			context_arg);
 
-      tree id_init = build2
-	(MODIFY_EXPR, TREE_TYPE (local_id_vars[i]),
-	 local_id_vars[i], workitemid_call);
+      tree id_init = build2 (MODIFY_EXPR, TREE_TYPE (local_id_vars[i]),
+			     local_id_vars[i], workitemid_call);
 
       tsi_link_after (&entry, id_init, TSI_NEW_STMT);
 
-      cur_wg_size_vars[i] =
-	add_local_variable
-	(std::string ("__cur_wg_size_") + dim_char, uint32_type_node);
+      cur_wg_size_vars[i]
+	= add_local_variable (std::string ("__cur_wg_size_") + dim_char,
+			      uint32_type_node);
 
-      tree cwgz_call = call_builtin
-	(&currentworkgroupsize_builtin, "__phsa_builtin_currentworkgroupsize",
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node,
-	 context_arg);
+      tree cwgz_call = call_builtin (&currentworkgroupsize_builtin,
+				     "__phsa_builtin_currentworkgroupsize", 2,
+				     uint32_type_node, uint32_type_node,
+				     build_int_cst (uint32_type_node, i),
+				     ptr_type_node, context_arg);
 
-      tree limit_init = build2
-	(MODIFY_EXPR, TREE_TYPE (cur_wg_size_vars[i]),
-	 cur_wg_size_vars[i], cwgz_call);
+      tree limit_init = build2 (MODIFY_EXPR, TREE_TYPE (cur_wg_size_vars[i]),
+				cur_wg_size_vars[i], cwgz_call);
 
       tsi_link_after (&entry, limit_init, TSI_NEW_STMT);
 
-      wg_id_vars[i] =
-	add_local_variable
-	(std::string ("__workgroupid_") + dim_char, uint32_type_node);
+      wg_id_vars[i]
+	= add_local_variable (std::string ("__workgroupid_") + dim_char,
+			      uint32_type_node);
 
-      tree wgid_call = call_builtin
-	(&workgroupid_builtin, "__phsa_builtin_workgroupid",
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node,
-	 context_arg);
+      tree wgid_call
+	= call_builtin (&workgroupid_builtin, "__phsa_builtin_workgroupid", 2,
+			uint32_type_node, uint32_type_node,
+			build_int_cst (uint32_type_node, i), ptr_type_node,
+			context_arg);
 
-      tree wgid_init = build2
-	(MODIFY_EXPR, TREE_TYPE (wg_id_vars[i]),
-	 wg_id_vars[i], wgid_call);
+      tree wgid_init = build2 (MODIFY_EXPR, TREE_TYPE (wg_id_vars[i]),
+			       wg_id_vars[i], wgid_call);
 
       tsi_link_after (&entry, wgid_init, TSI_NEW_STMT);
 
-      wg_size_vars[i] =
-	add_local_variable
-	(std::string ("__workgroupsize_") + dim_char, uint32_type_node);
+      wg_size_vars[i]
+	= add_local_variable (std::string ("__workgroupsize_") + dim_char,
+			      uint32_type_node);
 
-      tree wgsize_call = call_builtin
-	(&workgroupsize_builtin, "__phsa_builtin_workgroupsize",
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node,
-	 context_arg);
+      tree wgsize_call
+	= call_builtin (&workgroupsize_builtin, "__phsa_builtin_workgroupsize",
+			2, uint32_type_node, uint32_type_node,
+			build_int_cst (uint32_type_node, i), ptr_type_node,
+			context_arg);
 
-      tree wgsize_init = build2
-	(MODIFY_EXPR, TREE_TYPE (wg_size_vars[i]),
-	 wg_size_vars[i], wgsize_call);
+      tree wgsize_init = build2 (MODIFY_EXPR, TREE_TYPE (wg_size_vars[i]),
+				 wg_size_vars[i], wgsize_call);
 
       tsi_link_after (&entry, wgsize_init, TSI_NEW_STMT);
 
-      grid_size_vars[i] =
-	add_local_variable
-	(std::string ("__gridsize_") + dim_char, uint32_type_node);
+      grid_size_vars[i]
+	= add_local_variable (std::string ("__gridsize_") + dim_char,
+			      uint32_type_node);
 
-      tree gridsize_call = call_builtin
-	(&gridsize_builtin, "__phsa_builtin_gridsize",
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node,
-	 context_arg);
+      tree gridsize_call
+	= call_builtin (&gridsize_builtin, "__phsa_builtin_gridsize", 2,
+			uint32_type_node, uint32_type_node,
+			build_int_cst (uint32_type_node, i), ptr_type_node,
+			context_arg);
 
-      tree gridsize_init = build2
-	(MODIFY_EXPR, TREE_TYPE (grid_size_vars[i]),
-	 grid_size_vars[i], gridsize_call);
+      tree gridsize_init = build2 (MODIFY_EXPR, TREE_TYPE (grid_size_vars[i]),
+				   grid_size_vars[i], gridsize_call);
 
       tsi_link_after (&entry, gridsize_init, TSI_NEW_STMT);
     }
@@ -244,10 +239,10 @@ brig_function::add_id_variables ()
 tree
 brig_function::add_local_variable (std::string name, tree type)
 {
-  tree name_identifier =
-    get_identifier_with_length (name.c_str(), name.size());
-  tree variable = build_decl (UNKNOWN_LOCATION, VAR_DECL,
-			      name_identifier, type);
+  tree name_identifier
+    = get_identifier_with_length (name.c_str (), name.size ());
+  tree variable
+    = build_decl (UNKNOWN_LOCATION, VAR_DECL, name_identifier, type);
 
   DECL_NONLOCAL (variable) = 0;
   TREE_ADDRESSABLE (variable) = 0;
@@ -268,7 +263,7 @@ brig_function::add_local_variable (std::string name, tree type)
 // If it has not been created yet for the function being generated,
 // creates it as an unsigned int variable.
 tree
-brig_function::get_var_decl_for_reg (const BrigOperandRegister* reg)
+brig_function::get_var_decl_for_reg (const BrigOperandRegister *reg)
 {
   size_t offset = reg->regNum;
   switch (reg->regKind)
@@ -302,8 +297,8 @@ brig_function::get_var_decl_for_reg (const BrigOperandRegister* reg)
 
       regEntry = new reg_decl_index_entry;
 
-      regEntry->var_decl_ =
-	add_local_variable (gccbrig_reg_name (reg), nonconst_type);
+      regEntry->var_decl_
+	= add_local_variable (gccbrig_reg_name (reg), nonconst_type);
       regs_[offset] = regEntry;
     }
   return regEntry->var_decl_;
@@ -314,11 +309,11 @@ brig_function::get_var_decl_for_reg (const BrigOperandRegister* reg)
 // the loop body starts.  BRANCH_AFTER is the statement after which the loop
 // predicate check and the back edge goto will be appended.
 void
-brig_function::add_wi_loop
-(int dim, tree_stmt_iterator *header_entry, tree_stmt_iterator *branch_after)
+brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
+			    tree_stmt_iterator *branch_after)
 {
-  tree ivar = local_id_vars [dim];
-  tree ivar_max = cur_wg_size_vars [dim];
+  tree ivar = local_id_vars[dim];
+  tree ivar_max = cur_wg_size_vars[dim];
   tree_stmt_iterator entry = *header_entry;
 
   // TODO: this is not a parallel loop as we share the "register
@@ -327,13 +322,13 @@ brig_function::add_wi_loop
   // at function scope.
 
   // TODO: Initialize the iteration variable. Assume always starting from 0.
-  tree ivar_init = build2
-    (MODIFY_EXPR, TREE_TYPE (ivar), ivar, build_zero_cst (TREE_TYPE (ivar)));
+  tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
+			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
 
-  tree loop_body_label = label (std::string ("__wi_loop_") +
-				(char)((int)'x' + dim));
-  tree loop_body_label_stmt =	build_stmt (LABEL_EXPR, loop_body_label);
+  tree loop_body_label
+    = label (std::string ("__wi_loop_") + (char) ((int) 'x' + dim));
+  tree loop_body_label_stmt = build_stmt (LABEL_EXPR, loop_body_label);
 
   tsi_link_after (&entry, loop_body_label_stmt, TSI_NEW_STMT);
 
@@ -342,33 +337,33 @@ brig_function::add_wi_loop
       static tree id_set_builtin;
       // Set the local ID to the current wi-loop iteration variable value to
       // ensure the builtins see the correct values.
-      tree id_set_call = call_builtin
-	(&id_set_builtin, "__phsa_builtin_setworkitemid",
-	 3, void_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, dim),
-	 uint32_type_node, ivar, ptr_type_node, context_arg);
+      tree id_set_call
+	= call_builtin (&id_set_builtin, "__phsa_builtin_setworkitemid", 3,
+			void_type_node, uint32_type_node,
+			build_int_cst (uint32_type_node, dim), uint32_type_node,
+			ivar, ptr_type_node, context_arg);
       tsi_link_after (&entry, id_set_call, TSI_NEW_STMT);
     }
 
-
   // Increment the WI iteration variable.
-  tree incr = build2 (PREINCREMENT_EXPR, TREE_TYPE (ivar),
-		      ivar, build_one_cst (TREE_TYPE (ivar)));
+  tree incr = build2 (PREINCREMENT_EXPR, TREE_TYPE (ivar), ivar,
+		      build_one_cst (TREE_TYPE (ivar)));
 
   tsi_link_after (branch_after, incr, TSI_NEW_STMT);
 
   // Append the predicate check with the back edge goto.
   tree condition = build2 (LT_EXPR, TREE_TYPE (ivar), ivar, ivar_max);
   tree target_goto = build1 (GOTO_EXPR, void_type_node, loop_body_label);
-  tree if_stmt = build3 (COND_EXPR, void_type_node, condition, target_goto,
-			 NULL_TREE);
+  tree if_stmt
+    = build3 (COND_EXPR, void_type_node, condition, target_goto, NULL_TREE);
   tsi_link_after (branch_after, if_stmt, TSI_NEW_STMT);
 }
 
 bool
 brig_function::convert_to_wg_function ()
 {
-  if (has_barriers || has_function_calls_with_barriers) return false;
+  if (has_barriers || has_function_calls_with_barriers)
+    return false;
 
   // The most trivial case: No barriers at all in the kernel.
   // We can create one big work-item loop around the whole kernel.
@@ -388,8 +383,8 @@ brig_function::convert_to_wg_function ()
 }
 
 tree
-brig_function::build_launcher_and_metadata
-(size_t group_segment_size, size_t private_segment_size)
+brig_function::build_launcher_and_metadata (size_t group_segment_size,
+					    size_t private_segment_size)
 {
 
   /* The launcher function calls the device-side runtime
@@ -410,23 +405,21 @@ brig_function::build_launcher_and_metadata
   */
 
   // The original kernel name without the '_' prefix.
-  std::string kern_name = name.substr(1);
+  std::string kern_name = name.substr (1);
 
-  tree name_identifier =
-    get_identifier_with_length (kern_name.c_str(), kern_name.size());
+  tree name_identifier
+    = get_identifier_with_length (kern_name.c_str (), kern_name.size ());
 
-  tree launcher = build_decl
-    (UNKNOWN_LOCATION, FUNCTION_DECL,
-     name_identifier,
-     build_function_type_list
-     (void_type_node, ptr_type_node, ptr_type_node, NULL_TREE));
+  tree launcher
+    = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, name_identifier,
+		  build_function_type_list (void_type_node, ptr_type_node,
+					    ptr_type_node, NULL_TREE));
 
   TREE_USED (launcher) = 1;
   DECL_ARTIFICIAL (launcher) = 1;
 
-  tree context_arg =
-    build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		get_identifier ("__context"), ptr_type_node);
+  tree context_arg = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+				 get_identifier ("__context"), ptr_type_node);
 
   DECL_ARGUMENTS (launcher) = context_arg;
   DECL_ARG_TYPE (context_arg) = ptr_type_node;
@@ -434,9 +427,9 @@ brig_function::build_launcher_and_metadata
   TREE_USED (context_arg) = 1;
   DECL_ARTIFICIAL (context_arg) = 1;
 
-  tree group_base_addr_arg =
-    build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		get_identifier ("__group_base_addr"), ptr_type_node);
+  tree group_base_addr_arg
+    = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+		  get_identifier ("__group_base_addr"), ptr_type_node);
 
   chainon (DECL_ARGUMENTS (launcher), group_base_addr_arg);
   DECL_ARG_TYPE (group_base_addr_arg) = ptr_type_node;
@@ -444,8 +437,8 @@ brig_function::build_launcher_and_metadata
   TREE_USED (group_base_addr_arg) = 1;
   DECL_ARTIFICIAL (group_base_addr_arg) = 1;
 
-  tree resdecl =
-    build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE, void_type_node);
+  tree resdecl
+    = build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE, void_type_node);
 
   DECL_RESULT (launcher) = resdecl;
   DECL_CONTEXT (resdecl) = launcher;
@@ -472,19 +465,15 @@ brig_function::build_launcher_and_metadata
   tree phsail_launch_kernel_call;
 
   if (is_wg_function)
-    phsail_launch_kernel_call =
-      call_builtin (NULL, "__phsa_launch_wg_function",
-		    3, void_type_node,
-		    ptr_type_node, kernel_func_ptr,
-		    ptr_type_node, context_arg, ptr_type_node,
-		    group_base_addr_arg);
+    phsail_launch_kernel_call
+      = call_builtin (NULL, "__phsa_launch_wg_function", 3, void_type_node,
+		      ptr_type_node, kernel_func_ptr, ptr_type_node,
+		      context_arg, ptr_type_node, group_base_addr_arg);
   else
-    phsail_launch_kernel_call =
-      call_builtin (NULL, "__phsa_launch_kernel",
-		    3, void_type_node,
-		    ptr_type_node, kernel_func_ptr,
-		    ptr_type_node, context_arg, ptr_type_node,
-		    group_base_addr_arg);
+    phsail_launch_kernel_call
+      = call_builtin (NULL, "__phsa_launch_kernel", 3, void_type_node,
+		      ptr_type_node, kernel_func_ptr, ptr_type_node,
+		      context_arg, ptr_type_node, group_base_addr_arg);
 
   append_to_statement_list_force (phsail_launch_kernel_call, &stmt_list);
 
@@ -508,28 +497,26 @@ brig_function::build_launcher_and_metadata
      but life is never perfect ;) */
 
   std::ostringstream strstr;
-  strstr
-    << std::endl
-    << ".pushsection " << PHSA_KERNELDESC_SECTION_PREFIX << kern_name
-    << std::endl
-    << "\t.p2align 1, 1, 1" << std::endl
-    << "\t.byte ";
+  strstr << std::endl
+	 << ".pushsection " << PHSA_KERNELDESC_SECTION_PREFIX << kern_name
+	 << std::endl
+	 << "\t.p2align 1, 1, 1" << std::endl
+	 << "\t.byte ";
 
   for (size_t i = 0; i < sizeof (phsa_kernel_descriptor); ++i)
     {
-      strstr << "0x" << std::setw(2) << std::setfill('0')
-	     << std::hex << (unsigned)*((unsigned char*)&desc + i);
+      strstr << "0x" << std::setw (2) << std::setfill ('0') << std::hex
+	     << (unsigned) *((unsigned char *) &desc + i);
       if (i + 1 < sizeof (phsa_kernel_descriptor))
 	strstr << ", ";
     }
 
-  strstr << std::endl
-	 << ".popsection" << std::endl << std::endl;
+  strstr << std::endl << ".popsection" << std::endl << std::endl;
 
-  tree metadata_asm =
-    build_stmt
-    (ASM_EXPR, build_string (strstr.str().size(), strstr.str().c_str()),
-     NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE);
+  tree metadata_asm
+    = build_stmt (ASM_EXPR,
+		  build_string (strstr.str ().size (), strstr.str ().c_str ()),
+		  NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE);
 
   append_to_statement_list_force (metadata_asm, &stmt_list);
 
@@ -570,26 +557,29 @@ brig_function::create_alloca_frame ()
     }
 
   static tree push_frame_builtin = NULL_TREE;
-  tree push_frame_call = call_builtin
-    (&push_frame_builtin, "__phsa_builtin_alloca_push_frame",
-     1, void_type_node, ptr_type_node, context_arg);
+  tree push_frame_call
+    = call_builtin (&push_frame_builtin, "__phsa_builtin_alloca_push_frame", 1,
+		    void_type_node, ptr_type_node, context_arg);
 
   tsi_link_before (&entry, push_frame_call, TSI_NEW_STMT);
 
   static tree pop_frame_builtin = NULL_TREE;
 
-  do {
-    tree stmt = tsi_stmt (entry);
-    if (TREE_CODE (stmt) == RETURN_EXPR)
-      {
-	tree pop_frame_call = call_builtin
-	  (&pop_frame_builtin, "__phsa_builtin_alloca_pop_frame",
-	   1, void_type_node, ptr_type_node, context_arg);
+  do
+    {
+      tree stmt = tsi_stmt (entry);
+      if (TREE_CODE (stmt) == RETURN_EXPR)
+	{
+	  tree pop_frame_call
+	    = call_builtin (&pop_frame_builtin,
+			    "__phsa_builtin_alloca_pop_frame", 1,
+			    void_type_node, ptr_type_node, context_arg);
 
-	tsi_link_before (&entry, pop_frame_call, TSI_SAME_STMT);
-      }
-    tsi_next (&entry);
-  } while (!tsi_end_p (entry));
+	  tsi_link_before (&entry, pop_frame_call, TSI_SAME_STMT);
+	}
+      tsi_next (&entry);
+    }
+  while (!tsi_end_p (entry));
 }
 
 // Finishes the currently built function. After calling this, no new
@@ -627,15 +617,16 @@ brig_function::append_return_stmt ()
   tree stmts = BIND_EXPR_BODY (bind_expr);
   tree last_stmt = tsi_stmt (tsi_last (stmts));
 
-  if (TREE_CODE (last_stmt) == RETURN_EXPR) return;
+  if (TREE_CODE (last_stmt) == RETURN_EXPR)
+    return;
 
   if (ret_value != NULL_TREE)
     {
-      tree result_assign = build2
-	(MODIFY_EXPR, TREE_TYPE (ret_value), ret_value, ret_value);
+      tree result_assign
+	= build2 (MODIFY_EXPR, TREE_TYPE (ret_value), ret_value, ret_value);
 
-      tree return_expr =
-	build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);
+      tree return_expr
+	= build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);
       append_to_statement_list_force (return_expr, &stmts);
     }
   else

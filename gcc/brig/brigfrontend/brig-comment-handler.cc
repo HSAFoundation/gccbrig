@@ -27,8 +27,8 @@ extern int gccbrig_verbose;
 size_t
 brig_directive_comment_handler::operator() (const BrigBase *base)
 {
-  const BrigDirectiveComment *brig_comment =
-		(const BrigDirectiveComment*) base;
+  const BrigDirectiveComment *brig_comment
+    = (const BrigDirectiveComment *) base;
 
   if (gccbrig_verbose)
     {

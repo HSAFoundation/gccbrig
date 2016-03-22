@@ -33,14 +33,14 @@
 const BrigAluModifier *
 brig_cvt_inst_handler::modifier (const BrigBase *base) const
 {
-  const BrigInstCvt *inst = (const BrigInstCvt*) base;
+  const BrigInstCvt *inst = (const BrigInstCvt *) base;
   return &inst->modifier;
 }
 
 const BrigRound8_t *
 brig_cvt_inst_handler::round (const BrigBase *base) const
 {
-  const BrigInstCvt *inst = (const BrigInstCvt*) base;
+  const BrigInstCvt *inst = (const BrigInstCvt *) base;
   return &inst->round;
 }
 
@@ -55,13 +55,13 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
      - the conversion destination type
   */
 
-  const BrigInstBase *brig_inst =
-    (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
-  const BrigInstCvt *cvt_inst = (const BrigInstCvt*) base;
+  const BrigInstBase *brig_inst
+    = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
+  const BrigInstCvt *cvt_inst = (const BrigInstCvt *) base;
 
   const BrigAluModifier *inst_modifier = modifier (base);
-  const bool FTZ = inst_modifier != NULL &&
-    inst_modifier->allBits & BRIG_ALU_FTZ;
+  const bool FTZ
+    = inst_modifier != NULL && inst_modifier->allBits & BRIG_ALU_FTZ;
 
   // The conversion source type.
   tree src_type = get_tree_expr_type_for_hsa_type (cvt_inst->sourceType);
@@ -117,9 +117,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   // Flush the float operand to zero if indicated with 'ftz'.
   if (FTZ && SCALAR_FLOAT_TYPE_P (src_type))
     {
-      tree casted_input =
-	build_reinterpret_cast (src_type, input);
-      input = flush_to_zero(src_is_fp16) (*this, casted_input);
+      tree casted_input = build_reinterpret_cast (src_type, input);
+      input = flush_to_zero (src_is_fp16) (*this, casted_input);
     }
 
   tree conversion_result = NULL_TREE;
@@ -130,9 +129,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
       if (INTEGRAL_TYPE_P (src_type))
 	{
 	  // Generate an integer not equal operation.
-	  conversion_result =
-	    build2 (NE_EXPR, TREE_TYPE (input), input,
-		    build_int_cst (TREE_TYPE (input), 0));
+	  conversion_result = build2 (NE_EXPR, TREE_TYPE (input), input,
+				      build_int_cst (TREE_TYPE (input), 0));
 	}
       else
 	{
@@ -161,25 +159,25 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	    }
 	  else
 	    error ("Unknown REAL type.");
-	  tree casted_input =
-	    build_reinterpret_cast (unsigned_int_type, input);
-	  tree masked_input = build2
-	    (BIT_AND_EXPR, unsigned_int_type, casted_input, and_mask);
-	  conversion_result =
-	    build2 (NE_EXPR, TREE_TYPE (masked_input), masked_input,
-		    build_int_cst (unsigned_int_type, 0));
+	  tree casted_input = build_reinterpret_cast (unsigned_int_type, input);
+	  tree masked_input
+	    = build2 (BIT_AND_EXPR, unsigned_int_type, casted_input, and_mask);
+	  conversion_result
+	    = build2 (NE_EXPR, TREE_TYPE (masked_input), masked_input,
+		      build_int_cst (unsigned_int_type, 0));
 	}
       // The result from the comparison is a boolean, convert it to such.
-      conversion_result = convert_to_integer
-	(get_tree_type_for_hsa_type (BRIG_TYPE_B1), conversion_result);
+      conversion_result
+	= convert_to_integer (get_tree_type_for_hsa_type (BRIG_TYPE_B1),
+			      conversion_result);
     }
   else if (dest_is_fp16)
     {
       tree casted_input = build_reinterpret_cast (src_type, input);
-      conversion_result =
-	convert_to_real (brig_to_generic::s_fp32_type, casted_input);
+      conversion_result
+	= convert_to_real (brig_to_generic::s_fp32_type, casted_input);
       if (FTZ)
-	conversion_result = flush_to_zero(true) (*this, conversion_result);
+	conversion_result = flush_to_zero (true) (*this, conversion_result);
       conversion_result = build_f2h_conversion (conversion_result);
     }
   else if (SCALAR_FLOAT_TYPE_P (dest_type))
@@ -208,9 +206,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	  strstr << conv_dst_size * 8 << "_f";
 	  strstr << conv_src_size * 8;
 	  tree builtin = NULL_TREE;
-	  conversion_result =
-	    call_builtin (&builtin, strstr.str().c_str(), 1, dest_type,
-			  src_type, casted_input);
+	  conversion_result = call_builtin (&builtin, strstr.str ().c_str (), 1,
+					    dest_type, src_type, casted_input);
 	}
       else
 	{
@@ -221,8 +218,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	}
       // The converted result is finally extended to the target register
       // width, using the same sign as the destination.
-      conversion_result =
-	convert_to_integer (TREE_TYPE (output), conversion_result);
+      conversion_result
+	= convert_to_integer (TREE_TYPE (output), conversion_result);
     }
   else
     {
@@ -238,14 +235,14 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   // conversion output size. Cast it to the register variable type.
   if (dst_reg_size > conv_dst_size)
     {
-      tree casted_output = build1 (CONVERT_EXPR, TREE_TYPE (output),
-				   conversion_result);
+      tree casted_output
+	= build1 (CONVERT_EXPR, TREE_TYPE (output), conversion_result);
       assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
     }
   else
     {
-      tree casted_output = build_reinterpret_cast (TREE_TYPE (output),
-						   conversion_result);
+      tree casted_output
+	= build_reinterpret_cast (TREE_TYPE (output), conversion_result);
       assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
     }
   parent_.m_cf->append_statement (assign);

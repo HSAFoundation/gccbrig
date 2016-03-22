@@ -27,15 +27,15 @@ along with GCC; see the file COPYING3.  If not see
 #include "opts.h"
 
 /* This bit is set if we saw a `-xfoo' language specification.  */
-#define LANGSPEC	(1<<1)
+#define LANGSPEC (1 << 1)
 /* This bit is set if they did `-lm' or `-lmath'.  */
-#define MATHLIB		(1<<2)
+#define MATHLIB (1 << 2)
 /* This bit is set if they did `-lpthread'.  */
-#define THREADLIB	(1<<3)
+#define THREADLIB (1 << 3)
 /* This bit is set if they did `-lc'.  */
-#define WITHLIBC	(1<<4)
+#define WITHLIBC (1 << 4)
 /* Skip this option.  */
-#define SKIPOPT		(1<<5)
+#define SKIPOPT (1 << 5)
 
 #ifndef MATH_LIBRARY
 #define MATH_LIBRARY "m"
@@ -88,7 +88,7 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
   bool saw_opt_S = false;
 
   /* The first input file with an extension of .brig.  */
-  const char *first_brig_file = NULL;  
+  const char *first_brig_file = NULL;
 
   argc = *in_decoded_options_count;
   decoded_options = *in_decoded_options;
@@ -169,12 +169,10 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 	  else
 	    out[baselen + 1] = 'o';
 	  out[baselen + 2] = '\0';
-	  generate_option (OPT_o, out, 1, CL_DRIVER,
-			   &new_decoded_options[j]);
+	  generate_option (OPT_o, out, 1, CL_DRIVER, &new_decoded_options[j]);
 	}
       else
-	  generate_option (OPT_o, "a.out", 1, CL_DRIVER,
-			   &new_decoded_options[j]);
+	generate_option (OPT_o, "a.out", 1, CL_DRIVER, &new_decoded_options[j]);
       j++;
     }
 
@@ -184,10 +182,7 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 }
 
 /* Called before linking.  Returns 0 on success and -1 on failure.  */
-int lang_specific_pre_link (void)  /* Not used for Brig.  */
-{
-  return 0;
-}
+int lang_specific_pre_link (void) /* Not used for Brig.  */ { return 0; }
 
 /* Number of extra output files that lang_specific_pre_link may generate.  */
-int lang_specific_extra_outfiles = 0;  /* Not used for Brig.  */
+int lang_specific_extra_outfiles = 0; /* Not used for Brig.  */

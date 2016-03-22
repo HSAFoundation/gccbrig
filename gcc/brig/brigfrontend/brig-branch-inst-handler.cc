@@ -31,13 +31,13 @@
 size_t
 brig_branch_inst_handler::operator() (const BrigBase *base)
 {
-  const BrigInstBase *brig_inst =
-    (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
+  const BrigInstBase *brig_inst
+    = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
 
   if (brig_inst->opcode == BRIG_OPCODE_CALL)
     {
-      const BrigData *operand_entries =
-	parent_.get_brig_data_entry (brig_inst->operands);
+      const BrigData *operand_entries
+	= parent_.get_brig_data_entry (brig_inst->operands);
       tree func_ref = NULL_TREE;
       vec<tree, va_gc> *out_args;
       vec_alloc (out_args, 1);
@@ -49,10 +49,10 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 
       for (size_t i = 0; i < operand_count; ++i)
 	{
-	  uint32_t operand_offset =
-	    ((const uint32_t*) &operand_entries->bytes)[i];
-	  const BrigBase *operand_data =
-	    parent_.get_brig_operand_entry (operand_offset);
+	  uint32_t operand_offset
+	    = ((const uint32_t *) &operand_entries->bytes)[i];
+	  const BrigBase *operand_data
+	    = parent_.get_brig_operand_entry (operand_offset);
 	  if (i == 1)
 	    {
 	      gcc_assert (operand_data->kind == BRIG_KIND_OPERAND_CODE_REF);
@@ -60,25 +60,25 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 	      continue;
 	    }
 	  gcc_assert (operand_data->kind == BRIG_KIND_OPERAND_CODE_LIST);
-	  const BrigOperandCodeList *codelist =
-	    (const BrigOperandCodeList*)operand_data;
-	  const BrigData *data =
-	    parent_.get_brig_data_entry (codelist->elements);
+	  const BrigOperandCodeList *codelist
+	    = (const BrigOperandCodeList *) operand_data;
+	  const BrigData *data
+	    = parent_.get_brig_data_entry (codelist->elements);
 
 	  size_t bytes = data->byteCount;
-	  const BrigOperandOffset32_t *operand_ptr =
-	    (const BrigOperandOffset32_t *) data->bytes;
+	  const BrigOperandOffset32_t *operand_ptr
+	    = (const BrigOperandOffset32_t *) data->bytes;
 
 	  vec<tree, va_gc> *args = i == 0 ? out_args : in_args;
 
 	  while (bytes > 0)
 	    {
 	      BrigOperandOffset32_t offset = *operand_ptr;
-	      const BrigBase *code_element =
-		parent_.get_brig_code_entry (offset);
+	      const BrigBase *code_element
+		= parent_.get_brig_code_entry (offset);
 	      gcc_assert (code_element->kind == BRIG_KIND_DIRECTIVE_VARIABLE);
-	      const BrigDirectiveVariable *brig_var =
-		(const BrigDirectiveVariable*) code_element;
+	      const BrigDirectiveVariable *brig_var
+		= (const BrigDirectiveVariable *) code_element;
 	      tree var = parent_.m_cf->arg_variable (brig_var);
 
 	      if (brig_var->type & BRIG_TYPE_ARRAY)
@@ -89,9 +89,9 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 		  // use its element zero as the base address.
 		  tree etype = TREE_TYPE (TREE_TYPE (var));
 		  tree ptype = build_pointer_type (etype);
-		  tree element_zero =
-		    build4 (ARRAY_REF, etype, var, integer_zero_node,
-			    NULL_TREE, NULL_TREE);
+		  tree element_zero
+		    = build4 (ARRAY_REF, etype, var, integer_zero_node,
+			      NULL_TREE, NULL_TREE);
 		  var = build1 (ADDR_EXPR, ptype, element_zero);
 		}
 
@@ -103,11 +103,11 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 	}
 
       gcc_assert (func_ref != NULL_TREE);
-      gcc_assert (out_args->length() == 0 || out_args->length() == 1);
+      gcc_assert (out_args->length () == 0 || out_args->length () == 1);
 
       tree ret_val_type = void_type_node;
       tree ret_val = NULL_TREE;
-      if (out_args->length() == 1)
+      if (out_args->length () == 1)
 	{
 	  ret_val = (*out_args)[0];
 	  ret_val_type = TREE_TYPE (ret_val);
@@ -117,15 +117,15 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
       vec_safe_push (in_args, parent_.m_cf->group_base_arg);
       vec_safe_push (in_args, parent_.m_cf->private_base_arg);
 
-      tree call = build_call_vec (ret_val_type,
-				  build_fold_addr_expr (func_ref), in_args);
+      tree call = build_call_vec (ret_val_type, build_fold_addr_expr (func_ref),
+				  in_args);
       TREE_NOTHROW (func_ref) = 1;
       TREE_NOTHROW (call) = 1;
 
       if (ret_val != NULL_TREE)
 	{
-	  tree result_assign =
-	    build2 (MODIFY_EXPR, TREE_TYPE (ret_val), ret_val, call);
+	  tree result_assign
+	    = build2 (MODIFY_EXPR, TREE_TYPE (ret_val), ret_val, call);
 	  parent_.m_cf->append_statement (result_assign);
 	}
       else
@@ -147,9 +147,9 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
       // of processing the module, we should reanalyze these properties for
       // more accurate results in case calling a function that is defined
       // later than the current function.
-      parent_.m_cf->has_function_calls_with_barriers |=
-	callee == NULL || callee->has_barriers ||
-	callee->has_function_calls_with_barriers;
+      parent_.m_cf->has_function_calls_with_barriers
+	|= callee == NULL || callee->has_barriers
+	   || callee->has_function_calls_with_barriers;
 
       return base->byteCount;
     }
@@ -159,47 +159,47 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 
   if (brig_inst->opcode == BRIG_OPCODE_BR)
     {
-      tree goto_stmt = build1 (GOTO_EXPR, instr_type, operands [0]);
+      tree goto_stmt = build1 (GOTO_EXPR, instr_type, operands[0]);
       parent_.m_cf->append_statement (goto_stmt);
     }
   else if (brig_inst->opcode == BRIG_OPCODE_SBR)
     {
-      tree select = operands [0];
-      tree cases = operands [1];
+      tree select = operands[0];
+      tree cases = operands[1];
 
-      tree switch_expr =
-	build3 (SWITCH_EXPR, TREE_TYPE (select), select, NULL_TREE, NULL_TREE);
+      tree switch_expr = build3 (SWITCH_EXPR, TREE_TYPE (select), select,
+				 NULL_TREE, NULL_TREE);
 
-      tree default_case =
-	build_case_label (NULL_TREE, NULL_TREE,
-			  create_artificial_label (UNKNOWN_LOCATION));
+      tree default_case
+	= build_case_label (NULL_TREE, NULL_TREE,
+			    create_artificial_label (UNKNOWN_LOCATION));
       append_to_statement_list (default_case, &SWITCH_BODY (switch_expr));
 
-      tree default_jump =
-	build1 (GOTO_EXPR, void_type_node, TREE_VEC_ELT (cases, 0));
+      tree default_jump
+	= build1 (GOTO_EXPR, void_type_node, TREE_VEC_ELT (cases, 0));
       append_to_statement_list (default_jump, &SWITCH_BODY (switch_expr));
 
       for (int c = 0; c < TREE_VEC_LENGTH (cases); ++c)
 	{
-	  tree case_label =
-	    build_case_label (build_int_cst (integer_type_node, c), NULL_TREE,
-			      create_artificial_label (UNKNOWN_LOCATION));
+	  tree case_label
+	    = build_case_label (build_int_cst (integer_type_node, c), NULL_TREE,
+				create_artificial_label (UNKNOWN_LOCATION));
 
 	  append_to_statement_list (case_label, &SWITCH_BODY (switch_expr));
 
-	  tree jump = build1 (GOTO_EXPR, void_type_node,
-			      TREE_VEC_ELT (cases, c));
+	  tree jump
+	    = build1 (GOTO_EXPR, void_type_node, TREE_VEC_ELT (cases, c));
 	  append_to_statement_list (jump, &SWITCH_BODY (switch_expr));
 	}
       parent_.m_cf->append_statement (switch_expr);
     }
   else if (brig_inst->opcode == BRIG_OPCODE_CBR)
     {
-      tree condition = operands [0];
+      tree condition = operands[0];
       tree target_goto = build1 (GOTO_EXPR, void_type_node, operands[1]);
       // Represents the if..else as (condition)?(goto foo):(goto bar).
-      tree if_stmt = build3 (COND_EXPR, void_type_node, condition, target_goto,
-			     NULL_TREE);
+      tree if_stmt
+	= build3 (COND_EXPR, void_type_node, condition, target_goto, NULL_TREE);
       parent_.m_cf->append_statement (if_stmt);
     }
   else if (brig_inst->opcode == BRIG_OPCODE_WAVEBARRIER)
@@ -213,17 +213,17 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
       // FIXME. We should add attributes (are there suitable ones in gcc?) that
       // ensure the barrier won't be duplicated or moved out of loops etc.
       // Like 'noduplicate' of LLVM. Same goes for fbarriers.
-      parent_.m_cf->append_statement
-	(expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE,
-				 NULL_TREE, call_operands));
+      parent_.m_cf->append_statement (
+	expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE, NULL_TREE,
+				call_operands));
     }
-  else if (brig_inst->opcode >= BRIG_OPCODE_ARRIVEFBAR &&
-	   brig_inst->opcode <= BRIG_OPCODE_WAITFBAR)
+  else if (brig_inst->opcode >= BRIG_OPCODE_ARRIVEFBAR
+	   && brig_inst->opcode <= BRIG_OPCODE_WAITFBAR)
     {
       parent_.m_cf->has_barriers = true;
-      parent_.m_cf->append_statement
-	(expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE,
-				 uint32_type_node, operands));
+      parent_.m_cf->append_statement (
+	expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE,
+				uint32_type_node, operands));
     }
   else
     internal_error ("Unsupported branch %u.\n", brig_inst->opcode);

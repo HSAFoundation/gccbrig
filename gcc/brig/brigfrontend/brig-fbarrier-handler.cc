@@ -31,11 +31,11 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_directive_fbarrier_handler::operator() (const BrigBase *base)
 {
-	// Model fbarriers as group segment variables with fixed size
-	// large enough to store whatever data the actual target needs
-	// to store to maintain the barrier info. The handle is the
-	// offset to the beginning of the object.
-	parent_.append_group_variable (base, FBARRIER_STRUCT_SIZE, 1);
-	parent_.m_cf->has_barriers = true;
+  // Model fbarriers as group segment variables with fixed size
+  // large enough to store whatever data the actual target needs
+  // to store to maintain the barrier info. The handle is the
+  // offset to the beginning of the object.
+  parent_.append_group_variable (base, FBARRIER_STRUCT_SIZE, 1);
+  parent_.m_cf->has_barriers = true;
   return base->byteCount;
 }

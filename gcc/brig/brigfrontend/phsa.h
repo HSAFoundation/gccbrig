@@ -23,18 +23,18 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef PHSA_H
 #define PHSA_H
 
-typedef struct {
-	/* The size of the group segment used by the kernel. */
-	unsigned group_segment_size;
-	/* Size of the private segment used by a single work-item. */
-	unsigned private_segment_size;
-	/* Total size of the kernel arguments. */
-	unsigned kernarg_segment_size;
-	/* Maximum alignment of a kernel argument variable. */
-	unsigned kernarg_max_align;
+typedef struct
+{
+  /* The size of the group segment used by the kernel. */
+  unsigned group_segment_size;
+  /* Size of the private segment used by a single work-item. */
+  unsigned private_segment_size;
+  /* Total size of the kernel arguments. */
+  unsigned kernarg_segment_size;
+  /* Maximum alignment of a kernel argument variable. */
+  unsigned kernarg_max_align;
 } phsa_kernel_descriptor;
 
 #define PHSA_KERNELDESC_SECTION_PREFIX "phsa.kerneldesc."
 
 #endif
-

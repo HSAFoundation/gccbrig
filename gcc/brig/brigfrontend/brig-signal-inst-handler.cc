@@ -35,9 +35,9 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_signal_inst_handler::operator() (const BrigBase *base)
 {
-	const BrigInstSignal *inst = (const BrigInstSignal*) base;
-	BrigAtomicOperation8_t atomic_opcode;
-	atomic_opcode = inst->signalOperation;
+  const BrigInstSignal *inst = (const BrigInstSignal *) base;
+  BrigAtomicOperation8_t atomic_opcode;
+  atomic_opcode = inst->signalOperation;
 
-	return generate_tree (inst->base, atomic_opcode);
+  return generate_tree (inst->base, atomic_opcode);
 }

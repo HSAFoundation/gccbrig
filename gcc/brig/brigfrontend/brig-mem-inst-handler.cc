@@ -30,16 +30,16 @@
 #include "convert.h"
 
 tree
-brig_mem_inst_handler::build_mem_access (const BrigInstBase* brig_inst,
-					 tree addr,
-					 tree data)
+brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
+					 tree addr, tree data)
 {
   bool is_load = brig_inst->opcode == BRIG_OPCODE_LD;
   bool is_store = brig_inst->opcode == BRIG_OPCODE_ST;
 
-  if (!is_load && !is_store) {
-    internal_error ("mem inst opcode %u not implemented", brig_inst->opcode);
-  }
+  if (!is_load && !is_store)
+    {
+      internal_error ("mem inst opcode %u not implemented", brig_inst->opcode);
+    }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
 
@@ -53,8 +53,8 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase* brig_inst,
   tree unaligned_type = build_aligned_type (instr_type, 8);
 
   // Create a mem ref from the previous result, without offset.
-  tree mem_ref = build2 (MEM_REF, unaligned_type, addr,
-			 build_int_cst (ptype, 0));
+  tree mem_ref
+    = build2 (MEM_REF, unaligned_type, addr, build_int_cst (ptype, 0));
 
   if (is_load)
     {
@@ -65,9 +65,8 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase* brig_inst,
     }
   else
     {
-      return parent_.m_cf->append_statement
-	(build2
-	 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data));
+      return parent_.m_cf->append_statement (
+	build2 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data));
     }
   return mem_ref;
 }
@@ -75,14 +74,14 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase* brig_inst,
 size_t
 brig_mem_inst_handler::operator() (const BrigBase *base)
 {
-  const BrigInstBase *brig_inst =
-    (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
+  const BrigInstBase *brig_inst
+    = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
 
   if (brig_inst->opcode == BRIG_OPCODE_ALLOCA)
     {
       tree_stl_vec operands = build_operands (*brig_inst);
       size_t alignment = 1;
-      const BrigInstMem* mem_inst = (const BrigInstMem*)brig_inst;
+      const BrigInstMem *mem_inst = (const BrigInstMem *) brig_inst;
       if (mem_inst->align != BRIG_ALIGNMENT_NONE)
 	{
 	  alignment = 1 << (mem_inst->align - 1);
@@ -90,36 +89,36 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 
       tree align_opr = build_int_cstu (size_type_node, alignment);
       tree_stl_vec inputs;
-      inputs.push_back (operands [1]);
+      inputs.push_back (operands[1]);
       inputs.push_back (align_opr);
-      tree builtin_call =
-	expand_or_call_builtin (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
-				uint32_type_node, inputs);
-      build_output_assignment (*brig_inst, operands [0], builtin_call);
+      tree builtin_call
+	= expand_or_call_builtin (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
+				  uint32_type_node, inputs);
+      build_output_assignment (*brig_inst, operands[0], builtin_call);
       parent_.m_cf->has_allocas = true;
       return base->byteCount;
     }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
 
-  const BrigData *operand_entries =
-    parent_.get_brig_data_entry (brig_inst->operands);
+  const BrigData *operand_entries
+    = parent_.get_brig_data_entry (brig_inst->operands);
 
   uint32_t data_operand_offset;
   memcpy (&data_operand_offset, &operand_entries->bytes, 4);
 
-  const BrigBase *operand =
-    parent_.get_brig_operand_entry (data_operand_offset);
+  const BrigBase *operand
+    = parent_.get_brig_operand_entry (data_operand_offset);
 
   const BrigData *operandData = NULL;
 
   bool is_store = brig_inst->opcode == BRIG_OPCODE_ST;
 
-  bool is_three_element_vector_access =
-    operand->kind == BRIG_KIND_OPERAND_OPERAND_LIST &&
-    (operandData = parent_.get_brig_data_entry
-     (((const BrigOperandOperandList*) operand)->elements)) &&
-    operandData->byteCount / 4 == 3;
+  bool is_three_element_vector_access
+    = operand->kind == BRIG_KIND_OPERAND_OPERAND_LIST
+      && (operandData = parent_.get_brig_data_entry (
+	    ((const BrigOperandOperandList *) operand)->elements))
+      && operandData->byteCount / 4 == 3;
 
   if (is_three_element_vector_access)
     {
@@ -127,15 +126,15 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
       // because gcc assumes the GENERIC vector datatypes are of two exponent
       // size internally.
       size_t bytes = operandData->byteCount;
-      const BrigOperandOffset32_t *operand_ptr =
-	(const BrigOperandOffset32_t *) operandData->bytes;
+      const BrigOperandOffset32_t *operand_ptr
+	= (const BrigOperandOffset32_t *) operandData->bytes;
 
       uint32_t addr_operand_offset;
       memcpy (&addr_operand_offset, &operand_entries->bytes + 4, 4);
 
-      const BrigOperandAddress *addr_operand =
-	(const BrigOperandAddress*)
-	parent_.get_brig_operand_entry (addr_operand_offset);
+      const BrigOperandAddress *addr_operand
+	= (const BrigOperandAddress *) parent_.get_brig_operand_entry (
+	  addr_operand_offset);
 
       tree address_base = build_address_operand (*brig_inst, *addr_operand);
 
@@ -143,21 +142,20 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
       while (bytes > 0)
 	{
 	  BrigOperandOffset32_t offset = *operand_ptr;
-	  const BrigBase *operand_element =
-	    parent_.get_brig_operand_entry (offset);
-	  tree data =
-	    build_tree_operand (*brig_inst, *operand_element, instr_type);
+	  const BrigBase *operand_element
+	    = parent_.get_brig_operand_entry (offset);
+	  tree data
+	    = build_tree_operand (*brig_inst, *operand_element, instr_type);
 
 	  tree ptr_offset = build_int_cst (size_type_node, address_offset);
-	  tree address =
-	    build2 (POINTER_PLUS_EXPR,
-		    TREE_TYPE(address_base), address_base, ptr_offset);
+	  tree address = build2 (POINTER_PLUS_EXPR, TREE_TYPE (address_base),
+				 address_base, ptr_offset);
 
-	  if (is_store && TREE_TYPE (data) !=	instr_type)
+	  if (is_store && TREE_TYPE (data) != instr_type)
 	    {
-	      if (int_size_in_bytes (TREE_TYPE (data)) ==
-		  int_size_in_bytes (instr_type) &&
-		  !INTEGRAL_TYPE_P (instr_type))
+	      if (int_size_in_bytes (TREE_TYPE (data))
+		    == int_size_in_bytes (instr_type)
+		  && !INTEGRAL_TYPE_P (instr_type))
 		data = build1 (VIEW_CONVERT_EXPR, instr_type, data);
 	      else
 		data = convert (instr_type, data);

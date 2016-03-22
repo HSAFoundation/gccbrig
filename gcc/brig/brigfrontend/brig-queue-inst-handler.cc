@@ -1,4 +1,5 @@
-/* brig-queue-inst-handler.cc -- brig user mode queue related instruction handling
+/* brig-queue-inst-handler.cc -- brig user mode queue related instruction
+handling
    Copyright (C) 2015-2016 Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -29,69 +30,64 @@ along with GCC; see the file COPYING3.  If not see
 #include "errors.h"
 
 brig_queue_inst_handler::brig_queue_inst_handler (brig_to_generic &parent)
-	:	brig_code_entry_handler (parent)
+  : brig_code_entry_handler (parent)
 {
 }
 
 size_t
 brig_queue_inst_handler::operator() (const BrigBase *base)
 {
-	const BrigInstBase &inst_base = *(const BrigInstBase*) base;
+  const BrigInstBase &inst_base = *(const BrigInstBase *) base;
 
-	tree_stl_vec operands = build_operands (inst_base);
+  tree_stl_vec operands = build_operands (inst_base);
 
-	if (inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX ||
-			inst_base.opcode == BRIG_OPCODE_LDQUEUEREADINDEX)
-		{
-			std::string builtin_name =
-				inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX ?
-				"__phsa_builtin_ldqueuewriteindex" :
-				"__phsa_builtin_ldqueuereadindex";
+  if (inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX
+      || inst_base.opcode == BRIG_OPCODE_LDQUEUEREADINDEX)
+    {
+      std::string builtin_name
+	= inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX
+	    ? "__phsa_builtin_ldqueuewriteindex"
+	    : "__phsa_builtin_ldqueuereadindex";
 
-			tree expr = call_builtin
-				(NULL, builtin_name.c_str(), 1, uint64_type_node,
-				 uint64_type_node, operands [1]);
-			build_output_assignment (inst_base, operands[0], expr);
-		}
-	else if (inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX ||
-					 inst_base.opcode == BRIG_OPCODE_STQUEUEREADINDEX)
-		{
-			std::string builtin_name =
-				inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX ?
-				"__phsa_builtin_stqueuewriteindex" :
-				"__phsa_builtin_stqueuereadindex";
+      tree expr
+	= call_builtin (NULL, builtin_name.c_str (), 1, uint64_type_node,
+			uint64_type_node, operands[1]);
+      build_output_assignment (inst_base, operands[0], expr);
+    }
+  else if (inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX
+	   || inst_base.opcode == BRIG_OPCODE_STQUEUEREADINDEX)
+    {
+      std::string builtin_name
+	= inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX
+	    ? "__phsa_builtin_stqueuewriteindex"
+	    : "__phsa_builtin_stqueuereadindex";
 
-			call_builtin
-				(NULL, builtin_name.c_str(), 2, void_type_node,
-				 uint64_type_node, operands [0],
-				 uint64_type_node, operands [1]);
-		}
-	else if (inst_base.opcode == BRIG_OPCODE_ADDQUEUEWRITEINDEX)
-		{
-			std::string builtin_name =
-				"__phsa_builtin_addqueuewriteindex";
+      call_builtin (NULL, builtin_name.c_str (), 2, void_type_node,
+		    uint64_type_node, operands[0], uint64_type_node,
+		    operands[1]);
+    }
+  else if (inst_base.opcode == BRIG_OPCODE_ADDQUEUEWRITEINDEX)
+    {
+      std::string builtin_name = "__phsa_builtin_addqueuewriteindex";
 
-			tree expr = call_builtin
-				(NULL, builtin_name.c_str(), 2, uint64_type_node,
-				 uint64_type_node, operands [1],
-				 uint64_type_node, operands [2]);
-			build_output_assignment (inst_base, operands[0], expr);
-		}
-	else if (inst_base.opcode == BRIG_OPCODE_CASQUEUEWRITEINDEX)
-		{
-			std::string builtin_name =
-				"__phsa_builtin_casqueuewriteindex";
+      tree expr = call_builtin (NULL, builtin_name.c_str (), 2,
+				uint64_type_node, uint64_type_node, operands[1],
+				uint64_type_node, operands[2]);
+      build_output_assignment (inst_base, operands[0], expr);
+    }
+  else if (inst_base.opcode == BRIG_OPCODE_CASQUEUEWRITEINDEX)
+    {
+      std::string builtin_name = "__phsa_builtin_casqueuewriteindex";
 
-			tree expr = call_builtin
-				(NULL, builtin_name.c_str(), 3, uint64_type_node,
-				 uint64_type_node, operands [1],
-				 uint64_type_node, operands [2],
-				 uint64_type_node, operands [3]);
-			build_output_assignment (inst_base, operands[0], expr);
-		}
-	else
-		internal_error ("Unimplemented queue related instruction %u.",
-										inst_base.opcode);
+      tree expr
+	= call_builtin (NULL, builtin_name.c_str (), 3, uint64_type_node,
+			uint64_type_node, operands[1], uint64_type_node,
+			operands[2], uint64_type_node, operands[3]);
+      build_output_assignment (inst_base, operands[0], expr);
+    }
+  else
+    internal_error ("Unimplemented queue related instruction %u.",
+		    inst_base.opcode);
 
   return base->byteCount;
 }

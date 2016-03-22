@@ -29,18 +29,18 @@ along with GCC; see the file COPYING3.  If not see
 /* Functions defined in the Brig frontend proper called by the GCC
    interface.  */
 
-extern int brig_enable_dump (const char*);
-extern int brig_enable_optimize (const char*);
+extern int brig_enable_dump (const char *);
+extern int brig_enable_optimize (const char *);
 
-extern void brig_add_search_path (const char*);
+extern void brig_add_search_path (const char *);
 
 extern void brig_create_brigbrig (int int_type_size, int pointer_size,
-			    const char* pkgpath, const char *prefix,
-			    const char *relative_import_path);
+				  const char *pkgpath, const char *prefix,
+				  const char *relative_import_path);
 
-extern void brig_parse_input_files (const char**, unsigned int,
-				  bool only_check_syntax,
-				  bool require_return_statement);
+extern void brig_parse_input_files (const char **, unsigned int,
+				    bool only_check_syntax,
+				    bool require_return_statement);
 extern void brig_write_globals (void);
 
 extern tree brig_type_for_size (unsigned int bits, int unsignedp);
@@ -51,7 +51,7 @@ extern tree brig_type_for_mode (enum machine_mode, int unsignedp);
 
 extern void brig_preserve_from_gc (tree);
 
-extern const char *brig_localize_identifier (const char*);
+extern const char *brig_localize_identifier (const char *);
 
 extern unsigned int brig_field_alignment (tree);
 
@@ -63,6 +63,6 @@ extern void brig_write_export_data (const char *, unsigned int);
 
 extern const char *brig_read_export_data (int, off_t, char **, size_t *, int *);
 
-//extern GTY(()) tree brig_non_zero_struct;
+// extern GTY(()) tree brig_non_zero_struct;
 
 #endif /* !defined(BRIG_BRIG_C_H) */

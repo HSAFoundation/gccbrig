@@ -28,9 +28,9 @@
 size_t
 brig_copy_move_inst_handler::operator() (const BrigBase *base)
 {
-  const BrigInstBase *brig_inst =
-    (const BrigInstBase*) &((const BrigInstBasic*) base)->base;
-  const BrigInstSourceType *inst_src_type = (const BrigInstSourceType*) base;
+  const BrigInstBase *brig_inst
+    = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
+  const BrigInstSourceType *inst_src_type = (const BrigInstSourceType *) base;
 
   tree source_type = get_tree_type_for_hsa_type (inst_src_type->sourceType);
   tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
@@ -41,12 +41,12 @@ brig_copy_move_inst_handler::operator() (const BrigBase *base)
     {
       // For Combine, a simple reinterpret cast from the array constructor
       // works.
-      tree casted = build_reinterpret_cast	(dest_type, input);
+      tree casted = build_reinterpret_cast (dest_type, input);
       tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
       parent_.m_cf->append_statement (assign);
     }
-  else if (brig_inst->opcode == BRIG_OPCODE_LDA ||
-	   brig_inst->opcode == BRIG_OPCODE_EXPAND)
+  else if (brig_inst->opcode == BRIG_OPCODE_LDA
+	   || brig_inst->opcode == BRIG_OPCODE_EXPAND)
     build_output_assignment (*brig_inst, output, input);
   else
     {

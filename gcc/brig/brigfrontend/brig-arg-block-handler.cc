@@ -34,8 +34,8 @@ brig_directive_arg_block_handler::operator() (const BrigBase *base)
   if (base->kind == BRIG_KIND_DIRECTIVE_ARG_BLOCK_START)
     {
       tree stmt_list = alloc_stmt_list ();
-      tree bind_expr =
-	build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
+      tree bind_expr
+	= build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
       tree block = make_node (BLOCK);
       BIND_EXPR_BLOCK (bind_expr) = block;
       static int block_id = 0;
@@ -56,7 +56,8 @@ brig_directive_arg_block_handler::operator() (const BrigBase *base)
       // TODO: CHECK SPECS Is a deeper binding scope hierarchy required by
       // HSAIL? That is, can one have a call segment inside a call segment?
       tree new_bind_expr = parent_.m_cf->current_bind_expr;
-      parent_.m_cf->current_bind_expr = DECL_SAVED_TREE (parent_.m_cf->func_decl);
+      parent_.m_cf->current_bind_expr
+	= DECL_SAVED_TREE (parent_.m_cf->func_decl);
       parent_.m_cf->append_statement (new_bind_expr);
       parent_.m_cf->generating_arg_block = false;
     }

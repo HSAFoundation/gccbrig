@@ -36,42 +36,43 @@
 #include <vector>
 
 typedef std::map<std::string, tree> label_index;
-typedef std::map<const BrigDirectiveVariable*, tree> variable_index;
-typedef std::vector <tree> tree_stl_vec;
+typedef std::map<const BrigDirectiveVariable *, tree> variable_index;
+typedef std::vector<tree> tree_stl_vec;
 
 // There are 128 c regs and 2048 s/d/q regs each in the HSAIL.
 #define BRIG_2_TREE_HSAIL_C_REG_COUNT (128)
 #define BRIG_2_TREE_HSAIL_S_REG_COUNT (2048)
 #define BRIG_2_TREE_HSAIL_D_REG_COUNT (2048)
 #define BRIG_2_TREE_HSAIL_Q_REG_COUNT (2048)
-#define BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT				\
-  (BRIG_2_TREE_HSAIL_C_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT +	\
-   BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_Q_REG_COUNT)
+#define BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT                                      \
+  (BRIG_2_TREE_HSAIL_C_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT               \
+   + BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_Q_REG_COUNT)
 
 // Collects data for the currently built function.
-class brig_function {
- public:
-  typedef std::map<const BrigDirectiveVariable*, size_t> var_offset_table;
+class brig_function
+{
+public:
+  typedef std::map<const BrigDirectiveVariable *, size_t> var_offset_table;
 
- private:
-  struct reg_decl_index_entry {
+private:
+  struct reg_decl_index_entry
+  {
     tree var_decl_;
   };
 
- public:
+public:
   brig_function ();
   ~brig_function ();
 
-  tree arg_variable (const BrigDirectiveVariable* var) const;
-  void add_arg_variable (const BrigDirectiveVariable* brigVar,
-			 tree treeDecl);
+  tree arg_variable (const BrigDirectiveVariable *var) const;
+  void add_arg_variable (const BrigDirectiveVariable *brigVar, tree treeDecl);
 
   // Appends a new kernel argument descriptor for the current kernel's
   // arg space.
-  void append_kernel_arg (const BrigDirectiveVariable* var, size_t size,
+  void append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
 			  size_t alignment);
 
-  size_t kernel_arg_offset (const BrigDirectiveVariable* var) const;
+  size_t kernel_arg_offset (const BrigDirectiveVariable *var) const;
 
   // Add work-item ID variables to the beginning of the kernel function
   // which can be used for address computation if the kernel dispatch packet
@@ -80,11 +81,11 @@ class brig_function {
 
   // Returns a label with the given name in the function. If not found,
   // creates it (but doesn't append it to the statement list).
-  tree label (const std::string& name);
+  tree label (const std::string &name);
 
   tree add_local_variable (std::string name, tree type);
 
-  tree get_var_decl_for_reg(const BrigOperandRegister* reg);
+  tree get_var_decl_for_reg (const BrigOperandRegister *reg);
 
   // Tries to convert the current kernel to a work-group function.
   // Returns true in case the conversion was successful.
@@ -179,12 +180,10 @@ class brig_function {
   // True if we are currently generating the contents of an arg block.
   bool generating_arg_block;
 
- private:
+private:
   // Bookkeeping for the different HSA registers and their tree declarations
   // for the currently generated function.
   reg_decl_index_entry *regs_[BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT];
 };
 
 #endif
-
-

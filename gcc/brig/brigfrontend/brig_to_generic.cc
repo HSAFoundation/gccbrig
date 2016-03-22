@@ -50,11 +50,11 @@ tree brig_to_generic::s_fp16_type;
 tree brig_to_generic::s_fp32_type;
 tree brig_to_generic::s_fp64_type;
 
-brig_to_generic::brig_to_generic (const char* brig_blob) :
-  m_cf (NULL), m_brig (brig_blob), m_next_group_offset (0),
-  m_next_private_offset (0)
+brig_to_generic::brig_to_generic (const char *brig_blob)
+  : m_cf (NULL), m_brig (brig_blob), m_next_group_offset (0),
+    m_next_private_offset (0)
 {
-  const BrigModuleHeader *mheader = (const BrigModuleHeader*) brig_blob;
+  const BrigModuleHeader *mheader = (const BrigModuleHeader *) brig_blob;
   // TODO: parse in a separate method for error checking the input.
 
   m_data = m_code = m_operand = NULL;
@@ -62,29 +62,30 @@ brig_to_generic::brig_to_generic (const char* brig_blob) :
   // Find the positions of the different sections.
   for (uint32_t sec = 0; sec < mheader->sectionCount; ++sec)
     {
-      uint64_t offset =
-	((const uint64_t*) (brig_blob + mheader->sectionIndex))[sec];
-      const BrigSectionHeader *section_header =
-	(const BrigSectionHeader*) (brig_blob + offset);
-      char *name = strndup
-	((const char*) (&section_header->name), section_header->nameLength);
+      uint64_t offset
+	= ((const uint64_t *) (brig_blob + mheader->sectionIndex))[sec];
+      const BrigSectionHeader *section_header
+	= (const BrigSectionHeader *) (brig_blob + offset);
+      char *name = strndup ((const char *) (&section_header->name),
+			    section_header->nameLength);
 
-      if (sec == BRIG_SECTION_INDEX_DATA &&
-	  strncmp (name, "hsa_data", section_header->nameLength) == 0)
+      if (sec == BRIG_SECTION_INDEX_DATA
+	  && strncmp (name, "hsa_data", section_header->nameLength) == 0)
 	{
-	  m_data = (const char*) section_header;
+	  m_data = (const char *) section_header;
 	  m_data_size = section_header->byteCount;
 	}
-      else if (sec == BRIG_SECTION_INDEX_CODE &&
-	       strncmp (name, "hsa_code", section_header->nameLength) == 0)
+      else if (sec == BRIG_SECTION_INDEX_CODE
+	       && strncmp (name, "hsa_code", section_header->nameLength) == 0)
 	{
-	  m_code = (const char*) section_header;
+	  m_code = (const char *) section_header;
 	  m_code_size = section_header->byteCount;
 	}
-      else if (sec == BRIG_SECTION_INDEX_OPERAND &&
-	       strncmp (name, "hsa_operand", section_header->nameLength) == 0)
+      else if (sec == BRIG_SECTION_INDEX_OPERAND
+	       && strncmp (name, "hsa_operand", section_header->nameLength)
+		    == 0)
 	{
-	  m_operand = (const char*) section_header;
+	  m_operand = (const char *) section_header;
 	  m_operand_size = section_header->byteCount;
 	}
       else
@@ -129,13 +130,16 @@ brig_to_generic::brig_to_generic (const char* brig_blob) :
   m_default_float_rounding_mode = BRIG_ROUND_FLOAT_ZERO;
 }
 
-class unimplemented_entry_handler : public brig_code_entry_handler {
+class unimplemented_entry_handler : public brig_code_entry_handler
+{
 public:
+  unimplemented_entry_handler (brig_to_generic &parent)
+    : brig_code_entry_handler (parent)
+  {
+  }
 
-  unimplemented_entry_handler (brig_to_generic &parent) :
-    brig_code_entry_handler (parent) {}
-
-  size_t operator() (const BrigBase *base)
+  size_t
+  operator() (const BrigBase *base)
   {
     internal_error ("BrigKind 0x%x unimplemented", base->kind);
     return base->byteCount;
@@ -144,13 +148,17 @@ public:
 
 // Handler for entries that can be (and are) safely skipped
 // for the purposes of tree generation.
-class skipped_entry_handler : public brig_code_entry_handler {
+class skipped_entry_handler : public brig_code_entry_handler
+{
 public:
+  skipped_entry_handler (brig_to_generic &parent)
+    : brig_code_entry_handler (parent)
+  {
+  }
 
-  skipped_entry_handler (brig_to_generic &parent) :
-    brig_code_entry_handler (parent) {}
-
-  size_t operator() (const BrigBase *base) {
+  size_t
+  operator() (const BrigBase *base)
+  {
     return base->byteCount;
   }
 };
@@ -189,43 +197,44 @@ brig_to_generic::append_global (tree g)
 }
 
 tree
-brig_to_generic::global_variable (const BrigDirectiveVariable* var) const
+brig_to_generic::global_variable (const BrigDirectiveVariable *var) const
 {
   variable_index::const_iterator i = m_global_variables.find (var);
-  if (i == m_global_variables.end()) return NULL_TREE;
-  else return (*i).second;
+  if (i == m_global_variables.end ())
+    return NULL_TREE;
+  else
+    return (*i).second;
 }
 
 tree
-brig_to_generic::function_decl (const std::string& name)
+brig_to_generic::function_decl (const std::string &name)
 {
   label_index::const_iterator i = m_function_index.find (name);
-  if (i == m_function_index.end())
+  if (i == m_function_index.end ())
     return NULL_TREE;
   return (*i).second;
 }
 
 void
-brig_to_generic::add_function_decl (const std::string& name, tree func_decl)
+brig_to_generic::add_function_decl (const std::string &name, tree func_decl)
 {
-  m_function_index [name] = func_decl;
+  m_function_index[name] = func_decl;
 }
 
 void
-brig_to_generic::add_global_variable (
-				      const BrigDirectiveVariable* brig_var, tree tree_decl)
+brig_to_generic::add_global_variable (const BrigDirectiveVariable *brig_var,
+				      tree tree_decl)
 {
   append_global (tree_decl);
-  m_global_variables [brig_var] = tree_decl;
+  m_global_variables[brig_var] = tree_decl;
 }
 
-char*
+char *
 brig_to_generic::get_c_string (size_t entry_offset) const
 {
   const BrigData *data_item = get_brig_data_entry (entry_offset);
-  return strndup ((const char*)&data_item->bytes, data_item->byteCount);
+  return strndup ((const char *) &data_item->bytes, data_item->byteCount);
 }
-
 
 // Adapted from c-semantics.c.
 tree
@@ -269,8 +278,8 @@ tree
 build_reinterpret_cast (tree destination_type, tree source)
 {
 
-  if (!source  || !destination_type || TREE_TYPE (source) == NULL_TREE ||
-      destination_type == NULL_TREE)
+  if (!source || !destination_type || TREE_TYPE (source) == NULL_TREE
+      || destination_type == NULL_TREE)
     {
       // TODO: handle void pointers etc.
       internal_error ("illegal type");
@@ -291,16 +300,15 @@ build_reinterpret_cast (tree destination_type, tree source)
   size_t dst_size = int_size_in_bytes (destination_type);
   if (src_size <= dst_size)
     {
-      tree conv = build1
-	(VIEW_CONVERT_EXPR, destination_type, source);
+      tree conv = build1 (VIEW_CONVERT_EXPR, destination_type, source);
       return conv;
     }
   else
     {
       debug_tree (destination_type);
       debug_tree (source);
-      internal_error ("Unable to truncate the source (%lu > %lu).",
-		      src_size, dst_size);
+      internal_error ("Unable to truncate the source (%lu > %lu).", src_size,
+		      dst_size);
     }
   return NULL_TREE;
 }
@@ -310,9 +318,9 @@ build_reinterpret_cast (tree destination_type, tree source)
 brig_function *
 brig_to_generic::get_finished_function (tree func_decl)
 {
-  std::map<tree, brig_function*>::iterator i =
-    m_finished_functions.find (func_decl);
-  if (i != m_finished_functions.end())
+  std::map<tree, brig_function *>::iterator i
+    = m_finished_functions.find (func_decl);
+  if (i != m_finished_functions.end ())
     return (*i).second;
   else
     return NULL;
@@ -324,16 +332,17 @@ brig_to_generic::finish_current_function ()
   if (m_cf == NULL || m_cf->func_decl == NULL_TREE)
     return;
 
-  m_cf->finish();
+  m_cf->finish ();
 
-  //debug_function (m_cf->func_decl, TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+  // debug_function (m_cf->func_decl,
+  // TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
   gimplify_function_tree (m_cf->func_decl);
   cgraph_finalize_function (m_cf->func_decl, true);
   pop_cfun ();
 
   if (m_cf->is_kernel)
     m_kernels.push_back (m_cf);
-  m_finished_functions [m_cf->func_decl] = m_cf;
+  m_finished_functions[m_cf->func_decl] = m_cf;
   m_cf = new brig_function ();
 }
 
@@ -349,20 +358,20 @@ brig_to_generic::init_current_function (tree f)
 }
 
 void
-brig_to_generic::append_group_variable
-(const BrigBase* var, size_t size, size_t alignment)
+brig_to_generic::append_group_variable (const BrigBase *var, size_t size,
+					size_t alignment)
 {
   size_t align_padding = m_next_group_offset % alignment;
   m_next_group_offset += align_padding;
-  m_group_offsets [var] = m_next_group_offset;
+  m_group_offsets[var] = m_next_group_offset;
   m_next_group_offset += size;
 }
 
 size_t
-brig_to_generic::group_variable_segment_offset (const BrigBase* var) const
+brig_to_generic::group_variable_segment_offset (const BrigBase *var) const
 {
   group_var_offset_table::const_iterator i = m_group_offsets.find (var);
-  gcc_assert (i != m_group_offsets.end());
+  gcc_assert (i != m_group_offsets.end ());
   return (*i).second;
 }
 
@@ -373,31 +382,31 @@ brig_to_generic::group_segment_size () const
 }
 
 void
-brig_to_generic::append_private_variable
-(const BrigDirectiveVariable* var, size_t size, size_t alignment)
+brig_to_generic::append_private_variable (const BrigDirectiveVariable *var,
+					  size_t size, size_t alignment)
 {
   size_t align_padding = m_next_private_offset % alignment;
   m_next_private_offset += align_padding;
-  m_private_offsets [var] = m_next_private_offset;
+  m_private_offsets[var] = m_next_private_offset;
   m_next_private_offset += size;
-  m_private_data_sizes [var] = size + align_padding;
+  m_private_data_sizes[var] = size + align_padding;
 }
 
 size_t
-brig_to_generic::private_variable_segment_offset
-(const BrigDirectiveVariable* var) const
+brig_to_generic::private_variable_segment_offset (
+  const BrigDirectiveVariable *var) const
 {
   var_offset_table::const_iterator i = m_private_offsets.find (var);
-  gcc_assert (i != m_private_offsets.end());
+  gcc_assert (i != m_private_offsets.end ());
   return (*i).second;
 }
 
 size_t
-brig_to_generic::private_variable_size (const BrigDirectiveVariable* var) const
+brig_to_generic::private_variable_size (const BrigDirectiveVariable *var) const
 {
-  std::map<const BrigDirectiveVariable*, size_t>::const_iterator i =
-    m_private_data_sizes.find (var);
-  gcc_assert (i != m_private_data_sizes.end());
+  std::map<const BrigDirectiveVariable *, size_t>::const_iterator i
+    = m_private_data_sizes.find (var);
+  gcc_assert (i != m_private_data_sizes.end ());
   return (*i).second;
 }
 
@@ -407,26 +416,25 @@ brig_to_generic::private_segment_size () const
   return m_next_private_offset;
 }
 
-
 // Cached builtins indexed by name.
 typedef std::map<std::string, tree> builtin_index;
 builtin_index builtin_cache_;
 
 tree
-call_builtin (tree* pdecl, const char* name, int nargs, tree rettype, ...)
+call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
 {
   if (rettype == error_mark_node)
     return error_mark_node;
 
-  tree* types = new tree[nargs];
-  tree* args = new tree[nargs];
+  tree *types = new tree[nargs];
+  tree *args = new tree[nargs];
 
   va_list ap;
-  va_start(ap, rettype);
+  va_start (ap, rettype);
   for (int i = 0; i < nargs; ++i)
     {
-      types[i] = va_arg(ap, tree);
-      tree arg = va_arg(ap, tree);
+      types[i] = va_arg (ap, tree);
+      tree arg = va_arg (ap, tree);
       args[i] = build_reinterpret_cast (types[i], arg);
       if (types[i] == error_mark_node || args[i] == error_mark_node)
 	{
@@ -435,13 +443,13 @@ call_builtin (tree* pdecl, const char* name, int nargs, tree rettype, ...)
 	  return error_mark_node;
 	}
     }
-  va_end(ap);
+  va_end (ap);
 
   tree decl = NULL_TREE;
   if (pdecl == NULL || *pdecl == NULL_TREE)
     {
       builtin_index::const_iterator i = builtin_cache_.find (name);
-      if (i != builtin_cache_.end())
+      if (i != builtin_cache_.end ())
 	decl = (*i).second;
     }
   else
@@ -451,29 +459,29 @@ call_builtin (tree* pdecl, const char* name, int nargs, tree rettype, ...)
     {
       tree fnid = get_identifier (name);
       tree argtypes = NULL_TREE;
-      tree* pp = &argtypes;
+      tree *pp = &argtypes;
       for (int i = 0; i < nargs; ++i)
 	{
-	  *pp = tree_cons(NULL_TREE, types[i], NULL_TREE);
-	  pp = &TREE_CHAIN(*pp);
+	  *pp = tree_cons (NULL_TREE, types[i], NULL_TREE);
+	  pp = &TREE_CHAIN (*pp);
 	}
       *pp = void_list_node;
 
       tree fntype = build_function_type (rettype, argtypes);
 
-      decl = build_decl(UNKNOWN_LOCATION, FUNCTION_DECL, fnid, fntype);
+      decl = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, fnid, fntype);
 
       TREE_STATIC (decl) = 0;
       DECL_EXTERNAL (decl) = 1;
       TREE_PUBLIC (decl) = 1;
     }
 
-  tree fnptr = build_fold_addr_expr(decl);
+  tree fnptr = build_fold_addr_expr (decl);
 
-  tree ret = build_call_array(rettype, fnptr, nargs, args);
+  tree ret = build_call_array (rettype, fnptr, nargs, args);
 
   if (name != NULL)
-    builtin_cache_ [name] = decl;
+    builtin_cache_[name] = decl;
   if (pdecl != NULL)
     *pdecl = decl;
 
@@ -482,7 +490,6 @@ call_builtin (tree* pdecl, const char* name, int nargs, tree rettype, ...)
 
   return ret;
 }
-
 
 void
 brig_to_generic::write_globals ()
@@ -511,56 +518,56 @@ brig_to_generic::write_globals ()
 
   m_global_variables.clear ();
 
-  struct code_entry_handler_info {
+  struct code_entry_handler_info
+  {
     BrigKind kind;
-    brig_code_entry_handler* handler;
+    brig_code_entry_handler *handler;
   };
 
   // @todo: Convert to a hash table / map. For now, put the more common
   // entries to the top to keep the scan fast on average.
-  code_entry_handler_info handlers[] = {
-    {BRIG_KIND_INST_BASIC, &inst_handler},
-    {BRIG_KIND_INST_CMP, &cmp_inst_handler},
-    {BRIG_KIND_INST_MEM, &mem_inst_handler},
-    {BRIG_KIND_INST_MOD, &inst_mod_handler},
-    {BRIG_KIND_INST_CVT, &cvt_inst_handler},
-    {BRIG_KIND_INST_SEG_CVT, &seg_inst_handler},
-    {BRIG_KIND_INST_SEG, &seg_inst_handler},
-    {BRIG_KIND_INST_ADDR, &copy_move_inst_handler},
-    {BRIG_KIND_INST_SOURCE_TYPE, &copy_move_inst_handler},
-    {BRIG_KIND_INST_ATOMIC, &atomic_inst_handler},
-    {BRIG_KIND_INST_SIGNAL, &signal_inst_handler},
-    {BRIG_KIND_INST_BR, &branch_inst_handler},
-    {BRIG_KIND_INST_LANE, &lane_inst_handler},
-    {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
-    // Assuming fences are not needed. FIXME: call builtins
-    // when porting to a platform where they are.
-    {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
-    {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
-    {BRIG_KIND_DIRECTIVE_VARIABLE, &var_handler},
-    {BRIG_KIND_DIRECTIVE_ARG_BLOCK_START, &arg_block_handler},
-    {BRIG_KIND_DIRECTIVE_ARG_BLOCK_END, &arg_block_handler},
-    {BRIG_KIND_DIRECTIVE_FBARRIER, &fbar_handler},
-    {BRIG_KIND_DIRECTIVE_COMMENT, &comment_handler},
-    {BRIG_KIND_DIRECTIVE_KERNEL, &func_handler},
-    {BRIG_KIND_DIRECTIVE_SIGNATURE, &func_handler},
-    {BRIG_KIND_DIRECTIVE_FUNCTION, &func_handler},
-    {BRIG_KIND_DIRECTIVE_INDIRECT_FUNCTION, &func_handler},
-    {BRIG_KIND_DIRECTIVE_MODULE, &skipped_handler},
-    // Skipping debug locations for now as not needed for conformance.
-    {BRIG_KIND_DIRECTIVE_LOC, &skipped_handler},
-    // There are no supported pragmas at this moment.
-    {BRIG_KIND_DIRECTIVE_PRAGMA, &skipped_handler},
-    {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
-    {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}
-  };
+  code_entry_handler_info handlers[]
+    = {{BRIG_KIND_INST_BASIC, &inst_handler},
+       {BRIG_KIND_INST_CMP, &cmp_inst_handler},
+       {BRIG_KIND_INST_MEM, &mem_inst_handler},
+       {BRIG_KIND_INST_MOD, &inst_mod_handler},
+       {BRIG_KIND_INST_CVT, &cvt_inst_handler},
+       {BRIG_KIND_INST_SEG_CVT, &seg_inst_handler},
+       {BRIG_KIND_INST_SEG, &seg_inst_handler},
+       {BRIG_KIND_INST_ADDR, &copy_move_inst_handler},
+       {BRIG_KIND_INST_SOURCE_TYPE, &copy_move_inst_handler},
+       {BRIG_KIND_INST_ATOMIC, &atomic_inst_handler},
+       {BRIG_KIND_INST_SIGNAL, &signal_inst_handler},
+       {BRIG_KIND_INST_BR, &branch_inst_handler},
+       {BRIG_KIND_INST_LANE, &lane_inst_handler},
+       {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
+       // Assuming fences are not needed. FIXME: call builtins
+       // when porting to a platform where they are.
+       {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
+       {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
+       {BRIG_KIND_DIRECTIVE_VARIABLE, &var_handler},
+       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_START, &arg_block_handler},
+       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_END, &arg_block_handler},
+       {BRIG_KIND_DIRECTIVE_FBARRIER, &fbar_handler},
+       {BRIG_KIND_DIRECTIVE_COMMENT, &comment_handler},
+       {BRIG_KIND_DIRECTIVE_KERNEL, &func_handler},
+       {BRIG_KIND_DIRECTIVE_SIGNATURE, &func_handler},
+       {BRIG_KIND_DIRECTIVE_FUNCTION, &func_handler},
+       {BRIG_KIND_DIRECTIVE_INDIRECT_FUNCTION, &func_handler},
+       {BRIG_KIND_DIRECTIVE_MODULE, &skipped_handler},
+       // Skipping debug locations for now as not needed for conformance.
+       {BRIG_KIND_DIRECTIVE_LOC, &skipped_handler},
+       // There are no supported pragmas at this moment.
+       {BRIG_KIND_DIRECTIVE_PRAGMA, &skipped_handler},
+       {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
+       {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}};
 
   const BrigSectionHeader *dsection_header = (const BrigSectionHeader *) m_data;
 
   // Go through the data section just to sanity check the BRIG data section.
-  for (size_t b = dsection_header->headerByteCount; b < m_data_size; )
+  for (size_t b = dsection_header->headerByteCount; b < m_data_size;)
     {
-      const BrigData *entry = (const BrigData*)(m_data + b);
+      const BrigData *entry = (const BrigData *) (m_data + b);
       // Rounds upwards towards the closest multiple of 4.
       // The byteCount itself is 4 bytes and included in 7.
       b += ((7 + entry->byteCount) / 4) * 4;
@@ -568,25 +575,26 @@ brig_to_generic::write_globals ()
       // There can be zero padding at the end of the section to round the
       // size to a 4 multiple. Break before trying to read that in as
       // an incomplete BrigData.
-      if (m_data_size - b < sizeof (BrigData)) break;
+      if (m_data_size - b < sizeof (BrigData))
+	break;
     }
 
   const BrigSectionHeader *csection_header = (const BrigSectionHeader *) m_code;
 
-  for (size_t b = csection_header->headerByteCount; b < m_code_size; )
+  for (size_t b = csection_header->headerByteCount; b < m_code_size;)
     {
-      const BrigBase *entry = (const BrigBase*)(m_code + b);
+      const BrigBase *entry = (const BrigBase *) (m_code + b);
 
       brig_code_entry_handler *handler = &unimplemented_handler;
 
       // Find a handler.
       for (size_t i = 0;
-           i < sizeof(handlers) / sizeof(code_entry_handler_info); ++i)
-        {
-          if (handlers[i].kind == entry->kind)
-            handler = handlers[i].handler;
-        }
-      b += (*handler)(entry);
+	   i < sizeof (handlers) / sizeof (code_entry_handler_info); ++i)
+	{
+	  if (handlers[i].kind == entry->kind)
+	    handler = handlers[i].handler;
+	}
+      b += (*handler) (entry);
       continue;
     }
 
@@ -594,25 +602,25 @@ brig_to_generic::write_globals ()
 
   // Now that the whole BRIG module has been processed, build a launcher
   // and a metadata section for each built kernel.
-  for (size_t i = 0; i < m_kernels.size (); ++i) {
+  for (size_t i = 0; i < m_kernels.size (); ++i)
+    {
 
-    brig_function *f = m_kernels [i];
+      brig_function *f = m_kernels[i];
 
-    // TODO: analyze the kernel's actual group and private segment usage
-    // using a call graph. Now this is overly pessimistic.
-    tree launcher =
-      f->build_launcher_and_metadata
-      (group_segment_size (), private_segment_size ());
+      // TODO: analyze the kernel's actual group and private segment usage
+      // using a call graph. Now this is overly pessimistic.
+      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
+						      private_segment_size ());
 
-    append_global (launcher);
+      append_global (launcher);
 
-    gimplify_function_tree (launcher);
-    cgraph_finalize_function (launcher, true);
-    pop_cfun ();
-  }
+      gimplify_function_tree (launcher);
+      cgraph_finalize_function (launcher, true);
+      pop_cfun ();
+    }
 
   int no_globals = list_length (m_globals);
-  tree * vec = new tree [no_globals];
+  tree *vec = new tree[no_globals];
 
   int i = 0;
   tree global = m_globals;

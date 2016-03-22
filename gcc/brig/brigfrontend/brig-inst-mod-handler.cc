@@ -27,22 +27,22 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_inst_mod_handler::generate (const BrigBase *base)
 {
-	brig_basic_inst_handler basic_handler (parent_);
-	return basic_handler (base);
+  brig_basic_inst_handler basic_handler (parent_);
+  return basic_handler (base);
 }
 
 const BrigAluModifier *
 brig_inst_mod_handler::modifier (const BrigBase *base) const
 {
-	const BrigInstMod *inst = (const BrigInstMod*) base;
-	return &inst->modifier;
+  const BrigInstMod *inst = (const BrigInstMod *) base;
+  return &inst->modifier;
 }
 
 const BrigRound8_t *
 brig_inst_mod_handler::round (const BrigBase *base) const
 {
-	const BrigInstMod *inst = (const BrigInstMod*) base;
-	return &inst->round;
+  const BrigInstMod *inst = (const BrigInstMod *) base;
+  return &inst->round;
 }
 
 /**
@@ -50,13 +50,14 @@ brig_inst_mod_handler::round (const BrigBase *base) const
  * actual executed floating point operation. It turned out that supporting
  * conversions using fesetround calls won't work in gcc due to it not being able
  * to restrict code motions across calls at the moment. This functionality is
- * therefore disabled for now until a better solution is found or if fesetround()
+ * therefore disabled for now until a better solution is found or if
+ * fesetround()
  * is fixed in gcc.
  */
 size_t
-brig_inst_mod_handler::operator()(const BrigBase *base)
+brig_inst_mod_handler::operator() (const BrigBase *base)
 {
-	return generate (base);
+  return generate (base);
 
 #if 0
 	const BrigAluModifier *inst_modifier = modifier (base);

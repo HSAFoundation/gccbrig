@@ -45,28 +45,25 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   parent_.finish_current_function ();
   parent_.m_cf = new brig_function ();
 
-  const BrigDirectiveExecutable *exec =
-    (const BrigDirectiveExecutable *) base;
+  const BrigDirectiveExecutable *exec = (const BrigDirectiveExecutable *) base;
 
   if (gccbrig_verbose)
     {
-      printf("brig: function name %s\n", parent_.get_c_string (exec->name));
-      printf("brig: inargs %d outargs %d name offset %d\n",
-	     exec->inArgCount, exec->outArgCount, exec->name);
+      printf ("brig: function name %s\n", parent_.get_c_string (exec->name));
+      printf ("brig: inargs %d outargs %d name offset %d\n", exec->inArgCount,
+	      exec->outArgCount, exec->name);
     }
 
-  const bool is_definition =
-    exec->modifier.allBits & BRIG_EXECUTABLE_DEFINITION;
+  const bool is_definition
+    = exec->modifier.allBits & BRIG_EXECUTABLE_DEFINITION;
 
   const bool is_kernel = base->kind == BRIG_KIND_DIRECTIVE_KERNEL;
 
-  const BrigData *func_name_data =
-    parent_.get_brig_data_entry(exec->name);
+  const BrigData *func_name_data = parent_.get_brig_data_entry (exec->name);
 
   // Strip & from the beginning of the name.
-  std::string func_name
-    ((const char*) (func_name_data->bytes + 1),
-     func_name_data->byteCount - 1);
+  std::string func_name ((const char *) (func_name_data->bytes + 1),
+			 func_name_data->byteCount - 1);
 
   tree fndecl;
   tree ret_value = NULL_TREE;
@@ -75,8 +72,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 
   // Add a function scope BIND_EXPR using which we can push local variables that
   // represent HSAIL registers.
-  tree bind_expr =
-    build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
+  tree bind_expr = build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
 
   if (is_kernel)
     {
@@ -84,8 +80,8 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       // called by the host.
       func_name = std::string ("_") + func_name;
 
-      tree name_identifier =
-	get_identifier_with_length (func_name.c_str(), func_name.size());
+      tree name_identifier
+	= get_identifier_with_length (func_name.c_str (), func_name.size ());
 
       // The generated kernel functions take the following arguments:
       //
@@ -96,26 +92,24 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       // 3) a void* parameter that contains the first flat address of the group
       // region allocated to the current work-group.
       tree char_ptr_type_node = build_pointer_type (char_type_node);
-      fndecl = build_decl
-	(UNKNOWN_LOCATION, FUNCTION_DECL,
-	 name_identifier,
-	 build_function_type_list
-	 (void_type_node, char_ptr_type_node, ptr_type_node, ptr_type_node,
-	  NULL_TREE));
+      fndecl = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, name_identifier,
+			   build_function_type_list (void_type_node,
+						     char_ptr_type_node,
+						     ptr_type_node,
+						     ptr_type_node, NULL_TREE));
 
       SET_DECL_ASSEMBLER_NAME (fndecl, name_identifier);
 
-      tree resdecl =
-	build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE, void_type_node);
+      tree resdecl
+	= build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE, void_type_node);
 
       tree typelist = TYPE_ARG_TYPES (TREE_TYPE (fndecl));
       tree argtype = TREE_VALUE (typelist);
-      TYPE_ADDR_SPACE (argtype) =
-	gccbrig_get_target_addr_space_id (BRIG_SEGMENT_KERNARG);
+      TYPE_ADDR_SPACE (argtype)
+	= gccbrig_get_target_addr_space_id (BRIG_SEGMENT_KERNARG);
 
-      tree arg_arg =
-	build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		    get_identifier ("__args"), char_ptr_type_node);
+      tree arg_arg = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+				 get_identifier ("__args"), char_ptr_type_node);
       DECL_ARGUMENTS (fndecl) = arg_arg;
       DECL_ARG_TYPE (arg_arg) = char_ptr_type_node;
       DECL_CONTEXT (arg_arg) = fndecl;
@@ -126,18 +120,17 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       DECL_RESULT (fndecl) = resdecl;
       DECL_CONTEXT (resdecl) = fndecl;
       DECL_EXTERNAL (fndecl) = 0;
-
     }
   else
     {
       // Build a regular function fingerprint to enable targets to optimize
       // the calling convention as they see fit.
-      tree name_identifier =
-	get_identifier_with_length (func_name.c_str(), func_name.size());
+      tree name_identifier
+	= get_identifier_with_length (func_name.c_str (), func_name.size ());
 
-      parent_.m_cf->arg_variables.clear();
+      parent_.m_cf->arg_variables.clear ();
 
-      brig_directive_variable_handler arg_handler(parent_);
+      brig_directive_variable_handler arg_handler (parent_);
 
       vec<tree, va_gc> *args;
       vec_alloc (args, 4);
@@ -149,12 +142,12 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	{
 	  // The return value variable should be the first entry after the
 	  // function directive.
-	  const BrigBase *retval =
-	    (const BrigBase*) ((const char*) base + base->byteCount);
+	  const BrigBase *retval
+	    = (const BrigBase *) ((const char *) base + base->byteCount);
 	  assert (retval->kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
-	  const BrigDirectiveVariable* brigVar =
-	    (const BrigDirectiveVariable*) retval;
+	  const BrigDirectiveVariable *brigVar
+	    = (const BrigDirectiveVariable *) retval;
 
 	  brig_directive_variable_handler varhandler (parent_);
 
@@ -198,9 +191,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	  for (size_t arg = 0; arg < exec->inArgCount; ++arg)
 	    {
 
-	      const BrigDirectiveVariable* brigVar =
-		(const BrigDirectiveVariable*) parent_.get_brig_code_entry
-		(arg_offset);
+	      const BrigDirectiveVariable *brigVar
+		= (const BrigDirectiveVariable *) parent_.get_brig_code_entry (
+		  arg_offset);
 
 	      assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
@@ -222,10 +215,8 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       vec_safe_push (args, ptr_type_node);
       vec_safe_push (args, ptr_type_node);
 
-      fndecl = build_decl
-	(UNKNOWN_LOCATION, FUNCTION_DECL,
-	 name_identifier,
-	 build_function_type_vec (ret_type, args));
+      fndecl = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, name_identifier,
+			   build_function_type_vec (ret_type, args));
 
       DECL_RESULT (fndecl) = ret_value;
       DECL_CONTEXT (ret_value) = fndecl;
@@ -236,9 +227,8 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   // All functions need the hidden __context argument passed on
   // because they might call WI-specific functions which need
   // the context info.
-  tree context_arg =
-    build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		get_identifier ("__context"), ptr_type_node);
+  tree context_arg = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+				 get_identifier ("__context"), ptr_type_node);
   if (DECL_ARGUMENTS (fndecl) == NULL_TREE)
     DECL_ARGUMENTS (fndecl) = context_arg;
   else
@@ -251,9 +241,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 
   // They can also access group memory, so we need to pass the
   // group pointer along too.
-  tree group_base_arg =
-    build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		get_identifier ("__group_base_addr"), ptr_type_node);
+  tree group_base_arg
+    = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+		  get_identifier ("__group_base_addr"), ptr_type_node);
   chainon (DECL_ARGUMENTS (fndecl), group_base_arg);
   DECL_ARG_TYPE (group_base_arg) = ptr_type_node;
   DECL_CONTEXT (group_base_arg) = fndecl;
@@ -262,9 +252,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   TREE_USED (group_base_arg) = 1;
 
   // Same for private.
-  tree private_base_arg =
-    build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		get_identifier ("__private_base_addr"), ptr_type_node);
+  tree private_base_arg
+    = build_decl (UNKNOWN_LOCATION, PARM_DECL,
+		  get_identifier ("__private_base_addr"), ptr_type_node);
   chainon (DECL_ARGUMENTS (fndecl), private_base_arg);
   DECL_ARG_TYPE (private_base_arg) = ptr_type_node;
   DECL_CONTEXT (private_base_arg) = fndecl;
@@ -319,8 +309,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
     }
 
   tree arg;
-  for (arg = DECL_ARGUMENTS (fndecl); arg != NULL_TREE;
-       arg = TREE_CHAIN (arg))
+  for (arg = DECL_ARGUMENTS (fndecl); arg != NULL_TREE; arg = TREE_CHAIN (arg))
     {
       DECL_CONTEXT (arg) = fndecl;
       DECL_ARG_TYPE (arg) = TREE_TYPE (arg);
@@ -347,8 +336,8 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       parent_.m_cf->add_id_variables ();
 
       // Create a single entry point in the function.
-      parent_.m_cf->entry_label_stmt =
-	build_stmt (LABEL_EXPR, parent_.m_cf->label ("__kernel_entry"));
+      parent_.m_cf->entry_label_stmt
+	= build_stmt (LABEL_EXPR, parent_.m_cf->label ("__kernel_entry"));
       parent_.m_cf->append_statement (parent_.m_cf->entry_label_stmt);
 
       tree bind_expr = parent_.m_cf->current_bind_expr;
@@ -365,4 +354,3 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 
   return bytes_consumed;
 }
-

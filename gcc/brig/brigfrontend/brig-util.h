@@ -24,35 +24,24 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "brig_to_generic.h"
 
-bool
-gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum);
+bool gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum);
 
-unsigned
-gccbrig_hsa_type_bit_size (BrigType16_t t);
+unsigned gccbrig_hsa_type_bit_size (BrigType16_t t);
 
-uint64_t
-gccbrig_to_uint64_t(const BrigUInt64& brig_type);
+uint64_t gccbrig_to_uint64_t (const BrigUInt64 &brig_type);
 
-int
-gccbrig_reg_size(const BrigOperandRegister *brig_reg);
+int gccbrig_reg_size (const BrigOperandRegister *brig_reg);
 
-std::string
-gccbrig_reg_name (const BrigOperandRegister* reg);
+std::string gccbrig_reg_name (const BrigOperandRegister *reg);
 
-std::string
-gccbrig_type_name (BrigType16_t type);
+std::string gccbrig_type_name (BrigType16_t type);
 
-std::string
-gccbrig_segment_name (BrigSegment8_t segment);
+std::string gccbrig_segment_name (BrigSegment8_t segment);
 
-bool
-gccbrig_is_float_type (BrigType16_t type);
+bool gccbrig_is_float_type (BrigType16_t type);
 
-bool
-gccbrig_is_raw_operation (BrigOpcode16_t opcode);
+bool gccbrig_is_raw_operation (BrigOpcode16_t opcode);
 
-BrigType16_t
-gccbrig_tree_type_to_hsa_type (tree tree_type);
-
+BrigType16_t gccbrig_tree_type_to_hsa_type (tree tree_type);
 
 #endif
