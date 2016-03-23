@@ -50,58 +50,10 @@ tree brig_to_generic::s_fp16_type;
 tree brig_to_generic::s_fp32_type;
 tree brig_to_generic::s_fp64_type;
 
-brig_to_generic::brig_to_generic (const char *brig_blob)
-  : m_cf (NULL), m_brig (brig_blob), m_next_group_offset (0),
+brig_to_generic::brig_to_generic ()
+  : m_cf (NULL), m_brig (NULL), m_next_group_offset (0),
     m_next_private_offset (0)
 {
-  const BrigModuleHeader *mheader = (const BrigModuleHeader *) brig_blob;
-  // TODO: parse in a separate method for error checking the input.
-
-  m_data = m_code = m_operand = NULL;
-
-  // Find the positions of the different sections.
-  for (uint32_t sec = 0; sec < mheader->sectionCount; ++sec)
-    {
-      uint64_t offset
-	= ((const uint64_t *) (brig_blob + mheader->sectionIndex))[sec];
-      const BrigSectionHeader *section_header
-	= (const BrigSectionHeader *) (brig_blob + offset);
-      char *name = strndup ((const char *) (&section_header->name),
-			    section_header->nameLength);
-
-      if (sec == BRIG_SECTION_INDEX_DATA
-	  && strncmp (name, "hsa_data", section_header->nameLength) == 0)
-	{
-	  m_data = (const char *) section_header;
-	  m_data_size = section_header->byteCount;
-	}
-      else if (sec == BRIG_SECTION_INDEX_CODE
-	       && strncmp (name, "hsa_code", section_header->nameLength) == 0)
-	{
-	  m_code = (const char *) section_header;
-	  m_code_size = section_header->byteCount;
-	}
-      else if (sec == BRIG_SECTION_INDEX_OPERAND
-	       && strncmp (name, "hsa_operand", section_header->nameLength)
-		    == 0)
-	{
-	  m_operand = (const char *) section_header;
-	  m_operand_size = section_header->byteCount;
-	}
-      else
-	{
-	  sorry ("section %s", name);
-	}
-      free (name);
-    }
-
-  if (m_code == NULL)
-    error ("code section not found");
-  if (m_data == NULL)
-    error ("data section not found");
-  if (m_operand == NULL)
-    error ("operand section not found");
-
   m_globals = NULL_TREE;
 
   // Initialize the basic REAL types.
@@ -163,6 +115,188 @@ public:
   }
 };
 
+void
+brig_to_generic::parse (const char *brig_blob)
+{
+  m_brig = brig_blob;
+  m_brig_blobs.push_back (brig_blob);
+
+  const BrigModuleHeader *mheader = (const BrigModuleHeader *) brig_blob;
+
+  m_data = m_code = m_operand = NULL;
+
+  // Find the positions of the different sections.
+  for (uint32_t sec = 0; sec < mheader->sectionCount; ++sec)
+    {
+      uint64_t offset
+	= ((const uint64_t *) (brig_blob + mheader->sectionIndex))[sec];
+
+      const BrigSectionHeader *section_header
+	= (const BrigSectionHeader *) (brig_blob + offset);
+
+      char *name = strndup ((const char *) (&section_header->name),
+			    section_header->nameLength);
+
+      if (sec == BRIG_SECTION_INDEX_DATA
+	  && strncmp (name, "hsa_data", section_header->nameLength) == 0)
+	{
+	  m_data = (const char *) section_header;
+	  m_data_size = section_header->byteCount;
+	}
+      else if (sec == BRIG_SECTION_INDEX_CODE
+	       && strncmp (name, "hsa_code", section_header->nameLength) == 0)
+	{
+	  m_code = (const char *) section_header;
+	  m_code_size = section_header->byteCount;
+	}
+      else if (sec == BRIG_SECTION_INDEX_OPERAND
+	       && strncmp (name, "hsa_operand", section_header->nameLength)
+		    == 0)
+	{
+	  m_operand = (const char *) section_header;
+	  m_operand_size = section_header->byteCount;
+	}
+      else
+	{
+	  sorry ("section %s", name);
+	}
+      free (name);
+    }
+
+  if (m_code == NULL)
+    error ("code section not found");
+  if (m_data == NULL)
+    error ("data section not found");
+  if (m_operand == NULL)
+    error ("operand section not found");
+
+  brig_basic_inst_handler inst_handler (*this);
+  brig_branch_inst_handler branch_inst_handler (*this);
+  brig_cvt_inst_handler cvt_inst_handler (*this);
+  brig_seg_inst_handler seg_inst_handler (*this);
+  brig_copy_move_inst_handler copy_move_inst_handler (*this);
+  brig_signal_inst_handler signal_inst_handler (*this);
+  brig_atomic_inst_handler atomic_inst_handler (*this);
+  brig_cmp_inst_handler cmp_inst_handler (*this);
+  brig_mem_inst_handler mem_inst_handler (*this);
+  brig_inst_mod_handler inst_mod_handler (*this);
+  brig_directive_label_handler label_handler (*this);
+  brig_directive_variable_handler var_handler (*this);
+  brig_directive_fbarrier_handler fbar_handler (*this);
+  brig_directive_comment_handler comment_handler (*this);
+  brig_directive_function_handler func_handler (*this);
+  brig_directive_control_handler control_handler (*this);
+  brig_directive_arg_block_handler arg_block_handler (*this);
+  brig_directive_module_handler module_handler (*this);
+  brig_lane_inst_handler lane_inst_handler (*this);
+  brig_queue_inst_handler queue_inst_handler (*this);
+  skipped_entry_handler skipped_handler (*this);
+  unimplemented_entry_handler unimplemented_handler (*this);
+
+  struct code_entry_handler_info
+  {
+    BrigKind kind;
+    brig_code_entry_handler *handler;
+  };
+
+  // @todo: Convert to a hash table / map. For now, put the more common
+  // entries to the top to keep the scan fast on average.
+  code_entry_handler_info handlers[]
+    = {{BRIG_KIND_INST_BASIC, &inst_handler},
+       {BRIG_KIND_INST_CMP, &cmp_inst_handler},
+       {BRIG_KIND_INST_MEM, &mem_inst_handler},
+       {BRIG_KIND_INST_MOD, &inst_mod_handler},
+       {BRIG_KIND_INST_CVT, &cvt_inst_handler},
+       {BRIG_KIND_INST_SEG_CVT, &seg_inst_handler},
+       {BRIG_KIND_INST_SEG, &seg_inst_handler},
+       {BRIG_KIND_INST_ADDR, &copy_move_inst_handler},
+       {BRIG_KIND_INST_SOURCE_TYPE, &copy_move_inst_handler},
+       {BRIG_KIND_INST_ATOMIC, &atomic_inst_handler},
+       {BRIG_KIND_INST_SIGNAL, &signal_inst_handler},
+       {BRIG_KIND_INST_BR, &branch_inst_handler},
+       {BRIG_KIND_INST_LANE, &lane_inst_handler},
+       {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
+       // Assuming fences are not needed. FIXME: call builtins
+       // when porting to a platform where they are.
+       {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
+       {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
+       {BRIG_KIND_DIRECTIVE_VARIABLE, &var_handler},
+       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_START, &arg_block_handler},
+       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_END, &arg_block_handler},
+       {BRIG_KIND_DIRECTIVE_FBARRIER, &fbar_handler},
+       {BRIG_KIND_DIRECTIVE_COMMENT, &comment_handler},
+       {BRIG_KIND_DIRECTIVE_KERNEL, &func_handler},
+       {BRIG_KIND_DIRECTIVE_SIGNATURE, &func_handler},
+       {BRIG_KIND_DIRECTIVE_FUNCTION, &func_handler},
+       {BRIG_KIND_DIRECTIVE_INDIRECT_FUNCTION, &func_handler},
+       {BRIG_KIND_DIRECTIVE_MODULE, &module_handler},
+       // Skipping debug locations for now as not needed for conformance.
+       {BRIG_KIND_DIRECTIVE_LOC, &skipped_handler},
+       // There are no supported pragmas at this moment.
+       {BRIG_KIND_DIRECTIVE_PRAGMA, &skipped_handler},
+       {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
+       {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}};
+
+  const BrigSectionHeader *dsection_header = (const BrigSectionHeader *) m_data;
+
+  // Go through the data section just to sanity check the BRIG data section.
+  for (size_t b = dsection_header->headerByteCount; b < m_data_size;)
+    {
+      const BrigData *entry = (const BrigData *) (m_data + b);
+      // Rounds upwards towards the closest multiple of 4.
+      // The byteCount itself is 4 bytes and included in 7.
+      b += ((7 + entry->byteCount) / 4) * 4;
+
+      // There can be zero padding at the end of the section to round the
+      // size to a 4 multiple. Break before trying to read that in as
+      // an incomplete BrigData.
+      if (m_data_size - b < sizeof (BrigData))
+	break;
+    }
+
+  const BrigSectionHeader *csection_header = (const BrigSectionHeader *) m_code;
+
+  for (size_t b = csection_header->headerByteCount; b < m_code_size;)
+    {
+      const BrigBase *entry = (const BrigBase *) (m_code + b);
+
+      brig_code_entry_handler *handler = &unimplemented_handler;
+
+      if (m_cf != NULL && b >= m_cf->m_brig_def->nextModuleEntry)
+	finish_function (); // The function definition ended.
+
+      // Find a handler.
+      for (size_t i = 0;
+	   i < sizeof (handlers) / sizeof (code_entry_handler_info); ++i)
+	{
+	  if (handlers[i].kind == entry->kind)
+	    handler = handlers[i].handler;
+	}
+      b += (*handler) (entry);
+      continue;
+    }
+
+  finish_function ();
+
+  // Now that the whole BRIG module has been processed, build a launcher
+  // and a metadata section for each built kernel.
+  for (size_t i = 0; i < m_kernels.size (); ++i)
+    {
+
+      brig_function *f = m_kernels[i];
+
+      // TODO: analyze the kernel's actual group and private segment usage
+      // using a call graph. Now this is overly pessimistic.
+      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
+						      private_segment_size ());
+
+      append_global (launcher);
+
+      gimplify_function_tree (launcher);
+      cgraph_finalize_function (launcher, true);
+      pop_cfun ();
+    }
+}
 const BrigData *
 brig_to_generic::get_brig_data_entry (size_t entry_offset) const
 {
@@ -197,9 +331,9 @@ brig_to_generic::append_global (tree g)
 }
 
 tree
-brig_to_generic::global_variable (const BrigDirectiveVariable *var) const
+brig_to_generic::global_variable (const std::string &name) const
 {
-  variable_index::const_iterator i = m_global_variables.find (var);
+  label_index::const_iterator i = m_global_variables.find (name);
   if (i == m_global_variables.end ())
     return NULL_TREE;
   else
@@ -222,11 +356,27 @@ brig_to_generic::add_function_decl (const std::string &name, tree func_decl)
 }
 
 void
-brig_to_generic::add_global_variable (const BrigDirectiveVariable *brig_var,
-				      tree tree_decl)
+brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
 {
-  append_global (tree_decl);
-  m_global_variables[brig_var] = tree_decl;
+  append_global (var_decl);
+  m_global_variables[name] = var_decl;
+}
+
+std::string
+brig_to_generic::get_mangled_name
+(const BrigDirectiveExecutable *func) const
+{
+  // Strip the leading &.
+  std::string func_name = get_string (func->name).substr(1);
+  if (func->linkage == BRIG_LINKAGE_MODULE)
+    {
+      // Mangle the module scope function names with the module name and
+      // make them public so they can be queried by the HSA runtime from
+      // the produced binary. Assume it's the currently processed function
+      // we are always referring to.
+      func_name = "gccbrig." + m_module_name + "." + func_name;
+    }
+  return func_name;
 }
 
 char *
@@ -234,6 +384,13 @@ brig_to_generic::get_c_string (size_t entry_offset) const
 {
   const BrigData *data_item = get_brig_data_entry (entry_offset);
   return strndup ((const char *) &data_item->bytes, data_item->byteCount);
+}
+
+std::string
+brig_to_generic::get_string (size_t entry_offset) const
+{
+  const BrigData *data_item = get_brig_data_entry (entry_offset);
+  return std::string ((const char *) &data_item->bytes, data_item->byteCount);
 }
 
 // Adapted from c-semantics.c.
@@ -327,15 +484,15 @@ brig_to_generic::get_finished_function (tree func_decl)
 }
 
 void
-brig_to_generic::finish_current_function ()
+brig_to_generic::finish_function ()
 {
   if (m_cf == NULL || m_cf->func_decl == NULL_TREE)
     return;
 
   m_cf->finish ();
 
-  // debug_function (m_cf->func_decl,
-  // TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+  //debug_function (m_cf->func_decl,
+  //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
   gimplify_function_tree (m_cf->func_decl);
   cgraph_finalize_function (m_cf->func_decl, true);
   pop_cfun ();
@@ -343,11 +500,11 @@ brig_to_generic::finish_current_function ()
   if (m_cf->is_kernel)
     m_kernels.push_back (m_cf);
   m_finished_functions[m_cf->func_decl] = m_cf;
-  m_cf = new brig_function ();
+  m_cf = NULL;
 }
 
 void
-brig_to_generic::init_current_function (tree f)
+brig_to_generic::start_function (tree f)
 {
   if (DECL_STRUCT_FUNCTION (f) == NULL)
     push_struct_function (f);
@@ -358,19 +515,19 @@ brig_to_generic::init_current_function (tree f)
 }
 
 void
-brig_to_generic::append_group_variable (const BrigBase *var, size_t size,
+brig_to_generic::append_group_variable (const std::string &name, size_t size,
 					size_t alignment)
 {
   size_t align_padding = m_next_group_offset % alignment;
   m_next_group_offset += align_padding;
-  m_group_offsets[var] = m_next_group_offset;
+  m_group_offsets[name] = m_next_group_offset;
   m_next_group_offset += size;
 }
 
 size_t
-brig_to_generic::group_variable_segment_offset (const BrigBase *var) const
+brig_to_generic::group_variable_segment_offset (const std::string &name) const
 {
-  group_var_offset_table::const_iterator i = m_group_offsets.find (var);
+  var_offset_table::const_iterator i = m_group_offsets.find (name);
   gcc_assert (i != m_group_offsets.end ());
   return (*i).second;
 }
@@ -382,30 +539,30 @@ brig_to_generic::group_segment_size () const
 }
 
 void
-brig_to_generic::append_private_variable (const BrigDirectiveVariable *var,
+brig_to_generic::append_private_variable (const std::string &name,
 					  size_t size, size_t alignment)
 {
   size_t align_padding = m_next_private_offset % alignment;
   m_next_private_offset += align_padding;
-  m_private_offsets[var] = m_next_private_offset;
+  m_private_offsets[name] = m_next_private_offset;
   m_next_private_offset += size;
-  m_private_data_sizes[var] = size + align_padding;
+  m_private_data_sizes[name] = size + align_padding;
 }
 
 size_t
 brig_to_generic::private_variable_segment_offset (
-  const BrigDirectiveVariable *var) const
+  const std::string &name) const
 {
-  var_offset_table::const_iterator i = m_private_offsets.find (var);
+  var_offset_table::const_iterator i = m_private_offsets.find (name);
   gcc_assert (i != m_private_offsets.end ());
   return (*i).second;
 }
 
 size_t
-brig_to_generic::private_variable_size (const BrigDirectiveVariable *var) const
+brig_to_generic::private_variable_size (const std::string &name) const
 {
-  std::map<const BrigDirectiveVariable *, size_t>::const_iterator i
-    = m_private_data_sizes.find (var);
+  std::map<std::string, size_t>::const_iterator i
+    = m_private_data_sizes.find (name);
   gcc_assert (i != m_private_data_sizes.end ());
   return (*i).second;
 }
@@ -494,131 +651,6 @@ call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
 void
 brig_to_generic::write_globals ()
 {
-  brig_basic_inst_handler inst_handler (*this);
-  brig_branch_inst_handler branch_inst_handler (*this);
-  brig_cvt_inst_handler cvt_inst_handler (*this);
-  brig_seg_inst_handler seg_inst_handler (*this);
-  brig_copy_move_inst_handler copy_move_inst_handler (*this);
-  brig_signal_inst_handler signal_inst_handler (*this);
-  brig_atomic_inst_handler atomic_inst_handler (*this);
-  brig_cmp_inst_handler cmp_inst_handler (*this);
-  brig_mem_inst_handler mem_inst_handler (*this);
-  brig_inst_mod_handler inst_mod_handler (*this);
-  brig_directive_label_handler label_handler (*this);
-  brig_directive_variable_handler var_handler (*this);
-  brig_directive_fbarrier_handler fbar_handler (*this);
-  brig_directive_comment_handler comment_handler (*this);
-  brig_directive_function_handler func_handler (*this);
-  brig_directive_control_handler control_handler (*this);
-  brig_directive_arg_block_handler arg_block_handler (*this);
-  brig_lane_inst_handler lane_inst_handler (*this);
-  brig_queue_inst_handler queue_inst_handler (*this);
-  skipped_entry_handler skipped_handler (*this);
-  unimplemented_entry_handler unimplemented_handler (*this);
-
-  m_global_variables.clear ();
-
-  struct code_entry_handler_info
-  {
-    BrigKind kind;
-    brig_code_entry_handler *handler;
-  };
-
-  // @todo: Convert to a hash table / map. For now, put the more common
-  // entries to the top to keep the scan fast on average.
-  code_entry_handler_info handlers[]
-    = {{BRIG_KIND_INST_BASIC, &inst_handler},
-       {BRIG_KIND_INST_CMP, &cmp_inst_handler},
-       {BRIG_KIND_INST_MEM, &mem_inst_handler},
-       {BRIG_KIND_INST_MOD, &inst_mod_handler},
-       {BRIG_KIND_INST_CVT, &cvt_inst_handler},
-       {BRIG_KIND_INST_SEG_CVT, &seg_inst_handler},
-       {BRIG_KIND_INST_SEG, &seg_inst_handler},
-       {BRIG_KIND_INST_ADDR, &copy_move_inst_handler},
-       {BRIG_KIND_INST_SOURCE_TYPE, &copy_move_inst_handler},
-       {BRIG_KIND_INST_ATOMIC, &atomic_inst_handler},
-       {BRIG_KIND_INST_SIGNAL, &signal_inst_handler},
-       {BRIG_KIND_INST_BR, &branch_inst_handler},
-       {BRIG_KIND_INST_LANE, &lane_inst_handler},
-       {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
-       // Assuming fences are not needed. FIXME: call builtins
-       // when porting to a platform where they are.
-       {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
-       {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
-       {BRIG_KIND_DIRECTIVE_VARIABLE, &var_handler},
-       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_START, &arg_block_handler},
-       {BRIG_KIND_DIRECTIVE_ARG_BLOCK_END, &arg_block_handler},
-       {BRIG_KIND_DIRECTIVE_FBARRIER, &fbar_handler},
-       {BRIG_KIND_DIRECTIVE_COMMENT, &comment_handler},
-       {BRIG_KIND_DIRECTIVE_KERNEL, &func_handler},
-       {BRIG_KIND_DIRECTIVE_SIGNATURE, &func_handler},
-       {BRIG_KIND_DIRECTIVE_FUNCTION, &func_handler},
-       {BRIG_KIND_DIRECTIVE_INDIRECT_FUNCTION, &func_handler},
-       {BRIG_KIND_DIRECTIVE_MODULE, &skipped_handler},
-       // Skipping debug locations for now as not needed for conformance.
-       {BRIG_KIND_DIRECTIVE_LOC, &skipped_handler},
-       // There are no supported pragmas at this moment.
-       {BRIG_KIND_DIRECTIVE_PRAGMA, &skipped_handler},
-       {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
-       {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}};
-
-  const BrigSectionHeader *dsection_header = (const BrigSectionHeader *) m_data;
-
-  // Go through the data section just to sanity check the BRIG data section.
-  for (size_t b = dsection_header->headerByteCount; b < m_data_size;)
-    {
-      const BrigData *entry = (const BrigData *) (m_data + b);
-      // Rounds upwards towards the closest multiple of 4.
-      // The byteCount itself is 4 bytes and included in 7.
-      b += ((7 + entry->byteCount) / 4) * 4;
-
-      // There can be zero padding at the end of the section to round the
-      // size to a 4 multiple. Break before trying to read that in as
-      // an incomplete BrigData.
-      if (m_data_size - b < sizeof (BrigData))
-	break;
-    }
-
-  const BrigSectionHeader *csection_header = (const BrigSectionHeader *) m_code;
-
-  for (size_t b = csection_header->headerByteCount; b < m_code_size;)
-    {
-      const BrigBase *entry = (const BrigBase *) (m_code + b);
-
-      brig_code_entry_handler *handler = &unimplemented_handler;
-
-      // Find a handler.
-      for (size_t i = 0;
-	   i < sizeof (handlers) / sizeof (code_entry_handler_info); ++i)
-	{
-	  if (handlers[i].kind == entry->kind)
-	    handler = handlers[i].handler;
-	}
-      b += (*handler) (entry);
-      continue;
-    }
-
-  finish_current_function ();
-
-  // Now that the whole BRIG module has been processed, build a launcher
-  // and a metadata section for each built kernel.
-  for (size_t i = 0; i < m_kernels.size (); ++i)
-    {
-
-      brig_function *f = m_kernels[i];
-
-      // TODO: analyze the kernel's actual group and private segment usage
-      // using a call graph. Now this is overly pessimistic.
-      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
-						      private_segment_size ());
-
-      append_global (launcher);
-
-      gimplify_function_tree (launcher);
-      cgraph_finalize_function (launcher, true);
-      pop_cfun ();
-    }
-
   int no_globals = list_length (m_globals);
   tree *vec = new tree[no_globals];
 
@@ -637,4 +669,7 @@ brig_to_generic::write_globals ()
 
   check_global_declarations (vec, no_globals);
   delete[] vec;
+
+  for (size_t i = 0; i < m_brig_blobs.size(); ++i)
+    delete m_brig_blobs[i];
 }

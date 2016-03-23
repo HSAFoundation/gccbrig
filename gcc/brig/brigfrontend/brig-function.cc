@@ -44,8 +44,8 @@
 #include "errors.h"
 
 // TO CLEANUP: prepend m_ to all these member variables.
-brig_function::brig_function ()
-  : is_kernel (false), is_finished (false), name (""),
+brig_function::brig_function (const BrigDirectiveExecutable *exec)
+  : m_brig_def (exec), is_kernel (false), is_finished (false), name (""),
     current_bind_expr (NULL_TREE), func_decl (NULL_TREE),
     context_arg (NULL_TREE), group_base_arg (NULL_TREE),
     private_base_arg (NULL_TREE), ret_value (NULL_TREE),
@@ -115,7 +115,6 @@ void
 brig_function::append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
 				  size_t alignment)
 {
-
   gcc_assert (func_decl != NULL_TREE);
   gcc_assert (is_kernel);
   size_t align_padding = next_kernarg_offset % alignment;
@@ -593,10 +592,6 @@ brig_function::finish ()
       // Let's create one. The return instructions should have
       // been converted to branches to this label.
       append_statement (build_stmt (LABEL_EXPR, exit_label));
-    }
-
-  if (is_kernel)
-    {
       /* Attempt to convert the kernel to a work-group function that
 	 executes all work-items of the WG using a loop. */
       convert_to_wg_function ();
@@ -612,9 +607,12 @@ brig_function::finish ()
 void
 brig_function::append_return_stmt ()
 {
+  gcc_assert (current_bind_expr != NULL_TREE);
+  tree stmts = BIND_EXPR_BODY (current_bind_expr);
 
-  tree bind_expr = current_bind_expr;
-  tree stmts = BIND_EXPR_BODY (bind_expr);
+  if (STATEMENT_LIST_TAIL (stmts) == NULL)
+    return; // Empty function.
+
   tree last_stmt = tsi_stmt (tsi_last (stmts));
 
   if (TREE_CODE (last_stmt) == RETURN_EXPR)
@@ -634,4 +632,10 @@ brig_function::append_return_stmt ()
       tree return_stmt = build_stmt (RETURN_EXPR, NULL);
       append_to_statement_list_force (return_stmt, &stmts);
     }
+}
+
+bool
+brig_function::has_function_scope_var (const BrigBase* var) const
+{
+  return m_function_scope_vars.find (var) != m_function_scope_vars.end();
 }

@@ -35,7 +35,11 @@ brig_directive_fbarrier_handler::operator() (const BrigBase *base)
   // large enough to store whatever data the actual target needs
   // to store to maintain the barrier info. The handle is the
   // offset to the beginning of the object.
-  parent_.append_group_variable (base, FBARRIER_STRUCT_SIZE, 1);
-  parent_.m_cf->has_barriers = true;
+
+  const BrigDirectiveFbarrier* fbar = (const BrigDirectiveFbarrier*)base;
+  if (parent_.m_cf != NULL)
+    parent_.m_cf->m_function_scope_vars.insert (base);
+  std::string var_name = parent_.get_mangled_name (fbar);
+  parent_.append_group_variable (var_name, FBARRIER_STRUCT_SIZE, 1);
   return base->byteCount;
 }

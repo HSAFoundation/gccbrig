@@ -433,4 +433,16 @@ public:
   size_t operator() (const BrigBase *base);
 };
 
+class brig_directive_module_handler : public brig_code_entry_handler
+{
+public:
+  brig_directive_module_handler (brig_to_generic &parent)
+    : brig_code_entry_handler (parent)
+  {
+  }
+
+  size_t operator() (const BrigBase *base);
+};
+
+
 #endif

@@ -54,20 +54,24 @@ public:
   typedef std::map<const BrigDirectiveVariable *, tree> variable_index;
 
 private:
-  // Group variables can be either BrigDirectiveVariables or
-  // BrigDirectiveFbarriers.
-  typedef std::map<const BrigBase *, size_t> group_var_offset_table;
-  typedef std::map<const BrigDirectiveVariable *, size_t> var_offset_table;
+  typedef std::map<std::string, size_t> var_offset_table;
+  typedef std::map<const BrigBase *, std::string> name_index;
 
 public:
-  brig_to_generic (const char *brig_blob);
+  brig_to_generic ();
 
-  // Generate all global declarations.
+  // Parses the given BRIG blob.
+  void parse (const char *brig_blob);
+
+  // Generate all global declarations. Should be called after the last
+  // BRIG has been fed in.
   void write_globals ();
 
   // Returns a string from the data section as a zero terminated
   // string. Owned by the callee.
   char *get_c_string (size_t entry_offset) const;
+  std::string get_string (size_t entry_offset) const;
+
   const BrigData *get_brig_data_entry (size_t entry_offset) const;
   const BrigBase *get_brig_operand_entry (size_t entry_offset) const;
   const BrigBase *get_brig_code_entry (size_t entry_offset) const;
@@ -79,32 +83,41 @@ public:
   tree function_decl (const std::string &name);
   void add_function_decl (const std::string &name, tree func_decl);
 
-  tree global_variable (const BrigDirectiveVariable *var) const;
-  void add_global_variable (const BrigDirectiveVariable *brig_var,
-			    tree tree_decl);
+  tree global_variable (const std::string &name) const;
+  void add_global_variable (const std::string &name, tree var_decl);
 
   // Initializes a new currently handled function.
-  void init_current_function (tree f);
+  void start_function (tree f);
   // Finalizes the currently handled function. Should be called before
   // setting a new function.
-  void finish_current_function ();
+  void finish_function ();
 
   // Appends a new group variable (or an fbarrier) to the current kernel's
   // group segment.
-  void append_group_variable (const BrigBase *var, size_t size,
+  void append_group_variable (const std::string &name, size_t size,
 			      size_t alignment);
 
   // Appends a new group variable to the current kernel's
   // private segment.
-  void append_private_variable (const BrigDirectiveVariable *var, size_t size,
+  void append_private_variable (const std::string &name, size_t size,
 				size_t alignment);
 
-  size_t group_variable_segment_offset (const BrigBase *var) const;
+  size_t group_variable_segment_offset (const std::string &name) const;
 
   size_t
-  private_variable_segment_offset (const BrigDirectiveVariable *var) const;
+  private_variable_segment_offset (const std::string &name) const;
 
-  size_t private_variable_size (const BrigDirectiveVariable *var) const;
+  size_t private_variable_size (const std::string &name) const;
+
+  template <typename T>
+    std::string
+    get_mangled_name_tmpl (const T *brigVar) const; 
+
+  std::string get_mangled_name (const BrigDirectiveFbarrier *fbar) const
+    { return get_mangled_name_tmpl (fbar); }
+  std::string get_mangled_name (const BrigDirectiveVariable *var) const
+    { return get_mangled_name_tmpl (var); }
+  std::string get_mangled_name (const BrigDirectiveExecutable *func) const;
 
   // The size of the group and private segments required by the currently
   // processed kernel. Private segment size must be multiplied by the
@@ -125,7 +138,12 @@ public:
   // The currently built function.
   brig_function *m_cf;
 
+  // The name of the currently handled BRIG module.
+  std::string m_module_name;
+
 private:
+  // The BRIG blob and its different sections of the file currently being
+  // parsed.
   const char *m_brig;
   const char *m_data;
   size_t m_data_size;
@@ -136,14 +154,14 @@ private:
 
   tree m_globals;
 
-  variable_index m_global_variables;
+  label_index m_global_variables;
 
   // The size of each private variable, including the alignment padding.
-  std::map<const BrigDirectiveVariable *, size_t> m_private_data_sizes;
+  std::map<std::string, size_t> m_private_data_sizes;
 
   // The same for group variables.
   size_t m_next_group_offset;
-  group_var_offset_table m_group_offsets;
+  var_offset_table m_group_offsets;
 
   // And private.
   size_t m_next_private_offset;
@@ -158,7 +176,25 @@ private:
   // Stores all already processed functions from the translation unit
   // for some interprocedural analysis.
   std::map<tree, brig_function *> m_finished_functions;
+
+  // The parsed BRIG blobs. Owned and will be deleted after use.
+  std::vector<const char *> m_brig_blobs;
 };
+
+template <typename T>
+std::string
+brig_to_generic::get_mangled_name_tmpl (const T *brigVar) const
+{
+  std::string var_name = get_string (brigVar->name).substr(1);
+  // Mangle the variable name using the function name and the module name. 
+  if (m_cf != NULL &&
+      m_cf->has_function_scope_var (&brigVar->base))
+    var_name = m_cf->name + "." + var_name;
+
+  if (brigVar->linkage == BRIG_LINKAGE_MODULE)
+    var_name = "gccbrig." + m_module_name + "." + var_name;
+  return var_name;
+}
 
 /// An interface to organize the different types of BRIG element handlers.
 class brig_entry_handler

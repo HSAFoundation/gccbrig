@@ -469,17 +469,16 @@ brig_code_entry_handler::build_code_ref (const BrigBase &ref)
   else if (ref.kind == BRIG_KIND_DIRECTIVE_FUNCTION)
     {
       const BrigDirectiveExecutable *func
-	= (const BrigDirectiveExecutable *) &ref;
-
-      const BrigData *func_name = parent_.get_brig_data_entry (func->name);
-      // Drop the leading '&' from the name.
-      std::string func_name_str ((const char *) func_name->bytes + 1,
-				 func_name->byteCount - 1);
-      return parent_.function_decl (func_name_str);
+       = (const BrigDirectiveExecutable *) &ref;
+      return parent_.function_decl (parent_.get_mangled_name (func));
     }
   else if (ref.kind == BRIG_KIND_DIRECTIVE_FBARRIER)
     {
-      uint64_t offset = parent_.group_variable_segment_offset (&ref);
+      const BrigDirectiveFbarrier* fbar = (const BrigDirectiveFbarrier*)&ref;
+
+      uint64_t offset = parent_.group_variable_segment_offset
+	(parent_.get_mangled_name (fbar));
+
       return build_int_cst (uint32_type_node, offset);
     }
   else
@@ -630,12 +629,16 @@ brig_code_entry_handler::build_address_operand (
   tree ptr_base = NULL_TREE;
   tree ptr_offset = NULL_TREE;
   tree symbol_base = NULL_TREE;
+
   if (addr_operand.symbol != 0)
     {
       const BrigDirectiveVariable *arg_symbol
 	= (const BrigDirectiveVariable *) parent_.get_brig_code_entry (
 	  addr_operand.symbol);
       gcc_assert (arg_symbol->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
+
+      std::string var_name = parent_.get_mangled_name (arg_symbol);
+
       if (segment == BRIG_SEGMENT_KERNARG)
 	{
 	  // Find the offset to the kernarg buffer for the given
@@ -649,14 +652,13 @@ brig_code_entry_handler::build_address_operand (
 	}
       else if (segment == BRIG_SEGMENT_GROUP)
 	{
-	  uint64_t offset
-	    = parent_.group_variable_segment_offset (&arg_symbol->base);
+
+	  uint64_t offset = parent_.group_variable_segment_offset (var_name);
 	  ptr_offset = build_int_cst (size_type_node, offset);
 	}
       else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
 	{
-	  uint32_t offset
-	    = parent_.private_variable_segment_offset (arg_symbol);
+	  uint32_t offset = parent_.private_variable_segment_offset (var_name);
 
 	  /* Compute the offset to the work item's copy:
 
@@ -695,7 +697,7 @@ brig_code_entry_handler::build_address_operand (
 	  tree pos = build2 (
 	    MULT_EXPR, uint32_type_node,
 	    build_int_cst (uint32_type_node,
-			   parent_.private_variable_size (arg_symbol)),
+			   parent_.private_variable_size (var_name)),
 	    expand_or_call_builtin (BRIG_OPCODE_WORKITEMFLATID, BRIG_TYPE_U32,
 				    uint32_type_node, operands));
 
@@ -734,7 +736,7 @@ brig_code_entry_handler::build_address_operand (
 	}
       else
 	{
-	  tree global_var_decl = parent_.global_variable (arg_symbol);
+	  tree global_var_decl = parent_.global_variable (var_name);
 	  gcc_assert (global_var_decl != NULL_TREE);
 
 	  tree ptype = build_pointer_type (instr_type);
@@ -1179,6 +1181,7 @@ brig_code_entry_handler::get_tree_code_for_hsa_opcode (
     case BRIG_OPCODE_RET:
       return RETURN_EXPR;
     case BRIG_OPCODE_MOV:
+    case BRIG_OPCODE_LDF:
       return MODIFY_EXPR;
     case BRIG_OPCODE_LD:
     case BRIG_OPCODE_ST:

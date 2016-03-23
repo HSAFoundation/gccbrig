@@ -69,6 +69,7 @@ BRIG_OBJS = \
 	brig/brig-cmp-inst-handler.o \
 	brig/brig-branch-inst-handler.o \
 	brig/brig-mem-inst-handler.o \
+	brig/brig-module-handler.o \
 	brig/brig-inst-mod-handler.o \
 	brig/brig-function.o \
 	brig/brig_to_generic.o \

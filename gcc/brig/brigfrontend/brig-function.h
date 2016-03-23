@@ -34,6 +34,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <set>
 
 typedef std::map<std::string, tree> label_index;
 typedef std::map<const BrigDirectiveVariable *, tree> variable_index;
@@ -61,7 +62,7 @@ private:
   };
 
 public:
-  brig_function ();
+  brig_function (const BrigDirectiveExecutable *exec);
   ~brig_function ();
 
   tree arg_variable (const BrigDirectiveVariable *var) const;
@@ -106,6 +107,10 @@ public:
   void finish ();
 
   void append_return_stmt ();
+
+  bool has_function_scope_var (const BrigBase* var) const;
+
+  const BrigDirectiveExecutable *m_brig_def;
 
   bool is_kernel;
   bool is_finished;
@@ -179,6 +184,10 @@ public:
 
   // True if we are currently generating the contents of an arg block.
   bool generating_arg_block;
+
+  // A collection of function scope variables seen so far for resolving
+  // variable references vs. module scope declarations.
+  std::set<const BrigBase*> m_function_scope_vars;
 
 private:
   // Bookkeeping for the different HSA registers and their tree declarations

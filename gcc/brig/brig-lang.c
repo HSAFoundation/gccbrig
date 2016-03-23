@@ -183,8 +183,6 @@ brig_langhook_post_options (const char **pfilename ATTRIBUTE_UNUSED)
   return false;
 }
 
-static char *brig_blob = NULL;
-
 static size_t
 get_file_size (FILE *file)
 {
@@ -195,17 +193,28 @@ get_file_size (FILE *file)
   return size;
 }
 
+static brig_to_generic *brig_to_gen = NULL;
+
 static void
 brig_langhook_parse_file (void)
 {
-  FILE *f;
-  f = fopen (in_fnames[0], "r");
-  size_t fsize = get_file_size (f);
-  brig_blob = new char[fsize];
-  if (fread (brig_blob, 1, fsize, f) != fsize)
+  if (brig_to_gen == NULL)
+    brig_to_gen = new brig_to_generic;
+
+  for (unsigned int i = 0; i < num_in_fnames; ++i)
     {
-      error ("Could not read the BRIG file.");
-      exit (1);
+
+      FILE *f;
+      f = fopen (in_fnames[i], "r");
+      size_t fsize = get_file_size (f);
+      char *brig_blob = new char[fsize];
+      if (fread (brig_blob, 1, fsize, f) != fsize)
+	{
+	  error ("Could not read the BRIG file.");
+	  exit (1);
+	}
+      brig_to_gen->parse (brig_blob);
+      fclose (f);
     }
 }
 
@@ -345,8 +354,8 @@ brig_langhook_getdecls (void)
 static void
 brig_langhook_write_globals (void)
 {
-  brig_to_generic brig_to_gen (brig_blob);
-  brig_to_gen.write_globals ();
+  gcc_assert (brig_to_gen != NULL);
+  brig_to_gen->write_globals ();
 }
 
 static int

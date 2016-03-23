@@ -31,15 +31,8 @@ tree
 brig_directive_variable_handler::build_variable (
   const BrigDirectiveVariable *brigVar, tree_code var_decl_type)
 {
-  const BrigData *name_data = parent_.get_brig_data_entry (brigVar->name);
+  std::string var_name = parent_.get_mangled_name (brigVar);
 
-  // TODO: Encountering a (global) variable should mean a possible
-  // currently built function has ended in the BRIG. We should call
-  // finish_current_function () to handle the previously
-  // created function in that case.
-
-  std::string var_name ((const char *) (name_data->bytes + 1),
-			name_data->byteCount - 1);
   // Strip & from the beginning of the name.
   tree name_identifier = get_identifier (var_name.c_str ());
 
@@ -167,13 +160,20 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
     = brigVar->align == BRIG_ALIGNMENT_NONE ? 0 : 1 << (brigVar->align - 1);
   alignment = def_alignment > natural_align ? def_alignment : natural_align;
 
+  if (parent_.m_cf != NULL)
+    parent_.m_cf->m_function_scope_vars.insert (base);
+
+  std::string var_name = parent_.get_mangled_name (brigVar);
   if (brigVar->segment == BRIG_SEGMENT_KERNARG)
     {
       // Do not create a real variable, but only a table of
       // offsets to the kernarg segment buffer passed as the
       // single argument by the kernel launcher for later
       // reference.
-      parent_.m_cf->append_kernel_arg (brigVar, var_size, alignment);
+
+      // Ignore kernel declarations.
+      if (parent_.m_cf != NULL && parent_.m_cf->func_decl != NULL_TREE)
+	parent_.m_cf->append_kernel_arg (brigVar, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_GROUP)
@@ -184,7 +184,8 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
 	 introduced. These offsets will be then added to the
 	 group_base hidden pointer passed to the kernel in order to
 	 get the flat address. */
-      parent_.append_group_variable (base, var_size, alignment);
+
+      parent_.append_group_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_PRIVATE
@@ -193,7 +194,7 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       /* Private variables are handled like group variables,
 	 except that their offsets are multiplied by the work-item
 	 flat id, when accessed. */
-      parent_.append_private_variable (brigVar, var_size, alignment);
+      parent_.append_private_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
@@ -204,8 +205,7 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       // so we can get their address from the Runtime API.
       DECL_CONTEXT (var_decl) = NULL_TREE;
       TREE_STATIC (var_decl) = 1;
-
-      parent_.add_global_variable (brigVar, var_decl);
+      parent_.add_global_variable (var_name, var_decl);
     }
   else if (brigVar->segment == BRIG_SEGMENT_ARG)
     {

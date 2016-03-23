@@ -40,10 +40,9 @@ extern int gccbrig_verbose;
 size_t
 brig_directive_function_handler::operator() (const BrigBase *base)
 {
-  size_t bytes_consumed = base->byteCount;
+  parent_.finish_function ();
 
-  parent_.finish_current_function ();
-  parent_.m_cf = new brig_function ();
+  size_t bytes_consumed = base->byteCount;
 
   const BrigDirectiveExecutable *exec = (const BrigDirectiveExecutable *) base;
 
@@ -59,11 +58,15 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 
   const bool is_kernel = base->kind == BRIG_KIND_DIRECTIVE_KERNEL;
 
-  const BrigData *func_name_data = parent_.get_brig_data_entry (exec->name);
+  // There doesn't seem to be actual use cases for kernel declarations
+  // as they cannot be called by the program. Ignore them until there's
+  // a reason not to.
+  if (is_kernel && !is_definition)
+    return bytes_consumed;
 
-  // Strip & from the beginning of the name.
-  std::string func_name ((const char *) (func_name_data->bytes + 1),
-			 func_name_data->byteCount - 1);
+  parent_.m_cf = new brig_function (exec);
+
+  std::string func_name = parent_.get_mangled_name (exec);
 
   tree fndecl;
   tree ret_value = NULL_TREE;
@@ -273,7 +276,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   if (base->kind == BRIG_KIND_DIRECTIVE_FUNCTION)
     {
       TREE_STATIC (fndecl) = 1;
-      TREE_PUBLIC (fndecl) = 0;
+      TREE_PUBLIC (fndecl) = 1;
     }
   else if (base->kind == BRIG_KIND_DIRECTIVE_KERNEL)
     {
@@ -321,7 +324,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   if (!is_definition)
     return bytes_consumed;
 
-  parent_.init_current_function (fndecl);
+  parent_.start_function (fndecl);
 
   parent_.m_cf->name = func_name;
   parent_.m_cf->func_decl = fndecl;
@@ -331,7 +334,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   parent_.m_cf->group_base_arg = group_base_arg;
   parent_.m_cf->private_base_arg = private_base_arg;
 
-  if (is_kernel)
+  if (is_definition && is_kernel)
     {
       parent_.m_cf->add_id_variables ();
 
