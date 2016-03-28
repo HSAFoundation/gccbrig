@@ -277,26 +277,8 @@ brig_to_generic::parse (const char *brig_blob)
     }
 
   finish_function ();
-
-  // Now that the whole BRIG module has been processed, build a launcher
-  // and a metadata section for each built kernel.
-  for (size_t i = 0; i < m_kernels.size (); ++i)
-    {
-
-      brig_function *f = m_kernels[i];
-
-      // TODO: analyze the kernel's actual group and private segment usage
-      // using a call graph. Now this is overly pessimistic.
-      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
-						      private_segment_size ());
-
-      append_global (launcher);
-
-      gimplify_function_tree (launcher);
-      cgraph_finalize_function (launcher, true);
-      pop_cfun ();
-    }
 }
+
 const BrigData *
 brig_to_generic::get_brig_data_entry (size_t entry_offset) const
 {
@@ -651,6 +633,25 @@ call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
 void
 brig_to_generic::write_globals ()
 {
+  // Now that the whole BRIG module has been processed, build a launcher
+  // and a metadata section for each built kernel.
+  for (size_t i = 0; i < m_kernels.size (); ++i)
+    {
+
+      brig_function *f = m_kernels[i];
+
+      // TODO: analyze the kernel's actual group and private segment usage
+      // using a call graph. Now this is overly pessimistic.
+      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
+						      private_segment_size ());
+
+      append_global (launcher);
+
+      gimplify_function_tree (launcher);
+      cgraph_finalize_function (launcher, true);
+      pop_cfun ();
+    }
+
   int no_globals = list_length (m_globals);
   tree *vec = new tree[no_globals];
 
