@@ -42,17 +42,19 @@
 #include "dumpfile.h"
 #include "tree-cfg.h"
 #include "errors.h"
+#include "brig_to_generic.h"
 
-// TO CLEANUP: prepend m_ to all these member variables.
-brig_function::brig_function (const BrigDirectiveExecutable *exec)
+brig_function::brig_function (const BrigDirectiveExecutable *exec,
+			      brig_to_generic *parent)
   : m_brig_def (exec), m_is_kernel (false), m_is_finished (false), m_name (""),
     m_current_bind_expr (NULL_TREE), m_func_decl (NULL_TREE),
     m_context_arg (NULL_TREE), m_group_base_arg (NULL_TREE),
     m_private_base_arg (NULL_TREE), m_ret_value (NULL_TREE),
     m_next_kernarg_offset (0), m_kernarg_max_align (0), m_has_barriers (false),
     m_has_allocas (false), m_has_function_calls_with_barriers (false),
-    m_is_wg_function (false), m_has_unexpanded_dp_builtins (false),
-    m_generating_arg_block (false)
+    m_calls_analyzed (false), m_is_wg_function (false),
+    m_has_unexpanded_dp_builtins (false), m_generating_arg_block (false),
+    m_parent (parent)
 {
   memset (m_regs, 0,
 	  BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT * sizeof (BrigOperandRegister *));
@@ -358,9 +360,52 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   tsi_link_after (branch_after, if_stmt, TSI_NEW_STMT);
 }
 
+// Recursively analyzes the function and its callees for barrier usage.
+void
+brig_function::analyze_calls ()
+{
+  if (m_calls_analyzed) return;
+
+  // Set this early to not get stuck in case of recursive call graphs.
+  // This is safe because if the function calls itself, either the function
+  // has barrier calls which implies a call to a function with barrier calls,
+  // or it doesn't in which case the result depends on the later called
+  // functions.
+  m_calls_analyzed = true;
+
+  for (size_t i = 0; i < m_called_functions.size(); ++i)
+    {
+      tree f = m_called_functions[i];
+      brig_function *called_f = m_parent->get_finished_function (f);
+      if (called_f == NULL)
+	{
+	  // Unfinished function (only declaration within the set of BRIGs)
+	  // found. Cannot finish the CG analysis. Have to assume it does have
+	  // a barrier for safety.
+	  m_has_function_calls_with_barriers = true;
+	  m_has_unexpanded_dp_builtins = true;
+	  break;
+	}
+      called_f->analyze_calls ();
+      // We can assume m_has_barriers has been correctly set during the
+      // construction of the function decl. No need to reanalyze it.
+      m_has_function_calls_with_barriers |= called_f->m_has_barriers;
+
+      // If the function or any of its called functions has dispatch
+      // packet builtin calls that require the local id, we need to
+      // set the local id to the context in the work item loop before
+      // the functions are called. If we analyze the opposite, these
+      // function calls can be omitted.
+      m_has_unexpanded_dp_builtins |= called_f->m_has_unexpanded_dp_builtins;
+    }
+}
+
 bool
 brig_function::convert_to_wg_function ()
 {
+  if (!m_calls_analyzed)
+    analyze_calls ();
+
   if (m_has_barriers || m_has_function_calls_with_barriers)
     return false;
 
@@ -586,16 +631,23 @@ brig_function::create_alloca_frame ()
 void
 brig_function::finish ()
 {
-  if (m_is_kernel)
-    {
-      // Kernel functions should have a single exit point.
-      // Let's create one. The return instructions should have
-      // been converted to branches to this label.
-      append_statement (build_stmt (LABEL_EXPR, m_exit_label));
-      /* Attempt to convert the kernel to a work-group function that
-	 executes all work-items of the WG using a loop. */
-      convert_to_wg_function ();
-    }
+  append_return_stmt ();
+
+  // Currently assume single alloca frame per WG.
+  if (m_has_allocas)
+    create_alloca_frame ();
+}
+
+void
+brig_function::finish_kernel ()
+{
+  // Kernel functions should have a single exit point.
+  // Let's create one. The return instructions should have
+  // been converted to branches to this label.
+  append_statement (build_stmt (LABEL_EXPR, m_exit_label));
+  // Attempt to convert the kernel to a work-group function that
+  // executes all work-items of the WG using a loop. 
+  convert_to_wg_function ();
 
   append_return_stmt ();
 

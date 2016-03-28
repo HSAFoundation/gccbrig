@@ -64,7 +64,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   if (is_kernel && !is_definition)
     return bytes_consumed;
 
-  m_parent.m_cf = new brig_function (exec);
+  m_parent.m_cf = new brig_function (exec, &m_parent);
 
   std::string func_name = m_parent.get_mangled_name (exec);
 
@@ -334,7 +334,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   m_parent.m_cf->m_group_base_arg = group_base_arg;
   m_parent.m_cf->m_private_base_arg = private_base_arg;
 
-  if (is_definition && is_kernel)
+  if (is_kernel)
     {
       m_parent.m_cf->add_id_variables ();
 

@@ -31,6 +31,8 @@
 #include "tree-iterator.h"
 #include "hsa-brig-format.h"
 
+class brig_to_generic;
+
 #include <map>
 #include <string>
 #include <vector>
@@ -62,7 +64,7 @@ private:
   };
 
 public:
-  brig_function (const BrigDirectiveExecutable *exec);
+  brig_function (const BrigDirectiveExecutable *exec, brig_to_generic *parent);
   ~brig_function ();
 
   tree arg_variable (const BrigDirectiveVariable *var) const;
@@ -105,10 +107,13 @@ public:
   void create_alloca_frame ();
 
   void finish ();
+  void finish_kernel ();
 
   void append_return_stmt ();
 
   bool has_function_scope_var (const BrigBase* var) const;
+
+  void analyze_calls ();
 
   const BrigDirectiveExecutable *m_brig_def;
 
@@ -155,10 +160,14 @@ public:
 
   // If the function has at least one alloca instruction, this is set to true.
   bool m_has_allocas;
-
+  
   // If the kernel containts at least one function call that _may_
   // contain a barrier call, this is set to true.
   bool m_has_function_calls_with_barriers;
+
+  // Set to true after this function has been analyzed for barrier and
+  // dispatch packet instruction usage in the final call graph analysis.
+  bool m_calls_analyzed;
 
   // True in case the function was successfully converted to a WG function.
   bool m_is_wg_function;
@@ -189,6 +198,10 @@ public:
   // variable references vs. module scope declarations.
   std::set<const BrigBase*> m_function_scope_vars;
 
+  // The functions called by this function.
+  std::vector<tree> m_called_functions;
+  
+  brig_to_generic *m_parent;
 private:
   // Bookkeeping for the different HSA registers and their tree declarations
   // for the currently generated function.

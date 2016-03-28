@@ -175,7 +175,7 @@ private:
 
   // Stores all already processed functions from the translation unit
   // for some interprocedural analysis.
-  std::map<tree, brig_function *> m_finished_functions;
+  std::map<std::string, brig_function *> m_finished_functions;
 
   // The parsed BRIG blobs. Owned and will be deleted after use.
   std::vector<const char *> m_brig_blobs;

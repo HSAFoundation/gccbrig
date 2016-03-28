@@ -133,23 +133,8 @@ brig_branch_inst_handler::operator() (const BrigBase *base)
 	  m_parent.m_cf->append_statement (call);
 	}
 
-      // The called function might use dispatch packet builtins. We have
-      // to assume so for safety. This means we have to save the current local
-      // id  to the context struct in case of producing a work-item loop.
-      // TO OPTIMIZE: Check if the function actually calls local id-related
-      // dp functions. Then we save the local_id set calls in case of a WG
-      // function. Similarly is done for barrier call checking.
-      m_parent.m_cf->m_has_unexpanded_dp_builtins = true;
-
-      brig_function *callee = m_parent.get_finished_function (func_ref);
-
-      // TO OPTIMIZE: because we generate the WG functions only at the end
-      // of processing the module, we should reanalyze these properties for
-      // more accurate results in case calling a function that is defined
-      // later than the current function.
-      m_parent.m_cf->m_has_function_calls_with_barriers
-	|= callee == NULL || callee->m_has_barriers
-	   || callee->m_has_function_calls_with_barriers;
+      m_parent.m_cf->m_has_unexpanded_dp_builtins = false;
+      m_parent.m_cf->m_called_functions.push_back (func_ref);
 
       return base->byteCount;
     }

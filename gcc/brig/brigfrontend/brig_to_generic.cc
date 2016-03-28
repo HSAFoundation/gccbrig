@@ -457,8 +457,10 @@ build_reinterpret_cast (tree destination_type, tree source)
 brig_function *
 brig_to_generic::get_finished_function (tree func_decl)
 {
-  std::map<tree, brig_function *>::iterator i
-    = m_finished_functions.find (func_decl);
+  std::string func_name
+    = identifier_to_locale (IDENTIFIER_POINTER (DECL_NAME (func_decl)));
+  std::map<std::string, brig_function *>::iterator i
+    = m_finished_functions.find (func_name);
   if (i != m_finished_functions.end ())
     return (*i).second;
   else
@@ -471,17 +473,19 @@ brig_to_generic::finish_function ()
   if (m_cf == NULL || m_cf->m_func_decl == NULL_TREE)
     return;
 
-  m_cf->finish ();
-
   //debug_function (m_cf->func_decl,
   //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
-  gimplify_function_tree (m_cf->m_func_decl);
-  cgraph_finalize_function (m_cf->m_func_decl, true);
+  if (!m_cf->m_is_kernel)
+    {
+      m_cf->finish ();
+      gimplify_function_tree (m_cf->m_func_decl);
+      cgraph_finalize_function (m_cf->m_func_decl, true);
+    }
   pop_cfun ();
 
   if (m_cf->m_is_kernel)
     m_kernels.push_back (m_cf);
-  m_finished_functions[m_cf->m_func_decl] = m_cf;
+  m_finished_functions[m_cf->m_name] = m_cf;
   m_cf = NULL;
 }
 
@@ -639,6 +643,13 @@ brig_to_generic::write_globals ()
     {
 
       brig_function *f = m_kernels[i];
+
+      // Finish kernels now that we know the call graphs and their
+      // barrier usage.
+      f->finish_kernel ();
+
+      gimplify_function_tree (f->m_func_decl);
+      cgraph_finalize_function (f->m_func_decl, true);
 
       // TODO: analyze the kernel's actual group and private segment usage
       // using a call graph. Now this is overly pessimistic.
