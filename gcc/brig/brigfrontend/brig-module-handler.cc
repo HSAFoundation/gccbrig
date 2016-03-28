@@ -25,6 +25,6 @@ size_t
 brig_directive_module_handler::operator() (const BrigBase *base)
 {
   const BrigDirectiveModule* mod = (const BrigDirectiveModule*)base;
-  parent_.m_module_name = parent_.get_string (mod->name).substr(1);
+  m_parent.m_module_name = m_parent.get_string (mod->name).substr(1);
   return base->byteCount;
 }

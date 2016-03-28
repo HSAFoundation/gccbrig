@@ -460,24 +460,24 @@ brig_code_entry_handler::build_code_ref (const BrigBase &ref)
       const BrigDirectiveLabel *brig_label = (const BrigDirectiveLabel *) &ref;
 
       const BrigData *label_name
-	= parent_.get_brig_data_entry (brig_label->name);
+	= m_parent.get_brig_data_entry (brig_label->name);
 
       std::string label_str ((const char *) (label_name->bytes),
 			     label_name->byteCount);
-      return parent_.m_cf->label (label_str);
+      return m_parent.m_cf->label (label_str);
     }
   else if (ref.kind == BRIG_KIND_DIRECTIVE_FUNCTION)
     {
       const BrigDirectiveExecutable *func
        = (const BrigDirectiveExecutable *) &ref;
-      return parent_.function_decl (parent_.get_mangled_name (func));
+      return m_parent.function_decl (m_parent.get_mangled_name (func));
     }
   else if (ref.kind == BRIG_KIND_DIRECTIVE_FBARRIER)
     {
       const BrigDirectiveFbarrier* fbar = (const BrigDirectiveFbarrier*)&ref;
 
-      uint64_t offset = parent_.group_variable_segment_offset
-	(parent_.get_mangled_name (fbar));
+      uint64_t offset = m_parent.group_variable_segment_offset
+	(m_parent.get_mangled_name (fbar));
 
       return build_int_cst (uint32_type_node, offset);
     }
@@ -498,7 +498,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       vec<constructor_elt, va_gc> *constructor_vals = NULL;
       const BrigOperandOperandList &oplist
 	= (const BrigOperandOperandList &) operand;
-      const BrigData *data = parent_.get_brig_data_entry (oplist.elements);
+      const BrigData *data = m_parent.get_brig_data_entry (oplist.elements);
       size_t bytes = data->byteCount;
       const BrigOperandOffset32_t *operand_ptr
 	= (const BrigOperandOffset32_t *) data->bytes;
@@ -506,7 +506,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	{
 	  BrigOperandOffset32_t offset = *operand_ptr;
 	  const BrigBase *operand_element
-	    = parent_.get_brig_operand_entry (offset);
+	    = m_parent.get_brig_operand_entry (offset);
 	  tree element
 	    = build_tree_operand (brig_inst, *operand_element, operand_type);
 
@@ -537,7 +537,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       // Build a TREE_VEC of code expressions.
 
       const BrigOperandCodeList &oplist = (const BrigOperandCodeList &) operand;
-      const BrigData *data = parent_.get_brig_data_entry (oplist.elements);
+      const BrigData *data = m_parent.get_brig_data_entry (oplist.elements);
       size_t bytes = data->byteCount;
       const BrigOperandOffset32_t *operand_ptr
 	= (const BrigOperandOffset32_t *) data->bytes;
@@ -551,7 +551,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       while (bytes > 0)
 	{
 	  BrigOperandOffset32_t offset = *operand_ptr;
-	  const BrigBase *ref = parent_.get_brig_code_entry (offset);
+	  const BrigBase *ref = m_parent.get_brig_code_entry (offset);
 	  tree element = build_code_ref (*ref);
 
 	  gcc_assert (case_index < element_count);
@@ -570,7 +570,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       {
 	const BrigOperandRegister *brig_reg
 	  = (const BrigOperandRegister *) &operand;
-	return parent_.m_cf->get_var_decl_for_reg (brig_reg);
+	return m_parent.m_cf->get_m_var_declfor_reg (brig_reg);
       }
     case BRIG_KIND_OPERAND_CONSTANT_BYTES:
       {
@@ -595,7 +595,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	const BrigOperandCodeRef *brig_code_ref
 	  = (const BrigOperandCodeRef *) &operand;
 
-	const BrigBase *ref = parent_.get_brig_code_entry (brig_code_ref->ref);
+	const BrigBase *ref = m_parent.get_brig_code_entry (brig_code_ref->ref);
 
 	return build_code_ref (*ref);
 	break;
@@ -633,32 +633,32 @@ brig_code_entry_handler::build_address_operand (
   if (addr_operand.symbol != 0)
     {
       const BrigDirectiveVariable *arg_symbol
-	= (const BrigDirectiveVariable *) parent_.get_brig_code_entry (
+	= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry (
 	  addr_operand.symbol);
       gcc_assert (arg_symbol->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
-      std::string var_name = parent_.get_mangled_name (arg_symbol);
+      std::string var_name = m_parent.get_mangled_name (arg_symbol);
 
       if (segment == BRIG_SEGMENT_KERNARG)
 	{
 	  // Find the offset to the kernarg buffer for the given
 	  // kernel argument variable.
-	  tree func = parent_.m_cf->func_decl;
+	  tree func = m_parent.m_cf->m_func_decl;
 	  // __args is the first parameter in kernel functions.
 	  ptr_base = DECL_ARGUMENTS (func);
-	  uint64_t offset = parent_.m_cf->kernel_arg_offset (arg_symbol);
+	  uint64_t offset = m_parent.m_cf->kernel_arg_offset (arg_symbol);
 	  if (offset > 0)
 	    ptr_offset = build_int_cst (size_type_node, offset);
 	}
       else if (segment == BRIG_SEGMENT_GROUP)
 	{
 
-	  uint64_t offset = parent_.group_variable_segment_offset (var_name);
+	  uint64_t offset = m_parent.group_variable_segment_offset (var_name);
 	  ptr_offset = build_int_cst (size_type_node, offset);
 	}
       else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
 	{
-	  uint32_t offset = parent_.private_variable_segment_offset (var_name);
+	  uint32_t offset = m_parent.private_variable_segment_offset (var_name);
 
 	  /* Compute the offset to the work item's copy:
 
@@ -697,7 +697,7 @@ brig_code_entry_handler::build_address_operand (
 	  tree pos = build2 (
 	    MULT_EXPR, uint32_type_node,
 	    build_int_cst (uint32_type_node,
-			   parent_.private_variable_size (var_name)),
+			   m_parent.private_variable_size (var_name)),
 	    expand_or_call_builtin (BRIG_OPCODE_WORKITEMFLATID, BRIG_TYPE_U32,
 				    uint32_type_node, operands));
 
@@ -710,7 +710,7 @@ brig_code_entry_handler::build_address_operand (
 	}
       else if (segment == BRIG_SEGMENT_ARG)
 	{
-	  tree arg_var_decl = parent_.m_cf->arg_variable (arg_symbol);
+	  tree arg_var_decl = m_parent.m_cf->arg_variable (arg_symbol);
 
 	  gcc_assert (arg_var_decl != NULL_TREE);
 
@@ -736,7 +736,7 @@ brig_code_entry_handler::build_address_operand (
 	}
       else
 	{
-	  tree global_var_decl = parent_.global_variable (var_name);
+	  tree global_var_decl = m_parent.global_variable (var_name);
 	  gcc_assert (global_var_decl != NULL_TREE);
 
 	  tree ptype = build_pointer_type (instr_type);
@@ -757,29 +757,29 @@ brig_code_entry_handler::build_address_operand (
       // for group/private segments for now).
       if (segment == BRIG_SEGMENT_GROUP)
 	{
-	  symbol_base = parent_.m_cf->group_base_arg;
+	  symbol_base = m_parent.m_cf->m_group_base_arg;
 	}
       else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
 	{
 	  if (symbol_base != NULL_TREE)
 	    symbol_base = build2 (PLUS_EXPR, uint64_type_node,
 				  convert (uint64_type_node,
-					   parent_.m_cf->private_base_arg),
+					   m_parent.m_cf->m_private_base_arg),
 				  symbol_base);
 	  else
-	    symbol_base = parent_.m_cf->private_base_arg;
+	    symbol_base = m_parent.m_cf->m_private_base_arg;
 	}
     }
 
   if (addr_operand.reg != 0)
     {
       const BrigOperandRegister *mem_base_reg
-	= (const BrigOperandRegister *) parent_.get_brig_operand_entry (
+	= (const BrigOperandRegister *) m_parent.get_brig_operand_entry (
 	  addr_operand.reg);
       // BRIG offsets are always bytes, therefore always cast the reg
       // variable to a char* for the pointer arithmetics.
       tree ptr_type = build_pointer_type (char_type_node);
-      tree base_reg_var = parent_.m_cf->get_var_decl_for_reg (mem_base_reg);
+      tree base_reg_var = m_parent.m_cf->get_m_var_declfor_reg (mem_base_reg);
 
       // Cast the register variable to a pointer. If the reg
       // width is smaller than the pointer width, need to extend.
@@ -791,7 +791,7 @@ brig_code_entry_handler::build_address_operand (
 	  tree tmp = create_tmp_var (ptr_type, NULL);
 	  tree assign = build2 (MODIFY_EXPR, ptr_type, tmp,
 				build_reinterpret_cast (ptr_type, conv));
-	  parent_.m_cf->append_statement (assign);
+	  m_parent.m_cf->append_statement (assign);
 	  ptr_base = tmp;
 	}
       else
@@ -857,12 +857,12 @@ brig_code_entry_handler::build_tree_operand_from_brig (
   const BrigInstBase *brig_inst, tree operand_type, size_t operand_index)
 {
   const BrigData *operand_entries
-    = parent_.get_brig_data_entry (brig_inst->operands);
+    = m_parent.get_brig_data_entry (brig_inst->operands);
 
   uint32_t operand_offset
     = ((const uint32_t *) &operand_entries->bytes)[operand_index];
   const BrigBase *operand_data
-    = parent_.get_brig_operand_entry (operand_offset);
+    = m_parent.get_brig_operand_entry (operand_offset);
   return build_tree_operand (*brig_inst, *operand_data, operand_type);
 }
 
@@ -948,7 +948,7 @@ tree
 brig_code_entry_handler::get_tree_cst_for_hsa_operand (
   const BrigOperandConstantBytes *brigConst, tree type) const
 {
-  const BrigData *data = parent_.get_brig_data_entry (brigConst->bytes);
+  const BrigData *data = m_parent.get_brig_data_entry (brigConst->bytes);
 
   tree cst = NULL_TREE;
 
@@ -1075,10 +1075,10 @@ brig_code_entry_handler::get_tree_type_for_hsa_type (
 	  tree_type = uint16_type_node;
 	  break;
 	case BRIG_TYPE_F32:
-	  tree_type = parent_.s_fp32_type;
+	  tree_type = m_parent.s_fp32_type;
 	  break;
 	case BRIG_TYPE_F64:
-	  tree_type = parent_.s_fp64_type;
+	  tree_type = m_parent.s_fp64_type;
 	  break;
 	case BRIG_TYPE_SAMP:
 	case BRIG_TYPE_ROIMG:
@@ -1112,9 +1112,9 @@ brig_code_entry_handler::get_tree_expr_type_for_hsa_type (
   if (brig_inner_type == BRIG_TYPE_F16)
     {
       if (brig_inner_type == brig_type)
-	return parent_.s_fp32_type;
+	return m_parent.s_fp32_type;
       size_t element_count = gccbrig_hsa_type_bit_size (brig_type) / 16;
-      return build_vector_type (parent_.s_fp32_type, element_count);
+      return build_vector_type (m_parent.s_fp32_type, element_count);
     }
   else
     return get_tree_type_for_hsa_type (brig_type);
@@ -1420,7 +1420,7 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 						 tree arith_type,
 						 tree_stl_vec &operands)
 {
-  if (parent_.m_cf->is_kernel && can_expand_builtin (brig_opcode))
+  if (m_parent.m_cf->m_is_kernel && can_expand_builtin (brig_opcode))
     return expand_builtin (brig_opcode, arith_type, operands);
   else
     {
@@ -1468,9 +1468,9 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 
       if (needs_workitem_context_data (brig_opcode))
 	{
-	  call_operands.push_back (parent_.m_cf->context_arg);
+	  call_operands.push_back (m_parent.m_cf->m_context_arg);
 	  operand_types.push_back (ptr_type_node);
-	  parent_.m_cf->has_unexpanded_dp_builtins = true;
+	  m_parent.m_cf->m_has_unexpanded_dp_builtins = true;
 	}
 
       size_t operand_count = call_operands.size ();
@@ -1510,8 +1510,8 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
 				 uint32_2);
       id2 = convert (uint64_type_node, id2);
 
-      tree max0 = convert (uint64_type_node, parent_.m_cf->grid_size_vars[0]);
-      tree max1 = convert (uint64_type_node, parent_.m_cf->grid_size_vars[1]);
+      tree max0 = convert (uint64_type_node, m_parent.m_cf->m_grid_size_vars[0]);
+      tree max1 = convert (uint64_type_node, m_parent.m_cf->m_grid_size_vars[1]);
 
       tree id2_x_max0_x_max1 = build2 (MULT_EXPR, uint64_type_node, id2, max0);
       id2_x_max0_x_max1
@@ -1528,10 +1528,10 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
 
-      tree local_id_var = parent_.m_cf->local_id_vars[dim];
-      tree wg_id_var = parent_.m_cf->wg_id_vars[dim];
-      tree wg_size_var = parent_.m_cf->wg_size_vars[dim];
-      tree grid_size_var = parent_.m_cf->grid_size_vars[dim];
+      tree local_id_var = m_parent.m_cf->m_local_id_vars[dim];
+      tree wg_id_var = m_parent.m_cf->m_wg_id_vars[dim];
+      tree wg_size_var = m_parent.m_cf->m_wg_size_vars[dim];
+      tree grid_size_var = m_parent.m_cf->m_grid_size_vars[dim];
 
       tree wg_id_x_wg_size = build2 (MULT_EXPR, uint32_type_node,
 				     convert (uint32_type_node, wg_id_var),
@@ -1552,17 +1552,18 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_WORKITEMFLATID)
     {
       tree z_x_wgsx_wgsy
-	= build2 (MULT_EXPR, uint32_type_node, parent_.m_cf->local_id_vars[2],
-		  parent_.m_cf->wg_size_vars[0]);
+	= build2 (MULT_EXPR, uint32_type_node, m_parent.m_cf->m_local_id_vars[2],
+		  m_parent.m_cf->m_wg_size_vars[0]);
       z_x_wgsx_wgsy = build2 (MULT_EXPR, uint32_type_node, z_x_wgsx_wgsy,
-			      parent_.m_cf->wg_size_vars[1]);
+			      m_parent.m_cf->m_wg_size_vars[1]);
 
       tree y_x_wgsx
-	= build2 (MULT_EXPR, uint32_type_node, parent_.m_cf->local_id_vars[1],
-		  parent_.m_cf->wg_size_vars[0]);
+	= build2 (MULT_EXPR, uint32_type_node, m_parent.m_cf->m_local_id_vars[1],
+		  m_parent.m_cf->m_wg_size_vars[0]);
 
       tree sum = build2 (PLUS_EXPR, uint32_type_node, y_x_wgsx, z_x_wgsx_wgsy);
-      sum = build2 (PLUS_EXPR, uint32_type_node, parent_.m_cf->local_id_vars[0],
+      sum = build2 (PLUS_EXPR, uint32_type_node,
+		    m_parent.m_cf->m_local_id_vars[0],
 		    sum);
       return add_temp_var ("workitemflatid", sum);
     }
@@ -1579,7 +1580,7 @@ brig_code_entry_handler::add_temp_var (std::string name, tree expr)
 {
   tree temp_var = create_tmp_var (TREE_TYPE (expr), name.c_str ());
   tree assign = build2 (MODIFY_EXPR, TREE_TYPE (temp_var), temp_var, expr);
-  parent_.m_cf->append_statement (assign);
+  m_parent.m_cf->append_statement (assign);
   return temp_var;
 }
 
@@ -1780,13 +1781,13 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 			     : uint32_type_node;
 
   const BrigData *operand_entries
-    = parent_.get_brig_data_entry (brig_inst.operands);
+    = m_parent.get_brig_data_entry (brig_inst.operands);
   std::vector<tree> operands;
   for (size_t i = 0; i < operand_entries->byteCount / 4; ++i)
     {
       uint32_t operand_offset = ((const uint32_t *) &operand_entries->bytes)[i];
       const BrigBase *operand_data
-	= parent_.get_brig_operand_entry (operand_offset);
+	= m_parent.get_brig_operand_entry (operand_offset);
 
       const bool is_output
 	= gccbrig_hsa_opcode_op_output_p (brig_inst.opcode, i);
@@ -1980,7 +1981,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
       tree f2h_output = build_f2h_conversion (inst_expr);
       tree conv_int = convert_to_integer (output_type, f2h_output);
       tree assign = build2 (MODIFY_EXPR, output_type, output, conv_int);
-      parent_.m_cf->append_statement (assign);
+      m_parent.m_cf->append_statement (assign);
       return assign;
     }
   else if (VECTOR_TYPE_P (TREE_TYPE (output)))
@@ -2017,7 +2018,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 	  // A simple bitcast should do.
 	  tree bitcast = build_reinterpret_cast (output_type, inst_expr);
 	  tree assign = build2 (MODIFY_EXPR, output_type, output, bitcast);
-	  parent_.m_cf->append_statement (assign);
+	  m_parent.m_cf->append_statement (assign);
 	  return assign;
 	}
       else
@@ -2032,7 +2033,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 
 	  tree conv_int = convert_to_integer (output_type, inst_expr);
 	  tree assign = build2 (MODIFY_EXPR, output_type, output, conv_int);
-	  parent_.m_cf->append_statement (assign);
+	  m_parent.m_cf->append_statement (assign);
 	  return assign;
 	}
     }
@@ -2042,7 +2043,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 void
 brig_code_entry_handler::append_statement (tree stmt)
 {
-  parent_.m_cf->append_statement (stmt);
+  m_parent.m_cf->append_statement (stmt);
 }
 
 void
@@ -2090,7 +2091,7 @@ brig_code_entry_handler::pack (tree_stl_vec &elements)
   // Add a temp variable for readability.
   tree tmp_var = create_tmp_var (vec_type, "vec_out");
   tree vec_tmp_assign = build2 (MODIFY_EXPR, TREE_TYPE (tmp_var), tmp_var, vec);
-  parent_.m_cf->append_statement (vec_tmp_assign);
+  m_parent.m_cf->append_statement (vec_tmp_assign);
   return tmp_var;
 }
 

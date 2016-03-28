@@ -40,7 +40,7 @@ extern int gccbrig_verbose;
 size_t
 brig_directive_function_handler::operator() (const BrigBase *base)
 {
-  parent_.finish_function ();
+  m_parent.finish_function ();
 
   size_t bytes_consumed = base->byteCount;
 
@@ -48,7 +48,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 
   if (gccbrig_verbose)
     {
-      printf ("brig: function name %s\n", parent_.get_c_string (exec->name));
+      printf ("brig: function name %s\n", m_parent.get_c_string (exec->name));
       printf ("brig: inargs %d outargs %d name offset %d\n", exec->inArgCount,
 	      exec->outArgCount, exec->name);
     }
@@ -64,9 +64,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
   if (is_kernel && !is_definition)
     return bytes_consumed;
 
-  parent_.m_cf = new brig_function (exec);
+  m_parent.m_cf = new brig_function (exec);
 
-  std::string func_name = parent_.get_mangled_name (exec);
+  std::string func_name = m_parent.get_mangled_name (exec);
 
   tree fndecl;
   tree ret_value = NULL_TREE;
@@ -131,9 +131,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       tree name_identifier
 	= get_identifier_with_length (func_name.c_str (), func_name.size ());
 
-      parent_.m_cf->arg_variables.clear ();
+      m_parent.m_cf->m_arg_variables.clear ();
 
-      brig_directive_variable_handler arg_handler (parent_);
+      brig_directive_variable_handler arg_handler (m_parent);
 
       vec<tree, va_gc> *args;
       vec_alloc (args, 4);
@@ -152,7 +152,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	  const BrigDirectiveVariable *brigVar
 	    = (const BrigDirectiveVariable *) retval;
 
-	  brig_directive_variable_handler varhandler (parent_);
+	  brig_directive_variable_handler varhandler (m_parent);
 
 	  if (brigVar->type & BRIG_TYPE_ARRAY)
 	    {
@@ -163,14 +163,14 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	      tree arg_var = varhandler.build_variable (brigVar, PARM_DECL);
 	      vec_safe_push (args, TREE_TYPE (arg_var));
 
-	      parent_.m_cf->add_arg_variable (brigVar, arg_var);
+	      m_parent.m_cf->add_arg_variable (brigVar, arg_var);
 
 	      if (arg_decls == NULL_TREE)
 		arg_decls = arg_var;
 	      else
 		chainon (arg_decls, arg_var);
 
-	      parent_.m_cf->add_arg_variable (brigVar, arg_var);
+	      m_parent.m_cf->add_arg_variable (brigVar, arg_var);
 
 	      ret_value = build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE,
 				      void_type_node);
@@ -178,9 +178,9 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	  else
 	    {
 	      ret_value = varhandler.build_variable (brigVar, RESULT_DECL);
-	      parent_.m_cf->ret_value = ret_value;
+	      m_parent.m_cf->m_ret_value = ret_value;
 	      ret_type = TREE_TYPE (ret_value);
-	      parent_.m_cf->add_arg_variable (brigVar, ret_value);
+	      m_parent.m_cf->add_arg_variable (brigVar, ret_value);
 	    }
 	  bytes_consumed += retval->byteCount;
 	}
@@ -195,18 +195,18 @@ brig_directive_function_handler::operator() (const BrigBase *base)
 	    {
 
 	      const BrigDirectiveVariable *brigVar
-		= (const BrigDirectiveVariable *) parent_.get_brig_code_entry (
+		= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry (
 		  arg_offset);
 
 	      assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
 	      // Delegate to the brig_directive_variable_handler.
-	      brig_directive_variable_handler varhandler (parent_);
+	      brig_directive_variable_handler varhandler (m_parent);
 	      tree arg_var = varhandler.build_variable (brigVar, PARM_DECL);
 	      arg_offset += brigVar->base.byteCount;
 	      vec_safe_push (args, TREE_TYPE (arg_var));
 
-	      parent_.m_cf->add_arg_variable (brigVar, arg_var);
+	      m_parent.m_cf->add_arg_variable (brigVar, arg_var);
 
 	      if (arg_decls == NULL_TREE)
 		arg_decls = arg_var;
@@ -318,41 +318,41 @@ brig_directive_function_handler::operator() (const BrigBase *base)
       DECL_ARG_TYPE (arg) = TREE_TYPE (arg);
     }
 
-  parent_.add_function_decl (func_name, fndecl);
-  parent_.append_global (fndecl);
+  m_parent.add_function_decl (func_name, fndecl);
+  m_parent.append_global (fndecl);
 
   if (!is_definition)
     return bytes_consumed;
 
-  parent_.start_function (fndecl);
+  m_parent.start_function (fndecl);
 
-  parent_.m_cf->name = func_name;
-  parent_.m_cf->func_decl = fndecl;
-  parent_.m_cf->current_bind_expr = bind_expr;
-  parent_.m_cf->is_kernel = is_kernel;
-  parent_.m_cf->context_arg = context_arg;
-  parent_.m_cf->group_base_arg = group_base_arg;
-  parent_.m_cf->private_base_arg = private_base_arg;
+  m_parent.m_cf->m_name = func_name;
+  m_parent.m_cf->m_func_decl = fndecl;
+  m_parent.m_cf->m_current_bind_expr = bind_expr;
+  m_parent.m_cf->m_is_kernel = is_kernel;
+  m_parent.m_cf->m_context_arg = context_arg;
+  m_parent.m_cf->m_group_base_arg = group_base_arg;
+  m_parent.m_cf->m_private_base_arg = private_base_arg;
 
   if (is_definition && is_kernel)
     {
-      parent_.m_cf->add_id_variables ();
+      m_parent.m_cf->add_id_variables ();
 
       // Create a single entry point in the function.
-      parent_.m_cf->entry_label_stmt
-	= build_stmt (LABEL_EXPR, parent_.m_cf->label ("__kernel_entry"));
-      parent_.m_cf->append_statement (parent_.m_cf->entry_label_stmt);
+      m_parent.m_cf->m_entry_label_stmt
+	= build_stmt (LABEL_EXPR, m_parent.m_cf->label ("__kernel_entry"));
+      m_parent.m_cf->append_statement (m_parent.m_cf->m_entry_label_stmt);
 
-      tree bind_expr = parent_.m_cf->current_bind_expr;
+      tree bind_expr = m_parent.m_cf->m_current_bind_expr;
       tree stmts = BIND_EXPR_BODY (bind_expr);
 
-      parent_.m_cf->kernel_entry = tsi_last (stmts);
+      m_parent.m_cf->m_kernel_entry = tsi_last (stmts);
 
       // Let's not append the exit label yet, but only after the
       // function has been built. We need to build it so it can
       // be referred to because returns are converted to gotos to this
       // label.
-      parent_.m_cf->exit_label = parent_.m_cf->label ("__kernel_exit");
+      m_parent.m_cf->m_exit_label = m_parent.m_cf->label ("__kernel_exit");
     }
 
   return bytes_consumed;

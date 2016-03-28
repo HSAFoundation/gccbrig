@@ -43,14 +43,14 @@ brig_copy_move_inst_handler::operator() (const BrigBase *base)
       // works.
       tree casted = build_reinterpret_cast (dest_type, input);
       tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
-      parent_.m_cf->append_statement (assign);
+      m_parent.m_cf->append_statement (assign);
     }
   else if (brig_inst->opcode == BRIG_OPCODE_LDA
 	   || brig_inst->opcode == BRIG_OPCODE_EXPAND)
     build_output_assignment (*brig_inst, output, input);
   else
     {
-      brig_basic_inst_handler basic (parent_);
+      brig_basic_inst_handler basic (m_parent);
       return basic (base);
     }
   return base->byteCount;

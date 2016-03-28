@@ -65,7 +65,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
     }
   else
     {
-      return parent_.m_cf->append_statement (
+      return m_parent.m_cf->append_statement (
 	build2 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data));
     }
   return mem_ref;
@@ -95,20 +95,20 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 	= expand_or_call_builtin (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
 				  uint32_type_node, inputs);
       build_output_assignment (*brig_inst, operands[0], builtin_call);
-      parent_.m_cf->has_allocas = true;
+      m_parent.m_cf->m_has_allocas = true;
       return base->byteCount;
     }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
 
   const BrigData *operand_entries
-    = parent_.get_brig_data_entry (brig_inst->operands);
+    = m_parent.get_brig_data_entry (brig_inst->operands);
 
   uint32_t data_operand_offset;
   memcpy (&data_operand_offset, &operand_entries->bytes, 4);
 
   const BrigBase *operand
-    = parent_.get_brig_operand_entry (data_operand_offset);
+    = m_parent.get_brig_operand_entry (data_operand_offset);
 
   const BrigData *operandData = NULL;
 
@@ -116,7 +116,7 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 
   bool is_three_element_vector_access
     = operand->kind == BRIG_KIND_OPERAND_OPERAND_LIST
-      && (operandData = parent_.get_brig_data_entry (
+      && (operandData = m_parent.get_brig_data_entry (
 	    ((const BrigOperandOperandList *) operand)->elements))
       && operandData->byteCount / 4 == 3;
 
@@ -133,7 +133,7 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
       memcpy (&addr_operand_offset, &operand_entries->bytes + 4, 4);
 
       const BrigOperandAddress *addr_operand
-	= (const BrigOperandAddress *) parent_.get_brig_operand_entry (
+	= (const BrigOperandAddress *) m_parent.get_brig_operand_entry (
 	  addr_operand_offset);
 
       tree address_base = build_address_operand (*brig_inst, *addr_operand);
@@ -143,7 +143,7 @@ brig_mem_inst_handler::operator() (const BrigBase *base)
 	{
 	  BrigOperandOffset32_t offset = *operand_ptr;
 	  const BrigBase *operand_element
-	    = parent_.get_brig_operand_entry (offset);
+	    = m_parent.get_brig_operand_entry (offset);
 	  tree data
 	    = build_tree_operand (*brig_inst, *operand_element, instr_type);
 

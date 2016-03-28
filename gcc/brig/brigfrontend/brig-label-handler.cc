@@ -27,12 +27,12 @@ brig_directive_label_handler::operator() (const BrigBase *base)
 {
   const BrigDirectiveLabel *brig_label = (const BrigDirectiveLabel *) base;
 
-  const BrigData *label_name = parent_.get_brig_data_entry (brig_label->name);
+  const BrigData *label_name = m_parent.get_brig_data_entry (brig_label->name);
 
   std::string label_str ((const char *) (label_name->bytes),
 			 label_name->byteCount);
 
-  parent_.m_cf->append_statement (
-    build_stmt (LABEL_EXPR, parent_.m_cf->label (label_str)));
+  m_parent.m_cf->append_statement (
+    build_stmt (LABEL_EXPR, m_parent.m_cf->label (label_str)));
   return base->byteCount;
 }

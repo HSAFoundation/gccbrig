@@ -34,12 +34,12 @@
 #include "stringpool.h"
 
 brig_atomic_inst_handler::atomic_builtins_map
-  brig_atomic_inst_handler::atomic_builtins_;
+  brig_atomic_inst_handler::s_atomic_builtins;
 
 brig_atomic_inst_handler::brig_atomic_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
 {
-  if (atomic_builtins_.size () > 0)
+  if (s_atomic_builtins.size () > 0)
     return;
 
   tree sync_4_fn = build_function_type_list (integer_type_node, ptr_type_node,
@@ -67,85 +67,85 @@ brig_atomic_inst_handler::brig_atomic_inst_handler (brig_to_generic &parent)
 				    BUILT_IN_SYNC_FETCH_AND_SUB_4,
 				    BUILT_IN_NORMAL, NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_SUB_4, decl, true);
-  atomic_builtins_["__sync_fetch_and_sub_4"] = decl;
+  s_atomic_builtins["__sync_fetch_and_sub_4"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_sub_8", sync_8_fn,
 			       BUILT_IN_SYNC_FETCH_AND_SUB_8, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_SUB_8, decl, true);
-  atomic_builtins_["__sync_fetch_and_sub_8"] = decl;
+  s_atomic_builtins["__sync_fetch_and_sub_8"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_add_4", sync_4_fn,
 			       BUILT_IN_SYNC_FETCH_AND_ADD_4, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_ADD_4, decl, true);
-  atomic_builtins_["__sync_fetch_and_add_4"] = decl;
+  s_atomic_builtins["__sync_fetch_and_add_4"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_add_8", sync_8_fn,
 			       BUILT_IN_SYNC_FETCH_AND_ADD_8, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_ADD_8, decl, true);
-  atomic_builtins_["__sync_fetch_and_add_8"] = decl;
+  s_atomic_builtins["__sync_fetch_and_add_8"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_and_4", sync_4_fn,
 			       BUILT_IN_SYNC_FETCH_AND_AND_4, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_AND_4, decl, true);
-  atomic_builtins_["__sync_fetch_and_and_4"] = decl;
+  s_atomic_builtins["__sync_fetch_and_and_4"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_and_8", sync_8_fn,
 			       BUILT_IN_SYNC_FETCH_AND_AND_8, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_AND_8, decl, true);
-  atomic_builtins_["__sync_fetch_and_and_8"] = decl;
+  s_atomic_builtins["__sync_fetch_and_and_8"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_xor_4", sync_u4_fn,
 			       BUILT_IN_SYNC_FETCH_AND_XOR_4, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_XOR_4, decl, true);
-  atomic_builtins_["__sync_fetch_and_xor_4"] = decl;
+  s_atomic_builtins["__sync_fetch_and_xor_4"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_xor_8", sync_u8_fn,
 			       BUILT_IN_SYNC_FETCH_AND_XOR_8, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_XOR_8, decl, true);
-  atomic_builtins_["__sync_fetch_and_xor_8"] = decl;
+  s_atomic_builtins["__sync_fetch_and_xor_8"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_or_4", sync_u4_fn,
 			       BUILT_IN_SYNC_FETCH_AND_OR_4, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_OR_4, decl, true);
-  atomic_builtins_["__sync_fetch_and_or_4"] = decl;
+  s_atomic_builtins["__sync_fetch_and_or_4"] = decl;
 
   decl = add_builtin_function ("__sync_fetch_and_or_8", sync_u8_fn,
 			       BUILT_IN_SYNC_FETCH_AND_OR_8, BUILT_IN_NORMAL,
 			       NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_FETCH_AND_OR_8, decl, true);
-  atomic_builtins_["__sync_fetch_and_or_8"] = decl;
+  s_atomic_builtins["__sync_fetch_and_or_8"] = decl;
 
   decl = add_builtin_function ("__sync_lock_test_and_set_4", sync_u4_fn,
 			       BUILT_IN_SYNC_LOCK_TEST_AND_SET_4,
 			       BUILT_IN_NORMAL, NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_LOCK_TEST_AND_SET_4, decl, true);
-  atomic_builtins_["__sync_lock_test_and_set_4"] = decl;
+  s_atomic_builtins["__sync_lock_test_and_set_4"] = decl;
 
   decl = add_builtin_function ("__sync_lock_test_and_set_8", sync_u8_fn,
 			       BUILT_IN_SYNC_LOCK_TEST_AND_SET_8,
 			       BUILT_IN_NORMAL, NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_LOCK_TEST_AND_SET_8, decl, true);
-  atomic_builtins_["__sync_lock_test_and_set_8"] = decl;
+  s_atomic_builtins["__sync_lock_test_and_set_8"] = decl;
 
   decl = add_builtin_function ("__sync_val_compare_and_swap_4", sync_u4_2_fn,
 			       BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4,
 			       BUILT_IN_NORMAL, NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4, decl, true);
-  atomic_builtins_["__sync_val_compare_and_swap_4"] = decl;
+  s_atomic_builtins["__sync_val_compare_and_swap_4"] = decl;
 
   decl = add_builtin_function ("__sync_val_compare_and_swap_8", sync_u8_2_fn,
 			       BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8,
 			       BUILT_IN_NORMAL, NULL, NULL_TREE);
   set_builtin_decl (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8, decl, true);
-  atomic_builtins_["__sync_val_compare_and_swap_8"] = decl;
+  s_atomic_builtins["__sync_val_compare_and_swap_8"] = decl;
 
   add_custom_atomic_builtin ("__phsa_builtin_atomic_min_s32", 2,
 			     integer_type_node, ptr_type_node,
@@ -197,7 +197,7 @@ brig_atomic_inst_handler::add_custom_atomic_builtin (const char *name,
   va_start (ap, rettype);
   tree builtin = vbuild_builtin (name, nargs, rettype, ap);
   va_end (ap);
-  atomic_builtins_[name] = builtin;
+  s_atomic_builtins[name] = builtin;
 }
 
 size_t
@@ -250,8 +250,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		   << "_" << gccbrig_hsa_type_bit_size (inst.type) / 8;
 
       atomic_builtins_map::iterator i
-	= atomic_builtins_.find (builtin_name.str ());
-      gcc_assert (i != atomic_builtins_.end ());
+	= s_atomic_builtins.find (builtin_name.str ());
+      gcc_assert (i != s_atomic_builtins.end ());
       tree built_in = (*i).second;
       tree src1 = operands[first_input + 2];
 
@@ -336,8 +336,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	}
 
       atomic_builtins_map::iterator i
-	= atomic_builtins_.find (builtin_name.str ());
-      if (i == atomic_builtins_.end ())
+	= s_atomic_builtins.find (builtin_name.str ());
+      if (i == s_atomic_builtins.end ())
 	internal_error ("Couldn't find the builtin '%s'.",
 			builtin_name.str ().c_str ());
 
@@ -355,14 +355,14 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       tree tmp_var = create_tmp_var (arg0_type, "builtin_out");
       tree tmp_assign
 	= build2 (MODIFY_EXPR, TREE_TYPE (tmp_var), tmp_var, instr_expr);
-      parent_.m_cf->append_statement (tmp_assign);
+      m_parent.m_cf->append_statement (tmp_assign);
       instr_expr = tmp_var;
     }
 
   if (first_input > 0)
     build_output_assignment (inst, operands[0], instr_expr);
   else
-    parent_.m_cf->append_statement (instr_expr);
+    m_parent.m_cf->append_statement (instr_expr);
 
   return inst.base.byteCount;
 }

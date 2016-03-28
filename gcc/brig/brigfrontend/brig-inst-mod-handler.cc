@@ -27,7 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_inst_mod_handler::generate (const BrigBase *base)
 {
-  brig_basic_inst_handler basic_handler (parent_);
+  brig_basic_inst_handler basic_handler (m_parent);
   return basic_handler (base);
 }
 
@@ -68,7 +68,7 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 			tree call = call_builtin
 				(&built_in, "__phsa_builtin_enable_ftz", 0,
 				 void_type_node);
-			parent_.append_statement (call);
+			m_parent.append_statement (call);
 			DECL_IS_NOVOPS (built_in) = 1;
 			TREE_SIDE_EFFECTS (call) = 1;
     }
@@ -77,7 +77,7 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
   // TODO: Set the default rounding mode once in the function entry (and
   // restore at function exit), and assume it's set by default so we don't
   // have to reset it for each instruction.
-  BrigRound8_t brig_rounding_mode = parent_.default_float_rounding_mode;
+  BrigRound8_t brig_rounding_mode = m_parent.default_float_rounding_mode;
 	if (round_modifier != NULL)
 		brig_rounding_mode = *round_modifier;
 
@@ -123,17 +123,17 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 			// is close to what is wanted here, but it is meant for
 			// disabling exceptions during an atomic operation.
 
-			tree save_call = build_call_expr (parent_.fegetround_fn, 0);
-			tree ret_type = TREE_TYPE (TREE_TYPE (parent_.fegetround_fn));
+			tree save_call = build_call_expr (m_parent.fegetround_fn, 0);
+			tree ret_type = TREE_TYPE (TREE_TYPE (m_parent.fegetround_fn));
 			old_mode = create_tmp_var (ret_type, 0);
 
 			tree assign_temp =
 				build2 (MODIFY_EXPR, TREE_TYPE (old_mode), old_mode, save_call);
-			parent_.append_statement (assign_temp);
+			m_parent.append_statement (assign_temp);
 
 			// Switch the rounding mode to what is requested by the HSAIL instruction.
-			tree set_call = build_call_expr (parent_.fesetround_fn, 1, new_mode);
-			parent_.append_statement (set_call);
+			tree set_call = build_call_expr (m_parent.fesetround_fn, 1, new_mode);
+			m_parent.append_statement (set_call);
 		}
 
 	// Delegate the generation of the actual instruction to
@@ -145,8 +145,8 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 			// TODO: Emit a call to fesetround(int rounding_mode) to
 			// set the rounding mode to the one stated in the modifier.
 
-			tree restore_call = build_call_expr (parent_.fesetround_fn, 1, old_mode);
-			parent_.append_statement (restore_call);
+			tree restore_call = build_call_expr (m_parent.fesetround_fn, 1, old_mode);
+			m_parent.append_statement (restore_call);
 		}
 
   if (FTZ)
@@ -155,7 +155,7 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 			tree call = call_builtin
 				(&built_in, "__phsa_builtin_disable_ftz", 0,
 				 void_type_node);
-			parent_.append_statement (call);
+			m_parent.append_statement (call);
 			DECL_IS_NOVOPS (built_in) = 1;
 			TREE_SIDE_EFFECTS (call) = 1;
     }

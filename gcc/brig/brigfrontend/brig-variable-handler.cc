@@ -29,9 +29,9 @@
 
 tree
 brig_directive_variable_handler::build_variable (
-  const BrigDirectiveVariable *brigVar, tree_code var_decl_type)
+  const BrigDirectiveVariable *brigVar, tree_code m_var_decltype)
 {
-  std::string var_name = parent_.get_mangled_name (brigVar);
+  std::string var_name = m_parent.get_mangled_name (brigVar);
 
   // Strip & from the beginning of the name.
   tree name_identifier = get_identifier (var_name.c_str ());
@@ -47,7 +47,7 @@ brig_directive_variable_handler::build_variable (
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
 	error ("array variable size cannot be zero");
-      if (var_decl_type == PARM_DECL)
+      if (m_var_decltype == PARM_DECL)
 	t = build_pointer_type (element_type);
       else
 	t = build_array_type_nelts (element_type, element_count);
@@ -76,7 +76,7 @@ brig_directive_variable_handler::build_variable (
       alignment = 1 << (brigVar->align - 1);
     }
 
-  var_decl = build_decl (UNKNOWN_LOCATION, var_decl_type, name_identifier, t);
+  var_decl = build_decl (UNKNOWN_LOCATION, m_var_decltype, name_identifier, t);
 
   DECL_ALIGN (var_decl) = alignment * 8;
 
@@ -97,7 +97,7 @@ brig_directive_variable_handler::build_variable (
 		  || brigVar->segment == BRIG_SEGMENT_GLOBAL);
 
       const BrigBase *cst_operand_data
-	= parent_.get_brig_operand_entry (brigVar->init);
+	= m_parent.get_brig_operand_entry (brigVar->init);
 
       tree initializer = NULL_TREE;
       if (cst_operand_data->kind == BRIG_KIND_OPERAND_CONSTANT_BYTES)
@@ -114,7 +114,7 @@ brig_directive_variable_handler::build_variable (
       DECL_INITIAL (var_decl) = initializer;
     }
 
-  if (var_decl_type == PARM_DECL)
+  if (m_var_decltype == PARM_DECL)
     {
       DECL_ARG_TYPE (var_decl) = TREE_TYPE (var_decl);
       DECL_EXTERNAL (var_decl) = 0;
@@ -160,10 +160,10 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
     = brigVar->align == BRIG_ALIGNMENT_NONE ? 0 : 1 << (brigVar->align - 1);
   alignment = def_alignment > natural_align ? def_alignment : natural_align;
 
-  if (parent_.m_cf != NULL)
-    parent_.m_cf->m_function_scope_vars.insert (base);
+  if (m_parent.m_cf != NULL)
+    m_parent.m_cf->m_function_scope_vars.insert (base);
 
-  std::string var_name = parent_.get_mangled_name (brigVar);
+  std::string var_name = m_parent.get_mangled_name (brigVar);
   if (brigVar->segment == BRIG_SEGMENT_KERNARG)
     {
       // Do not create a real variable, but only a table of
@@ -172,8 +172,8 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       // reference.
 
       // Ignore kernel declarations.
-      if (parent_.m_cf != NULL && parent_.m_cf->func_decl != NULL_TREE)
-	parent_.m_cf->append_kernel_arg (brigVar, var_size, alignment);
+      if (m_parent.m_cf != NULL && m_parent.m_cf->m_func_decl != NULL_TREE)
+	m_parent.m_cf->append_kernel_arg (brigVar, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_GROUP)
@@ -185,7 +185,7 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
 	 group_base hidden pointer passed to the kernel in order to
 	 get the flat address. */
 
-      parent_.append_group_variable (var_name, var_size, alignment);
+      m_parent.append_group_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_PRIVATE
@@ -194,7 +194,7 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       /* Private variables are handled like group variables,
 	 except that their offsets are multiplied by the work-item
 	 flat id, when accessed. */
-      parent_.append_private_variable (var_name, var_size, alignment);
+      m_parent.append_private_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
@@ -205,22 +205,22 @@ brig_directive_variable_handler::operator() (const BrigBase *base)
       // so we can get their address from the Runtime API.
       DECL_CONTEXT (var_decl) = NULL_TREE;
       TREE_STATIC (var_decl) = 1;
-      parent_.add_global_variable (var_name, var_decl);
+      m_parent.add_global_variable (var_name, var_decl);
     }
   else if (brigVar->segment == BRIG_SEGMENT_ARG)
     {
 
-      if (parent_.m_cf->generating_arg_block)
+      if (m_parent.m_cf->m_generating_arg_block)
 	{
 	  tree var_decl = build_variable (brigVar);
-	  tree bind_expr = parent_.m_cf->current_bind_expr;
+	  tree bind_expr = m_parent.m_cf->m_current_bind_expr;
 
-	  DECL_CONTEXT (var_decl) = parent_.m_cf->func_decl;
+	  DECL_CONTEXT (var_decl) = m_parent.m_cf->m_func_decl;
 	  DECL_CHAIN (var_decl) = BIND_EXPR_VARS (bind_expr);
 	  BIND_EXPR_VARS (bind_expr) = var_decl;
 	  TREE_PUBLIC (var_decl) = 0;
 
-	  parent_.m_cf->add_arg_variable (brigVar, var_decl);
+	  m_parent.m_cf->add_arg_variable (brigVar, var_decl);
 	}
       else
 	{

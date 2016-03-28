@@ -41,13 +41,13 @@ brig_directive_arg_block_handler::operator() (const BrigBase *base)
       static int block_id = 0;
       BLOCK_NUMBER (block) = block_id++;
       TREE_USED (block) = 1;
-      tree parent_block = DECL_INITIAL (parent_.m_cf->func_decl);
-      BLOCK_SUPERCONTEXT (block) = parent_block;
+      tree m_parentblock = DECL_INITIAL (m_parent.m_cf->m_func_decl);
+      BLOCK_SUPERCONTEXT (block) = m_parentblock;
 
-      chainon (BLOCK_SUBBLOCKS (parent_block), block);
+      chainon (BLOCK_SUBBLOCKS (m_parentblock), block);
 
-      parent_.m_cf->current_bind_expr = bind_expr;
-      parent_.m_cf->generating_arg_block = true;
+      m_parent.m_cf->m_current_bind_expr = bind_expr;
+      m_parent.m_cf->m_generating_arg_block = true;
     }
   else if (base->kind == BRIG_KIND_DIRECTIVE_ARG_BLOCK_END)
     {
@@ -55,11 +55,11 @@ brig_directive_arg_block_handler::operator() (const BrigBase *base)
       // scope.
       // TODO: CHECK SPECS Is a deeper binding scope hierarchy required by
       // HSAIL? That is, can one have a call segment inside a call segment?
-      tree new_bind_expr = parent_.m_cf->current_bind_expr;
-      parent_.m_cf->current_bind_expr
-	= DECL_SAVED_TREE (parent_.m_cf->func_decl);
-      parent_.m_cf->append_statement (new_bind_expr);
-      parent_.m_cf->generating_arg_block = false;
+      tree new_bind_expr = m_parent.m_cf->m_current_bind_expr;
+      m_parent.m_cf->m_current_bind_expr
+	= DECL_SAVED_TREE (m_parent.m_cf->m_func_decl);
+      m_parent.m_cf->append_statement (new_bind_expr);
+      m_parent.m_cf->m_generating_arg_block = false;
     }
   else
     internal_error ("Encountered an illegal kind %x.", base->kind);

@@ -244,7 +244,7 @@ public:
   size_t operator() (const BrigBase *base);
 
   tree build_variable (const BrigDirectiveVariable *brigVar,
-		       tree_code var_decl_type = VAR_DECL);
+		       tree_code m_var_decltype = VAR_DECL);
 };
 
 class brig_directive_fbarrier_handler : public brig_code_entry_handler
@@ -385,7 +385,7 @@ private:
   void add_custom_atomic_builtin (const char *name, int nargs, tree rettype,
 				  ...);
   // __sync*() builtin func declarations.
-  static atomic_builtins_map atomic_builtins_;
+  static atomic_builtins_map s_atomic_builtins;
 };
 
 class brig_signal_inst_handler : public brig_atomic_inst_handler

@@ -49,13 +49,13 @@ brig_seg_inst_handler::operator() (const BrigBase *base)
       if (inst.segment == BRIG_SEGMENT_GROUP)
 	expr = build2 (PLUS_EXPR, size_type_node,
 		       convert_to_integer (size_type_node,
-					   parent_.m_cf->group_base_arg),
+					   m_parent.m_cf->m_group_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else if (inst.segment == BRIG_SEGMENT_PRIVATE
 	       || inst.segment == BRIG_SEGMENT_SPILL)
 	expr = build2 (PLUS_EXPR, size_type_node,
 		       convert_to_integer (size_type_node,
-					   parent_.m_cf->private_base_arg),
+					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
 	internal_error ("Unimplemented.");
@@ -81,12 +81,12 @@ brig_seg_inst_handler::operator() (const BrigBase *base)
       if (inst.segment == BRIG_SEGMENT_GROUP)
 	expr = build2 (MINUS_EXPR, size_type_node,
 		       convert_to_integer (size_type_node,
-					   parent_.m_cf->group_base_arg),
+					   m_parent.m_cf->m_group_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else if (inst.segment == BRIG_SEGMENT_PRIVATE)
 	expr = build2 (MINUS_EXPR, size_type_node,
 		       convert_to_integer (size_type_node,
-					   parent_.m_cf->private_base_arg),
+					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
 	internal_error ("Unimplemented.");
@@ -123,7 +123,7 @@ brig_seg_inst_handler::operator() (const BrigBase *base)
 
       expr = call_builtin (NULL, builtin_name.c_str (), 2,
 			   TREE_TYPE (operands[0]), size_type_node, operands[1],
-			   ptr_type_node, parent_.m_cf->context_arg);
+			   ptr_type_node, m_parent.m_cf->m_context_arg);
     }
   else
     internal_error ("Unimplemented segment related instruction %x.",

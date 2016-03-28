@@ -58,7 +58,7 @@ public:
 private:
   struct reg_decl_index_entry
   {
-    tree var_decl_;
+    tree m_var_decl;
   };
 
 public:
@@ -86,7 +86,7 @@ public:
 
   tree add_local_variable (std::string name, tree type);
 
-  tree get_var_decl_for_reg (const BrigOperandRegister *reg);
+  tree get_m_var_declfor_reg (const BrigOperandRegister *reg);
 
   // Tries to convert the current kernel to a work-group function.
   // Returns true in case the conversion was successful.
@@ -112,78 +112,78 @@ public:
 
   const BrigDirectiveExecutable *m_brig_def;
 
-  bool is_kernel;
-  bool is_finished;
-  std::string name;
-  tree current_bind_expr;
-  tree func_decl;
-  tree entry_label_stmt;
-  tree exit_label;
+  bool m_is_kernel;
+  bool m_is_finished;
+  std::string m_name;
+  tree m_current_bind_expr;
+  tree m_func_decl;
+  tree m_entry_label_stmt;
+  tree m_exit_label;
 
   // The __context function argument.
-  tree context_arg;
+  tree m_context_arg;
   // The __group_base_ptr argument in the current function.
   // Points to the start of the group segment for the kernel
   // instance.
-  tree group_base_arg;
+  tree m_group_base_arg;
   // The __private_base_ptr argument in the current function.
   // Points to the start of the private segment.
-  tree private_base_arg;
+  tree m_private_base_arg;
 
   // The return value variable for the current function.
-  tree ret_value;
+  tree m_ret_value;
 
   // The offsets of the kernel arguments in the __arg blob
   // pointing to the kernel argument space.
-  size_t next_kernarg_offset;
+  size_t m_next_kernarg_offset;
 
   // The largest kernel argument variable alignment.
-  size_t kernarg_max_align;
+  size_t m_kernarg_max_align;
 
-  var_offset_table kernarg_offsets;
+  var_offset_table m_kernarg_offsets;
 
   // Argument variables in the currently handled binding expression
   // (argument segment).
-  variable_index arg_variables;
+  variable_index m_arg_variables;
 
   // Labels in the current function are collected here so we can refer
   // to them from jumps before they have been placed to the function.
   label_index m_label_index;
 
   // If the kernel contains at least one barrier, this is set to true.
-  bool has_barriers;
+  bool m_has_barriers;
 
   // If the function has at least one alloca instruction, this is set to true.
-  bool has_allocas;
+  bool m_has_allocas;
 
   // If the kernel containts at least one function call that _may_
   // contain a barrier call, this is set to true.
-  bool has_function_calls_with_barriers;
+  bool m_has_function_calls_with_barriers;
 
   // True in case the function was successfully converted to a WG function.
-  bool is_wg_function;
+  bool m_is_wg_function;
 
   // Work-item ID related variables are cached in the entry of the kernel
   // function in order to use them directly in address computations, leading
   // to more efficient optimizations. The references to the local variables
   // are stored here.
-  tree local_id_vars[3];
-  tree cur_wg_size_vars[3];
-  tree wg_id_vars[3];
-  tree wg_size_vars[3];
-  tree grid_size_vars[3];
+  tree m_local_id_vars[3];
+  tree m_cur_wg_size_vars[3];
+  tree m_wg_id_vars[3];
+  tree m_wg_size_vars[3];
+  tree m_grid_size_vars[3];
 
   // Set to true in case the kernel contains at least one dispatch packet
   // (work-item ID-related) builtin call that could not be expanded to
   // tree nodes.
-  bool has_unexpanded_dp_builtins;
+  bool m_has_unexpanded_dp_builtins;
 
   // Points to the instruction after which the real kernel code starts.
   // Usually points to the last WI ID variable initialization statement.
-  tree_stmt_iterator kernel_entry;
+  tree_stmt_iterator m_kernel_entry;
 
   // True if we are currently generating the contents of an arg block.
-  bool generating_arg_block;
+  bool m_generating_arg_block;
 
   // A collection of function scope variables seen so far for resolving
   // variable references vs. module scope declarations.
@@ -192,7 +192,7 @@ public:
 private:
   // Bookkeeping for the different HSA registers and their tree declarations
   // for the currently generated function.
-  reg_decl_index_entry *regs_[BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT];
+  reg_decl_index_entry *m_regs[BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT];
 };
 
 #endif

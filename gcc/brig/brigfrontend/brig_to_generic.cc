@@ -468,20 +468,20 @@ brig_to_generic::get_finished_function (tree func_decl)
 void
 brig_to_generic::finish_function ()
 {
-  if (m_cf == NULL || m_cf->func_decl == NULL_TREE)
+  if (m_cf == NULL || m_cf->m_func_decl == NULL_TREE)
     return;
 
   m_cf->finish ();
 
   //debug_function (m_cf->func_decl,
   //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
-  gimplify_function_tree (m_cf->func_decl);
-  cgraph_finalize_function (m_cf->func_decl, true);
+  gimplify_function_tree (m_cf->m_func_decl);
+  cgraph_finalize_function (m_cf->m_func_decl, true);
   pop_cfun ();
 
-  if (m_cf->is_kernel)
+  if (m_cf->m_is_kernel)
     m_kernels.push_back (m_cf);
-  m_finished_functions[m_cf->func_decl] = m_cf;
+  m_finished_functions[m_cf->m_func_decl] = m_cf;
   m_cf = NULL;
 }
 
@@ -493,7 +493,7 @@ brig_to_generic::start_function (tree f)
   else
     push_cfun (DECL_STRUCT_FUNCTION (f));
 
-  m_cf->func_decl = f;
+  m_cf->m_func_decl = f;
 }
 
 void

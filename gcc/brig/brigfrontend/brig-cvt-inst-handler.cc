@@ -245,7 +245,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	= build_reinterpret_cast (TREE_TYPE (output), conversion_result);
       assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
     }
-  parent_.m_cf->append_statement (assign);
+  m_parent.m_cf->append_statement (assign);
 
   return base->byteCount;
 }
