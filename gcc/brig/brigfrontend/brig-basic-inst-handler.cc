@@ -94,7 +94,7 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
   // There is limited support for vector highpart mul nodes,
   // and it probably depends on the target which ones are
   // supported. TO DO: figure out a more robust way to ask this
-  // from the target. can_mult_highpart_p() from optabs.c seems
+  // from the target. can_mult_highpart_p () from optabs.c seems
   // not to be reliable enough.
 
   size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
@@ -452,7 +452,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 }
 
 size_t
-brig_basic_inst_handler::operator() (const BrigBase *base)
+brig_basic_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *brig_inst = (const BrigInstBase *) base;
 

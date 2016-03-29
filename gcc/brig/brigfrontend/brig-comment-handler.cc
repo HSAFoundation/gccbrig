@@ -25,7 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 extern int gccbrig_verbose;
 
 size_t
-brig_directive_comment_handler::operator() (const BrigBase *base)
+brig_directive_comment_handler::operator () (const BrigBase *base)
 {
   const BrigDirectiveComment *brig_comment
     = (const BrigDirectiveComment *) base;

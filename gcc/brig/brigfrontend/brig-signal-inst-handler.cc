@@ -33,7 +33,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-expr.h"
 
 size_t
-brig_signal_inst_handler::operator() (const BrigBase *base)
+brig_signal_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstSignal *inst = (const BrigInstSignal *) base;
   BrigAtomicOperation8_t atomic_opcode;

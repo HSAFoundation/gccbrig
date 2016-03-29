@@ -29,7 +29,7 @@
 #include "vec.h"
 
 size_t
-brig_branch_inst_handler::operator() (const BrigBase *base)
+brig_branch_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *brig_inst
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;

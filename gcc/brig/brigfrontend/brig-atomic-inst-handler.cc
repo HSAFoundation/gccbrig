@@ -368,7 +368,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 }
 
 size_t
-brig_atomic_inst_handler::operator() (const BrigBase *base)
+brig_atomic_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstAtomic *inst = (const BrigInstAtomic *) base;
   BrigAtomicOperation8_t atomic_opcode;

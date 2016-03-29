@@ -23,7 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "brig-code-entry-handler.h"
 
 size_t
-brig_directive_label_handler::operator() (const BrigBase *base)
+brig_directive_label_handler::operator () (const BrigBase *base)
 {
   const BrigDirectiveLabel *brig_label = (const BrigDirectiveLabel *) base;
 

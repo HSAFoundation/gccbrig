@@ -29,7 +29,7 @@ brig_lane_inst_handler::brig_lane_inst_handler (brig_to_generic &parent)
 }
 
 size_t
-brig_lane_inst_handler::operator() (const BrigBase *base)
+brig_lane_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstLane &inst = *(const BrigInstLane *) base;
   tree_stl_vec operands = build_operands (inst.base);

@@ -389,13 +389,13 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
   /* The launcher function calls the device-side runtime
      that runs the kernel for all work-items. In C:
 
-     void KernelName(void* context, void* group_base_addr) {
+     void KernelName (void* context, void* group_base_addr) {
      __phsa_launch_kernel (_KernelName, context, group_base_addr);
      }
 
      or, in case of a successful conversion to a work-group function:
 
-     void KernelName(void* context, void* group_base_addr) {
+     void KernelName (void* context, void* group_base_addr) {
      __phsa_launch_wg_function (_KernelName, context, group_base_addr);
      }
 
@@ -638,5 +638,5 @@ brig_function::append_return_stmt ()
 bool
 brig_function::has_function_scope_var (const BrigBase* var) const
 {
-  return m_function_scope_vars.find (var) != m_function_scope_vars.end();
+  return m_function_scope_vars.find (var) != m_function_scope_vars.end ();
 }

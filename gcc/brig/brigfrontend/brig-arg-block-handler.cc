@@ -29,7 +29,7 @@
 #include "print-tree.h"
 
 size_t
-brig_directive_arg_block_handler::operator() (const BrigBase *base)
+brig_directive_arg_block_handler::operator () (const BrigBase *base)
 {
   if (base->kind == BRIG_KIND_DIRECTIVE_ARG_BLOCK_START)
     {
