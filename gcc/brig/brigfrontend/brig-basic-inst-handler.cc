@@ -88,7 +88,7 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
 {
   if (!VECTOR_TYPE_P (instr_type))
     return false;
-  if (!brig_inst->opcode == BRIG_OPCODE_MULHI)
+  if (brig_inst->opcode != BRIG_OPCODE_MULHI)
     return false;
 
   // There is limited support for vector highpart mul nodes,
