@@ -420,7 +420,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      u8x4_type, u8x4_type, u16x2_type);
 
   // TODO: clock has code motion constraints. Should add function attributes
-  // to prevent reordering with mem instructions or other clock() calls.
+  // to prevent reordering with mem instructions or other clock () calls.
   add_custom_builtin (BRIG_OPCODE_CLOCK, BRIG_TYPE_U64, "__phsa_builtin_clock",
 		      0, u64_type);
 
@@ -511,7 +511,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 
 	  // In case a vector is used an input, cast the elements to
 	  // correct size here so we don't need a separate unpack/pack for it.
-	  // fp16-fp32 conversion is done in build_operands().
+	  // fp16-fp32 conversion is done in build_operands ().
 	  if (is_input && TREE_TYPE (element) != operand_type)
 	    {
 	      if (int_size_in_bytes (TREE_TYPE (element))
@@ -2095,7 +2095,7 @@ brig_code_entry_handler::pack (tree_stl_vec &elements)
 }
 
 tree
-tree_element_unary_visitor::operator() (brig_code_entry_handler &handler,
+tree_element_unary_visitor::operator () (brig_code_entry_handler &handler,
 					tree operand)
 {
   if (VECTOR_TYPE_P (TREE_TYPE (operand)))
@@ -2139,7 +2139,7 @@ tree_element_unary_visitor::operator() (brig_code_entry_handler &handler,
 }
 
 tree
-tree_element_binary_visitor::operator() (brig_code_entry_handler &handler,
+tree_element_binary_visitor::operator () (brig_code_entry_handler &handler,
 					 tree operand0, tree operand1)
 {
   if (VECTOR_TYPE_P (TREE_TYPE (operand0)))

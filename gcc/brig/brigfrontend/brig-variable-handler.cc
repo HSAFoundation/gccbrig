@@ -130,7 +130,7 @@ brig_directive_variable_handler::build_variable (
 }
 
 size_t
-brig_directive_variable_handler::operator() (const BrigBase *base)
+brig_directive_variable_handler::operator () (const BrigBase *base)
 {
   const BrigDirectiveVariable *brigVar = (const BrigDirectiveVariable *) base;
 

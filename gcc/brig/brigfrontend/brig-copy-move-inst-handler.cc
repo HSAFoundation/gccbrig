@@ -25,7 +25,7 @@
 #include "errors.h"
 
 size_t
-brig_copy_move_inst_handler::operator() (const BrigBase *base)
+brig_copy_move_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *brig_inst
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;

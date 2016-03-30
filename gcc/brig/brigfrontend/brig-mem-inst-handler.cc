@@ -71,7 +71,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
 }
 
 size_t
-brig_mem_inst_handler::operator() (const BrigBase *base)
+brig_mem_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *brig_inst
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;

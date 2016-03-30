@@ -33,7 +33,7 @@ brig_seg_inst_handler::brig_seg_inst_handler (brig_to_generic &parent)
 }
 
 size_t
-brig_seg_inst_handler::operator() (const BrigBase *base)
+brig_seg_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase &inst_base = *(const BrigInstBase *) base;
 

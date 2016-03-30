@@ -40,7 +40,7 @@ public:
   brig_code_entry_handler (brig_to_generic &parent);
   // Handles the brig_code data at the given pointer and adds it to the
   // currently built tree. Returns the number of consumed bytes;
-  virtual size_t operator() (const BrigBase *base) = 0;
+  virtual size_t operator () (const BrigBase *base) = 0;
 
   void append_statement (tree stmt);
 
@@ -143,7 +143,7 @@ private:
 class tree_element_unary_visitor
 {
 public:
-  tree operator() (brig_code_entry_handler &handler, tree operand);
+  tree operator () (brig_code_entry_handler &handler, tree operand);
 
   // Performs an action to a single element, which can have originally
   // been a vector element or a scalar.
@@ -154,7 +154,7 @@ public:
 class tree_element_binary_visitor
 {
 public:
-  tree operator() (brig_code_entry_handler &handler, tree operand0,
+  tree operator () (brig_code_entry_handler &handler, tree operand0,
 		   tree operand1);
 
   // Performs an action to a pair of elements, which can have originally
@@ -194,7 +194,7 @@ public:
 // A base class for instruction types that support floating point
 // modifiers.
 //
-// operator() delegates to subclasses (template method pattern) in
+// operator () delegates to subclasses (template method pattern) in
 // type specific parts.
 class brig_inst_mod_handler : public brig_code_entry_handler
 {
@@ -208,7 +208,7 @@ public:
   virtual const BrigAluModifier *modifier (const BrigBase *base) const;
   virtual const BrigRound8_t *round (const BrigBase *base) const;
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_function_handler : public brig_code_entry_handler
@@ -218,7 +218,7 @@ public:
     : brig_code_entry_handler (parent)
   {
   }
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_control_handler : public brig_code_entry_handler
@@ -229,7 +229,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_variable_handler : public brig_code_entry_handler
@@ -240,7 +240,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 
   tree build_variable (const BrigDirectiveVariable *brigVar,
 		       tree_code m_var_decltype = VAR_DECL);
@@ -254,7 +254,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_label_handler : public brig_code_entry_handler
@@ -265,7 +265,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_comment_handler : public brig_code_entry_handler
@@ -276,7 +276,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_arg_block_handler : public brig_code_entry_handler
@@ -287,7 +287,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_basic_inst_handler : public brig_code_entry_handler
@@ -295,7 +295,7 @@ class brig_basic_inst_handler : public brig_code_entry_handler
 public:
   brig_basic_inst_handler (brig_to_generic &parent);
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 
 private:
   // Builds a broadcast of the lowest element in the given vector operand.
@@ -338,7 +338,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_mem_inst_handler : public brig_code_entry_handler
@@ -349,7 +349,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 
 private:
   tree build_mem_access (const BrigInstBase *brig_inst, tree addr, tree data);
@@ -363,7 +363,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_atomic_inst_handler : public brig_code_entry_handler
@@ -374,7 +374,7 @@ private:
 public:
   brig_atomic_inst_handler (brig_to_generic &parent);
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 
 protected:
   size_t generate_tree (const BrigInstBase &inst,
@@ -394,7 +394,7 @@ public:
     : brig_atomic_inst_handler (parent)
   {
   }
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_cmp_inst_handler : public brig_code_entry_handler
@@ -405,7 +405,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_seg_inst_handler : public brig_code_entry_handler
@@ -413,7 +413,7 @@ class brig_seg_inst_handler : public brig_code_entry_handler
 public:
   brig_seg_inst_handler (brig_to_generic &parent);
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_lane_inst_handler : public brig_code_entry_handler
@@ -421,7 +421,7 @@ class brig_lane_inst_handler : public brig_code_entry_handler
 public:
   brig_lane_inst_handler (brig_to_generic &parent);
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_queue_inst_handler : public brig_code_entry_handler
@@ -429,7 +429,7 @@ class brig_queue_inst_handler : public brig_code_entry_handler
 public:
   brig_queue_inst_handler (brig_to_generic &parent);
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 class brig_directive_module_handler : public brig_code_entry_handler
@@ -440,7 +440,7 @@ public:
   {
   }
 
-  size_t operator() (const BrigBase *base);
+  size_t operator () (const BrigBase *base);
 };
 
 

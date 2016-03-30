@@ -91,7 +91,7 @@ public:
   }
 
   size_t
-  operator() (const BrigBase *base)
+  operator () (const BrigBase *base)
   {
     internal_error ("BrigKind 0x%x unimplemented", base->kind);
     return base->byteCount;
@@ -109,7 +109,7 @@ public:
   }
 
   size_t
-  operator() (const BrigBase *base)
+  operator () (const BrigBase *base)
   {
     return base->byteCount;
   }
@@ -349,7 +349,7 @@ brig_to_generic::get_mangled_name
 (const BrigDirectiveExecutable *func) const
 {
   // Strip the leading &.
-  std::string func_name = get_string (func->name).substr(1);
+  std::string func_name = get_string (func->name).substr (1);
   if (func->linkage == BRIG_LINKAGE_MODULE)
     {
       // Mangle the module scope function names with the module name and
@@ -682,6 +682,6 @@ brig_to_generic::write_globals ()
   check_global_declarations (vec, no_globals);
   delete[] vec;
 
-  for (size_t i = 0; i < m_brig_blobs.size(); ++i)
+  for (size_t i = 0; i < m_brig_blobs.size (); ++i)
     delete m_brig_blobs[i];
 }

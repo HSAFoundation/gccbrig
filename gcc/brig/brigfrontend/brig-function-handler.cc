@@ -38,7 +38,7 @@
 extern int gccbrig_verbose;
 
 size_t
-brig_directive_function_handler::operator() (const BrigBase *base)
+brig_directive_function_handler::operator () (const BrigBase *base)
 {
   m_parent.finish_function ();
 

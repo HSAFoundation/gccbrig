@@ -28,7 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #define FBARRIER_STRUCT_SIZE 32
 
 size_t
-brig_directive_fbarrier_handler::operator() (const BrigBase *base)
+brig_directive_fbarrier_handler::operator () (const BrigBase *base)
 {
   // Model fbarriers as group segment variables with fixed size
   // large enough to store whatever data the actual target needs

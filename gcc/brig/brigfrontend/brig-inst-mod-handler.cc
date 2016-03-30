@@ -46,16 +46,16 @@ brig_inst_mod_handler::round (const BrigBase *base) const
 }
 
 /**
- * This used to inject fesetround() calls to control the rounding mode of the
+ * This used to inject fesetround () calls to control the rounding mode of the
  * actual executed floating point operation. It turned out that supporting
  * conversions using fesetround calls won't work in gcc due to it not being able
  * to restrict code motions across calls at the moment. This functionality is
  * therefore disabled for now until a better solution is found or if
- * fesetround()
+ * fesetround ()
  * is fixed in gcc.
  */
 size_t
-brig_inst_mod_handler::operator() (const BrigBase *base)
+brig_inst_mod_handler::operator () (const BrigBase *base)
 {
   return generate (base);
 
@@ -119,7 +119,7 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 
 			// Emit a call to fegetround() to save the current
 			// rounding mode to a temporary variable.
-			// atomic_assign_expand_fenv() target hook
+			// atomic_assign_expand_fenv () target hook
 			// is close to what is wanted here, but it is meant for
 			// disabling exceptions during an atomic operation.
 
@@ -142,7 +142,7 @@ brig_inst_mod_handler::operator() (const BrigBase *base)
 
 	if (new_mode != NULL_TREE)
 		{
-			// TODO: Emit a call to fesetround(int rounding_mode) to
+			// TODO: Emit a call to fesetround (int rounding_mode) to
 			// set the rounding mode to the one stated in the modifier.
 
 			tree restore_call = build_call_expr (m_parent.fesetround_fn, 1, old_mode);

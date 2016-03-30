@@ -27,7 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "convert.h"
 
 size_t
-brig_cmp_inst_handler::operator() (const BrigBase *base)
+brig_cmp_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *inst_base = (const BrigInstBase *) base;
   const BrigInstCmp *inst = (const BrigInstCmp *) base;
