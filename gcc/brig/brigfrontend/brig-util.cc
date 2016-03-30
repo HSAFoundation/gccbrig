@@ -26,6 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include <sstream>
 
+#include "stdint.h"
 #include "hsa-brig-format.h"
 #include "brig-util.h"
 #include "errors.h"

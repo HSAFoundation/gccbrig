@@ -29,7 +29,7 @@
 #include "tree-pretty-print.h"
 #include "print-tree.h"
 
-const BrigAluModifier *
+const BrigAluModifier8_t *
 brig_cvt_inst_handler::modifier (const BrigBase *base) const
 {
   const BrigInstCvt *inst = (const BrigInstCvt *) base;
@@ -58,9 +58,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
   const BrigInstCvt *cvt_inst = (const BrigInstCvt *) base;
 
-  const BrigAluModifier *inst_modifier = modifier (base);
-  const bool FTZ
-    = inst_modifier != NULL && inst_modifier->allBits & BRIG_ALU_FTZ;
+  const BrigAluModifier8_t *inst_modifier = modifier (base);
+  const bool FTZ = inst_modifier != NULL && (*inst_modifier) & BRIG_ALU_FTZ;
 
   // The conversion source type.
   tree src_type = get_tree_expr_type_for_hsa_type (cvt_inst->sourceType);

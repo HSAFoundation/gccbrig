@@ -31,7 +31,7 @@ brig_inst_mod_handler::generate (const BrigBase *base)
   return basic_handler (base);
 }
 
-const BrigAluModifier *
+const BrigAluModifier8_t *
 brig_inst_mod_handler::modifier (const BrigBase *base) const
 {
   const BrigInstMod *inst = (const BrigInstMod *) base;

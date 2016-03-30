@@ -205,7 +205,7 @@ public:
   }
 
   virtual size_t generate (const BrigBase *base);
-  virtual const BrigAluModifier *modifier (const BrigBase *base) const;
+  virtual const BrigAluModifier8_t *modifier (const BrigBase *base) const;
   virtual const BrigRound8_t *round (const BrigBase *base) const;
 
   size_t operator () (const BrigBase *base);
@@ -326,7 +326,7 @@ public:
   }
 
   virtual size_t generate (const BrigBase *base);
-  virtual const BrigAluModifier *modifier (const BrigBase *base) const;
+  virtual const BrigAluModifier8_t *modifier (const BrigBase *base) const;
   virtual const BrigRound8_t *round (const BrigBase *base) const;
 };
 
