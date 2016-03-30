@@ -1,5 +1,7 @@
 /* brig-c.h -- Header file for brig input's gcc C interface.
-   Copyright (C) 2009-2014 Free Software Foundation, Inc.
+   Copyright (C) 2016 Free Software Foundation, Inc.
+   Contributed by Pekka Jaaskelainen <pekka.jaaskelainen@parmance.com>
+   for General Processor Tech.
 
 This file is part of GCC.
 
@@ -16,9 +18,7 @@ for more details.
 You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
-/**
- * @author pekka.jaaskelainen@parmance.com for General Processor Tech. 2015
- */
+
 #ifndef BRIG_BRIG_C_H
 #define BRIG_BRIG_C_H
 
