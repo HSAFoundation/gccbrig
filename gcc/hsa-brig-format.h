@@ -27,6 +27,8 @@ http://www.hsafoundation.com/html/Content/PRM/Topics/PRM_title_page.htm */
 #ifndef HSA_BRIG_FORMAT_H
 #define HSA_BRIG_FORMAT_H
 
+#include "stdint.h"
+
 struct BrigModuleHeader;
 typedef uint16_t BrigKind16_t;
 typedef uint32_t BrigVersion32_t;
