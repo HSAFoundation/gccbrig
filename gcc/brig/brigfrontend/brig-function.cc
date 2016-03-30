@@ -645,7 +645,7 @@ brig_function::finish_kernel ()
   // been converted to branches to this label.
   append_statement (build_stmt (LABEL_EXPR, m_exit_label));
   // Attempt to convert the kernel to a work-group function that
-  // executes all work-items of the WG using a loop. 
+  // executes all work-items of the WG using a loop.
   convert_to_wg_function ();
 
   append_return_stmt ();

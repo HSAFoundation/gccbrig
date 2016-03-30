@@ -666,7 +666,7 @@ brig_code_entry_handler::build_address_operand (
 	     This way the work items have the same variable in
 	     successive elements to each other in the segment,
 	     helping to achieve autovectorization of loads/stores
-	     with stride 1. */
+	     with stride 1.  */
 
 	  tree_stl_vec uint32_0
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, 0));
@@ -1406,7 +1406,7 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMFLATID:
     case BRIG_OPCODE_WORKITEMABSID:
       /* TO OPTIMIZE: expand more builtins. At least the (cur)wgsize is already
-	 available in cf. */
+	 available in cf.  */
       return true;
     default:
       return false;

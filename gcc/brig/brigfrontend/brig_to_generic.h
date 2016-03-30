@@ -110,7 +110,7 @@ public:
 
   template <typename T>
     std::string
-    get_mangled_name_tmpl (const T *brigVar) const; 
+    get_mangled_name_tmpl (const T *brigVar) const;
 
   std::string get_mangled_name (const BrigDirectiveFbarrier *fbar) const
     { return get_mangled_name_tmpl (fbar); }
@@ -184,8 +184,8 @@ template <typename T>
 std::string
 brig_to_generic::get_mangled_name_tmpl (const T *brigVar) const
 {
-  std::string var_name = get_string (brigVar->name).substr (1);
-  // Mangle the variable name using the function name and the module name. 
+  std::string var_name = get_string (brigVar->name).substr(1);
+  // Mangle the variable name using the function name and the module name.
   if (m_cf != NULL &&
       m_cf->has_function_scope_var (&brigVar->base))
     var_name = m_cf->m_name + "." + var_name;

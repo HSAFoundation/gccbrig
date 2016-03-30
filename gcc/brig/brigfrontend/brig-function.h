@@ -47,8 +47,8 @@ typedef std::vector<tree> tree_stl_vec;
 #define BRIG_2_TREE_HSAIL_S_REG_COUNT (2048)
 #define BRIG_2_TREE_HSAIL_D_REG_COUNT (2048)
 #define BRIG_2_TREE_HSAIL_Q_REG_COUNT (2048)
-#define BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT                                      \
-  (BRIG_2_TREE_HSAIL_C_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT               \
+#define BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT				       \
+  (BRIG_2_TREE_HSAIL_C_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT	       \
    + BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_Q_REG_COUNT)
 
 // Collects data for the currently built function.
