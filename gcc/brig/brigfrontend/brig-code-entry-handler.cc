@@ -1510,8 +1510,10 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
 				 uint32_2);
       id2 = convert (uint64_type_node, id2);
 
-      tree max0 = convert (uint64_type_node, m_parent.m_cf->m_grid_size_vars[0]);
-      tree max1 = convert (uint64_type_node, m_parent.m_cf->m_grid_size_vars[1]);
+      tree max0 = convert (uint64_type_node,
+			   m_parent.m_cf->m_grid_size_vars[0]);
+      tree max1 = convert (uint64_type_node,
+			   m_parent.m_cf->m_grid_size_vars[1]);
 
       tree id2_x_max0_x_max1 = build2 (MULT_EXPR, uint64_type_node, id2, max0);
       id2_x_max0_x_max1
@@ -1552,13 +1554,15 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_WORKITEMFLATID)
     {
       tree z_x_wgsx_wgsy
-	= build2 (MULT_EXPR, uint32_type_node, m_parent.m_cf->m_local_id_vars[2],
+	= build2 (MULT_EXPR, uint32_type_node,
+		  m_parent.m_cf->m_local_id_vars[2],
 		  m_parent.m_cf->m_wg_size_vars[0]);
       z_x_wgsx_wgsy = build2 (MULT_EXPR, uint32_type_node, z_x_wgsx_wgsy,
 			      m_parent.m_cf->m_wg_size_vars[1]);
 
       tree y_x_wgsx
-	= build2 (MULT_EXPR, uint32_type_node, m_parent.m_cf->m_local_id_vars[1],
+	= build2 (MULT_EXPR, uint32_type_node,
+		  m_parent.m_cf->m_local_id_vars[1],
 		  m_parent.m_cf->m_wg_size_vars[0]);
 
       tree sum = build2 (PLUS_EXPR, uint32_type_node, y_x_wgsx, z_x_wgsx_wgsy);

@@ -23,7 +23,8 @@
 # Installation name.
 
 GCCBRIG_INSTALL_NAME := $(shell echo gccbrig|sed '$(program_transform_name)')
-GCCBRIG_TARGET_INSTALL_NAME := $(target_noncanonical)-$(shell echo gccbrig|sed '$(program_transform_name)')
+GCCBRIG_TARGET_INSTALL_NAME := $(target_noncanonical)-$(shell echo gccbrig|sed \
+	'$(program_transform_name)')
 
 # The name for selecting brig in LANGUAGES.
 brig: brig1$(exeext)
@@ -33,7 +34,8 @@ brig: brig1$(exeext)
 CFLAGS-brig/brigspec.o += $(DRIVER_DEFINES)
 
 GCCBRIG_OBJS = $(GCC_OBJS) brig/brigspec.o
-gccbrig$(exeext): $(GCCBRIG_OBJS) $(EXTRA_GCC_OBJS) libcommon-target.a $(LIBDEPS)
+gccbrig$(exeext): $(GCCBRIG_OBJS) $(EXTRA_GCC_OBJS) libcommon-target.a \
+	$(LIBDEPS)
 	+$(LINKER) $(ALL_LINKERFLAGS) $(LDFLAGS) -o $@ \
 	  $(GCCBRIG_OBJS) $(EXTRA_GCC_OBJS) libcommon-target.a \
 	  $(EXTRA_GCC_LIBS) $(LIBS)
@@ -151,14 +153,16 @@ check_brig_parallelize = brig-test.exp=*/test/\[0-57-9a-bd-hj-qs-zA-Z\]* \
 
 brig.install-common: installdirs
 	-rm -f $(DESTDIR)$(bindir)/$(GCCBRIG_INSTALL_NAME)$(exeext)
-	$(INSTALL_PROGRAM) gccbrig$(exeext) $(DESTDIR)$(bindir)/$(GCCBRIG_INSTALL_NAME)$(exeext)
+	$(INSTALL_PROGRAM) gccbrig$(exeext) \
+	$(DESTDIR)$(bindir)/$(GCCBRIG_INSTALL_NAME)$(exeext)
 	-if test -f brig1$(exeext); then \
 	  if test -f gccbrig-cross$(exeext); then \
 	    :; \
 	  else \
 	    rm -f $(DESTDIR)$(bindir)/$(GCCBRIG_TARGET_INSTALL_NAME)$(exeext); \
 	    ( cd $(DESTDIR)$(bindir) && \
-	      $(LN) $(GCCBRIG_INSTALL_NAME)$(exeext) $(GCCBRIG_TARGET_INSTALL_NAME)$(exeext) ); \
+	      $(LN) $(GCCBRIG_INSTALL_NAME)$(exeext) \
+	      $(GCCBRIG_TARGET_INSTALL_NAME)$(exeext) ); \
 	  fi; \
 	fi
 
@@ -180,7 +184,8 @@ brig.install-html: $(build_htmldir)/brig
 	@$(NORMAL_INSTALL)
 	test -z "$(htmldir)" || $(mkinstalldirs) "$(DESTDIR)$(htmldir)"
 	@for p in $(build_htmldir)/brig; do \
-	  if test -f "$$p" || test -d "$$p"; then d=""; else d="$(srcdir)/"; fi; \
+	  if test -f "$$p" || test -d "$$p"; then d=""; else d="$(srcdir)/"; \
+	  fi; \
 	  f=$(html__strip_dir) \
 	  if test -d "$$d$$p"; then \
 	    echo " $(mkinstalldirs) '$(DESTDIR)$(htmldir)/$$f'"; \
@@ -195,7 +200,8 @@ brig.install-html: $(build_htmldir)/brig
 
 brig.install-man: #$(DESTDIR)$(man1dir)/$(GCCBRIG_INSTALL_NAME)$(man1ext)
 
-#$(DESTDIR)$(man1dir)/$(GCCBRIG_INSTALL_NAME)$(man1ext): doc/gccbrig.1 installdirs
+#$(DESTDIR)$(man1dir)/$(GCCBRIG_INSTALL_NAME)$(man1ext): doc/gccbrig.1 \
+#	installdirs
 #	-rm -f $@
 #	-$(INSTALL_DATA) $< $@
 #	-chmod a-x $@
