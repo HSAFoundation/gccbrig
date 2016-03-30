@@ -44,7 +44,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 		      ? INTEGRAL_TYPE_P (TREE_TYPE (cmp_type))
 		      : INTEGRAL_TYPE_P (cmp_type);
 
-  // The type for the GENERIC comparison. It should match the
+  // The type for the GENERIC comparison.  It should match the
   // input operand width for vector comparisons, a boolean
   // otherwise.
   tree result_type = get_comparison_result_type (cmp_type);
@@ -74,7 +74,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       else
 	{
 	  // For HSA float comparison, if either operand is NaN,
-	  // the result is false. NE_EXPR can return true.
+	  // the result is false.  NE_EXPR can return true.
 	  // Represent this is case as !UNEQ_EXPR == !(UNORDERED || EQ).
 	  neg_expr = build2 (UNEQ_EXPR, result_type, operands[1], operands[2]);
 	}
@@ -149,8 +149,8 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 	   && !is_boolean_dest)
     {
       // We need to produce the all-ones pattern for the width of the whole
-      // resulting integer type. In case of vector comparisons, the result
-      // is already in that form. Use back and forth shifts for propagating
+      // resulting integer type.  In case of vector comparisons, the result
+      // is already in that form.  Use back and forth shifts for propagating
       // the lower 1.
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
@@ -170,7 +170,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
     {
       // Because F16 comparison is emulated as an F32 comparison with S32
       // results, we must now truncate the result vector to S16s so it
-      // fits to the destination register. We can build the target vector
+      // fits to the destination register.  We can build the target vector
       // type from the f16 storage type (unsigned ints).
       expr = add_temp_var ("wide_cmp_result", expr);
       tree_stl_vec wide_elements;

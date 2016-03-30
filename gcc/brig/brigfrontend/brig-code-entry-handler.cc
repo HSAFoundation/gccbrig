@@ -419,7 +419,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      "__phsa_builtin_sadhi_u16x2_u8x4", 3, u16x2_type,
 		      u8x4_type, u8x4_type, u16x2_type);
 
-  // TODO: clock has code motion constraints. Should add function attributes
+  // TODO: clock has code motion constraints.  Should add function attributes
   // to prevent reordering with mem instructions or other clock () calls.
   add_custom_builtin (BRIG_OPCODE_CLOCK, BRIG_TYPE_U64, "__phsa_builtin_clock",
 		      0, u64_type);
@@ -780,7 +780,7 @@ brig_code_entry_handler::build_address_operand (
       tree ptr_type = build_pointer_type (char_type_node);
       tree base_reg_var = m_parent.m_cf->get_m_var_declfor_reg (mem_base_reg);
 
-      // Cast the register variable to a pointer. If the reg
+      // Cast the register variable to a pointer.  If the reg
       // width is smaller than the pointer width, need to extend.
 
       if (int_size_in_bytes (ptr_type)
@@ -801,7 +801,7 @@ brig_code_entry_handler::build_address_operand (
   uint64_t offs = gccbrig_to_uint64_t (addr_operand.offset);
   if (offs > 0)
     ptr_offset = build_int_cst (size_type_node, offs);
-  // The pointer type we use to access the memory. Should be of the
+  // The pointer type we use to access the memory.  Should be of the
   // width of the load/store instruction, not the target/data
   // register.
   tree ptype = build_pointer_type (instr_type);
@@ -811,8 +811,8 @@ brig_code_entry_handler::build_address_operand (
   tree u64t = uint64_type_node;
 
   // Sum up the base + offset separately to ensure byte-based ptr
-  // arithmetics. In case of symbol + offset or reg + offset,
-  // this is enough. Note: the base can be actually a separate
+  // arithmetics.  In case of symbol + offset or reg + offset,
+  // this is enough.  Note: the base can be actually a separate
   // (base + offset) in case of accessing private or group
   // memory through offsetting the hidden base pointer argument.
   tree addr = ptr_base;
@@ -837,7 +837,7 @@ brig_code_entry_handler::build_address_operand (
   else if (addr == NULL_TREE && ptr_offset != NULL_TREE)
     {
       // At least direct module-scope global group symbol access with LDA
-      // has only the ptr_offset. Group base ptr is not added as LDA should
+      // has only the ptr_offset.  Group base ptr is not added as LDA should
       // return the segment address, not the flattened one.
       addr = ptr_offset;
     }
@@ -1087,7 +1087,7 @@ brig_code_entry_handler::get_tree_type_for_hsa_type (
 	    // Handle images and samplers as target-specific blobs of data
 	    // that should be allocated earlier on from the runtime side.
 	    // Create a void* that should be initialized to point to the blobs
-	    // by the kernel launcher. Images and samplers are accessed
+	    // by the kernel launcher.  Images and samplers are accessed
 	    // via builtins that take void* as the reference.
 	    // TODO: who and how these arrays should be initialized?
 	    tree void_ptr = build_pointer_type (void_type_node);
@@ -1194,7 +1194,7 @@ brig_code_entry_handler::get_tree_code_for_hsa_opcode (
 	return CALL_EXPR;
     case BRIG_OPCODE_NRCP:
     case BRIG_OPCODE_NRSQRT:
-      // Implement as 1/f (x). gcc should pattern detect that and
+      // Implement as 1/f (x).  gcc should pattern detect that and
       // use a native instruction, if available, for it.
       return TREE_LIST;
     case BRIG_OPCODE_FLOOR:
@@ -1405,7 +1405,7 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMFLATABSID:
     case BRIG_OPCODE_WORKITEMFLATID:
     case BRIG_OPCODE_WORKITEMABSID:
-      /* TO OPTIMIZE: expand more builtins. At least the (cur)wgsize is already
+      /* TO OPTIMIZE: expand more builtins.  At least the (cur)wgsize is already
 	 available in cf.  */
       return true;
     default:
@@ -1816,9 +1816,9 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	    {
 	      // HSAIL shuffle inputs the MASK vector as tightly packed bits
 	      // while GENERIC VEC_PERM_EXPR expects the mask elements to be
-	      // of the same size as the elements in the input vectors. Let's
+	      // of the same size as the elements in the input vectors.  Let's
 	      // cast to a scalar type here and convert to the VEC_PERM_EXPR
-	      // format in instruction handling. There are no arbitrary bit
+	      // format in instruction handling.  There are no arbitrary bit
 	      // width
 	      // int types in GENERIC so we cannot use the original vector
 	      // type.
@@ -1829,7 +1829,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	      // Always treat the element as unsigned ints to avoid
 	      // sign extensions/negative offsets with masks, which
 	      // are expected to be of the same element type as the
-	      // data in VEC_PERM_EXPR. With shuffles the data type
+	      // data in VEC_PERM_EXPR.  With shuffles the data type
 	      // should not matter as it's a "raw operation".
 	      operand_type = get_raw_tree_type (operand_type);
 	    }
@@ -1906,7 +1906,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 		}
 	      else
 		// Always add a view_convert_expr to ensure correct type for
-		// constant operands. For some reason leads to illegal
+		// constant operands.  For some reason leads to illegal
 		// optimizations
 		// otherwise.
 		operand = build1 (VIEW_CONVERT_EXPR, operand_type, operand);
@@ -1921,7 +1921,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	    {
 	      // gcc expects the lower bit to be 1 (or all ones in case of
 	      // vectors)
-	      // while CMOV assumes false iff 0. Convert the input here
+	      // while CMOV assumes false iff 0.  Convert the input here
 	      // to what gcc likes by generating 'operand = operand != 0'.
 	      tree cmp_res_type = get_comparison_result_type (operand_type);
 	      operand = build2 (NE_EXPR, cmp_res_type, operand,
@@ -2011,7 +2011,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
   else
     {
       // All we do here is to bitcast the result and store it to the
-      // 'register' (variable). Mainly need to take care of differing
+      // 'register' (variable).  Mainly need to take care of differing
       // bitwidths.
       size_t src_width = int_size_in_bytes (input_type);
       size_t dst_width = int_size_in_bytes (output_type);
@@ -2029,7 +2029,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 	  if (CONVERT_EXPR_P (inst_expr) && POINTER_TYPE_P (inst_expr))
 	    {
 	      // convert_to_integer crashes when converting a view convert
-	      // expr to a pointer. First cast it to a large enough int
+	      // expr to a pointer.  First cast it to a large enough int
 	      // and let the next integer conversion do the clipping.
 	      inst_expr = convert_to_integer (size_type_node, inst_expr);
 	    }
@@ -2262,7 +2262,7 @@ tree
 brig_code_entry_handler::extend_int (tree input, tree dest_type, tree src_type)
 {
   // Extend integer conversions according to the destination's
-  // ext mode. First we need to clip the input register to
+  // ext mode.  First we need to clip the input register to
   // the possible smaller integer size to ensure the correct sign
   // bit is extended.
   tree clipped_input = convert_to_integer (src_type, input);
@@ -2276,7 +2276,7 @@ brig_code_entry_handler::extend_int (tree input, tree dest_type, tree src_type)
       = convert_to_integer (signed_type_for (dest_type), clipped_input);
 
   // Treat the result as unsigned so we do not sign extend to the
-  // register width. For some reason this GENERIC sequence sign
+  // register width.  For some reason this GENERIC sequence sign
   // extends to the s register:
   /*
     D.1541 = (signed char) s1;
@@ -2285,7 +2285,7 @@ brig_code_entry_handler::extend_int (tree input, tree dest_type, tree src_type)
   */
 
   // The converted result is then extended to the target register
-  // width, using the same sign as the destination. FIXME: is this
+  // width, using the same sign as the destination.  FIXME: is this
   // correct, shouldn't it be TREE_TYPE (output)?
   return convert_to_integer (dest_type, conversion_result);
 }

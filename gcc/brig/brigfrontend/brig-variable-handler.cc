@@ -180,7 +180,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       /* Handle group region variables similarly as kernargs:
 	 assign offsets to the group region on the fly when
 	 a new module scope or function scope group variable is
-	 introduced. These offsets will be then added to the
+	 introduced.  These offsets will be then added to the
 	 group_base hidden pointer passed to the kernel in order to
 	 get the flat address.  */
 
@@ -224,7 +224,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       else
 	{
 	  // Must be an incoming function argument which has
-	  // been parsed in brig-function-handler.cc. No
+	  // been parsed in brig-function-handler.cc.  No
 	  // need to generate anything here.
 	}
     }

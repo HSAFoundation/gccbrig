@@ -58,7 +58,7 @@ brig_to_generic::brig_to_generic ()
 
   // Initialize the basic REAL types.
   // This doesn't work straight away because most of the targets
-  // do not support fp16 natively. Let's by default convert
+  // do not support fp16 natively.  Let's by default convert
   // to fp32 and back before and after each instruction (handle it as
   // a storage format only), and later add an optimization pass
   // that removes the extra converts (in case of multiple fp16 ops
@@ -77,7 +77,7 @@ brig_to_generic::brig_to_generic ()
   s_fp64_type = double_type_node;
 
   // TODO: (machine)query the preferred rounding mode that is set by
-  // the machine by default. This can be redefined by each BRIG module
+  // the machine by default.  This can be redefined by each BRIG module
   // header.
   m_default_float_rounding_mode = BRIG_ROUND_FLOAT_ZERO;
 }
@@ -199,7 +199,7 @@ brig_to_generic::parse (const char *brig_blob)
     brig_code_entry_handler *handler;
   };
 
-  // @todo: Convert to a hash table / map. For now, put the more common
+  // @todo: Convert to a hash table / map.  For now, put the more common
   // entries to the top to keep the scan fast on average.
   code_entry_handler_info handlers[]
     = {{BRIG_KIND_INST_BASIC, &inst_handler},
@@ -216,7 +216,7 @@ brig_to_generic::parse (const char *brig_blob)
        {BRIG_KIND_INST_BR, &branch_inst_handler},
        {BRIG_KIND_INST_LANE, &lane_inst_handler},
        {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
-       // Assuming fences are not needed. FIXME: call builtins
+       // Assuming fences are not needed.  FIXME: call builtins
        // when porting to a platform where they are.
        {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
        {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
@@ -248,7 +248,7 @@ brig_to_generic::parse (const char *brig_blob)
       b += ((7 + entry->byteCount) / 4) * 4;
 
       // There can be zero padding at the end of the section to round the
-      // size to a 4 multiple. Break before trying to read that in as
+      // size to a 4 multiple.  Break before trying to read that in as
       // an incomplete BrigData.
       if (m_data_size - b < sizeof (BrigData))
 	break;
@@ -354,7 +354,7 @@ brig_to_generic::get_mangled_name
     {
       // Mangle the module scope function names with the module name and
       // make them public so they can be queried by the HSA runtime from
-      // the produced binary. Assume it's the currently processed function
+      // the produced binary.  Assume it's the currently processed function
       // we are always referring to.
       func_name = "gccbrig." + m_module_name + "." + func_name;
     }
@@ -652,7 +652,7 @@ brig_to_generic::write_globals ()
       cgraph_finalize_function (f->m_func_decl, true);
 
       // TODO: analyze the kernel's actual group and private segment usage
-      // using a call graph. Now this is overly pessimistic.
+      // using a call graph.  Now this is overly pessimistic.
       tree launcher = f->build_launcher_and_metadata (group_segment_size (),
 						      private_segment_size ());
 

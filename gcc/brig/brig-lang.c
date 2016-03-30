@@ -301,7 +301,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
   else
     {
       /* E.g., build_common_builtin_nodes () asks for modes/builtins
-	       we do not generate or need. Just ignore them silently for now.
+	       we do not generate or need.  Just ignore them silently for now.
       internal_error ("unsupported mode %s unsignedp %d\n",
 		      GET_MODE_NAME (mode), unsignedp);
       */
@@ -326,7 +326,7 @@ brig_langhook_global_bindings_p (void)
   return current_function_decl == NULL_TREE;
 }
 
-/* Push a declaration into the current binding level. From Go: We can't
+/* Push a declaration into the current binding level.  From Go: We can't
    usefully implement this since we don't want to convert from tree
    back to one of our internal data structures.  I think the only way
    this is used is to record a decl which is to be returned by

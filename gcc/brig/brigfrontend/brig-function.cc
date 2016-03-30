@@ -93,8 +93,8 @@ brig_function::label (const std::string &name)
     return (*i).second;
 }
 
-// Record an argument variable for later use. This includes both local variables
-// inside arg blocks and incoming function arguments.
+// Record an argument variable for later use.  This includes both local
+// variables inside arg blocks and incoming function arguments.
 void
 brig_function::add_arg_variable (const BrigDirectiveVariable *brigVar,
 				 tree treeDecl)
@@ -304,7 +304,7 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
   return regEntry->m_var_decl;
 }
 
-// Builds a work-item do..while loop for a single DIM. HEADER_ENTRY is
+// Builds a work-item do..while loop for a single DIM.  HEADER_ENTRY is
 // a statement after which the iteration variables should be initialized and
 // the loop body starts.  BRANCH_AFTER is the statement after which the loop
 // predicate check and the back edge goto will be appended.
@@ -317,11 +317,11 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   tree_stmt_iterator entry = *header_entry;
 
   // TODO: this is not a parallel loop as we share the "register
-  // variables" across work-items. Should create a copy of them
-  // per WI instance. That is, declare them inside the loop, not
+  // variables" across work-items.  Should create a copy of them
+  // per WI instance.  That is, declare them inside the loop, not
   // at function scope.
 
-  // TODO: Initialize the iteration variable. Assume always starting from 0.
+  // TODO: Initialize the iteration variable.  Assume always starting from 0.
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
@@ -379,7 +379,7 @@ brig_function::analyze_calls ()
       if (called_f == NULL)
 	{
 	  // Unfinished function (only declaration within the set of BRIGs)
-	  // found. Cannot finish the CG analysis. Have to assume it does have
+	  // found.  Cannot finish the CG analysis.  Have to assume it does have
 	  // a barrier for safety.
 	  m_has_function_calls_with_barriers = true;
 	  m_has_unexpanded_dp_builtins = true;
@@ -387,13 +387,13 @@ brig_function::analyze_calls ()
 	}
       called_f->analyze_calls ();
       // We can assume m_has_barriers has been correctly set during the
-      // construction of the function decl. No need to reanalyze it.
+      // construction of the function decl.  No need to reanalyze it.
       m_has_function_calls_with_barriers |= called_f->m_has_barriers;
 
       // If the function or any of its called functions has dispatch
       // packet builtin calls that require the local id, we need to
       // set the local id to the context in the work item loop before
-      // the functions are called. If we analyze the opposite, these
+      // the functions are called.  If we analyze the opposite, these
       // function calls can be omitted.
       m_has_unexpanded_dp_builtins |= called_f->m_has_unexpanded_dp_builtins;
     }
@@ -431,7 +431,7 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
 {
 
   /* The launcher function calls the device-side runtime
-     that runs the kernel for all work-items. In C:
+     that runs the kernel for all work-items.  In C:
 
      void KernelName (void* context, void* group_base_addr)
      {
@@ -446,7 +446,7 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
      }
 
      The user/host sees this function as the kernel to call from the
-     outside. The actual kernel generated from HSAIL was named _KernelName.
+     outside.  The actual kernel generated from HSAIL was named _KernelName.
   */
 
   // The original kernel name without the '_' prefix.
@@ -535,10 +535,10 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
   desc.kernarg_max_align = m_kernarg_max_align;
 
   /* Generate a descriptor for the kernel with HSAIL-
-     specific info needed by the runtime. It's done
+     specific info needed by the runtime.  It's done
      via an assembly directive that generates a special
      ELF section for each kernel that contains raw bytes
-     of a descriptor object. This is slightly disgusting,
+     of a descriptor object.  This is slightly disgusting,
      but life is never perfect ;) */
 
   std::ostringstream strstr;
@@ -627,7 +627,7 @@ brig_function::create_alloca_frame ()
   while (!tsi_end_p (entry));
 }
 
-// Finishes the currently built function. After calling this, no new
+// Finishes the currently built function.  After calling this, no new
 // statements should be appeneded to the function.
 void
 brig_function::finish ()
@@ -643,7 +643,7 @@ void
 brig_function::finish_kernel ()
 {
   // Kernel functions should have a single exit point.
-  // Let's create one. The return instructions should have
+  // Let's create one.  The return instructions should have
   // been converted to branches to this label.
   append_statement (build_stmt (LABEL_EXPR, m_exit_label));
   // Attempt to convert the kernel to a work-group function that

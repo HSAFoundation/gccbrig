@@ -47,9 +47,9 @@ brig_inst_mod_handler::round (const BrigBase *base) const
 
 /**
  * This used to inject fesetround () calls to control the rounding mode of the
- * actual executed floating point operation. It turned out that supporting
+ * actual executed floating point operation.  It turned out that supporting
  * conversions using fesetround calls won't work in gcc due to it not being able
- * to restrict code motions across calls at the moment. This functionality is
+ * to restrict code motions across calls at the moment.  This functionality is
  * therefore disabled for now until a better solution is found or if
  * fesetround ()
  * is fixed in gcc.

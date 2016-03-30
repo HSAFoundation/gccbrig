@@ -39,7 +39,7 @@
 /**
  * Converts an HSAIL BRIG input to GENERIC.
  *
- * This class holds global state for the translation process. Handling
+ * This class holds global state for the translation process.  Handling
  * of the smaller pieces of BRIG data is delegated to various handler
  * classes declared in brig-code-entry-handlers.h.
  *
@@ -62,12 +62,12 @@ public:
   // Parses the given BRIG blob.
   void parse (const char *brig_blob);
 
-  // Generate all global declarations. Should be called after the last
+  // Generate all global declarations.  Should be called after the last
   // BRIG has been fed in.
   void write_globals ();
 
   // Returns a string from the data section as a zero terminated
-  // string. Owned by the callee.
+  // string.  Owned by the callee.
   char *get_c_string (size_t entry_offset) const;
   std::string get_string (size_t entry_offset) const;
 
@@ -77,7 +77,7 @@ public:
 
   void append_global (tree g);
 
-  // Returns a function declaration with the given name. Assumes it has been
+  // Returns a function declaration with the given name.  Assumes it has been
   // created previously via a DirectiveFunction or similar.
   tree function_decl (const std::string &name);
   void add_function_decl (const std::string &name, tree func_decl);
@@ -87,7 +87,7 @@ public:
 
   // Initializes a new currently handled function.
   void start_function (tree f);
-  // Finalizes the currently handled function. Should be called before
+  // Finalizes the currently handled function.  Should be called before
   // setting a new function.
   void finish_function ();
 
@@ -119,7 +119,7 @@ public:
   std::string get_mangled_name (const BrigDirectiveExecutable *func) const;
 
   // The size of the group and private segments required by the currently
-  // processed kernel. Private segment size must be multiplied by the
+  // processed kernel.  Private segment size must be multiplied by the
   // number of work-items in the launch, in case of a work-group function.
   size_t group_segment_size () const;
   size_t private_segment_size () const;
@@ -176,7 +176,7 @@ private:
   // for some interprocedural analysis.
   std::map<std::string, brig_function *> m_finished_functions;
 
-  // The parsed BRIG blobs. Owned and will be deleted after use.
+  // The parsed BRIG blobs.  Owned and will be deleted after use.
   std::vector<const char *> m_brig_blobs;
 };
 
@@ -204,7 +204,7 @@ public:
   }
 
   // Handles the brig_code data at the given pointer and adds it to the
-  // currently built tree. Returns the number of consumed bytes;
+  // currently built tree.  Returns the number of consumed bytes;
   virtual size_t operator () (const BrigBase *base) = 0;
 
 protected:
@@ -215,11 +215,11 @@ protected:
 // Stolen from gogo-tree.cc in the Go frontend.
 tree call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...);
 
-// BRIG regs are untyped, but GENERIC is not. We need to
+// BRIG regs are untyped, but GENERIC is not.  We need to
 // add implicit casts in case treating the operand with
 // an instruction with a type different than the created
 // reg var type in order to select correct instruction type
-// later on. This function creates the necessary reinterpret
+// later on.  This function creates the necessary reinterpret
 // type cast from a source variable to the destination type.
 // In case no cast is needed to the same type, SOURCE is returned
 // directly.

@@ -194,9 +194,9 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
     {
       m_parent.m_cf->m_has_barriers = true;
       tree_stl_vec call_operands;
-      // FIXME. We should add attributes (are there suitable ones in gcc?) that
+      // FIXME.  We should add attributes (are there suitable ones in gcc?) that
       // ensure the barrier won't be duplicated or moved out of loops etc.
-      // Like 'noduplicate' of LLVM. Same goes for fbarriers.
+      // Like 'noduplicate' of LLVM.  Same goes for fbarriers.
       m_parent.m_cf->append_statement (
 	expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE, NULL_TREE,
 				call_operands));

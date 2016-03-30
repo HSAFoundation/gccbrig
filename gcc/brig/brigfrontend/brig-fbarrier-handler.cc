@@ -32,7 +32,7 @@ brig_directive_fbarrier_handler::operator () (const BrigBase *base)
 {
   // Model fbarriers as group segment variables with fixed size
   // large enough to store whatever data the actual target needs
-  // to store to maintain the barrier info. The handle is the
+  // to store to maintain the barrier info.  The handle is the
   // offset to the beginning of the object.
 
   const BrigDirectiveFbarrier* fbar = (const BrigDirectiveFbarrier*)base;

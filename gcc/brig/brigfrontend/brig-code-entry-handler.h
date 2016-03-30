@@ -39,13 +39,13 @@ private:
 public:
   brig_code_entry_handler (brig_to_generic &parent);
   // Handles the brig_code data at the given pointer and adds it to the
-  // currently built tree. Returns the number of consumed bytes;
+  // currently built tree.  Returns the number of consumed bytes;
   virtual size_t operator () (const BrigBase *base) = 0;
 
   void append_statement (tree stmt);
 
 protected:
-  // Returns a GENERIC storage type for the given HSA type. Returns
+  // Returns a GENERIC storage type for the given HSA type.  Returns
   // the element type in case of vector instructions.
   tree get_tree_type_for_hsa_type (BrigType16_t brig_type) const;
   // Returns a GENERIC expression type for the given HSA type.

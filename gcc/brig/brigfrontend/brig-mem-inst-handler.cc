@@ -47,8 +47,8 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
 
   tree ptype = build_pointer_type (instr_type);
 
-  // The HSAIL mem instructions are unaligned by default. TODO/OPTIMIZE: exploit
-  // the align modifier, it should lead to faster code.
+  // The HSAIL mem instructions are unaligned by default.
+  // TODO/OPTIMIZE: exploit the align modifier, it should lead to faster code.
   tree unaligned_type = build_aligned_type (instr_type, 8);
 
   // Create a mem ref from the previous result, without offset.

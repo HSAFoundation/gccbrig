@@ -82,7 +82,7 @@ public:
   // instructions are expanded to tree nodes using them.
   void add_id_variables ();
 
-  // Returns a label with the given name in the function. If not found,
+  // Returns a label with the given name in the function.  If not found,
   // creates it (but doesn't append it to the statement list).
   tree label (const std::string &name);
 
@@ -174,7 +174,7 @@ public:
 
   // Work-item ID related variables are cached in the entry of the kernel
   // function in order to use them directly in address computations, leading
-  // to more efficient optimizations. The references to the local variables
+  // to more efficient optimizations.  The references to the local variables
   // are stored here.
   tree m_local_id_vars[3];
   tree m_cur_wg_size_vars[3];

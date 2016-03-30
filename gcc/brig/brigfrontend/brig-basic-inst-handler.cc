@@ -92,8 +92,8 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
 
   // There is limited support for vector highpart mul nodes,
   // and it probably depends on the target which ones are
-  // supported. TO DO: figure out a more robust way to ask this
-  // from the target. can_mult_highpart_p () from optabs.c seems
+  // supported.  TO DO: figure out a more robust way to ask this
+  // from the target.  can_mult_highpart_p () from optabs.c seems
   // not to be reliable enough.
 
   size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
@@ -121,7 +121,7 @@ brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
   tree element_type = get_raw_type (TREE_TYPE (TREE_TYPE (operands[0])));
 
   // Offsets to add to the mask values to convert from the
-  // HSAIL mask to VEC_PERM_EXPR masks. VEC_PERM_EXPR mask
+  // HSAIL mask to VEC_PERM_EXPR masks.  VEC_PERM_EXPR mask
   // assumes an index spanning from 0 to 2 times the vec
   // width while HSAIL refers separately to two different
   // input vectors, thus is not a "full shuffle" where all
@@ -175,7 +175,7 @@ tree
 brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
 {
   // Implement the unpack with a shuffle that stores the unpacked
-  // element to the lowest bit positions in the dest. After that
+  // element to the lowest bit positions in the dest.  After that
   // a bit AND is used to clear the uppermost bits.
   tree src_element_type = TREE_TYPE (TREE_TYPE (operands[0]));
 
@@ -366,7 +366,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	  // There doesn't seem to be a "standard" MAD built-in in gcc so let's
 	  // use a chain of multiply + add for now (double rounding method).
 	  // It should be easier for optimizers
-	  // than a custom built-in call. WIDEN_MULT_EXPR is close, but
+	  // than a custom built-in call.  WIDEN_MULT_EXPR is close, but
 	  // requires a double size result type.
 	  tree mult_res
 	    = build2 (MULT_EXPR, arith_type, operands[0], operands[1]);
@@ -400,7 +400,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	  // Implement as 1.0/sqrt (x) and assume gcc instruction selects to
 	  // native ISA other than a division, if available.
 	  // TO OPTIMIZE: this will happen only with unsafe math optimizations
-	  // on which cannot be used in general for HSAIL compliance. Perhaps
+	  // on which cannot be used in general for HSAIL compliance.  Perhaps
 	  // a builtin call would be better option here.
 	  return build2 (RDIV_EXPR, arith_type, build_one_cst (arith_type),
 			 expand_or_call_builtin (BRIG_OPCODE_SQRT, brig_type,
@@ -526,7 +526,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     }
 
   // The actual arithmetics type that should be performed with the
-  // operation. This is not always the same as the original BRIG
+  // operation.  This is not always the same as the original BRIG
   // opcode's type due to implicit conversions of storage-only f16.
   tree arith_type = gccbrig_is_raw_operation (brig_inst->opcode)
 		      ? get_tree_type_for_hsa_type (brig_inst_type)
@@ -580,7 +580,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 out the best way to compute this,  but it seems gcc is not modularized
 	 in this matter.
 
-	 TO OPTIMIZE: promote to larger vector types instead. For example
+	 TO OPTIMIZE: promote to larger vector types instead.  For example
 	 MULT_HIGHPART_EXPR with  s8x8 doesn't work, but s16x8 seems to at least
 	 with my x86-64.
       */
@@ -655,7 +655,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       || p == BRIG_PACK_SSAT)
     {
       // In case of _s_ or _ss_, select only the lowest element
-      // from the new input to the output. We could extract
+      // from the new input to the output.  We could extract
       // the element and use a scalar operation, but try
       // to keep data in vector registers as much as possible
       // to avoid copies between scalar and vector datapaths.

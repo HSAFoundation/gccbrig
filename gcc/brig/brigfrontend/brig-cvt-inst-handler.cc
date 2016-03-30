@@ -87,8 +87,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   size_t src_reg_size = int_size_in_bytes (TREE_TYPE (input));
 
   // The input register can be of different type&size than the
-  // conversion input size. First cast the input to the conversion
-  // input type. These casts are always bitcasts which can be
+  // conversion input size.  First cast the input to the conversion
+  // input type.  These casts are always bitcasts which can be
   // expressed as casts between different unsigned integers.
   if (src_reg_size != conv_src_size)
     {
@@ -134,7 +134,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	{
 	  // For REAL source types, ztest returns 1 if the value is not +- 0.0f.
 	  // We can perform this check with an integer comparison after
-	  // masking away the sign bit from a correct position. This is safer
+	  // masking away the sign bit from a correct position.  This is safer
 	  // than using absf because of exceptions in case of a NaN
 	  // input (NaN exceptions are not generated with cvt).
 	  tree unsigned_int_type = NULL_TREE;
@@ -230,7 +230,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
   tree assign = NULL_TREE;
   // The output register can be of different type&size than the
-  // conversion output size. Cast it to the register variable type.
+  // conversion output size.  Cast it to the register variable type.
   if (dst_reg_size > conv_dst_size)
     {
       tree casted_output

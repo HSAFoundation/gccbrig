@@ -23,7 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "hsa-brig-format.h"
 
 /* These functions should be eventually converted to machine info queries and
-   redefined at backends. At that point make these functions delegate to
+   redefined at backends.  At that point make these functions delegate to
    those.  */
 
 // Convert the given BRIG SEGMENT to a tree address space ID for the target.

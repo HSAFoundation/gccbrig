@@ -238,8 +238,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	   || (atomic_opcode >= BRIG_ATOMIC_WAIT_EQ
 	       && atomic_opcode <= BRIG_ATOMIC_WAITTIMEOUT_GTE))
     // signal_wait* instructions can return spuriously before the
-    // condition becomes true. Therefore it's legal to return
-    // right away. TO OPTIMIZE: builtin calls which can be
+    // condition becomes true.  Therefore it's legal to return
+    // right away.  TO OPTIMIZE: builtin calls which can be
     // implemented with a power efficient sleep-wait.
     instr_expr = mem_ref;
   else if (atomic_opcode == BRIG_ATOMIC_CAS)
@@ -329,7 +329,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	}
       else
 	{
-	  // Use gcc's atomic builtin. They have the byte size appended to the
+	  // Use gcc's atomic builtin.  They have the byte size appended to the
 	  // end of the name.
 	  builtin_name << "_" << gccbrig_hsa_type_bit_size (inst.type) / 8;
 	}

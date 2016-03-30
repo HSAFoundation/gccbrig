@@ -59,7 +59,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
   const bool is_kernel = base->kind == BRIG_KIND_DIRECTIVE_KERNEL;
 
   // There doesn't seem to be actual use cases for kernel declarations
-  // as they cannot be called by the program. Ignore them until there's
+  // as they cannot be called by the program.  Ignore them until there's
   // a reason not to.
   if (is_kernel && !is_definition)
     return bytes_consumed;
@@ -349,7 +349,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
       m_parent.m_cf->m_kernel_entry = tsi_last (stmts);
 
       // Let's not append the exit label yet, but only after the
-      // function has been built. We need to build it so it can
+      // function has been built.  We need to build it so it can
       // be referred to because returns are converted to gotos to this
       // label.
       m_parent.m_cf->m_exit_label = m_parent.m_cf->label ("__kernel_exit");
