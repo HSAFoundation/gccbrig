@@ -53,7 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "brig-c.h"
 
-/* If -v set. */
+/* If -v set.  */
 int gccbrig_verbose = 0;
 
 /* Language-dependent contents of a type.  */
@@ -132,7 +132,7 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
 
   /* If we set this to one, the whole program optimizations internalize
      all global variables, making them invisible to the .so loader (and
-     thus the Portable HSA Runtime API). */
+     thus the Portable HSA Runtime API).  */
   opts->x_flag_whole_program = 0;
 
   /* The builtin math functions should not set errno.  */
@@ -176,7 +176,7 @@ brig_langhook_post_options (const char **pfilename ATTRIBUTE_UNUSED)
     flag_excess_precision_cmdline = EXCESS_PRECISION_STANDARD;
 
   /* gccbrig casts pointers around like crazy, TBAA produces
-	   broken code if not force disabling it. */
+	   broken code if not force disabling it.  */
   flag_strict_aliasing = 0;
 
   /* Returning false means that the backend should be used.  */
