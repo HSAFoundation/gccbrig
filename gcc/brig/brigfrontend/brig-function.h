@@ -160,7 +160,7 @@ public:
 
   // If the function has at least one alloca instruction, this is set to true.
   bool m_has_allocas;
-  
+
   // If the kernel containts at least one function call that _may_
   // contain a barrier call, this is set to true.
   bool m_has_function_calls_with_barriers;
@@ -200,7 +200,7 @@ public:
 
   // The functions called by this function.
   std::vector<tree> m_called_functions;
-  
+
   brig_to_generic *m_parent;
 private:
   // Bookkeeping for the different HSA registers and their tree declarations

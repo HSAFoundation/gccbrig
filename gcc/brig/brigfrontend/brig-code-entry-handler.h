@@ -168,7 +168,9 @@ public:
 class flush_to_zero : public tree_element_unary_visitor
 {
 public:
-  flush_to_zero (bool fp16) : m_fp16 (fp16) {}
+  flush_to_zero (bool fp16) : m_fp16 (fp16)
+  {
+  }
 
   virtual tree visit_element (brig_code_entry_handler &caller, tree operand);
 

@@ -71,7 +71,7 @@ public:
   {
     /* Implement saturating arithmetics with scalar built-ins for now.
        TO OPTIMIZE: emit GENERIC nodes for the simplest cases or at least
-       emit vector built-ins.	*/
+       emit vector built-ins.  */
     tree builtin = NULL_TREE;
     return call_builtin (&builtin, builtin_name_.c_str (), 2,
 			 TREE_TYPE (operand0), TREE_TYPE (operand0), operand0,
@@ -397,7 +397,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	}
       else if (brig_opcode == BRIG_OPCODE_NRSQRT)
 	{
-	  // Implement as 1.0/sqrt(x) and assume gcc instruction selects to
+	  // Implement as 1.0/sqrt (x) and assume gcc instruction selects to
 	  // native ISA other than a division, if available.
 	  // TO OPTIMIZE: this will happen only with unsafe math optimizations
 	  // on which cannot be used in general for HSAIL compliance. Perhaps

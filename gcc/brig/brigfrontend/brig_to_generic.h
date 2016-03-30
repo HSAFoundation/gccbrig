@@ -184,10 +184,10 @@ template <typename T>
 std::string
 brig_to_generic::get_mangled_name_tmpl (const T *brigVar) const
 {
-  std::string var_name = get_string (brigVar->name).substr(1);
+  std::string var_name = get_string (brigVar->name).substr (1);
   // Mangle the variable name using the function name and the module name.
-  if (m_cf != NULL &&
-      m_cf->has_function_scope_var (&brigVar->base))
+  if (m_cf != NULL
+      && m_cf->has_function_scope_var (&brigVar->base))
     var_name = m_cf->m_name + "." + var_name;
 
   if (brigVar->linkage == BRIG_LINKAGE_MODULE)
@@ -199,7 +199,10 @@ brig_to_generic::get_mangled_name_tmpl (const T *brigVar) const
 class brig_entry_handler
 {
 public:
-  brig_entry_handler (brig_to_generic &parent) : m_parent (parent) {}
+  brig_entry_handler (brig_to_generic &parent) : m_parent (parent)
+  {
+  }
+
   // Handles the brig_code data at the given pointer and adds it to the
   // currently built tree. Returns the number of consumed bytes;
   virtual size_t operator () (const BrigBase *base) = 0;

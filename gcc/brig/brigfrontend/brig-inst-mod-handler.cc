@@ -117,7 +117,7 @@ brig_inst_mod_handler::operator () (const BrigBase *base)
 	// modes per instruction, then the mode switching should
 	// not be used but the correct opcode should be called instead.
 
-	// Emit a call to fegetround() to save the current
+	// Emit a call to fegetround () to save the current
 	// rounding mode to a temporary variable.
 	// atomic_assign_expand_fenv () target hook
 	// is close to what is wanted here, but it is meant for

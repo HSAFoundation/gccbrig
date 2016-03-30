@@ -372,7 +372,7 @@ brig_function::analyze_calls ()
   // functions.
   m_calls_analyzed = true;
 
-  for (size_t i = 0; i < m_called_functions.size(); ++i)
+  for (size_t i = 0; i < m_called_functions.size (); ++i)
     {
       tree f = m_called_functions[i];
       brig_function *called_f = m_parent->get_finished_function (f);
@@ -433,13 +433,15 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
   /* The launcher function calls the device-side runtime
      that runs the kernel for all work-items. In C:
 
-     void KernelName (void* context, void* group_base_addr) {
+     void KernelName (void* context, void* group_base_addr)
+     {
      __phsa_launch_kernel (_KernelName, context, group_base_addr);
      }
 
      or, in case of a successful conversion to a work-group function:
 
-     void KernelName (void* context, void* group_base_addr) {
+     void KernelName (void* context, void* group_base_addr)
+     {
      __phsa_launch_wg_function (_KernelName, context, group_base_addr);
      }
 

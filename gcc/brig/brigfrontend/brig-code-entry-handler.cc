@@ -1194,7 +1194,7 @@ brig_code_entry_handler::get_tree_code_for_hsa_opcode (
 	return CALL_EXPR;
     case BRIG_OPCODE_NRCP:
     case BRIG_OPCODE_NRSQRT:
-      // Implement as 1/f(x). gcc should pattern detect that and
+      // Implement as 1/f (x). gcc should pattern detect that and
       // use a native instruction, if available, for it.
       return TREE_LIST;
     case BRIG_OPCODE_FLOOR:

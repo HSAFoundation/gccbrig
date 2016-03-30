@@ -24,7 +24,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* These functions should be eventually converted to machine info queries and
    redefined at backends. At that point make these functions delegate to
-   those.*/
+   those.  */
 
 // Convert the given BRIG SEGMENT to a tree address space ID for the target.
 unsigned gccbrig_get_target_addr_space_id (BrigSegment8_t segment);
