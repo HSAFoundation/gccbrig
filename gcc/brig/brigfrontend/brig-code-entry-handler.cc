@@ -1,5 +1,7 @@
 /* brig-code-entry-handler.cc -- a gccbrig base class
-   Copyright (C) 2015-2016 Free Software Foundation, Inc.
+   Copyright (C) 2016 Free Software Foundation, Inc.
+   Contributed by Pekka Jaaskelainen <pekka.jaaskelainen@parmance.com>
+   for General Processor Tech.
 
    This file is part of GCC.
 
@@ -16,9 +18,6 @@
    You should have received a copy of the GNU General Public License
    along with GCC; see the file COPYING3.  If not see
    <http://www.gnu.org/licenses/>.  */
-/**
- * @author pekka.jaaskelainen@parmance.com for General Processor Tech.
- */
 
 #include "brig-code-entry-handler.h"
 
