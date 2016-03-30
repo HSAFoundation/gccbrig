@@ -302,9 +302,8 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
     {
       /* E.g., build_common_builtin_nodes () asks for modes/builtins
 	       we do not generate or need. Just ignore them silently for now.
-      internal_error ("unsupported mode %s unsignedp %d\n",
-								      GET_MODE_NAME (mode),
-      unsignedp);
+      internal_error ("unsupported mode %s unsignedp %d\n", GET_MODE_NAME(mode),
+		      unsignedp);
       */
       return void_type_node;
     }
