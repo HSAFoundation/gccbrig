@@ -54,7 +54,7 @@ brig_directive_function_handler::operator() (const BrigBase *base)
     }
 
   const bool is_definition
-    = exec->modifier.allBits & BRIG_EXECUTABLE_DEFINITION;
+    = exec->modifier & BRIG_EXECUTABLE_DEFINITION;
 
   const bool is_kernel = base->kind == BRIG_KIND_DIRECTIVE_KERNEL;
 

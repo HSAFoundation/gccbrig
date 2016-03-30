@@ -60,7 +60,7 @@ brig_seg_inst_handler::operator() (const BrigBase *base)
       else
 	internal_error ("Unimplemented.");
 
-      if (!(inst.modifier.allBits & BRIG_SEG_CVT_NONULL))
+      if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
 	  // Need to convert the null value. -1 is used for 32b segments,
 	  // and 0 for flat/global.
@@ -91,7 +91,7 @@ brig_seg_inst_handler::operator() (const BrigBase *base)
       else
 	internal_error ("Unimplemented.");
 
-      if (!(inst.modifier.allBits & BRIG_SEG_CVT_NONULL))
+      if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
 	  // Need to convert the null value. -1 is used for 32b segments,
 	  // and 0 for flat/global.

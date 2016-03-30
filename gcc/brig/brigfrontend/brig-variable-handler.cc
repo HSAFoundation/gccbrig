@@ -64,7 +64,7 @@ brig_directive_variable_handler::build_variable (
 
   if (brigVar->segment == BRIG_SEGMENT_READONLY
       || brigVar->segment == BRIG_SEGMENT_KERNARG
-      || (brigVar->modifier.allBits & BRIG_VARIABLE_CONST))
+      || (brigVar->modifier & BRIG_VARIABLE_CONST))
     {
       TYPE_READONLY (t) = 1;
     }
@@ -86,7 +86,7 @@ brig_directive_variable_handler::build_variable (
   TREE_USED (var_decl) = 1;
 
   TREE_PUBLIC (var_decl) = 1;
-  if (brigVar->modifier.allBits & BRIG_VARIABLE_DEFINITION)
+  if (brigVar->modifier & BRIG_VARIABLE_DEFINITION)
     DECL_EXTERNAL (var_decl) = 0;
   else
     DECL_EXTERNAL (var_decl) = 1; // The definition is elsewhere.

@@ -1689,12 +1689,12 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
   if (base->kind == BRIG_KIND_INST_MOD)
     {
       const BrigInstMod *mod = (const BrigInstMod *) base;
-      ftz = mod->modifier.allBits & BRIG_ALU_FTZ;
+      ftz = mod->modifier & BRIG_ALU_FTZ;
     }
   else if (base->kind == BRIG_KIND_INST_CMP)
     {
       const BrigInstCmp *cmp = (const BrigInstCmp *) base;
-      ftz = cmp->modifier.allBits & BRIG_ALU_FTZ;
+      ftz = cmp->modifier & BRIG_ALU_FTZ;
     }
 
   bool is_vec_instr = brig_inst.type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64
@@ -1952,12 +1952,12 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
   if (base->kind == BRIG_KIND_INST_MOD)
     {
       const BrigInstMod *mod = (const BrigInstMod *) base;
-      ftz = mod->modifier.allBits & BRIG_ALU_FTZ;
+      ftz = mod->modifier & BRIG_ALU_FTZ;
     }
   else if (base->kind == BRIG_KIND_INST_CMP)
     {
       const BrigInstCmp *cmp = (const BrigInstCmp *) base;
-      ftz = cmp->modifier.allBits & BRIG_ALU_FTZ;
+      ftz = cmp->modifier & BRIG_ALU_FTZ;
     }
 
   if (TREE_CODE (inst_expr) == CALL_EXPR)

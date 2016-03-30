@@ -19,6 +19,8 @@ along with GCC; see the file COPYING3.  If not see
 /**
  * @author pekka.jaaskelainen@parmance.com for General Processor Tech. 2015
  */
+
+#include "stdint.h"
 #include "brig-machine.h"
 
 unsigned
