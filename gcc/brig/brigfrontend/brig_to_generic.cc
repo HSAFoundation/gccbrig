@@ -342,6 +342,46 @@ brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
 {
   append_global (var_decl);
   m_global_variables[name] = var_decl;
+
+  // If we have generated a host def var ptr for this global variable
+  // definition (because there was a declaration earlier which looked
+  // like it might have been a host defined variable), we now have
+  // to assign its address and make it non-public to allow the
+  // references to point to the defined variable instead.
+  std::string host_def_var_name
+    = std::string (PHSA_HOST_DEF_PTR_PREFIX) + name;
+  tree host_def_var = global_variable (host_def_var_name.c_str ());
+  if (host_def_var == NULL_TREE)
+    return;
+
+  tree ptype = build_pointer_type (TREE_TYPE (var_decl));
+  tree var_addr = build1 (ADDR_EXPR, ptype, var_decl);
+
+  DECL_INITIAL (host_def_var) = var_addr;
+  TREE_PUBLIC (host_def_var) = 0;
+}
+
+// Adds an indirection pointer for a potential host-defined program scope
+// variable declaration.
+void
+brig_to_generic::add_host_def_var_ptr (const std::string &name, tree var_decl)
+{
+  std::string var_name = std::string (PHSA_HOST_DEF_PTR_PREFIX) + name;
+
+  tree name_identifier = get_identifier (var_name.c_str ());
+
+  tree ptr_var = build_decl (UNKNOWN_LOCATION, VAR_DECL, name_identifier,
+			     build_pointer_type (TREE_TYPE (var_decl)));
+  DECL_EXTERNAL (ptr_var) = 0;
+  DECL_ARTIFICIAL (ptr_var) = 0;
+
+  TREE_PUBLIC (ptr_var) = 1;
+  TREE_USED (ptr_var) = 1;
+  TREE_ADDRESSABLE (ptr_var) = 1;
+  TREE_STATIC (ptr_var) = 1;
+
+  append_global (ptr_var);
+  m_global_variables[var_name] = ptr_var;
 }
 
 std::string
@@ -473,7 +513,7 @@ brig_to_generic::finish_function ()
   if (m_cf == NULL || m_cf->m_func_decl == NULL_TREE)
     return;
 
-  //debug_function (m_cf->func_decl,
+  //debug_function (m_cf->m_func_decl,
   //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
   if (!m_cf->m_is_kernel)
     {

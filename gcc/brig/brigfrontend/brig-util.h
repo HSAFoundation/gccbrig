@@ -44,4 +44,6 @@ bool gccbrig_is_raw_operation (BrigOpcode16_t opcode);
 
 BrigType16_t gccbrig_tree_type_to_hsa_type (tree tree_type);
 
+bool might_be_host_defined_var (const BrigDirectiveVariable *brigVar);
+
 #endif

@@ -35,5 +35,6 @@ typedef struct
 } phsa_kernel_descriptor;
 
 #define PHSA_KERNELDESC_SECTION_PREFIX "phsa.kerneldesc."
+#define PHSA_HOST_DEF_PTR_PREFIX "__phsa.host_def."
 
 #endif

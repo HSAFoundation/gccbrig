@@ -35,6 +35,8 @@
 #include "langhooks.h"
 #include "gimple-expr.h"
 #include "convert.h"
+#include "brig-util.h"
+#include "phsa.h"
 
 brig_code_entry_handler::builtin_map brig_code_entry_handler::s_custom_builtins;
 
@@ -734,13 +736,27 @@ brig_code_entry_handler::build_address_operand (
 	    symbol_base = build1 (ADDR_EXPR, ptype, arg_var_decl);
 	}
       else
+
 	{
 	  tree global_var_decl = m_parent.global_variable (var_name);
-	  gcc_assert (global_var_decl != NULL_TREE);
 
-	  tree ptype = build_pointer_type (instr_type);
+	  // In case the global variable hasn't been defined (yet),
+	  // use the host def indirection ptr variable.
+	  if (global_var_decl == NULL_TREE)
+	    {
+	      std::string host_ptr_name
+		= std::string (PHSA_HOST_DEF_PTR_PREFIX) + var_name;
+	      tree host_defined_ptr = m_parent.global_variable (host_ptr_name);
+	      gcc_assert (host_defined_ptr != NULL_TREE);
+	      symbol_base = host_defined_ptr;
+	    }
+	  else
+	    {
+	      gcc_assert (global_var_decl != NULL_TREE);
 
-	  symbol_base = build1 (ADDR_EXPR, ptype, global_var_decl);
+	      tree ptype = build_pointer_type (instr_type);
+	      symbol_base = build1 (ADDR_EXPR, ptype, global_var_decl);
+	    }
 	}
     }
 
@@ -2302,3 +2318,4 @@ brig_code_entry_handler::int_constant_value (tree node)
     n = TREE_OPERAND (n, 0);
   return int_cst_value (n);
 }
+

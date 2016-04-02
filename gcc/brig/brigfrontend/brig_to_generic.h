@@ -84,6 +84,7 @@ public:
 
   tree global_variable (const std::string &name) const;
   void add_global_variable (const std::string &name, tree var_decl);
+  void add_host_def_var_ptr (const std::string &name, tree var_decl);
 
   // Initializes a new currently handled function.
   void start_function (tree f);

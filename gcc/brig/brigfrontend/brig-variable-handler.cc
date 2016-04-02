@@ -25,14 +25,16 @@
 #include "errors.h"
 #include "brig-machine.h"
 #include "brig-util.h"
+#include "print-tree.h"
 
 tree
 brig_directive_variable_handler::build_variable (
-  const BrigDirectiveVariable *brigVar, tree_code m_var_decltype)
+  const BrigDirectiveVariable *brigVar, tree_code var_decltype)
 {
   std::string var_name = m_parent.get_mangled_name (brigVar);
 
-  // Strip & from the beginning of the name.
+  bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
+
   tree name_identifier = get_identifier (var_name.c_str ());
 
   tree var_decl;
@@ -46,7 +48,7 @@ brig_directive_variable_handler::build_variable (
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
 	error ("array variable size cannot be zero");
-      if (m_var_decltype == PARM_DECL)
+      if (var_decltype == PARM_DECL)
 	t = build_pointer_type (element_type);
       else
 	t = build_array_type_nelts (element_type, element_count);
@@ -75,7 +77,7 @@ brig_directive_variable_handler::build_variable (
       alignment = 1 << (brigVar->align - 1);
     }
 
-  var_decl = build_decl (UNKNOWN_LOCATION, m_var_decltype, name_identifier, t);
+  var_decl = build_decl (UNKNOWN_LOCATION, var_decltype, name_identifier, t);
 
   DECL_ALIGN (var_decl) = alignment * 8;
 
@@ -85,7 +87,7 @@ brig_directive_variable_handler::build_variable (
   TREE_USED (var_decl) = 1;
 
   TREE_PUBLIC (var_decl) = 1;
-  if (brigVar->modifier & BRIG_VARIABLE_DEFINITION)
+  if (is_definition)
     DECL_EXTERNAL (var_decl) = 0;
   else
     DECL_EXTERNAL (var_decl) = 1; // The definition is elsewhere.
@@ -113,7 +115,7 @@ brig_directive_variable_handler::build_variable (
       DECL_INITIAL (var_decl) = initializer;
     }
 
-  if (m_var_decltype == PARM_DECL)
+  if (var_decltype == PARM_DECL)
     {
       DECL_ARG_TYPE (var_decl) = TREE_TYPE (var_decl);
       DECL_EXTERNAL (var_decl) = 0;
@@ -199,12 +201,28 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
   else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
 	   || brigVar->segment == BRIG_SEGMENT_READONLY)
     {
-      tree var_decl = build_variable (brigVar);
-      // Make all global variables program scope for now
-      // so we can get their address from the Runtime API.
-      DECL_CONTEXT (var_decl) = NULL_TREE;
-      TREE_STATIC (var_decl) = 1;
-      m_parent.add_global_variable (var_name, var_decl);
+      bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
+      tree def = is_definition ? NULL_TREE : m_parent.global_variable (var_name);
+
+      if (!is_definition && def != NULL_TREE)
+	{
+	  // We have a definition already for this declaration.
+	  // Use the definition instead of the declaration.
+	}
+      else if (might_be_host_defined_var (brigVar))
+	{
+	  tree var_decl = build_variable (brigVar);
+	  m_parent.add_host_def_var_ptr (var_name, var_decl);
+	}
+      else
+	{
+	  tree var_decl = build_variable (brigVar);
+	  // Make all global variables program scope for now
+	  // so we can get their address from the Runtime API.
+	  DECL_CONTEXT (var_decl) = NULL_TREE;
+	  TREE_STATIC (var_decl) = 1;
+	  m_parent.add_global_variable (var_name, var_decl);
+	}
     }
   else if (brigVar->segment == BRIG_SEGMENT_ARG)
     {
@@ -233,3 +251,4 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 
   return base->byteCount;
 }
+

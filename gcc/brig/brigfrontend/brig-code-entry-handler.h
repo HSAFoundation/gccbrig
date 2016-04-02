@@ -245,7 +245,7 @@ public:
   size_t operator () (const BrigBase *base);
 
   tree build_variable (const BrigDirectiveVariable *brigVar,
-		       tree_code m_var_decltype = VAR_DECL);
+		       tree_code var_decltype = VAR_DECL);
 };
 
 class brig_directive_fbarrier_handler : public brig_code_entry_handler

@@ -326,3 +326,22 @@ gccbrig_is_raw_operation (BrigOpcode16_t opcode)
 	 || opcode == BRIG_OPCODE_UNPACKHI || opcode == BRIG_OPCODE_ST
 	 || opcode == BRIG_OPCODE_PACK;
 }
+
+// The program scope definition could be left external within the
+// kernel binary which means it must be defined by the host via
+// HSA runtime. For these we have special treatment: 
+// Create additional pointer indirection when accessing the variable
+// value from kernel code through a generated pointer
+// __gccbrig_ptr_variable_name. The pointer value then can be set either
+// within the kernel binary (in case of a later linked in definition)
+// or from the host.
+bool
+might_be_host_defined_var (const BrigDirectiveVariable *brigVar)
+{
+  bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
+  return
+    brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition 
+    && brigVar->linkage == BRIG_LINKAGE_PROGRAM
+    && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM ||
+	brigVar->allocation == BRIG_ALLOCATION_AGENT);
+}
