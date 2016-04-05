@@ -584,6 +584,21 @@ brig_to_generic::private_variable_segment_offset (
   return (*i).second;
 }
 
+bool
+brig_to_generic::has_private_variable (const std::string &name) const
+{
+  std::map<std::string, size_t>::const_iterator i
+    = m_private_data_sizes.find (name);
+  return i != m_private_data_sizes.end ();
+}
+
+bool
+brig_to_generic::has_group_variable (const std::string &name) const
+{
+  var_offset_table::const_iterator i = m_group_offsets.find (name);
+  return i != m_group_offsets.end ();
+}
+
 size_t
 brig_to_generic::private_variable_size (const std::string &name) const
 {

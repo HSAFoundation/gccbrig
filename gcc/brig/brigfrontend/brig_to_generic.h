@@ -104,8 +104,14 @@ public:
 
   size_t group_variable_segment_offset (const std::string &name) const;
 
+  bool
+  has_group_variable (const std::string &name) const;
+
   size_t
   private_variable_segment_offset (const std::string &name) const;
+
+  bool
+  has_private_variable (const std::string &name) const;
 
   size_t private_variable_size (const std::string &name) const;
 

@@ -185,8 +185,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	 introduced.  These offsets will be then added to the
 	 group_base hidden pointer passed to the kernel in order to
 	 get the flat address.  */
-
-      m_parent.append_group_variable (var_name, var_size, alignment);
+      if (!m_parent.has_group_variable (var_name))
+	m_parent.append_group_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_PRIVATE
@@ -195,7 +195,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       /* Private variables are handled like group variables,
 	 except that their offsets are multiplied by the work-item
 	 flat id, when accessed.  */
-      m_parent.append_private_variable (var_name, var_size, alignment);
+      if (!m_parent.has_private_variable (var_name))
+	m_parent.append_private_variable (var_name, var_size, alignment);
       return base->byteCount;
     }
   else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
