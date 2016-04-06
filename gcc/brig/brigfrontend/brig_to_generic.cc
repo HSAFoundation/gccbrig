@@ -511,7 +511,12 @@ void
 brig_to_generic::finish_function ()
 {
   if (m_cf == NULL || m_cf->m_func_decl == NULL_TREE)
-    return;
+    {
+      // It can be a finished func declaration fingerprint,
+      // in that case we don't have m_func_decl.
+      m_cf = NULL;
+      return;
+    }
 
   //debug_function (m_cf->m_func_decl,
   //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
