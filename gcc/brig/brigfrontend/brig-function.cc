@@ -26,7 +26,6 @@
 #include "stringpool.h"
 #include "tree-iterator.h"
 #include "toplev.h"
-#include "cgraph.h"
 #include "gimplify.h"
 #include "gimple-expr.h"
 #include "print-tree.h"
@@ -41,6 +40,7 @@
 #include "dumpfile.h"
 #include "tree-cfg.h"
 #include "errors.h"
+#include "function.h"
 #include "brig_to_generic.h"
 
 brig_function::brig_function (const BrigDirectiveExecutable *exec,

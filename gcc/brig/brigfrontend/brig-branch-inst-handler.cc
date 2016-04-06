@@ -26,6 +26,7 @@
 #include "tree-pretty-print.h"
 #include "print-tree.h"
 #include "vec.h"
+#include "fold-const.h"
 
 size_t
 brig_branch_inst_handler::operator () (const BrigBase *base)

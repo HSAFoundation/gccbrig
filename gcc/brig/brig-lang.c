@@ -32,7 +32,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-expr.h"
 #include "gimplify.h"
 #include "dumpfile.h"
-#include "cgraph.h"
 #include "stor-layout.h"
 #include "toplev.h"
 #include "debug.h"
@@ -46,6 +45,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "vec.h"
 #include "brigfrontend/brig_to_generic.h"
 #include "machmode.h"
+#include "fold-const.h"
 
 #include "common/common-target.h"
 
@@ -101,7 +101,7 @@ struct GTY (()) language_function
 static bool
 brig_langhook_init (void)
 {
-  build_common_tree_nodes (false, false);
+  build_common_tree_nodes (false);
 
   /* From Go: I don't know why this has to be done explicitly.  */
   void_list_node = build_tree_list (NULL_TREE, void_type_node);
@@ -192,13 +192,10 @@ get_file_size (FILE *file)
   return size;
 }
 
-static brig_to_generic *brig_to_gen = NULL;
-
 static void
 brig_langhook_parse_file (void)
 {
-  if (brig_to_gen == NULL)
-    brig_to_gen = new brig_to_generic;
+  brig_to_generic brig_to_gen;
 
   for (unsigned int i = 0; i < num_in_fnames; ++i)
     {
@@ -212,9 +209,11 @@ brig_langhook_parse_file (void)
 	  error ("Could not read the BRIG file.");
 	  exit (1);
 	}
-      brig_to_gen->parse (brig_blob);
+      brig_to_gen.parse (brig_blob);
       fclose (f);
     }
+
+  brig_to_gen.write_globals ();
 }
 
 static tree
@@ -287,9 +286,6 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	case 64:
 	  gcc_assert (int_size_in_bytes (long_integer_type_node) == 8);
 	  return unsignedp ? uint64_type_node : long_integer_type_node;
-	case 128:
-	  return unsignedp ? int128_unsigned_type_node
-			   : int128_integer_type_node;
 	default:
 	  internal_error ("unsupported int mode %s unsignedp %d size %d\n",
 			  GET_MODE_NAME (mode), unsignedp,
@@ -345,15 +341,6 @@ static tree
 brig_langhook_getdecls (void)
 {
   return NULL;
-}
-
-/* Write out globals.  */
-
-static void
-brig_langhook_write_globals (void)
-{
-  gcc_assert (brig_to_gen != NULL);
-  brig_to_gen->write_globals ();
 }
 
 static int
@@ -464,7 +451,6 @@ brig_localize_identifier (const char *ident)
 #define LANG_HOOKS_GLOBAL_BINDINGS_P brig_langhook_global_bindings_p
 #define LANG_HOOKS_PUSHDECL brig_langhook_pushdecl
 #define LANG_HOOKS_GETDECLS brig_langhook_getdecls
-#define LANG_HOOKS_WRITE_GLOBALS brig_langhook_write_globals
 #define LANG_HOOKS_GIMPLIFY_EXPR brig_langhook_gimplify_expr
 #define LANG_HOOKS_EH_PERSONALITY brig_langhook_eh_personality
 

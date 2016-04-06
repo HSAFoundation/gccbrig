@@ -36,6 +36,7 @@
 #include "gimple-expr.h"
 #include "convert.h"
 #include "brig-util.h"
+#include "builtins.h"
 #include "phsa.h"
 
 brig_code_entry_handler::builtin_map brig_code_entry_handler::s_custom_builtins;
@@ -996,6 +997,7 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand (
 	  size_t element_count = TYPE_VECTOR_SUBPARTS (tree_element_type);
 	  if (bytes_left < scalar_element_size * element_count)
 	    fatal_error (
+	      UNKNOWN_LOCATION,
 	      "Not enough bytes left for the initializer (%lu need %lu).",
 	      bytes_left, scalar_element_size * element_count);
 
@@ -1014,6 +1016,7 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand (
 	{
 	  if (bytes_left < scalar_element_size)
 	    fatal_error (
+	      UNKNOWN_LOCATION,
 	      "Not enough bytes left for the initializer (%lu need %lu).",
 	      bytes_left, scalar_element_size);
 	  cst = build_tree_cst_element (scalar_element_type, next_data);
@@ -1334,8 +1337,10 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode (
   if (VECTOR_TYPE_P (type) && builtin != NULL_TREE)
     {
       // Try to find a vectorized version of the built-in.
+      // TODO: probably assert that builtin is a mathfn builtin?
       tree vec_builtin
-	= targetm.vectorize.builtin_vectorized_function (builtin, type, type);
+	= targetm.vectorize.builtin_vectorized_function
+	(builtin_mathfn_code (builtin), type, type);
       if (vec_builtin != NULL_TREE)
 	return vec_builtin;
       else

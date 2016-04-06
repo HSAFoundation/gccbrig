@@ -24,11 +24,15 @@
 #include <iomanip>
 #include <sstream>
 
+#include "config.h"
+#include "system.h"
+#include "coretypes.h"
+#include "target.h"
+#include "function.h"
 #include "brig_to_generic.h"
 #include "stringpool.h"
 #include "tree-iterator.h"
 #include "toplev.h"
-#include "cgraph.h"
 #include "gimplify.h"
 #include "gimple-expr.h"
 #include "print-tree.h"
@@ -43,6 +47,8 @@
 #include "dumpfile.h"
 #include "tree-cfg.h"
 #include "errors.h"
+#include "fold-const.h"
+#include "cgraph.h"
 
 extern int gccbrig_verbose;
 
@@ -524,7 +530,7 @@ brig_to_generic::finish_function ()
     {
       m_cf->finish ();
       gimplify_function_tree (m_cf->m_func_decl);
-      cgraph_finalize_function (m_cf->m_func_decl, true);
+      cgraph_node::finalize_function (m_cf->m_func_decl, true);
     }
   pop_cfun ();
 
@@ -709,7 +715,7 @@ brig_to_generic::write_globals ()
       f->finish_kernel ();
 
       gimplify_function_tree (f->m_func_decl);
-      cgraph_finalize_function (f->m_func_decl, true);
+      cgraph_node::finalize_function (f->m_func_decl, true);
 
       // TODO: analyze the kernel's actual group and private segment usage
       // using a call graph.  Now this is overly pessimistic.
@@ -719,7 +725,7 @@ brig_to_generic::write_globals ()
       append_global (launcher);
 
       gimplify_function_tree (launcher);
-      cgraph_finalize_function (launcher, true);
+      cgraph_node::finalize_function (launcher, true);
       pop_cfun ();
     }
 
@@ -737,9 +743,10 @@ brig_to_generic::write_globals ()
 
   wrapup_global_declarations (vec, no_globals);
 
-  finalize_compilation_unit ();
+  symtab->finalize_compilation_unit ();
 
-  check_global_declarations (vec, no_globals);
+// TODO: probably use for loop and call check_global_declaration (..)
+//  check_global_declarations (vec, no_globals);
   delete[] vec;
 
   for (size_t i = 0; i < m_brig_blobs.size (); ++i)
