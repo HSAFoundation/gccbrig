@@ -127,7 +127,6 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
 {
   /* Signed overflow is precisely defined.  */
   opts->x_flag_wrapv = 1;
-
   opts->x_optimize = 3;
 
   /* If we set this to one, the whole program optimizations internalize
