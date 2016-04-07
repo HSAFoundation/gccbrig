@@ -286,6 +286,8 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	case 64:
 	  gcc_assert (int_size_in_bytes (long_integer_type_node) == 8);
 	  return unsignedp ? uint64_type_node : long_integer_type_node;
+	case 128:
+	  return build_nonstandard_integer_type (128, unsignedp);
 	default:
 	  internal_error ("unsupported int mode %s unsignedp %d size %d\n",
 			  GET_MODE_NAME (mode), unsignedp,
