@@ -743,10 +743,6 @@ brig_to_generic::write_globals ()
 
   wrapup_global_declarations (vec, no_globals);
 
-  symtab->finalize_compilation_unit ();
-
-// TODO: probably use for loop and call check_global_declaration (..)
-//  check_global_declarations (vec, no_globals);
   delete[] vec;
 
   for (size_t i = 0; i < m_brig_blobs.size (); ++i)
