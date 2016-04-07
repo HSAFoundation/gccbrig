@@ -1356,22 +1356,13 @@ brig_code_entry_handler::get_comparison_result_type (tree source_type)
 {
   if (VECTOR_TYPE_P (source_type))
     {
-      tree element_type = TREE_TYPE (source_type);
-      size_t element_size = int_size_in_bytes (element_type);
-      size_t element_count = TYPE_VECTOR_SUBPARTS (source_type);
-      bool is_int_cmp = INTEGRAL_TYPE_P (element_type);
-      if (is_int_cmp)
-	return signed_type_for (source_type);
-      else if (element_size == 4)
-	return build_vector_type (get_tree_type_for_hsa_type (BRIG_TYPE_S32),
-				  element_count);
-      else if (element_size == 8)
-	return build_vector_type (get_tree_type_for_hsa_type (BRIG_TYPE_S64),
-				  element_count);
-      else
-	error ("Unsupported float element size.");
+      size_t element_size = int_size_in_bytes (TREE_TYPE (source_type));
+      return build_vector_type
+	(build_nonstandard_boolean_type (element_size * 8),
+	 TYPE_VECTOR_SUBPARTS (source_type));
     }
-  return get_tree_type_for_hsa_type (BRIG_TYPE_B1);
+  else
+    return get_tree_type_for_hsa_type (BRIG_TYPE_B1);
 }
 
 // Returns true in case the given opcode needs to know about work-item context.
@@ -1829,8 +1820,6 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	  operand_type
 	    = VECTOR_TYPE_P (src_type) ? TREE_TYPE (src_type) : src_type;
 	}
-      else if (brig_inst.opcode == BRIG_OPCODE_CMOV && i == 1)
-	operand_type = get_comparison_result_type (operand_type);
       else if (brig_inst.opcode == BRIG_OPCODE_SHUFFLE)
 	{
 	  if (i == 3)
@@ -1946,7 +1935,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	      // to what gcc likes by generating 'operand = operand != 0'.
 	      tree cmp_res_type = get_comparison_result_type (operand_type);
 	      operand = build2 (NE_EXPR, cmp_res_type, operand,
-				build_zero_cst (cmp_res_type));
+				build_zero_cst (TREE_TYPE (operand)));
 	    }
 
 	  if (ftz)
