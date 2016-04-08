@@ -145,21 +145,57 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
     {
       expr = convert_to_real (brig_to_generic::s_fp32_type, expr);
     }
-  else if (!VECTOR_TYPE_P (dest_type) && INTEGRAL_TYPE_P (dest_type)
+  else if (VECTOR_TYPE_P (dest_type) && ANY_INTEGRAL_TYPE_P (dest_type)
 	   && !is_boolean_dest)
     {
+      // In later gcc versions, the output of comparison is not
+      // all ones for vectors like still in 4.9.1. We need to use
+      // create an additional to produce the all ones 'true' value
+      // required by HSA.
+      // VEC_COND_EXPR <a == b, { -1, -1, -1, -1 }, { 0, 0, 0, 0 }>;
+      tree all_ones =
+	build_vector_from_val (dest_type,
+			       build_minus_one_cst (TREE_TYPE (dest_type)));
+      tree all_zeroes =
+	build_vector_from_val (dest_type,
+			       build_zero_cst (TREE_TYPE (dest_type)));
+	
+      expr = build3 (VEC_COND_EXPR, dest_type, expr, all_ones, all_zeroes);
+    }
+  else if (INTEGRAL_TYPE_P (dest_type) && !is_boolean_dest)
+    {
       // We need to produce the all-ones pattern for the width of the whole
-      // resulting integer type.  In case of vector comparisons, the result
-      // is already in that form.  Use back and forth shifts for propagating
+      // resulting integer type. Use back and forth shifts for propagating
       // the lower 1.
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
-      tree shift_left_result
-	= build2 (LSHIFT_EXPR, signed_type, signed_result,
-		  build_int_cstu (signed_type, result_width - 1));
 
+      
+      size_t element_width;
+      if (VECTOR_TYPE_P (dest_type))
+	element_width = int_size_in_bytes (TREE_TYPE (dest_type)) * 8;
+      else
+	element_width = result_width;
+
+      debug_tree (signed_result);
+      
+      tree shift_amount_cst;
+      if (VECTOR_TYPE_P (dest_type))
+	shift_amount_cst
+	  = build_vector_from_val
+	  (signed_type, 
+	   build_int_cstu (TREE_TYPE (signed_type), element_width - 1));
+      else
+	shift_amount_cst = build_int_cstu (signed_type, element_width - 1);
+
+      debug_tree (shift_amount_cst);
+      debug_generic_expr (shift_amount_cst);
+
+      tree shift_left_result
+	= build2 (LSHIFT_EXPR, signed_type, signed_result, shift_amount_cst);
+      
       expr = build2 (RSHIFT_EXPR, signed_type, shift_left_result,
-		     build_int_cstu (signed_type, result_width - 1));
+		     shift_amount_cst);
     }
   else if (SCALAR_FLOAT_TYPE_P (dest_type))
     {
