@@ -712,7 +712,11 @@ brig_code_entry_handler::build_address_operand (
 	}
       else if (segment == BRIG_SEGMENT_ARG)
 	{
-	  tree arg_var_decl = m_parent.m_cf->arg_variable (arg_symbol);
+	  tree arg_var_decl;
+	  if (m_parent.m_cf->m_ret_value_brig_var == arg_symbol)
+	    arg_var_decl = m_parent.m_cf->m_ret_temp;
+	  else
+	    arg_var_decl = m_parent.m_cf->arg_variable (arg_symbol);
 
 	  gcc_assert (arg_var_decl != NULL_TREE);
 
