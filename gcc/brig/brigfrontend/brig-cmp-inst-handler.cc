@@ -67,17 +67,12 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     case BRIG_COMPARE_SNE:
     case BRIG_COMPARE_NE:
-      if (is_int_cmp)
-	{
-	  expr = build2 (NE_EXPR, result_type, operands[1], operands[2]);
-	}
-      else
-	{
-	  // For HSA float comparison, if either operand is NaN,
-	  // the result is false.  NE_EXPR can return true.
-	  // Represent this is case as !UNEQ_EXPR == !(UNORDERED || EQ).
-	  neg_expr = build2 (UNEQ_EXPR, result_type, operands[1], operands[2]);
-	}
+      expr = build2 (NE_EXPR, result_type, operands[1], operands[2]);
+
+      if (!is_int_cmp)
+	expr = build2 (BIT_AND_EXPR, TREE_TYPE (expr), 
+		       expr,
+		       build2 (ORDERED_EXPR, result_type, operands[1], operands[2]));
       break;
     case BRIG_COMPARE_SLT:
     case BRIG_COMPARE_LT:
@@ -97,7 +92,14 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     case BRIG_COMPARE_SEQU:
     case BRIG_COMPARE_EQU:
-      expr = build2 (UNEQ_EXPR, result_type, operands[1], operands[2]);
+      // For some reason gcc trunk (as of 2016-04-06) doesn't handle
+      // NaNs correctly with UNEQ_EXPR (at least with x86_64), thus
+      // implement via two or'd expressions. This worked in gcc 4.9.1.
+      expr = build2 (EQ_EXPR, result_type, operands[1], operands[2]);
+
+      expr = build2 (BIT_IOR_EXPR, TREE_TYPE (expr), 
+		     expr,
+		     build2 (UNORDERED_EXPR, result_type, operands[1], operands[2]));
       break;
     case BRIG_COMPARE_SNEU:
     case BRIG_COMPARE_NEU:
@@ -121,12 +123,10 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     case BRIG_COMPARE_SNUM:
     case BRIG_COMPARE_NUM:
-      // TODO: requires OR, it's a binary operator?!
       expr = build2 (ORDERED_EXPR, result_type, operands[1], operands[2]);
       break;
     case BRIG_COMPARE_SNAN:
     case BRIG_COMPARE_NAN:
-      // TODO: requires OR, it's a binary operator?!
       expr = build2 (UNORDERED_EXPR, result_type, operands[1], operands[2]);
       break;
     default:
@@ -146,13 +146,15 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       expr = convert_to_real (brig_to_generic::s_fp32_type, expr);
     }
   else if (VECTOR_TYPE_P (dest_type) && ANY_INTEGRAL_TYPE_P (dest_type)
-	   && !is_boolean_dest)
+	   && !is_boolean_dest 
+	   && (inst->sourceType & 0x01F) != BRIG_TYPE_F16)
     {
       // In later gcc versions, the output of comparison is not
       // all ones for vectors like still in 4.9.1. We need to use
-      // create an additional to produce the all ones 'true' value
+      // an additional VEC_COND_EXPR to produce the all ones 'true' value
       // required by HSA.
       // VEC_COND_EXPR <a == b, { -1, -1, -1, -1 }, { 0, 0, 0, 0 }>;
+      
       tree all_ones =
 	build_vector_from_val (dest_type,
 			       build_minus_one_cst (TREE_TYPE (dest_type)));
@@ -169,27 +171,11 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       // the lower 1.
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
-
       
-      size_t element_width;
-      if (VECTOR_TYPE_P (dest_type))
-	element_width = int_size_in_bytes (TREE_TYPE (dest_type)) * 8;
-      else
-	element_width = result_width;
+      size_t element_width = result_width;
 
-      debug_tree (signed_result);
-      
-      tree shift_amount_cst;
-      if (VECTOR_TYPE_P (dest_type))
-	shift_amount_cst
-	  = build_vector_from_val
-	  (signed_type, 
-	   build_int_cstu (TREE_TYPE (signed_type), element_width - 1));
-      else
-	shift_amount_cst = build_int_cstu (signed_type, element_width - 1);
-
-      debug_tree (shift_amount_cst);
-      debug_generic_expr (shift_amount_cst);
+      tree shift_amount_cst
+	= build_int_cstu (signed_type, element_width - 1);
 
       tree shift_left_result
 	= build2 (LSHIFT_EXPR, signed_type, signed_result, shift_amount_cst);
