@@ -49,7 +49,8 @@ brig_function::brig_function (const BrigDirectiveExecutable *exec,
     m_current_bind_expr (NULL_TREE), m_func_decl (NULL_TREE),
     m_context_arg (NULL_TREE), m_group_base_arg (NULL_TREE),
     m_private_base_arg (NULL_TREE), m_ret_value (NULL_TREE),
-    m_next_kernarg_offset (0), m_kernarg_max_align (0), m_has_barriers (false),
+    m_next_kernarg_offset (0), m_kernarg_max_align (0),
+    m_ret_value_brig_var (NULL), m_has_barriers (false),
     m_has_allocas (false), m_has_function_calls_with_barriers (false),
     m_calls_analyzed (false), m_is_wg_function (false),
     m_has_unexpanded_dp_builtins (false), m_generating_arg_block (false),
@@ -675,7 +676,7 @@ brig_function::append_return_stmt ()
     {
       tree result_assign
 	= build2 (MODIFY_EXPR, TREE_TYPE (m_ret_value), m_ret_value,
-		  m_ret_value);
+		  m_ret_temp);
 
       tree return_expr
 	= build1 (RETURN_EXPR, TREE_TYPE (result_assign), result_assign);

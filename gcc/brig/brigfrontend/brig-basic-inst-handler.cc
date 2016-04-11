@@ -562,7 +562,6 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	}
       else
 	{
-	  // TO CLEANUP: move to brig_function
 	  m_parent.m_cf->append_return_stmt ();
 	  return base->byteCount;
 	}

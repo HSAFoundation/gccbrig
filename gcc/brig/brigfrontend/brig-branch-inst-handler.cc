@@ -123,6 +123,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 
       if (ret_val != NULL_TREE)
 	{
+	  TREE_ADDRESSABLE (ret_val) = 1;
 	  tree result_assign
 	    = build2 (MODIFY_EXPR, TREE_TYPE (ret_val), ret_val, call);
 	  m_parent.m_cf->append_statement (result_assign);

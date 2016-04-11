@@ -180,13 +180,15 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 	      ret_value = varhandler.build_variable (brigVar, RESULT_DECL);
 	      m_parent.m_cf->m_ret_value = ret_value;
 	      ret_type = TREE_TYPE (ret_value);
-	      m_parent.m_cf->add_arg_variable (brigVar, ret_value);
+	      m_parent.m_cf->m_ret_value_brig_var = brigVar;
 	    }
 	  bytes_consumed += retval->byteCount;
 	}
       else
 	ret_value = build_decl (UNKNOWN_LOCATION, RESULT_DECL, NULL_TREE,
 				void_type_node);
+
+      TREE_ADDRESSABLE (ret_value) = 1;
 
       if (exec->inArgCount > 0)
 	{
@@ -333,6 +335,18 @@ brig_directive_function_handler::operator () (const BrigBase *base)
   m_parent.m_cf->m_context_arg = context_arg;
   m_parent.m_cf->m_group_base_arg = group_base_arg;
   m_parent.m_cf->m_private_base_arg = private_base_arg;
+
+  if (ret_value != NULL_TREE && TREE_TYPE (ret_value) != void_type_node)
+    {
+      // We cannot assign to <<retval>> directly in gcc trunk. We need to
+      // create a local temporary variable which can be stored to and when
+      // returning from the function, we'll copy it to the actual <<retval>>
+      // in return statement's argument.
+      tree temp_var = m_parent.m_cf->m_ret_temp
+	= m_parent.m_cf->add_local_variable ("_retvalue_temp",
+					     TREE_TYPE (ret_value));
+      TREE_ADDRESSABLE (temp_var) = 1;
+    }
 
   if (is_kernel)
     {

@@ -151,6 +151,11 @@ public:
   // (argument segment).
   variable_index m_arg_variables;
 
+  // The brig variable for the function return value.
+  const BrigDirectiveVariable *m_ret_value_brig_var;
+  // The function local temporary variable for the return value.
+  tree m_ret_temp;
+
   // Labels in the current function are collected here so we can refer
   // to them from jumps before they have been placed to the function.
   label_index m_label_index;
