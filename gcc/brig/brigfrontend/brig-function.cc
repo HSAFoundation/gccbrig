@@ -122,6 +122,8 @@ brig_function::append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
   size_t align_padding = m_next_kernarg_offset % alignment;
   m_next_kernarg_offset += align_padding;
   m_kernarg_offsets[var] = m_next_kernarg_offset;
+
+  if (alignment > size) size = alignment;
   m_next_kernarg_offset += size;
 
   m_kernarg_max_align
