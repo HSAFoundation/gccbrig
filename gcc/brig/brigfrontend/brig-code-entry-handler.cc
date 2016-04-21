@@ -230,19 +230,19 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S32,
-		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
+		      "__phsa_builtin_bitinsert_u32", 3, u32_type, u32_type,
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U32,
-		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
+		      "__phsa_builtin_bitinsert_u32", 3, u32_type, u32_type,
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S64,
-		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
+		      "__phsa_builtin_bitinsert_u64", 3, u64_type, u64_type,
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U64,
-		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
+		      "__phsa_builtin_bitinsert_u64", 3, u64_type, u64_type,
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITMASK, BRIG_TYPE_B32,
