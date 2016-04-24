@@ -2775,6 +2775,7 @@ target_libraries="target-libgcc \
 		target-newlib \
 		target-libgomp \
 		target-libcilkrts \
+		target-libhsail-rt \
 		target-libatomic \
 		target-libitm \
 		target-libstdc++-v3 \

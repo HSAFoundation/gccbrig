@@ -44,6 +44,9 @@ along with GCC; see the file COPYING3.  If not see
 #define MATH_LIBRARY_PROFILE MATH_LIBRARY
 #endif
 
+#define LIBHSAIL "hsail-rt"
+#define LIBPTH "pth"
+
 void
 lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 		      unsigned int *in_decoded_options_count,
@@ -175,6 +178,13 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 	generate_option (OPT_o, "a.out", 1, CL_DRIVER, &new_decoded_options[j]);
       j++;
     }
+
+  /* TODO: conditionally link in libpth in case found. */  
+  generate_option (OPT_l, LIBPTH, 1, CL_DRIVER, &new_decoded_options[j]);
+  j++;
+
+  generate_option (OPT_l, LIBHSAIL, 1, CL_DRIVER, &new_decoded_options[j]);
+  j++;
 
   *in_decoded_options_count = j;
   *in_decoded_options = new_decoded_options;
