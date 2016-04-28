@@ -157,6 +157,7 @@ target_libraries="target-libgcc \
 		target-libgomp \
 		target-libcilkrts \
 		target-liboffloadmic \
+		target-libhsail-rt \
 		target-libatomic \
 		target-libitm \
 		target-libstdc++-v3 \
