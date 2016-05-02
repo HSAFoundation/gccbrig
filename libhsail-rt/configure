@@ -14687,12 +14687,14 @@ fi
 if test ".$with_pth" != .no; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: version $_pth_version, $_pth_type under $_pth_location" >&5
 $as_echo "version $_pth_version, $_pth_type under $_pth_location" >&6; }
-    CFLAGS="$CFLAGS -DHAVE_PTH"
+    PTH_CFLAGS="$PTH_CFLAGS -DHAVE_PTH"
 else
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-    CFLAGS="$CFLAGS -UHAVE_PTH"
+    PTH_CFLAGS="$PTH_CFLAGS -UHAVE_PTH"
 fi
+
+
 
 
 # Must be last

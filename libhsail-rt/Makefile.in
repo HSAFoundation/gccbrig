@@ -312,7 +312,7 @@ WARN_CFLAGS = $(WARN_FLAGS) $(WERROR)
 AM_CPPFLAGS = -I$(srcdir)/rt -I$(srcdir)/include/internal
 AM_CFLAGS = \
 	-I $(srcdir)/../libgcc \
-	-I $(MULTIBUILDTOP)../../gcc/include
+	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS)
 
 toolexeclib_LTLIBRARIES = libhsail-rt.la
 runtime_files = \
