@@ -28,7 +28,10 @@
 #ifndef PHSA_RT_WORKITEMS_H
 #define PHSA_RT_WORKITEMS_H
 
+#ifdef HAVE_PTH
 #include <pth.h>
+#endif
+
 #include <stdint.h>
 #include "phsa-rt.h"
 
@@ -92,7 +95,9 @@ typedef struct
   size_t x;
   size_t y;
   size_t z;
+#ifdef HAVE_PTH
   pth_t wi_thread_handle;
+#endif
 } PHSAWorkItem;
 
 #endif

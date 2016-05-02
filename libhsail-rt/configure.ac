@@ -1,3 +1,5 @@
+# Starting point copied from libcilkrts:
+#
 #  @copyright
 #  Copyright (C) 2011-2013, Intel Corporation
 #  All rights reserved.
@@ -32,6 +34,8 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 
 AC_INIT([phsa HSAIL runtime library], [1.0], [pekka.jaaskelainen@parmance.com])
+AC_CONFIG_MACRO_DIR([m4])
+
 AC_PREREQ([2.64])
 
 # Needed to define ${target}.  Needs to be very early to avoid annoying
@@ -46,7 +50,6 @@ AM_MAINTAINER_MODE
 AC_PROG_CC
 AC_PROG_CXX
 # AC_PROG_LIBTOOL
-# AC_CONFIG_MACRO_DIR([..])
 AC_CONFIG_FILES([Makefile])
 
 if test "${multilib}" = "yes"; then
@@ -139,26 +142,7 @@ AM_PROG_LIBTOOL
 AC_SUBST(toolexecdir)
 AC_SUBST(toolexeclibdir)
 
-AC_SUBST(lt_cv_dlopen_libs)
-
-# Check for pthread_{,attr_}[sg]etaffinity_np.
-AC_LINK_IFELSE(
- [AC_LANG_PROGRAM(
-  [#define _GNU_SOURCE
-   #include <pthread.h>],
-  [cpu_set_t cpuset;
-   pthread_attr_t attr;
-   pthread_getaffinity_np (pthread_self (), sizeof (cpu_set_t), &cpuset);
-   if (CPU_ISSET (0, &cpuset))
-     CPU_SET (1, &cpuset);
-   else
-     CPU_ZERO (&cpuset);
-   pthread_setaffinity_np (pthread_self (), sizeof (cpu_set_t), &cpuset);
-   pthread_attr_init (&attr);
-   pthread_attr_getaffinity_np (&attr, sizeof (cpu_set_t), &cpuset);
-   pthread_attr_setaffinity_np (&attr, sizeof (cpu_set_t), &cpuset);])],
-  AC_DEFINE(HAVE_PTHREAD_AFFINITY_NP, 1,
-[       Define if pthread_{,attr_}{g,s}etaffinity_np is supported.]))
+AC_CHECK_PTH(1.2.0,yes,yes,yes,CFLAGS="$CFLAGS -DHAVE_PTH",CFLAGS="$CFLAGS -UHAVE_PTH")
 
 # Must be last
 AC_OUTPUT

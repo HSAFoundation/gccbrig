@@ -36,7 +36,10 @@
  * @author pekka.jaaskelainen@parmance.com for General Processor Tech.
  */
 
+#ifdef HAVE_PTH
 #include <pth.h>
+#endif
+
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
@@ -85,6 +88,7 @@ phsa_fatal_error (int code)
   exit (code);
 }
 
+#ifdef HAVE_PTH
 // Pth-based work-item thread implementation.
 static void *
 phsa_work_item_thread (void *arg)
@@ -214,10 +218,12 @@ phsa_work_item_thread (void *arg)
 
   pth_exit (NULL);
 }
+#endif
 
 #define MIN(a, b) ((a < b) ? a : b)
 #define MAX(a, b) ((a > b) ? a : b)
 
+#ifdef HAVE_PTH
 /* Spawns a given number of work-items to execute a set of work-groups,
  * blocks until their completion.  */
 static void
@@ -373,6 +379,7 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 
   pth_kill ();
 }
+#endif
 
 /*
  * Executes the given work-group function for all work groups in the grid.
@@ -542,6 +549,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
       }
 */
 
+#ifdef HAVE_PTH
 void
 __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
 		      void *group_base_ptr)
@@ -549,6 +557,7 @@ __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
   context->kernel = kernel;
   phsa_spawn_work_items (context, group_base_ptr);
 }
+#endif
 
 void
 __phsa_launch_wg_function (gccbrigKernelFunc kernel,
@@ -809,11 +818,13 @@ __phsa_builtin_packetcompletionsig_sig64 (PHSAWorkItem *wi)
   return (uint64_t) (wi->launch_data->dp->completion_signal.handle);
 }
 
+#ifdef HAVE_PTH
 void
 __phsa_builtin_barrier (PHSAWorkItem *wi)
 {
   pth_barrier_reach ((pth_barrier_t *) wi->launch_data->wg_sync_barrier);
 }
+#endif
 
 //#define DEBUG_ALLOCA
 /**

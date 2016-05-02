@@ -24,7 +24,10 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#ifdef HAVE_PTH
 #include <pth.h>
+#endif
+
 #include <stdlib.h>
 #include <signal.h>
 
@@ -73,6 +76,7 @@ __phsa_builtin_leavefbar (uint32_t addr, PHSAWorkItem *wi)
   --fbar->member_count;
 }
 
+#ifdef HAVE_PTH
 void
 __phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 {
@@ -86,6 +90,7 @@ __phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
     pth_yield (NULL);
   fbar->arrive_count = 0;
 }
+#endif
 
 void
 __phsa_builtin_arrivefbar (uint32_t addr, PHSAWorkItem *wi)

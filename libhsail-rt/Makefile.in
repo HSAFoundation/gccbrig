@@ -15,18 +15,18 @@
 
 @SET_MAKE@
 
-# Makefile.am -- Go library Makefile.
+# Makefile.am -- libhsail-rt library Makefile.
 
 # Starting point copied from libcilkrts:
 #  @copyright
 #  Copyright (C) 2011, 2013, Intel Corporation
 #  All rights reserved.
-#  
+#
 #  @copyright
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions
 #  are met:
-#  
+#
 #    * Redistributions of source code must retain the above copyright
 #      notice, this list of conditions and the following disclaimer.
 #    * Redistributions in binary form must reproduce the above copyright
@@ -36,7 +36,7 @@
 #    * Neither the name of Intel Corporation nor the names of its
 #      contributors may be used to endorse or promote products derived
 #      from this software without specific prior written permission.
-#  
+#
 #  @copyright
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 #  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -101,7 +101,8 @@ DIST_COMMON = README $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
 	$(srcdir)/../mkinstalldirs $(srcdir)/../depcomp
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/../config/depstand.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/pth.m4 \
+	$(top_srcdir)/../config/depstand.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
 	$(top_srcdir)/../config/multi.m4 $(top_srcdir)/../libtool.m4 \
 	$(top_srcdir)/../ltoptions.m4 $(top_srcdir)/../ltsugar.m4 \
@@ -149,6 +150,9 @@ am__objects_1 = rt/arithmetic.lo rt/atomics.lo rt/bitstring.lo \
 	rt/queue.lo rt/sat_arithmetic.lo rt/segment.lo rt/workitems.lo
 am_libhsail_rt_la_OBJECTS = $(am__objects_1)
 libhsail_rt_la_OBJECTS = $(am_libhsail_rt_la_OBJECTS)
+libhsail_rt_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
+	$(libhsail_rt_la_LDFLAGS) $(LDFLAGS) -o $@
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/../depcomp
 am__depfiles_maybe = depfiles
@@ -228,6 +232,10 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
+PTH_CFLAGS = @PTH_CFLAGS@
+PTH_CPPFLAGS = @PTH_CPPFLAGS@
+PTH_LDFLAGS = @PTH_LDFLAGS@
+PTH_LIBS = @PTH_LIBS@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
@@ -272,7 +280,6 @@ libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
 localstatedir = @localstatedir@
-lt_cv_dlopen_libs = @lt_cv_dlopen_libs@
 mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
@@ -319,10 +326,10 @@ runtime_files = \
 	rt/queue.c \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
-	rt/workitems.c 
+	rt/workitems.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
-libhsail_la_LDFLAGS = -rpath '$(libdir)'
+libhsail_rt_la_LDFLAGS = -rpath '$(libdir)'
 
 # Work around what appears to be a GNU make bug handling MAKEFLAGS
 # values defined in terms of make variables, as is the case for CC and
@@ -451,7 +458,7 @@ rt/sat_arithmetic.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/segment.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/workitems.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 libhsail-rt.la: $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_DEPENDENCIES) $(EXTRA_libhsail_rt_la_DEPENDENCIES) 
-	$(LINK) -rpath $(toolexeclibdir) $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_LIBADD) $(LIBS)
+	$(libhsail_rt_la_LINK) -rpath $(toolexeclibdir) $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
