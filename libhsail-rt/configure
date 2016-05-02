@@ -604,7 +604,10 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
-lt_cv_dlopen_libs
+PTH_LIBS
+PTH_LDFLAGS
+PTH_CFLAGS
+PTH_CPPFLAGS
 toolexeclibdir
 toolexecdir
 CXXCPP
@@ -742,6 +745,8 @@ with_pic
 enable_fast_install
 with_gnu_ld
 enable_libtool_lock
+with_pth
+with_pth_test
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1396,6 +1401,8 @@ Optional Packages:
   --with-pic              try to use only PIC/non-PIC objects [default=use
                           both]
   --with-gnu-ld           assume the C compiler uses GNU ld [default=no]
+  --with-pth=ARG        Build with GNU Pth Library  (default=yes)
+  --with-pth-test         Perform GNU Pth Sanity Test (default=yes)
 
 Some influential environment variables:
   CC          C compiler command
@@ -2220,6 +2227,8 @@ ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
 ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
+
 
 
 
@@ -4206,7 +4215,6 @@ fi
 
 
 # AC_PROG_LIBTOOL
-# AC_CONFIG_MACRO_DIR([..])
 ac_config_files="$ac_config_files Makefile"
 
 
@@ -10788,7 +10796,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 10791 "configure"
+#line 10799 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -10894,7 +10902,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 10897 "configure"
+#line 10905 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -14150,38 +14158,544 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 
+PTH_CPPFLAGS=''
+PTH_CFLAGS=''
+PTH_LDFLAGS=''
+PTH_LIBS=''
 
 
-# Check for pthread_{,attr_}[sg]etaffinity_np.
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for GNU Pth" >&5
+$as_echo_n "checking for GNU Pth... " >&6; }
+if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   " >&5
+$as_echo "  " >&6; }
+fi
+
+
+# Check whether --with-pth was given.
+if test "${with_pth+set}" = set; then :
+  withval=$with_pth;
+else
+  with_pth="yes"
+
+fi
+
+# Check whether --with-pth-test was given.
+if test "${with_pth_test+set}" = set; then :
+  withval=$with_pth_test;
+else
+  with_pth_test="yes"
+
+fi
+if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Command Line Options:" >&5
+$as_echo "  + Command Line Options:" >&6; }
+fi
+
+if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o --with-pth=$with_pth" >&5
+$as_echo "      o --with-pth=$with_pth" >&6; }
+fi
+
+if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o --with-pth-test=$with_pth_test" >&5
+$as_echo "      o --with-pth-test=$with_pth_test" >&6; }
+fi
+
+if test ".$with_pth" != .no; then
+    _pth_subdir=no
+    _pth_subdir_opts=''
+    case "$with_pth" in
+        subdir:* )
+            _pth_subdir=yes
+                        _pth_subdir_opts=`echo $with_pth | sed -e 's/^subdir:[^ 	]*[ 	]*//'`
+            with_pth=`echo $with_pth | sed -e 's/^subdir:\([^ 	]*\).*$/\1/'`
+                        ;;
+    esac
+    _pth_version=""
+    _pth_location=""
+    _pth_type=""
+    _pth_cppflags=""
+    _pth_cflags=""
+    _pth_ldflags=""
+    _pth_libs=""
+    if test ".$with_pth" = .yes; then
+        #   via config script in $PATH
+                _pth_version=`(pth-config --version) 2>/dev/null |\
+                      sed -e 's/^.*\([0-9]\.[0-9]*[ab.][0-9]*\).*$/\1/'`
+                if test ".$_pth_version" != .; then
+            _pth_location=`pth-config --prefix`
+            _pth_type='installed'
+            _pth_cppflags=`pth-config --cflags`
+            _pth_cflags=`pth-config --cflags`
+            _pth_ldflags=`pth-config --ldflags`
+            _pth_libs=`pth-config --libs --all`
+        fi
+    elif test -d "$with_pth"; then
+        with_pth=`echo $with_pth | sed -e 's;/*$;;'`
+        _pth_found=no
+        #   via locally included source tree
+        if test ".$_pth_subdir" = .yes; then
+            _pth_location="$with_pth"
+            _pth_type='local'
+            _pth_cppflags="-I$with_pth"
+            _pth_cflags="-I$with_pth"
+            if test -f "$with_pth/ltconfig"; then
+                _pth_ldflags="-L$with_pth/.libs"
+            else
+                _pth_ldflags="-L$with_pth"
+            fi
+            _pth_libs="-lpth"
+                        _pth_version=`grep '^const char PTH_Hello' $with_pth/pth_vers.c |\
+                          sed -e 's;^.*Version[ 	]*\([0-9]*\.[0-9]*[.ab][0-9]*\)[ 	].*$;\1;'`
+                        _pth_found=yes
+            ac_configure_args="$ac_configure_args --enable-subdir $_pth_subdir_opts"
+            with_pth_test=no
+        fi
+        #   via config script under a specified directory
+        #   (a standard installation, but not a source tree)
+        if test ".$_pth_found" = .no; then
+            for _dir in $with_pth/bin $with_pth; do
+                if test -f "$_dir/pth-config"; then
+                    test -f "$_dir/pth-config.in" && continue # pth-config in source tree!
+                                        _pth_version=`($_dir/pth-config --version) 2>/dev/null |\
+                                  sed -e 's/^.*\([0-9]\.[0-9]*[ab.][0-9]*\).*$/\1/'`
+                                        if test ".$_pth_version" != .; then
+                        _pth_location=`$_dir/pth-config --prefix`
+                        _pth_type="installed"
+                        _pth_cppflags=`$_dir/pth-config --cflags`
+                        _pth_cflags=`$_dir/pth-config --cflags`
+                        _pth_ldflags=`$_dir/pth-config --ldflags`
+                        _pth_libs=`$_dir/pth-config --libs --all`
+                        _pth_found=yes
+                        break
+                    fi
+                fi
+            done
+        fi
+        #   in any subarea under a specified directory
+        #   (either a special installation or a Pth source tree)
+        if test ".$_pth_found" = .no; then
+                        _pth_found=0
+            for _file in x `find $with_pth -name "pth.h" -type f -print`; do
+                test .$_file = .x && continue
+                _dir=`echo $_file | sed -e 's;[^/]*$;;' -e 's;\(.\)/$;\1;'`
+                _pth_version=`($_dir/pth-config --version) 2>/dev/null |\
+                              sed -e 's/^.*\([0-9]\.[0-9]*[ab.][0-9]*\).*$/\1/'`
+                if test ".$_pth_version" = .; then
+                    _pth_version=`grep '^#define PTH_VERSION_STR' $_file |\
+                                  sed -e 's;^#define[ 	]*PTH_VERSION_STR[ 	]*"\([0-9]*\.[0-9]*[.ab][0-9]*\)[ 	].*$;\1;'`
+                fi
+                _pth_cppflags="-I$_dir"
+                _pth_cflags="-I$_dir"
+                _pth_found=`expr $_pth_found + 1`
+            done
+            for _file in x `find $with_pth -name "libpth.[aso]" -type f -print`; do
+                test .$_file = .x && continue
+                _dir=`echo $_file | sed -e 's;[^/]*$;;' -e 's;\(.\)/$;\1;'`
+                _pth_ldflags="-L$_dir"
+                _pth_libs="-lpth"
+                _pth_found=`expr $_pth_found + 1`
+            done
+                        if test ".$_pth_found" = .2; then
+                _pth_location="$with_pth"
+                _pth_type="uninstalled"
+            else
+                _pth_version=''
+            fi
+        fi
+    fi
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Determined Location:" >&5
+$as_echo "  + Determined Location:" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o path: $_pth_location" >&5
+$as_echo "      o path: $_pth_location" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o type: $_pth_type" >&5
+$as_echo "      o type: $_pth_type" >&6; }
+fi
+
+    if test ".$_pth_version" = .; then
+        if test ".$with_pth" != .yes; then
+             { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+             Unable to locate GNU Pth under $with_pth.
+             Please specify the correct path to either a GNU Pth installation tree
+             (use --with-pth=DIR if you used --prefix=DIR for installing GNU Pth in
+             the past) or to a GNU Pth source tree (use --with-pth=DIR if DIR is a
+             path to a pth-X.Y.Z/ directory; but make sure the package is already
+             built, i.e., the "configure; make" step was already performed there).
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+        else
+             { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+             Unable to locate GNU Pth in any system-wide location (see \$PATH).
+             Please specify the correct path to either a GNU Pth installation tree
+             (use --with-pth=DIR if you used --prefix=DIR for installing GNU Pth in
+             the past) or to a GNU Pth source tree (use --with-pth=DIR if DIR is a
+             path to a pth-X.Y.Z/ directory; but make sure the package is already
+             built, i.e., the "configure; make" step was already performed there).
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+        fi
+    fi
+                _req_version="1.2.0"
+    for _var in _pth_version _req_version; do
+        eval "_val=\"\$${_var}\""
+        _major=`echo $_val | sed 's/\([0-9]*\)\.\([0-9]*\)\([ab.]\)\([0-9]*\)/\1/'`
+        _minor=`echo $_val | sed 's/\([0-9]*\)\.\([0-9]*\)\([ab.]\)\([0-9]*\)/\2/'`
+        _rtype=`echo $_val | sed 's/\([0-9]*\)\.\([0-9]*\)\([ab.]\)\([0-9]*\)/\3/'`
+        _micro=`echo $_val | sed 's/\([0-9]*\)\.\([0-9]*\)\([ab.]\)\([0-9]*\)/\4/'`
+        case $_rtype in
+            "a" ) _rtype=0 ;;
+            "b" ) _rtype=1 ;;
+            "." ) _rtype=2 ;;
+        esac
+        _hex=`echo dummy | awk '{ printf("%d%02d%1d%02d", major, minor, rtype, micro); }' \
+              "major=$_major" "minor=$_minor" "rtype=$_rtype" "micro=$_micro"`
+        eval "${_var}_hex=\"\$_hex\""
+    done
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Determined Versions:" >&5
+$as_echo "  + Determined Versions:" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o existing: $_pth_version -> 0x$_pth_version_hex" >&5
+$as_echo "      o existing: $_pth_version -> 0x$_pth_version_hex" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o required: $_req_version -> 0x$_req_version_hex" >&5
+$as_echo "      o required: $_req_version -> 0x$_req_version_hex" >&6; }
+fi
+
+    _ok=0
+    if test ".$_pth_version_hex" != .; then
+        if test ".$_req_version_hex" != .; then
+            if test $_pth_version_hex -ge $_req_version_hex; then
+                _ok=1
+            fi
+        fi
+    fi
+    if test ".$_ok" = .0; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+        Found Pth version $_pth_version, but required at least version $_req_version.
+        Upgrade Pth under $_pth_location to $_req_version or higher first, please.
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+    fi
+                if test ".$with_pth_test" = .yes; then
+        _ac_save_CPPFLAGS="$CPPFLAGS"
+        _ac_save_CFLAGS="$CFLAGS"
+        _ac_save_LDFLAGS="$LDFLAGS"
+        _ac_save_LIBS="$LIBS"
+        CPPFLAGS="$CPPFLAGS $_pth_cppflags"
+        CFLAGS="$CFLAGS $_pth_cflags"
+        LDFLAGS="$LDFLAGS $_pth_ldflags"
+        LIBS="$LIBS $_pth_libs"
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Test Build Environment:" >&5
+$as_echo "  + Test Build Environment:" >&6; }
+fi
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o CPPFLAGS=\"$CPPFLAGS\"" >&5
+$as_echo "      o CPPFLAGS=\"$CPPFLAGS\"" >&6; }
+fi
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o CFLAGS=\"$CFLAGS\"" >&5
+$as_echo "      o CFLAGS=\"$CFLAGS\"" >&6; }
+fi
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o LDFLAGS=\"$LDFLAGS\"" >&5
+$as_echo "      o LDFLAGS=\"$LDFLAGS\"" >&6; }
+fi
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o LIBS=\"$LIBS\"" >&5
+$as_echo "      o LIBS=\"$LIBS\"" >&6; }
+fi
+
+        cross_compile=no
+
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Performing Sanity Checks:" >&5
+$as_echo "  + Performing Sanity Checks:" >&6; }
+fi
+
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o pre-processor test" >&5
+$as_echo "      o pre-processor test" >&6; }
+fi
+
+        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
-#define _GNU_SOURCE
-   #include <pthread.h>
+        #include <stdio.h>
+        #include <pth.h>
+
+_ACEOF
+if ac_fn_c_try_cpp "$LINENO"; then :
+  _ok=yes
+else
+  _ok=no
+fi
+rm -f conftest.err conftest.$ac_ext
+        if test ".$_ok" != .yes; then
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+            Found GNU Pth $_pth_version under $_pth_location, but
+            was unable to perform a sanity pre-processor check. This means
+            the GNU Pth header pth.h was not found.
+            We used the following build environment:
+            >> CPP="$CPP"
+            >> CPPFLAGS="$CPPFLAGS"
+            See config.log for possibly more details.
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+        fi
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o link check" >&5
+$as_echo "      o link check" >&6; }
+fi
+
+        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+        #include <stdio.h>
+        #include <pth.h>
+
 int
 main ()
 {
-cpu_set_t cpuset;
-   pthread_attr_t attr;
-   pthread_getaffinity_np (pthread_self (), sizeof (cpu_set_t), &cpuset);
-   if (CPU_ISSET (0, &cpuset))
-     CPU_SET (1, &cpuset);
-   else
-     CPU_ZERO (&cpuset);
-   pthread_setaffinity_np (pthread_self (), sizeof (cpu_set_t), &cpuset);
-   pthread_attr_init (&attr);
-   pthread_attr_getaffinity_np (&attr, sizeof (cpu_set_t), &cpuset);
-   pthread_attr_setaffinity_np (&attr, sizeof (cpu_set_t), &cpuset);
+        int main(int argc, char *argv)
+        {
+            FILE *fp;
+            if (!(fp = fopen("conftestval", "w")))
+                exit(1);
+            fprintf(fp, "hmm");
+            fclose(fp);
+            pth_init();
+            pth_kill();
+            if (!(fp = fopen("conftestval", "w")))
+                exit(1);
+            fprintf(fp, "yes");
+            fclose(fp);
+            exit(0);
+        }
+
   ;
   return 0;
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
-
-$as_echo "#define HAVE_PTHREAD_AFFINITY_NP 1" >>confdefs.h
-
+  _ok=yes
+else
+  _ok=no
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
+        if test ".$_ok" != .yes; then
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+            Found GNU Pth $_pth_version under $_pth_location, but
+            was unable to perform a sanity linker check. This means
+            the GNU Pth library libpth.a was not found.
+            We used the following build environment:
+            >> CC="$CC"
+            >> CFLAGS="$CFLAGS"
+            >> LDFLAGS="$LDFLAGS"
+            >> LIBS="$LIBS"
+            See config.log for possibly more details.
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+        fi
+        if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o run-time check" >&5
+$as_echo "      o run-time check" >&6; }
+fi
+
+        if test "$cross_compiling" = yes; then :
+  _ok=no
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+        #include <stdio.h>
+        #include <pth.h>
+                 int main(int argc, char *argv)
+        {
+            FILE *fp;
+            if (!(fp = fopen("conftestval", "w")))
+                exit(1);
+            fprintf(fp, "hmm");
+            fclose(fp);
+            pth_init();
+            pth_kill();
+            if (!(fp = fopen("conftestval", "w")))
+                exit(1);
+            fprintf(fp, "yes");
+            fclose(fp);
+            exit(0);
+        }
+
+_ACEOF
+if ac_fn_c_try_run "$LINENO"; then :
+  _ok=`cat conftestval`
+else
+  _ok=no
+fi
+rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
+  conftest.$ac_objext conftest.beam conftest.$ac_ext
+fi
+
+        if test ".$_ok" != .yes; then
+            if test ".$_ok" = .no; then
+                { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+                Found GNU Pth $_pth_version under $_pth_location, but
+                was unable to perform a sanity execution check. This usually
+                means that the GNU Pth shared library libpth.so is present
+                but \$LD_LIBRARY_PATH is incomplete to execute a Pth test.
+                In this case either disable this test via --without-pth-test,
+                or extend \$LD_LIBRARY_PATH, or build GNU Pth as a static
+                library only via its --disable-shared Autoconf option.
+                We used the following build environment:
+                >> CC="$CC"
+                >> CFLAGS="$CFLAGS"
+                >> LDFLAGS="$LDFLAGS"
+                >> LIBS="$LIBS"
+                See config.log for possibly more details.
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+            else
+                { $as_echo "$as_me:${as_lineno-$LINENO}: result: *FAILED*" >&5
+$as_echo "*FAILED*" >&6; }
+
+echo " "+------------------------------------------------------------------------+"" 1>&2
+cat <<EOT | sed -e 's/^[ 	]*/ | /' -e 's/>>/  /' 1>&2
+                Found GNU Pth $_pth_version under $_pth_location, but
+                was unable to perform a sanity run-time check. This usually
+                means that the GNU Pth library failed to work and possibly
+                caused a core dump in the test program. In this case it
+                is strongly recommended that you re-install GNU Pth and this
+                time make sure that it really passes its "make test" procedure.
+                We used the following build environment:
+                >> CC="$CC"
+                >> CFLAGS="$CFLAGS"
+                >> LDFLAGS="$LDFLAGS"
+                >> LIBS="$LIBS"
+                See config.log for possibly more details.
+EOT
+echo " "+------------------------------------------------------------------------+"" 1>&2
+exit 1
+
+            fi
+        fi
+        _extendvars="yes"
+        if test ".$_extendvars" != .yes; then
+            CPPFLAGS="$_ac_save_CPPFLAGS"
+            CFLAGS="$_ac_save_CFLAGS"
+            LDFLAGS="$_ac_save_LDFLAGS"
+            LIBS="$_ac_save_LIBS"
+        fi
+    else
+        _extendvars="yes"
+        if test ".$_extendvars" = .yes; then
+            if test ".$_pth_subdir" = .yes; then
+                CPPFLAGS="$CPPFLAGS $_pth_cppflags"
+                CFLAGS="$CFLAGS $_pth_cflags"
+                LDFLAGS="$LDFLAGS $_pth_ldflags"
+                LIBS="$LIBS $_pth_libs"
+            fi
+        fi
+    fi
+    PTH_CPPFLAGS="$_pth_cppflags"
+    PTH_CFLAGS="$_pth_cflags"
+    PTH_LDFLAGS="$_pth_ldflags"
+    PTH_LIBS="$_pth_libs"
+
+
+
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:   + Final Results:" >&5
+$as_echo "  + Final Results:" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o PTH_CPPFLAGS=\"$PTH_CPPFLAGS\"" >&5
+$as_echo "      o PTH_CPPFLAGS=\"$PTH_CPPFLAGS\"" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o PTH_CFLAGS=\"$PTH_CFLAGS\"" >&5
+$as_echo "      o PTH_CFLAGS=\"$PTH_CFLAGS\"" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o PTH_LDFLAGS=\"$PTH_LDFLAGS\"" >&5
+$as_echo "      o PTH_LDFLAGS=\"$PTH_LDFLAGS\"" >&6; }
+fi
+
+    if test ".$verbose" = .yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result:       o PTH_LIBS=\"$PTH_LIBS\"" >&5
+$as_echo "      o PTH_LIBS=\"$PTH_LIBS\"" >&6; }
+fi
+
+fi
+if test ".$with_pth" != .no; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: version $_pth_version, $_pth_type under $_pth_location" >&5
+$as_echo "version $_pth_version, $_pth_type under $_pth_location" >&6; }
+    PTH_CFLAGS="$PTH_CFLAGS -DHAVE_PTH"
+else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+    PTH_CFLAGS="$PTH_CFLAGS -UHAVE_PTH"
+fi
+
+
+
 
 # Must be last
 cat >confcache <<\_ACEOF
