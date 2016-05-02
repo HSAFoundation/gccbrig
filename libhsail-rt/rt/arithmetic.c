@@ -17,7 +17,7 @@
    in all copies or substantial portions of the Software.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -32,7 +32,7 @@
 #include <float.h>
 
 /* HSAIL defines INT_MIN % -1 to be 0 while with C it's undefined,
-	 and causes an overflow exception at least with gcc and C on IA-32. */
+	 and causes an overflow exception at least with gcc and C on IA-32.  */
 int32_t
 __phsa_builtin_rem_s32 (int32_t dividend, int32_t divisor)
 {
@@ -52,8 +52,8 @@ __phsa_builtin_rem_s64 (int64_t dividend, int64_t divisor)
 }
 
 /* HSAIL has defined behavior for min and max when one of the operands is
-	 NaN: in that case the other operand is returned. In C and with gcc's
-	 MIN_EXPR/MAX_EXPR, the returned operand is undefined. */
+	 NaN: in that case the other operand is returned.  In C and with gcc's
+	 MIN_EXPR/MAX_EXPR, the returned operand is undefined.  */
 float
 __phsa_builtin_min_f32 (float a, float b)
 {
@@ -209,7 +209,7 @@ __phsa_builtin_cvt_zeroi_sat_s64_f32 (float a)
 }
 
 /* Flush the operand to zero in case it's a denormalized number.
-   Do not cause any exceptions in case of NaNs. */
+   Do not cause any exceptions in case of NaNs.  */
 float
 __phsa_builtin_ftz_f32 (float a)
 {
@@ -232,8 +232,8 @@ __phsa_builtin_ftz_f32 (float a)
 #define F16_MIN (6.10e-5)
 
 /* Flush the single precision operand to zero in case it's considered
-   a denormalized number in case it was a f16. Do not cause any exceptions
-   in case of NaNs. */
+   a denormalized number in case it was a f16.  Do not cause any exceptions
+   in case of NaNs.  */
 float
 __phsa_builtin_ftz_f32_f16 (float a)
 {
