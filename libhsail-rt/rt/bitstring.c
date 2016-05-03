@@ -16,7 +16,7 @@
    in all copies or substantial portions of the Software.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -140,7 +140,7 @@ __phsa_builtin_bitselect_u64 (uint64_t src0, uint64_t src1, uint64_t src2)
 
 /* Due to the defined behavior with 0, we cannot use the gcc builtin
    __builtin_clz*() directly. __builtin_ffs() has defined behavior, but
-   returns 0 while HSAIL requires to return -1.*/
+   returns 0 while HSAIL requires to return -1.  */
 uint32_t
 __phsa_builtin_firstbit_u32 (uint32_t src0)
 {

@@ -1,5 +1,5 @@
 /* workitems.c -- The main runtime entry that performs work-item execution in
-   various ways and the builtin functions closely related to the 
+   various ways and the builtin functions closely related to the
    implementation.
 
    Copyright (C) 2015-2016 Free Software Foundation, Inc.
@@ -18,7 +18,7 @@
    in all copies or substantial portions of the Software.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -28,7 +28,7 @@
 
 /**
  * The fiber based multiple work-item work-group execution uses the Pth
- * library for user mode threading. However, if gccbrig is able to optimize the
+ * library for user mode threading.  However, if gccbrig is able to optimize the
  * kernel to a much faster work-group function that implements the multiple
  * WI execution using loops instead of fibers requiring slow context switches,
  * the fiber-based implementation won't be called.
@@ -36,7 +36,10 @@
  * @author pekka.jaaskelainen@parmance.com for General Processor Tech.
  */
 
+#ifdef HAVE_PTH
 #include <pth.h>
+#endif
+
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
@@ -64,7 +67,7 @@ static clock_t start_time;
 #include <stdio.h>
 #endif
 
-// HSA requires WGs to be executed in flat work-group id order. Enabling
+// HSA requires WGs to be executed in flat work-group id order.  Enabling
 // the following macro can reveal test cases that rely on the ordering,
 // but is not useful for much else.
 // #define EXECUTE_WGS_BACKWARDS
@@ -85,6 +88,7 @@ phsa_fatal_error (int code)
   exit (code);
 }
 
+#ifdef HAVE_PTH
 // Pth-based work-item thread implementation.
 static void *
 phsa_work_item_thread (void *arg)
@@ -101,7 +105,7 @@ phsa_work_item_thread (void *arg)
 	phsa_fatal_error (1);
 
       /* At this point the threads can assume that either more_wgs is 0 or
-	 the current_work_group_* is set to point to the WG executed next. */
+	 the current_work_group_* is set to point to the WG executed next.  */
       if (!wi->wg->more_wgs)
 	break;
 #ifdef DEBUG_PHSA_RT
@@ -140,10 +144,10 @@ phsa_work_item_thread (void *arg)
 	phsa_fatal_error (2);
 
       /* If there's only one work-item, it returns PTH_BARRIER_TAILLIGHT,
-	 not _HEADLIGHT. */
+	 not _HEADLIGHT.  */
       if (retcode == PTH_BARRIER_TAILLIGHT)
 	{
-/* The last thread updates the WG to execute next. */
+/* The last thread updates the WG to execute next.  */
 #ifdef EXECUTE_WGS_BACKWARDS
 	  if (wg->x == l_data->wg_min_x)
 	    {
@@ -182,7 +186,7 @@ phsa_work_item_thread (void *arg)
 
 	  /* Reinitialize the work-group barrier according to the new WG's
 	     size, which might not be the same as the previous ones, due
-	     to "partial WGs". */
+	     to "partial WGs".  */
 	  size_t wg_size = __phsa_builtin_currentworkgroupsize (0, wi)
 			   * __phsa_builtin_currentworkgroupsize (1, wi)
 			   * __phsa_builtin_currentworkgroupsize (2, wi);
@@ -214,12 +218,14 @@ phsa_work_item_thread (void *arg)
 
   pth_exit (NULL);
 }
+#endif
 
 #define MIN(a, b) ((a < b) ? a : b)
 #define MAX(a, b) ((a > b) ? a : b)
 
+#ifdef HAVE_PTH
 /* Spawns a given number of work-items to execute a set of work-groups,
- * blocks until their completion. */
+ * blocks until their completion.  */
 static void
 phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 		      size_t wg_size_x, size_t wg_size_y, size_t wg_size_z)
@@ -287,9 +293,9 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 	  wi->z = z;
 
 	  /* TODO: set PTH_ATTR_STACK_SIZE according to the private
-		   segment size. Too big stack consumes huge amount of
+		   segment size.  Too big stack consumes huge amount of
 		   memory in case of huge number of WIs and a too small stack
-		   will fail in mysterious and potentially dangerous ways. */
+		   will fail in mysterious and potentially dangerous ways.  */
 	  wi->wi_thread_handle = pth_spawn (NULL, phsa_work_item_thread, wi);
 	  ++flat_wi_id;
 	}
@@ -306,7 +312,7 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 }
 
 /* Spawn the work-item threads to execute work-groups and let
- * them execute all the WGs, including a potential partial WG. */
+ * them execute all the WGs, including a potential partial WG.  */
 static void
 phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 {
@@ -314,8 +320,8 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
   size_t x, y, z;
 
   /* TO DO: host-side memory management of group and private segment
-     memory. Agents in general are less likely to support efficient dynamic mem
-     allocation. */
+     memory.  Agents in general are less likely to support efficient dynamic mem
+     allocation.  */
   if (dp->group_segment_size > 0
       && posix_memalign (&group_base_ptr, 256, dp->group_segment_size) != 0)
     phsa_fatal_error (3);
@@ -324,9 +330,9 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 
   pth_init ();
 
-  /* HSA seems to allow the WG size to be larger than the grid size. We need to
+  /* HSA seems to allow the WG size to be larger than the grid size.  We need to
      saturate the effective WG size to the grid size to prevent the extra WIs
-     from executing. */
+     from executing.  */
   size_t sat_wg_size_x, sat_wg_size_y, sat_wg_size_z, sat_wg_size;
   sat_wg_size_x = MIN (dp->workgroup_size_x, dp->grid_size_x);
   sat_wg_size_y = MIN (dp->workgroup_size_y, dp->grid_size_y);
@@ -340,7 +346,7 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 #endif
 
   /* For now execute all work groups in a single coarse thread (does not utilize
-     multicore/multithread). */
+     multicore/multithread).  */
   context->wg_min_x = context->wg_min_y = context->wg_min_z = 0;
 
   int dims = dp->setup & 0x3;
@@ -373,12 +379,13 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 
   pth_kill ();
 }
+#endif
 
 /*
  * Executes the given work-group function for all work groups in the grid.
  *
  * A work-group function is a version of the original kernel which executes
- * the kernel for all work-items in a work-group. It is produced by gccbrig
+ * the kernel for all work-items in a work-group.  It is produced by gccbrig
  * if it can handle the kernel's barrier usage and is much faster way to
  * execute massive numbers of work-items in a non-SPMD machine than fibers
  * (easily 100x faster).
@@ -390,17 +397,17 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
   size_t x, y, z, wg_x, wg_y, wg_z;
 
   /* TODO: host-side memory management of group and private segment
-     memory. Agents in general are less likely to support efficient dynamic mem
-     allocation. */
+     memory.  Agents in general are less likely to support efficient dynamic mem
+     allocation.  */
   if (dp->group_segment_size > 0
       && posix_memalign (&group_base_ptr, 256, dp->group_segment_size) != 0)
     phsa_fatal_error (3);
 
   context->group_segment_start_addr = (size_t) group_base_ptr;
 
-  /* HSA seems to allow the WG size to be larger than the grid size. We need
+  /* HSA seems to allow the WG size to be larger than the grid size.  We need
      to saturate the effective WG size to the grid size to prevent the extra WIs
-     from executing. */
+     from executing.  */
   size_t sat_wg_size_x, sat_wg_size_y, sat_wg_size_z, sat_wg_size;
   sat_wg_size_x = MIN (dp->workgroup_size_x, dp->grid_size_x);
   sat_wg_size_y = MIN (dp->workgroup_size_y, dp->grid_size_y);
@@ -542,6 +549,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
       }
 */
 
+#ifdef HAVE_PTH
 void
 __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
 		      void *group_base_ptr)
@@ -549,6 +557,7 @@ __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
   context->kernel = kernel;
   phsa_spawn_work_items (context, group_base_ptr);
 }
+#endif
 
 void
 __phsa_launch_wg_function (gccbrigKernelFunc kernel,
@@ -809,11 +818,13 @@ __phsa_builtin_packetcompletionsig_sig64 (PHSAWorkItem *wi)
   return (uint64_t) (wi->launch_data->dp->completion_signal.handle);
 }
 
+#ifdef HAVE_PTH
 void
 __phsa_builtin_barrier (PHSAWorkItem *wi)
 {
   pth_barrier_reach ((pth_barrier_t *) wi->launch_data->wg_sync_barrier);
 }
+#endif
 
 //#define DEBUG_ALLOCA
 /**
@@ -822,7 +833,7 @@ __phsa_builtin_barrier (PHSAWorkItem *wi)
  *
  * Allocates the space from the end of the private segment allocated
  * for the whole work group.  In implementations with separate private
- * memories per WI, we will need to have a stack pointer per WI. But in
+ * memories per WI, we will need to have a stack pointer per WI.  But in
  * the current implementation, the segment is shared, so we possibly
  * save some space in case all WIs do not call the alloca.
  *
@@ -841,7 +852,7 @@ __phsa_builtin_barrier (PHSAWorkItem *wi)
  * alloca_frame_p is set to the current stack position.
  *
  * At the exit points of a function with allocas, the alloca frame
- * is popped before returning. This involves popping the alloca_frame_p
+ * is popped before returning.  This involves popping the alloca_frame_p
  * to the one of the previous function in the call stack, and alloca_stack_p
  * similarly, to the position of the last word alloca'd by the previous
  * function.
@@ -874,7 +885,7 @@ __phsa_builtin_alloca_push_frame (PHSAWorkItem *wi)
   volatile PHSAWorkGroup *wg = wi->wg;
 /* Store the alloca_frame_p without any alignment padding so
    we know exactly where the previous frame ended after popping
-   it. */
+   it.  */
 #ifdef DEBUG_ALLOCA
   printf ("--- push frame ");
 #endif
@@ -893,7 +904,7 @@ __phsa_builtin_alloca_push_frame (PHSAWorkItem *wi)
  * pointer.
  *
  * This should be called at all the function return points in case
- * the function contains at least one call to alloca. Restores the
+ * the function contains at least one call to alloca.  Restores the
  * alloca stack to the condition it was before pushing the frame
  * the last time.
  */
@@ -906,7 +917,7 @@ __phsa_builtin_alloca_pop_frame (PHSAWorkItem *wi)
   memcpy (&wg->alloca_frame_p,
 	  (const void *) (wg->private_base_ptr + wg->alloca_frame_p), 4);
   /* Now frame_p points to the beginning of the previous function's
-     frame and stack_p to its end. */
+     frame and stack_p to its end.  */
 
   wg->alloca_stack_p += 4;
 

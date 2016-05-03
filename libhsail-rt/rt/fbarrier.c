@@ -16,7 +16,7 @@
    in all copies or substantial portions of the Software.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -24,7 +24,10 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#ifdef HAVE_PTH
 #include <pth.h>
+#endif
+
 #include <stdlib.h>
 #include <signal.h>
 
@@ -38,7 +41,7 @@ typedef struct
   volatile uint32_t wait_count;
   /* No need for a mutex here as there's no real parallel
      execution between work-items in the simple fiber-based
-     implementation. */
+     implementation.  */
 } fbarrier;
 
 void
@@ -73,6 +76,7 @@ __phsa_builtin_leavefbar (uint32_t addr, PHSAWorkItem *wi)
   --fbar->member_count;
 }
 
+#ifdef HAVE_PTH
 void
 __phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 {
@@ -86,6 +90,7 @@ __phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
     pth_yield (NULL);
   fbar->arrive_count = 0;
 }
+#endif
 
 void
 __phsa_builtin_arrivefbar (uint32_t addr, PHSAWorkItem *wi)

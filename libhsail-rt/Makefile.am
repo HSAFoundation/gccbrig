@@ -1,15 +1,15 @@
-# Makefile.am -- Go library Makefile.
+# Makefile.am -- libhsail-rt library Makefile.
 
 # Starting point copied from libcilkrts:
 #  @copyright
 #  Copyright (C) 2011, 2013, Intel Corporation
 #  All rights reserved.
-#  
+#
 #  @copyright
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions
 #  are met:
-#  
+#
 #    * Redistributions of source code must retain the above copyright
 #      notice, this list of conditions and the following disclaimer.
 #    * Redistributions in binary form must reproduce the above copyright
@@ -19,7 +19,7 @@
 #    * Neither the name of Intel Corporation nor the names of its
 #      contributors may be used to endorse or promote products derived
 #      from this software without specific prior written permission.
-#  
+#
 #  @copyright
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 #  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -59,7 +59,7 @@ AM_CPPFLAGS = -I$(srcdir)/rt -I$(srcdir)/include/internal
 
 AM_CFLAGS = \
 	-I $(srcdir)/../libgcc \
-	-I $(MULTIBUILDTOP)../../gcc/include
+	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS)
 
 toolexeclib_LTLIBRARIES = libhsail-rt.la
 
@@ -74,10 +74,10 @@ runtime_files = \
 	rt/queue.c \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
-	rt/workitems.c 
+	rt/workitems.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
-libhsail_la_LDFLAGS  = -rpath '$(libdir)'
+libhsail_rt_la_LDFLAGS  = -rpath '$(libdir)'
 
 # Work around what appears to be a GNU make bug handling MAKEFLAGS
 # values defined in terms of make variables, as is the case for CC and
