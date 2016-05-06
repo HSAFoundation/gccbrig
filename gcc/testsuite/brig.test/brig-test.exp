@@ -22,8 +22,6 @@ load_lib brig.exp
 # Initialize `dg'.
 dg-init
 
-puts "Compiling HSAIL source files to BRIG binaries in $tmpdir."
-
 set hsail_files [find $srcdir/$subdir *.hsail]
 
 # Main loop.
