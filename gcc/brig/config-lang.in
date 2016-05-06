@@ -38,4 +38,4 @@ lang_requires_boot_languages=c++
 
 gtfiles="\$(srcdir)/brig/brig-lang.c \$(srcdir)/brig/brig-c.h"
 
-build_by_default="yes"
+build_by_default="no"

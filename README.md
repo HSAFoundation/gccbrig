@@ -1,4 +1,4 @@
-# gccbrig - BRIG gcc frontend for portable HSAIL finalization
+# BRIG gcc frontend for portable HSAIL finalization
 
 The current development branch was forked from the gcc 4.9.1 release tar ball.
 
@@ -12,7 +12,7 @@ Users of better install gccbrig somewhere in PATH and LD_LIBRARY_PATH:
   cd gccbrig
   mkdir build
   cd build
-  ../configure --disable-multilib --prefix=/your/install/prefix
+  ../configure --disable-multilib --enable-languages=brig --prefix=/your/install/prefix
   make -j4 && make install
 ```
 
@@ -27,7 +27,7 @@ which can reveal bugs.
   cd gccbrig
   mkdir build
   cd build
-  ../configure --enable-checking --disable-multilib
+  ../configure --enable-checking --disable-multilib --enable-languages=brig
   make -j4
 ```
 
