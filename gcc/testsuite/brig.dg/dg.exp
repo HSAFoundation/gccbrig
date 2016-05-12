@@ -21,7 +21,7 @@ load_lib brig-dg.exp
 # Initialize `dg'.
 dg-init
 
-#dg-runtest [find $srcdir/$subdir *.hsail] "" ""
+dg-runtest [find $srcdir/$subdir *.hsail] "" ""
 
 # All done.
 dg-finish
