@@ -574,13 +574,12 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 Let's fall back to scalarization and promotion of the vector elements
 	 to larger types.
 
-	 This is silly as these type of things do not belong to the frontend,
+	 This is not modular as these type of things do not belong to the frontend,
 	 there should be a legalization phase before the backend that figures
-	 out the best way to compute this,  but it seems gcc is not modularized
-	 in this matter.
+	 out the best way to compute this.
 
 	 TO OPTIMIZE: promote to larger vector types instead.  For example
-	 MULT_HIGHPART_EXPR with  s8x8 doesn't work, but s16x8 seems to at least
+	 MULT_HIGHPART_EXPR with s8x8 doesn't work, but s16x8 seems to at least
 	 with my x86-64.
       */
       tree_stl_vec operand0_elements;
@@ -633,7 +632,6 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     }
   else
     {
-
       // 'class' is always of b1 type, let's consider it by its
       // float type when building the instruction to find the
       // correct builtin
