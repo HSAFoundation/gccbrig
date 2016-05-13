@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -2978,7 +2978,7 @@ package body Make is
             Comp_Last := Comp_Last + 1;
             Comp_Args (Comp_Last) := AdaSCIL_Flag;
 
-         elsif not Ada_File_Name (S) and then not Targparm.AAMP_On_Target then
+         elsif not Ada_File_Name (S) then
             Comp_Last := Comp_Last + 1;
             Comp_Args (Comp_Last) := Ada_Flag_1;
             Comp_Last := Comp_Last + 1;
@@ -5816,7 +5816,7 @@ package body Make is
             Finish_Program (Project_Tree, E_Success);
 
          else
-            --  Call Get_Target_Parameters to ensure that AAMP_On_Target gets
+            --  Call Get_Target_Parameters to ensure that flags are properly
             --  set before calling Usage.
 
             Targparm.Get_Target_Parameters;
@@ -6413,16 +6413,29 @@ package body Make is
       --  Scan again the switch and arguments, now that we are sure that they
       --  do not include --version or --help.
 
-      --  First, for native gnatmake, check for switch -P and, if found and
-      --  gprbuild is available, silently invoke gprbuild.
+      --  First, check for switch -P and, if found and gprbuild is available,
+      --  silently invoke gprbuild, with switch --target if not on a native
+      --  platform.
 
-      Find_Program_Name;
+      declare
+         Arg_Len       : Natural       := Argument_Count;
+         Call_Gprbuild : Boolean       := False;
+         Gprbuild      : String_Access := null;
+         Pos           : Natural       := 0;
+         Success       : Boolean;
+         Target        : String_Access := null;
 
-      if Name_Buffer (1 .. Name_Len) = "gnatmake" then
-         declare
-            Call_Gprbuild : Boolean := False;
+      begin
+         Find_Program_Name;
 
-         begin
+         if Name_Len >= 8
+           and then Name_Buffer (Name_Len - 7 .. Name_Len) = "gnatmake"
+         then
+            if Name_Len > 8 then
+               Target  := new String'(Name_Buffer (1 .. Name_Len - 9));
+               Arg_Len := Arg_Len + 1;
+            end if;
+
             for J in 1 .. Argument_Count loop
                declare
                   Arg : constant String := Argument (J);
@@ -6437,16 +6450,20 @@ package body Make is
             end loop;
 
             if Call_Gprbuild then
-               declare
-                  Gprbuild : String_Access :=
-                               Locate_Exec_On_Path (Exec_Name => "gprbuild");
-                  Args     : Argument_List (1 .. Argument_Count);
-                  Success  : Boolean;
+               Gprbuild := Locate_Exec_On_Path (Exec_Name => "gprbuild");
 
-               begin
-                  if Gprbuild /= null then
+               if Gprbuild /= null then
+                  declare
+                     Args : Argument_List (1 .. Arg_Len);
+                  begin
+                     if Target /= null then
+                        Args (1) := new String'("--target=" & Target.all);
+                        Pos := 1;
+                     end if;
+
                      for J in 1 .. Argument_Count loop
-                        Args (J) := new String'(Argument (J));
+                        Pos := Pos + 1;
+                        Args (Pos) := new String'(Argument (J));
                      end loop;
 
                      Spawn (Gprbuild.all, Args, Success);
@@ -6456,11 +6473,11 @@ package body Make is
                      if Success then
                         Exit_Program (E_Success);
                      end if;
-                  end if;
-               end;
+                  end;
+               end if;
             end if;
-         end;
-      end if;
+         end if;
+      end;
 
       Scan_Args : for Next_Arg in 1 .. Argument_Count loop
          Scan_Make_Arg (Env, Argument (Next_Arg), And_Save => True);
@@ -6504,14 +6521,6 @@ package body Make is
 
       if Object_Directory_Path /= null and then In_Place_Mode then
          Make_Failed ("-i and -D cannot be used simultaneously");
-      end if;
-
-      --  Warn about 'gnatmake -P'
-
-      if Project_File_Name /= null then
-         Write_Line
-           ("warning: gnatmake -P is obsolete and will not be available "
-            & "in the next release; use gprbuild instead");
       end if;
 
       --  If --subdirs= is specified, but not -P, this is equivalent to -D,

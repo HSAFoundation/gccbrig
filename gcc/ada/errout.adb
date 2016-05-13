@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1153,14 +1153,21 @@ package body Errout is
          end if;
       end if;
 
-      --  Bump appropriate statistics count
+      --  Bump appropriate statistics counts
 
-      if Errors.Table (Cur_Msg).Warn or else Errors.Table (Cur_Msg).Style then
-         Warnings_Detected := Warnings_Detected + 1;
+      if Errors.Table (Cur_Msg).Info then
+         Info_Messages := Info_Messages + 1;
 
-         if Errors.Table (Cur_Msg).Info then
-            Info_Messages := Info_Messages + 1;
+         --  Could be (usually is) both "info" and "warning"
+
+         if Errors.Table (Cur_Msg).Warn then
+            Warnings_Detected := Warnings_Detected + 1;
          end if;
+
+      elsif Errors.Table (Cur_Msg).Warn
+        or else Errors.Table (Cur_Msg).Style
+      then
+         Warnings_Detected := Warnings_Detected + 1;
 
       elsif Errors.Table (Cur_Msg).Check then
          Check_Messages := Check_Messages + 1;
@@ -1298,9 +1305,7 @@ package body Errout is
          Last_Killed := True;
       end if;
 
-      if not (Is_Warning_Msg or Is_Style_Msg) then
-         Set_Posted (N);
-      end if;
+      Set_Posted (N);
    end Error_Msg_NEL;
 
    ------------------
@@ -2358,7 +2363,10 @@ package body Errout is
    -- Adjust_Name_Case --
    ----------------------
 
-   procedure Adjust_Name_Case (Loc : Source_Ptr) is
+   procedure Adjust_Name_Case
+     (Buf : in out Bounded_String;
+      Loc : Source_Ptr)
+   is
    begin
       --  We have an all lower case name from Namet, and now we want to set
       --  the appropriate case. If possible we copy the actual casing from
@@ -2387,10 +2395,10 @@ package body Errout is
 
             Sbuffer := Source_Text (Src_Ind);
 
-            while Ref_Ptr <= Name_Len loop
+            while Ref_Ptr <= Buf.Length loop
                exit when
                  Fold_Lower (Sbuffer (Src_Ptr)) /=
-                   Fold_Lower (Name_Buffer (Ref_Ptr));
+                   Fold_Lower (Buf.Chars (Ref_Ptr));
                Ref_Ptr := Ref_Ptr + 1;
                Src_Ptr := Src_Ptr + 1;
             end loop;
@@ -2398,21 +2406,26 @@ package body Errout is
             --  If we get through the loop without a mismatch, then output the
             --  name the way it is cased in the source program
 
-            if Ref_Ptr > Name_Len then
+            if Ref_Ptr > Buf.Length then
                Src_Ptr := Loc;
 
-               for J in 1 .. Name_Len loop
-                  Name_Buffer (J) := Sbuffer (Src_Ptr);
+               for J in 1 .. Buf.Length loop
+                  Buf.Chars (J) := Sbuffer (Src_Ptr);
                   Src_Ptr := Src_Ptr + 1;
                end loop;
 
             --  Otherwise set the casing using the default identifier casing
 
             else
-               Set_Casing (Identifier_Casing (Src_Ind), Mixed_Case);
+               Set_Casing (Buf, Identifier_Casing (Src_Ind));
             end if;
          end if;
       end;
+   end Adjust_Name_Case;
+
+   procedure Adjust_Name_Case (Loc : Source_Ptr) is
+   begin
+      Adjust_Name_Case (Global_Name_Buffer, Loc);
    end Adjust_Name_Case;
 
    ---------------------------
@@ -2874,7 +2887,7 @@ package body Errout is
       end if;
       --  Remaining step is to adjust casing and possibly add 'Class
 
-      Adjust_Name_Case (Loc);
+      Adjust_Name_Case (Global_Name_Buffer, Loc);
       Set_Msg_Name_Buffer;
       Add_Class;
    end Set_Msg_Node;

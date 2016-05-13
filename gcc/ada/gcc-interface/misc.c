@@ -369,9 +369,6 @@ gnat_init (void)
   sbitsize_one_node = sbitsize_int (1);
   sbitsize_unit_node = sbitsize_int (BITS_PER_UNIT);
 
-  /* Show that REFERENCE_TYPEs are internal and should be Pmode.  */
-  internal_reference_types ();
-
   /* Register our internal error function.  */
   global_dc->internal_error = &internal_error_function;
 
@@ -721,7 +718,9 @@ gnat_get_alias_set (tree type)
       get_alias_set (TREE_TYPE (TREE_TYPE (TYPE_FIELDS (TREE_TYPE (type)))));
 
   /* If the type can alias any other types, return the alias set 0.  */
-  else if (TYPE_P (type) && TYPE_UNIVERSAL_ALIASING_P (type))
+  else if (TYPE_P (type)
+	   && !TYPE_IS_DUMMY_P (type)
+	   && TYPE_UNIVERSAL_ALIASING_P (type))
     return 0;
 
   return -1;
@@ -935,7 +934,7 @@ gnat_get_array_descr_info (const_tree const_type,
 	     and XUA types.  */
 	  if (TYPE_CONTEXT (first_dimen)
 	      && TREE_CODE (TYPE_CONTEXT (first_dimen)) != RECORD_TYPE
-	      && contains_placeholder_p (TYPE_MIN_VALUE (index_type))
+	      && CONTAINS_PLACEHOLDER_P (TYPE_MIN_VALUE (index_type))
 	      && gnat_encodings != DWARF_GNAT_ENCODINGS_MINIMAL)
 	    {
 	      info->dimen[i].lower_bound = NULL_TREE;

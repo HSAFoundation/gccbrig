@@ -483,7 +483,7 @@ nvptx_strict_argument_naming (cumulative_args_t cum_v)
 static rtx
 nvptx_libcall_value (machine_mode mode, const_rtx)
 {
-  if (!cfun->machine->doing_call)
+  if (!cfun || !cfun->machine->doing_call)
     /* Pretend to return in a hard reg for early uses before pseudos can be
        generated.  */
     return gen_rtx_REG (mode, NVPTX_RETURN_REGNUM);
@@ -502,6 +502,7 @@ nvptx_function_value (const_tree type, const_tree ARG_UNUSED (func),
 
   if (outgoing)
     {
+      gcc_assert (cfun);
       cfun->machine->return_mode = mode;
       return gen_rtx_REG (mode, NVPTX_RETURN_REGNUM);
     }
@@ -750,6 +751,26 @@ write_fn_proto (std::stringstream &s, bool is_defn,
   tree fntype = TREE_TYPE (decl);
   tree result_type = TREE_TYPE (fntype);
 
+  /* atomic_compare_exchange_$n builtins have an exceptional calling
+     convention.  */
+  int not_atomic_weak_arg = -1;
+  if (DECL_BUILT_IN_CLASS (decl) == BUILT_IN_NORMAL)
+    switch (DECL_FUNCTION_CODE (decl))
+      {
+      case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_1:
+      case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_2:
+      case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_4:
+      case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_8:
+      case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_16:
+	/* These atomics skip the 'weak' parm in an actual library
+	   call.  We must skip it in the prototype too.  */
+	not_atomic_weak_arg = 3;
+	break;
+
+      default:
+	break;
+      }
+
   /* Declare the result.  */
   bool return_in_mem = write_return_type (s, true, result_type);
 
@@ -774,11 +795,14 @@ write_fn_proto (std::stringstream &s, bool is_defn,
       prototyped = false;
     }
 
-  for (; args; args = TREE_CHAIN (args))
+  for (; args; args = TREE_CHAIN (args), not_atomic_weak_arg--)
     {
       tree type = prototyped ? TREE_VALUE (args) : TREE_TYPE (args);
-
-      argno = write_arg_type (s, -1, argno, type, prototyped);
+      
+      if (not_atomic_weak_arg)
+	argno = write_arg_type (s, -1, argno, type, prototyped);
+      else
+	gcc_assert (type == boolean_type_node);
     }
 
   if (stdarg_p (fntype))

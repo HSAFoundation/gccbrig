@@ -1258,6 +1258,10 @@ static bool goal_alt_swapped;
 /* The chosen insn alternative.	 */
 static int goal_alt_number;
 
+/* True if the corresponding operand is the result of an equivalence
+   substitution.  */
+static bool equiv_substition_p[MAX_RECOG_OPERANDS];
+
 /* The following five variables are used to choose the best insn
    alternative.	 They reflect final characteristics of the best
    alternative.	 */
@@ -1303,7 +1307,21 @@ process_addr_reg (rtx *loc, bool check_only_p, rtx_insn **before, rtx_insn **aft
 
   subreg_p = GET_CODE (*loc) == SUBREG;
   if (subreg_p)
-    loc = &SUBREG_REG (*loc);
+    {
+      reg = SUBREG_REG (*loc);
+      mode = GET_MODE (reg);
+
+      /* For mode with size bigger than ptr_mode, there unlikely to be "mov"
+	 between two registers with different classes, but there normally will
+	 be "mov" which transfers element of vector register into the general
+	 register, and this normally will be a subreg which should be reloaded
+	 as a whole.  This is particularly likely to be triggered when
+	 -fno-split-wide-types specified.  */
+      if (in_class_p (reg, cl, &new_class)
+	  || GET_MODE_SIZE (mode) <= GET_MODE_SIZE (ptr_mode))
+       loc = &SUBREG_REG (*loc);
+    }
+
   reg = *loc;
   mode = GET_MODE (reg);
   if (! REG_P (reg))
@@ -2064,7 +2082,10 @@ process_alt_operands (int only_alternative)
 			 memory, or make other memory by reloading the
 			 address like for 'o'.  */
 		      if (CONST_POOL_OK_P (mode, op)
-			  || MEM_P (op) || REG_P (op))
+			  || MEM_P (op) || REG_P (op)
+			  /* We can restore the equiv insn by a
+			     reload.  */
+			  || equiv_substition_p[nop])
 			badop = false;
 		      constmemok = true;
 		      offmemok = true;
@@ -2914,6 +2935,7 @@ process_address_1 (int nop, bool check_only_p,
 {
   struct address_info ad;
   rtx new_reg;
+  HOST_WIDE_INT scale;
   rtx op = *curr_id->operand_loc[nop];
   const char *constraint = curr_static_id->operand[nop].constraint;
   enum constraint_num cn = lookup_constraint (constraint);
@@ -3161,14 +3183,14 @@ process_address_1 (int nop, bool check_only_p,
       *ad.inner = simplify_gen_binary (PLUS, GET_MODE (new_reg),
 				       new_reg, *ad.index);
     }
-  else if (get_index_scale (&ad) == 1)
+  else if ((scale = get_index_scale (&ad)) == 1)
     {
       /* The last transformation to one reg will be made in
 	 curr_insn_transform function.  */
       end_sequence ();
       return false;
     }
-  else
+  else if (scale != 0)
     {
       /* base + scale * index => base + new_reg,
 	 case (1) above.
@@ -3179,6 +3201,17 @@ process_address_1 (int nop, bool check_only_p,
       new_reg = index_part_to_reg (&ad);
       *ad.inner = simplify_gen_binary (PLUS, GET_MODE (new_reg),
 				       *ad.base_term, new_reg);
+    }
+  else
+    {
+      enum reg_class cl = base_reg_class (ad.mode, ad.as,
+					  SCRATCH, SCRATCH);
+      rtx addr = *ad.inner;
+      
+      new_reg = lra_create_new_reg (Pmode, NULL_RTX, cl, "addr");
+      /* addr => new_base.  */
+      lra_emit_move (new_reg, addr);
+      *ad.inner = new_reg;
     }
   *before = get_insns ();
   end_sequence ();
@@ -3359,6 +3392,7 @@ swap_operands (int nop)
   std::swap (curr_operand_mode[nop], curr_operand_mode[nop + 1]);
   std::swap (original_subreg_reg_mode[nop], original_subreg_reg_mode[nop + 1]);
   std::swap (*curr_id->operand_loc[nop], *curr_id->operand_loc[nop + 1]);
+  std::swap (equiv_substition_p[nop], equiv_substition_p[nop + 1]);
   /* Swap the duplicates too.  */
   lra_update_dup (curr_id, nop);
   lra_update_dup (curr_id, nop + 1);
@@ -3461,8 +3495,10 @@ curr_insn_transform (bool check_only_p)
 	  old = SUBREG_REG (old);
 	subst = get_equiv_with_elimination (old, curr_insn);
 	original_subreg_reg_mode[i] = VOIDmode;
+	equiv_substition_p[i] = false;
 	if (subst != old)
 	  {
+	    equiv_substition_p[i] = true;
 	    subst = copy_rtx (subst);
 	    lra_assert (REG_P (old));
 	    if (GET_CODE (op) != SUBREG)

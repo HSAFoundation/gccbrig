@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1998-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1998-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -191,8 +191,7 @@ package body Lib.Xref is
 
          Set_Has_Xref_Entry (Key.Ent);
 
-      --  It was already in Xref_Set, so throw away the tentatively-added
-      --  entry.
+      --  It was already in Xref_Set, so throw away the tentatively-added entry
 
       else
          Xrefs.Decrement_Last;
@@ -373,16 +372,16 @@ package body Lib.Xref is
       Set_Ref : Boolean   := True;
       Force   : Boolean   := False)
    is
-      Actual_Typ     : Character := Typ;
-      Call           : Node_Id;
-      Def            : Source_Ptr;
-      Ent            : Entity_Id;
-      Ent_Scope      : Entity_Id;
-      Formal         : Entity_Id;
-      Kind           : Entity_Kind;
-      Nod            : Node_Id;
-      Ref            : Source_Ptr;
-      Ref_Scope      : Entity_Id;
+      Actual_Typ : Character := Typ;
+      Call       : Node_Id;
+      Def        : Source_Ptr;
+      Ent        : Entity_Id;
+      Ent_Scope  : Entity_Id;
+      Formal     : Entity_Id;
+      Kind       : Entity_Kind;
+      Nod        : Node_Id;
+      Ref        : Source_Ptr;
+      Ref_Scope  : Entity_Id;
 
       function Get_Through_Renamings (E : Entity_Id) return Entity_Id;
       --  Get the enclosing entity through renamings, which may come from
@@ -1174,8 +1173,7 @@ package body Lib.Xref is
       while Present (Formal) loop
          if Ekind (Formal) = E_In_Parameter then
 
-            if Nkind (Parameter_Type (Parent (Formal)))
-              = N_Access_Definition
+            if Nkind (Parameter_Type (Parent (Formal))) = N_Access_Definition
             then
                Generate_Reference (E, Formal, '^', False);
             else
@@ -1468,17 +1466,23 @@ package body Lib.Xref is
                --  initialized with a tag-indeterminate call gets a subtype
                --  of the classwide type during expansion. See if the original
                --  type in the declaration is named, and return it instead
-               --  of going to the root type.
+               --  of going to the root type. The expression may be a class-
+               --  wide function call whose result is on the secondary stack,
+               --  which forces the declaration to be rewritten as a renaming,
+               --  so examine the source declaration.
 
-               if Ekind (Tref) = E_Class_Wide_Subtype
-                 and then Nkind (Parent (Ent)) = N_Object_Declaration
-                 and then
-                   Nkind (Original_Node (Object_Definition (Parent (Ent))))
-                     = N_Identifier
-               then
-                  Tref :=
-                    Entity
-                      (Original_Node ((Object_Definition (Parent (Ent)))));
+               if Ekind (Tref) = E_Class_Wide_Subtype then
+                  declare
+                     Decl : constant Node_Id := Original_Node (Parent (Ent));
+                  begin
+                     if Nkind (Decl) = N_Object_Declaration
+                       and then Is_Entity_Name
+                                  (Original_Node (Object_Definition (Decl)))
+                     then
+                        Tref :=
+                          Entity (Original_Node (Object_Definition (Decl)));
+                     end if;
+                  end;
                end if;
 
             --  For anything else, exit

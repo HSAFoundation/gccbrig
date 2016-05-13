@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1428,15 +1428,15 @@ package body Sem_Ch8 is
          Set_Etype (New_P, Standard_Void_Type);
 
          if Present (Renamed_Object (Old_P)) then
-            Set_Renamed_Object (New_P,  Renamed_Object (Old_P));
+            Set_Renamed_Object (New_P, Renamed_Object (Old_P));
          else
             Set_Renamed_Object (New_P, Old_P);
          end if;
 
          Set_Has_Completion (New_P);
 
-         Set_First_Entity (New_P,  First_Entity (Old_P));
-         Set_Last_Entity  (New_P,  Last_Entity  (Old_P));
+         Set_First_Entity (New_P, First_Entity (Old_P));
+         Set_Last_Entity  (New_P, Last_Entity  (Old_P));
          Set_First_Private_Entity (New_P, First_Private_Entity (Old_P));
          Check_Library_Unit_Renaming (N, Old_P);
          Generate_Reference (Old_P, Name (N));
@@ -6729,17 +6729,27 @@ package body Sem_Ch8 is
 
          --  The designated type may be a limited view with no components.
          --  Check whether the non-limited view is available, because in some
-         --  cases this will not be set when installing the context.
+         --  cases this will not be set when installing the context. Rewrite
+         --  the node by introducing an explicit dereference at once, and
+         --  setting the type of the rewritten prefix to the non-limited view
+         --  of the original designated type.
 
          if Is_Access_Type (P_Type) then
             declare
-               D : constant Entity_Id := Directly_Designated_Type (P_Type);
+               Desig_Typ : constant Entity_Id :=
+                             Directly_Designated_Type (P_Type);
+
             begin
-               if Is_Incomplete_Type (D)
-                 and then From_Limited_With (D)
-                 and then Present (Non_Limited_View (D))
+               if Is_Incomplete_Type (Desig_Typ)
+                 and then From_Limited_With (Desig_Typ)
+                 and then Present (Non_Limited_View (Desig_Typ))
                then
-                  Set_Directly_Designated_Type (P_Type,  Non_Limited_View (D));
+                  Rewrite (P,
+                    Make_Explicit_Dereference (Sloc (P),
+                      Prefix => Relocate_Node (P)));
+
+                  Set_Etype (P, Get_Full_View (Non_Limited_View (Desig_Typ)));
+                  P_Type := Etype (P);
                end if;
             end;
          end if;
@@ -6930,14 +6940,24 @@ package body Sem_Ch8 is
          else
             --  Format node as expanded name, to avoid cascaded errors
 
+            --  If the limited_with transformation was applied earlier,
+            --  restore source for proper error reporting.
+
+            if not Comes_From_Source (P)
+              and then Nkind (P) = N_Explicit_Dereference
+            then
+               Rewrite (P, Prefix (P));
+               P_Type := Etype (P);
+            end if;
+
             Change_Selected_Component_To_Expanded_Name (N);
-            Set_Entity  (N, Any_Id);
-            Set_Etype   (N, Any_Type);
+            Set_Entity (N, Any_Id);
+            Set_Etype  (N, Any_Type);
 
             --  Issue error message, but avoid this if error issued already.
             --  Use identifier of prefix if one is available.
 
-            if P_Name = Any_Id  then
+            if P_Name = Any_Id then
                null;
 
             --  It is not an error if the prefix is the current instance of
@@ -7526,7 +7546,7 @@ package body Sem_Ch8 is
          --  array of Boolean type.
 
          when Name_Op_And | Name_Op_Not | Name_Op_Or  | Name_Op_Xor =>
-            while Id  /= Priv_Id loop
+            while Id /= Priv_Id loop
                if Valid_Boolean_Arg (Id) and then Is_Base_Type (Id) then
                   Add_Implicit_Operator (Id);
                   return True;
@@ -7538,7 +7558,7 @@ package body Sem_Ch8 is
          --  Equality: look for any non-limited type (result is Boolean)
 
          when Name_Op_Eq | Name_Op_Ne =>
-            while Id  /= Priv_Id loop
+            while Id /= Priv_Id loop
                if Is_Type (Id)
                  and then not Is_Limited_Type (Id)
                  and then Is_Base_Type (Id)
@@ -7553,7 +7573,7 @@ package body Sem_Ch8 is
          --  Comparison operators: scalar type, or array of scalar
 
          when Name_Op_Lt | Name_Op_Le | Name_Op_Gt | Name_Op_Ge =>
-            while Id  /= Priv_Id loop
+            while Id /= Priv_Id loop
                if (Is_Scalar_Type (Id)
                     or else (Is_Array_Type (Id)
                               and then Is_Scalar_Type (Component_Type (Id))))
@@ -7576,7 +7596,7 @@ package body Sem_Ch8 is
               Name_Op_Multiply |
               Name_Op_Divide   |
               Name_Op_Expon    =>
-            while Id  /= Priv_Id loop
+            while Id /= Priv_Id loop
                if Is_Numeric_Type (Id) and then Is_Base_Type (Id) then
                   Add_Implicit_Operator (Id);
                   return True;
@@ -7588,7 +7608,7 @@ package body Sem_Ch8 is
          --  Concatenation: any one-dimensional array type
 
          when Name_Op_Concat =>
-            while Id  /= Priv_Id loop
+            while Id /= Priv_Id loop
                if Is_Array_Type (Id)
                  and then Number_Dimensions (Id) = 1
                  and then Is_Base_Type (Id)
@@ -8590,7 +8610,7 @@ package body Sem_Ch8 is
                   Next (Pack_Name);
                end loop;
 
-            elsif Nkind (Decl) = N_Use_Type_Clause  then
+            elsif Nkind (Decl) = N_Use_Type_Clause then
                Chain_Use_Clause (Decl);
 
                Id := First (Subtype_Marks (Decl));
@@ -9132,7 +9152,7 @@ package body Sem_Ch8 is
                      Ent1 := Entity_Of_Unit (Unit1);
                      Ent2 := Entity_Of_Unit (Unit2);
 
-                     if Scope (Ent2) = Standard_Standard  then
+                     if Scope (Ent2) = Standard_Standard then
                         Error_Msg_Sloc := Sloc (Current_Use_Clause (T));
                         Err_No := Clause1;
 

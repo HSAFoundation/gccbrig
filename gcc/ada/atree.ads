@@ -76,6 +76,10 @@ package Atree is
    --  This value is increased by one if debug flag -gnatd.N is set. This is
    --  for testing performance impact of adding a new extension node. We make
    --  this of type Node_Id for easy reference in loops using this value.
+   --  Print_Statistics can be used to display statistics on entities & nodes.
+   --  Measurements conducted for the 5->6 bump showed an increase from 1.81 to
+   --  2.01 for the nodes/entities ratio and a 2% increase in compilation time
+   --  on average for the GCC-based compiler at -O0 on a 32-bit x86 host.
 
    ----------------------------------------
    -- Definitions of Fields in Tree Node --
@@ -474,8 +478,8 @@ package Atree is
    --  The contents of the source node is not affected. If the source node
    --  has an extension, then the destination must have an extension also.
    --  The parent pointer of the destination and its list link, if any, are
-   --  not affected by the copy. Note that parent pointers of descendents
-   --  are not adjusted, so the descendents of the destination node after
+   --  not affected by the copy. Note that parent pointers of descendants
+   --  are not adjusted, so the descendants of the destination node after
    --  the Copy_Node is completed have dubious parent pointers. Note that
    --  this routine does NOT copy aspect specifications, the Has_Aspects
    --  flag in the returned node will always be False. The caller must deal
@@ -489,16 +493,16 @@ package Atree is
    --  overloaded. The new node will have an extension if the source has
    --  an extension. New_Copy (Empty) returns Empty, and New_Copy (Error)
    --  returns Error. Note that, unlike Copy_Separate_Tree, New_Copy does not
-   --  recursively copy any descendents, so in general parent pointers are not
-   --  set correctly for the descendents of the copied node. Both normal and
+   --  recursively copy any descendants, so in general parent pointers are not
+   --  set correctly for the descendants of the copied node. Both normal and
    --  extended nodes (entities) may be copied using New_Copy.
 
    function Relocate_Node (Source : Node_Id) return Node_Id;
    --  Source is a non-entity node that is to be relocated. A new node is
    --  allocated, and the contents of Source are copied to this node, using
-   --  New_Copy. The parent pointers of descendents of the node are then
+   --  New_Copy. The parent pointers of descendants of the node are then
    --  adjusted to point to the relocated copy. The original node is not
-   --  modified, but the parent pointers of its descendents are no longer
+   --  modified, but the parent pointers of its descendants are no longer
    --  valid. The new copy is always marked as not overloaded. This routine is
    --  used in conjunction with the tree rewrite routines (see descriptions of
    --  Replace/Rewrite).
@@ -1063,7 +1067,7 @@ package Atree is
    --  original node). Neither Old_Node nor New_Node can be extended nodes.
    --
    --  Note: New_Node may not contain references to Old_Node, for example as
-   --  descendents, since the rewrite would make such references invalid. If
+   --  descendants, since the rewrite would make such references invalid. If
    --  New_Node does need to reference Old_Node, then these references should
    --  be to a relocated copy of Old_Node (see Relocate_Node procedure).
    --
@@ -1082,7 +1086,7 @@ package Atree is
    --  preserves the setting of Comes_From_Source.
    --
    --  Note, New_Node may not contain references to Old_Node, for example as
-   --  descendents, since the rewrite would make such references invalid. If
+   --  descendants, since the rewrite would make such references invalid. If
    --  New_Node does need to reference Old_Node, then these references should
    --  be to a relocated copy of Old_Node (see Relocate_Node procedure).
    --

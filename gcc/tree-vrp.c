@@ -2749,17 +2749,17 @@ extract_range_from_binary_expr_1 (value_range *vr,
 	  /* Sort the 4 products so that min is in prod0 and max is in
 	     prod3.  */
 	  /* min0min1 > max0max1 */
-	  if (wi::gts_p (prod0, prod3))
+	  if (prod0 > prod3)
 	    std::swap (prod0, prod3);
 
 	  /* min0max1 > max0min1 */
-	  if (wi::gts_p (prod1, prod2))
+	  if (prod1 > prod2)
 	    std::swap (prod1, prod2);
 
-	  if (wi::gts_p (prod0, prod1))
+	  if (prod0 > prod1)
 	    std::swap (prod0, prod1);
 
-	  if (wi::gts_p (prod2, prod3))
+	  if (prod2 > prod3)
 	    std::swap (prod2, prod3);
 
 	  /* diff = max - min.  */
@@ -3775,7 +3775,7 @@ check_for_binary_op_overflow (enum tree_code subcode, tree type,
       /* If all values in [wmin, wmax] are smaller than
 	 [wtmin, wtmax] or all are larger than [wtmin, wtmax],
 	 the arithmetic operation will always overflow.  */
-      if (wi::lts_p (wmax, wtmin) || wi::gts_p (wmin, wtmax))
+      if (wmax < wtmin || wmin > wtmax)
 	return true;
       return false;
     }
@@ -5145,8 +5145,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 
   /* Only register an ASSERT_EXPR if NAME was found in the sub-graph
      reachable from E.  */
-  if (live_on_edge (e, name)
-      && !has_single_use (name))
+  if (live_on_edge (e, name))
     register_new_assert_for (name, name, comp_code, val, NULL, e, bsi);
 
   /* In the case of NAME <= CST and NAME being defined as
@@ -5188,8 +5187,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	  && (cst2 == NULL_TREE
 	      || TREE_CODE (cst2) == INTEGER_CST)
 	  && INTEGRAL_TYPE_P (TREE_TYPE (name3))
-	  && live_on_edge (e, name3)
-	  && !has_single_use (name3))
+	  && live_on_edge (e, name3))
 	{
 	  tree tmp;
 
@@ -5215,8 +5213,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
       	  && TREE_CODE (name2) == SSA_NAME
 	  && TREE_CODE (cst2) == INTEGER_CST
 	  && INTEGRAL_TYPE_P (TREE_TYPE (name2))
-	  && live_on_edge (e, name2)
-	  && !has_single_use (name2))
+	  && live_on_edge (e, name2))
 	{
 	  tree tmp;
 
@@ -5319,8 +5316,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	  tree op1 = gimple_assign_rhs2 (def_stmt);
 	  if (TREE_CODE (op0) == SSA_NAME
 	      && TREE_CODE (op1) == INTEGER_CST
-	      && live_on_edge (e, op0)
-	      && !has_single_use (op0))
+	      && live_on_edge (e, op0))
 	    {
 	      enum tree_code reverse_op = (rhs_code == PLUS_EXPR
 					   ? MINUS_EXPR : PLUS_EXPR);
@@ -5346,8 +5342,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      && (comp_code == LE_EXPR || comp_code == GT_EXPR
 		  || !tree_int_cst_equal (val,
 					  TYPE_MIN_VALUE (TREE_TYPE (val))))
-	      && live_on_edge (e, name2)
-	      && !has_single_use (name2))
+	      && live_on_edge (e, name2))
 	    {
 	      tree tmp, cst;
 	      enum tree_code new_comp_code = comp_code;
@@ -5392,8 +5387,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      && INTEGRAL_TYPE_P (TREE_TYPE (name2))
 	      && IN_RANGE (tree_to_uhwi (cst2), 1, prec - 1)
 	      && prec == GET_MODE_PRECISION (TYPE_MODE (TREE_TYPE (val)))
-	      && live_on_edge (e, name2)
-	      && !has_single_use (name2))
+	      && live_on_edge (e, name2))
 	    {
 	      mask = wi::mask (tree_to_uhwi (cst2), false, prec);
 	      val2 = fold_binary (LSHIFT_EXPR, TREE_TYPE (val), val, cst2);
@@ -5498,12 +5492,10 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 		      || !INTEGRAL_TYPE_P (TREE_TYPE (names[1]))
 		      || (TYPE_PRECISION (TREE_TYPE (name2))
 			  != TYPE_PRECISION (TREE_TYPE (names[1])))
-		      || !live_on_edge (e, names[1])
-		      || has_single_use (names[1]))
+		      || !live_on_edge (e, names[1]))
 		    names[1] = NULL_TREE;
 		}
-	      if (live_on_edge (e, name2)
-		  && !has_single_use (name2))
+	      if (live_on_edge (e, name2))
 		names[0] = name2;
 	    }
 	}
@@ -5724,8 +5716,7 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
 
   /* We know that OP will have a zero or nonzero value.  If OP is used
      more than once go ahead and register an assert for OP.  */
-  if (live_on_edge (e, op)
-      && !has_single_use (op))
+  if (live_on_edge (e, op))
     {
       val = build_int_cst (TREE_TYPE (op), 0);
       register_new_assert_for (op, op, code, val, NULL, e, bsi);
@@ -6158,7 +6149,7 @@ find_assert_locations_1 (basic_block bb, sbitmap live)
 		      /* Note we want to register the assert for the
 			 operand of the NOP_EXPR after SI, not after the
 			 conversion.  */
-		      if (! has_single_use (t))
+		      if (bitmap_bit_p (live, SSA_NAME_VERSION (t)))
 			register_new_assert_for (t, t, comp_code, value,
 						 bb, NULL, si);
 		    }
@@ -6596,7 +6587,7 @@ search_for_addr_array (tree t, location_t location)
 
       idx = mem_ref_offset (t);
       idx = wi::sdiv_trunc (idx, wi::to_offset (el_sz));
-      if (wi::lts_p (idx, 0))
+      if (idx < 0)
 	{
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
@@ -6608,8 +6599,8 @@ search_for_addr_array (tree t, location_t location)
 		      "array subscript is below array bounds");
 	  TREE_NO_WARNING (t) = 1;
 	}
-      else if (wi::gts_p (idx, (wi::to_offset (up_bound)
-				- wi::to_offset (low_bound) + 1)))
+      else if (idx > (wi::to_offset (up_bound)
+		      - wi::to_offset (low_bound) + 1))
 	{
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {

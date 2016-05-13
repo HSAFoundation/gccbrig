@@ -2526,12 +2526,14 @@ struct GTY(()) lang_decl {
 
   */
 #define FOR_EACH_CLONE(CLONE, FN)			\
-  if (TREE_CODE (FN) == FUNCTION_DECL			\
-      && (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (FN)	\
-	  || DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (FN)))	\
-     for (CLONE = DECL_CHAIN (FN);			\
-	  CLONE && DECL_CLONED_FUNCTION_P (CLONE);	\
-	  CLONE = DECL_CHAIN (CLONE))
+  if (!(TREE_CODE (FN) == FUNCTION_DECL			\
+	&& (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (FN)	\
+	    || DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (FN))))\
+    ;							\
+  else							\
+    for (CLONE = DECL_CHAIN (FN);			\
+	 CLONE && DECL_CLONED_FUNCTION_P (CLONE);	\
+	 CLONE = DECL_CHAIN (CLONE))
 
 /* Nonzero if NODE has DECL_DISCRIMINATOR and not DECL_ACCESS.  */
 #define DECL_DISCRIMINATOR_P(NODE)	\
@@ -5692,6 +5694,9 @@ extern tree ocp_convert				(tree, tree, int, int,
 extern tree cp_convert				(tree, tree, tsubst_flags_t);
 extern tree cp_convert_and_check                (tree, tree, tsubst_flags_t);
 extern tree cp_fold_convert			(tree, tree);
+extern tree cp_get_callee			(tree);
+extern tree cp_get_callee_fndecl		(tree);
+extern tree cp_get_fndecl_from_callee		(tree);
 extern tree convert_to_void			(tree, impl_conv_void,
                                  		 tsubst_flags_t);
 extern tree convert_force			(tree, tree, int,
@@ -6125,6 +6130,7 @@ extern bool any_type_dependent_elements_p       (const_tree);
 extern bool type_dependent_expression_p_push	(tree);
 extern bool value_dependent_expression_p	(tree);
 extern bool instantiation_dependent_expression_p (tree);
+extern bool instantiation_dependent_uneval_expression_p (tree);
 extern bool any_value_dependent_elements_p      (const_tree);
 extern bool dependent_omp_for_p			(tree, tree, tree, tree);
 extern tree resolve_typename_type		(tree, bool);
@@ -6393,7 +6399,7 @@ extern tree omp_reduction_id			(enum tree_code, tree, tree);
 extern tree cp_remove_omp_priv_cleanup_stmt	(tree *, int *, void *);
 extern void cp_check_omp_declare_reduction	(tree);
 extern void finish_omp_declare_simd_methods	(tree);
-extern tree finish_omp_clauses			(tree, bool, bool = false);
+extern tree finish_omp_clauses			(tree, enum c_omp_region_type);
 extern tree push_omp_privatization_clauses	(bool);
 extern void pop_omp_privatization_clauses	(tree);
 extern void save_omp_privatization_clauses	(vec<tree> &);
@@ -6490,6 +6496,7 @@ extern cp_lvalue_kind real_lvalue_p		(const_tree);
 extern cp_lvalue_kind lvalue_kind		(const_tree);
 extern bool lvalue_or_rvalue_with_address_p	(const_tree);
 extern bool xvalue_p	                        (const_tree);
+extern tree cp_stabilize_reference		(tree);
 extern bool builtin_valid_in_constant_expr_p    (const_tree);
 extern tree build_min				(enum tree_code, tree, ...);
 extern tree build_min_nt_loc			(location_t, enum tree_code,
@@ -6659,7 +6666,8 @@ extern tree cp_build_c_cast			(tree, tree, tsubst_flags_t);
 extern cp_expr build_x_modify_expr		(location_t, tree,
 						 enum tree_code, tree,
 						 tsubst_flags_t);
-extern tree cp_build_modify_expr		(tree, enum tree_code, tree,
+extern tree cp_build_modify_expr		(location_t, tree,
+						 enum tree_code, tree,
 						 tsubst_flags_t);
 extern tree convert_for_initialization		(tree, tree, tree, int,
 						 impl_conv_rhs, tree, int,
@@ -6719,11 +6727,24 @@ extern tree finish_binary_fold_expr          (tree, tree, int);
 
 /* in typeck2.c */
 extern void require_complete_eh_spec_types	(tree, tree);
-extern void cxx_incomplete_type_diagnostic	(const_tree, const_tree, diagnostic_t);
-#undef cxx_incomplete_type_error
-extern void cxx_incomplete_type_error		(const_tree, const_tree);
-#define cxx_incomplete_type_error(V,T) \
-  (cxx_incomplete_type_diagnostic ((V), (T), DK_ERROR))
+extern void cxx_incomplete_type_diagnostic	(location_t, const_tree,
+						 const_tree, diagnostic_t);
+inline void
+cxx_incomplete_type_diagnostic (const_tree value, const_tree type,
+				diagnostic_t diag_kind)
+{
+  cxx_incomplete_type_diagnostic (EXPR_LOC_OR_LOC (value, input_location),
+				  value, type, diag_kind);
+}
+
+extern void cxx_incomplete_type_error		(location_t, const_tree,
+						 const_tree);
+inline void
+cxx_incomplete_type_error (const_tree value, const_tree type)
+{
+  cxx_incomplete_type_diagnostic (value, type, DK_ERROR);
+}
+
 extern void cxx_incomplete_type_inform 	        (const_tree);
 extern tree error_not_base_type			(tree, tree);
 extern tree binfo_or_else			(tree, tree);
@@ -6868,20 +6889,20 @@ extern void vtv_save_class_info                 (tree);
 extern void vtv_recover_class_info              (void);
 extern void vtv_build_vtable_verify_fndecl      (void);
 
-/* In cp-cilkplus.c.  */
-extern bool cpp_validate_cilk_plus_loop		(tree);
-
 /* In cp/cp-array-notations.c */
 extern tree expand_array_notation_exprs         (tree);
 bool cilkplus_an_triplet_types_ok_p             (location_t, tree, tree, tree,
 						 tree);
 
 /* In constexpr.c */
+extern void fini_constexpr			(void);
 extern bool literal_type_p                      (tree);
 extern tree register_constexpr_fundef           (tree, tree);
 extern bool check_constexpr_ctor_body           (tree, tree, bool);
 extern tree ensure_literal_type_for_constexpr_object (tree);
 extern bool potential_constant_expression       (tree);
+extern bool potential_nondependent_constant_expression (tree);
+extern bool potential_nondependent_static_init_expression (tree);
 extern bool potential_static_init_expression    (tree);
 extern bool potential_rvalue_constant_expression (tree);
 extern bool require_potential_constant_expression (tree);

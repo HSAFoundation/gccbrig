@@ -769,7 +769,7 @@ wide_int_constant_multiple_p (const widest_int &val, const widest_int &div,
 
   if (val == 0)
     {
-      if (*mult_set && mult != 0)
+      if (*mult_set && *mult != 0)
 	return false;
       *mult_set = true;
       *mult = 0;
@@ -929,7 +929,7 @@ aff_comb_cannot_overlap_p (aff_tree *diff, const widest_int &size1,
   else
     {
       /* We succeed if the second object starts after the first one ends.  */
-      return wi::les_p (size1, diff->offset);
+      return size1 <= diff->offset;
     }
 }
 

@@ -1055,7 +1055,7 @@ completely_scalarize (tree base, tree decl_type, HOST_WIDE_INT offset, tree ref)
 		idx = wi::sext (idx, TYPE_PRECISION (domain));
 		max = wi::sext (max, TYPE_PRECISION (domain));
 	      }
-	    for (int el_off = offset; wi::les_p (idx, max); ++idx)
+	    for (int el_off = offset; idx <= max; ++idx)
 	      {
 		tree nref = build4 (ARRAY_REF, elemtype,
 				    ref,
@@ -2132,6 +2132,7 @@ create_access_replacement (struct access *access)
       bool fail = false;
 
       DECL_NAME (repl) = get_identifier (pretty_name);
+      DECL_NAMELESS (repl) = 1;
       obstack_free (&name_obstack, pretty_name);
 
       /* Get rid of any SSA_NAMEs embedded in debug_expr,
@@ -2743,6 +2744,9 @@ generate_subtree_copies (struct access *access, tree agg,
 			 gimple_stmt_iterator *gsi, bool write,
 			 bool insert_after, location_t loc)
 {
+  /* Never write anything into constant pool decls.  See PR70602.  */
+  if (!write && constant_decl_p (agg))
+    return;
   do
     {
       if (chunk_size && access->offset >= start_offset + chunk_size)
@@ -4701,6 +4705,7 @@ get_replaced_param_substitute (struct ipa_parm_adjustment *adj)
 
       repl = create_tmp_reg (TREE_TYPE (adj->base), "ISR");
       DECL_NAME (repl) = get_identifier (pretty_name);
+      DECL_NAMELESS (repl) = 1;
       obstack_free (&name_obstack, pretty_name);
 
       adj->new_ssa_base = repl;

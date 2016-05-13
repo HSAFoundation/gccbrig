@@ -368,33 +368,61 @@ pop_label (tree label, tree old_value)
   SET_IDENTIFIER_LABEL_VALUE (DECL_NAME (label), old_value);
 }
 
+/* Push all named labels into a vector, so that we can sort it on DECL_UID
+   to avoid code generation differences.  */
+
+int
+note_label (named_label_entry **slot, vec<named_label_entry **> &labels)
+{
+  labels.quick_push (slot);
+  return 1;
+}
+
+/* Helper function to sort named label entries in a vector by DECL_UID.  */
+
+static int
+sort_labels (const void *a, const void *b)
+{
+  named_label_entry **slot1 = *(named_label_entry **const *) a;
+  named_label_entry **slot2 = *(named_label_entry **const *) b;
+  if (DECL_UID ((*slot1)->label_decl) < DECL_UID ((*slot2)->label_decl))
+    return -1;
+  if (DECL_UID ((*slot1)->label_decl) > DECL_UID ((*slot2)->label_decl))
+    return 1;
+  return 0;
+}
+
 /* At the end of a function, all labels declared within the function
    go out of scope.  BLOCK is the top-level block for the
    function.  */
-
-int
-pop_labels_1 (named_label_entry **slot, tree block)
-{
-  struct named_label_entry *ent = *slot;
-
-  pop_label (ent->label_decl, NULL_TREE);
-
-  /* Put the labels into the "variables" of the top-level block,
-     so debugger can see them.  */
-  DECL_CHAIN (ent->label_decl) = BLOCK_VARS (block);
-  BLOCK_VARS (block) = ent->label_decl;
-
-  named_labels->clear_slot (slot);
-
-  return 1;
-}
 
 static void
 pop_labels (tree block)
 {
   if (named_labels)
     {
-      named_labels->traverse<tree, pop_labels_1> (block);
+      auto_vec<named_label_entry **, 32> labels;
+      named_label_entry **slot;
+      unsigned int i;
+
+      /* Push all the labels into a vector and sort them by DECL_UID,
+	 so that gaps between DECL_UIDs don't affect code generation.  */
+      labels.reserve_exact (named_labels->elements ());
+      named_labels->traverse<vec<named_label_entry **> &, note_label> (labels);
+      labels.qsort (sort_labels);
+      FOR_EACH_VEC_ELT (labels, i, slot)
+	{
+	  struct named_label_entry *ent = *slot;
+
+	  pop_label (ent->label_decl, NULL_TREE);
+
+	  /* Put the labels into the "variables" of the top-level block,
+	     so debugger can see them.  */
+	  DECL_CHAIN (ent->label_decl) = BLOCK_VARS (block);
+	  BLOCK_VARS (block) = ent->label_decl;
+
+	  named_labels->clear_slot (slot);
+	}
       named_labels = NULL;
     }
 }
@@ -1361,38 +1389,14 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
   if (DECL_P (olddecl)
       && TREE_CODE (newdecl) == FUNCTION_DECL
       && TREE_CODE (olddecl) == FUNCTION_DECL
-      && (DECL_UNINLINABLE (newdecl) || DECL_UNINLINABLE (olddecl)))
+      && diagnose_mismatched_attributes (olddecl, newdecl))
     {
-      if (DECL_DECLARED_INLINE_P (newdecl)
-	  && DECL_UNINLINABLE (newdecl)
-	  && lookup_attribute ("noinline", DECL_ATTRIBUTES (newdecl)))
-	/* Already warned elsewhere.  */;
-      else if (DECL_DECLARED_INLINE_P (olddecl)
-	       && DECL_UNINLINABLE (olddecl)
-	       && lookup_attribute ("noinline", DECL_ATTRIBUTES (olddecl)))
-	/* Already warned.  */;
-      else if (DECL_DECLARED_INLINE_P (newdecl)
-	       && DECL_UNINLINABLE (olddecl)
-	       && lookup_attribute ("noinline", DECL_ATTRIBUTES (olddecl)))
-	{
-	  if (warning_at (DECL_SOURCE_LOCATION (newdecl),
-			  OPT_Wattributes, "function %qD redeclared as inline",
-			  newdecl))
-	    inform (DECL_SOURCE_LOCATION (olddecl),
-		    "previous declaration of %qD with attribute noinline",
-		    olddecl);
-	}
-      else if (DECL_DECLARED_INLINE_P (olddecl)
-	       && DECL_UNINLINABLE (newdecl)
-	       && lookup_attribute ("noinline", DECL_ATTRIBUTES (newdecl)))
-	{
-	  if (warning_at (DECL_SOURCE_LOCATION (newdecl),
-			  OPT_Wattributes, "function %qD redeclared with "
-			  "attribute noinline", newdecl))
-	    inform (DECL_SOURCE_LOCATION (olddecl),
-		    "previous declaration of %qD was inline",
-		    olddecl);
-	}
+      if (DECL_INITIAL (olddecl))
+	inform (DECL_SOURCE_LOCATION (olddecl),
+		"previous definition of %q+D was here", olddecl);
+      else
+	inform (DECL_SOURCE_LOCATION (olddecl),
+		"previous declaration of %qD was here", olddecl);
     }
 
   /* Check for redeclaration and other discrepancies.  */
@@ -2038,7 +2042,7 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
 	  if (TYPE_USER_ALIGN (tem))
 	    {
 	      if (TYPE_ALIGN (tem) > TYPE_ALIGN (newtype))
-		TYPE_ALIGN (newtype) = TYPE_ALIGN (tem);
+		SET_TYPE_ALIGN (newtype, TYPE_ALIGN (tem));
 	      TYPE_USER_ALIGN (newtype) = true;
 	    }
 
@@ -2462,7 +2466,7 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
   /* Likewise for DECL_ALIGN, DECL_USER_ALIGN and DECL_PACKED.  */
   if (DECL_ALIGN (olddecl) > DECL_ALIGN (newdecl))
     {
-      DECL_ALIGN (newdecl) = DECL_ALIGN (olddecl);
+      SET_DECL_ALIGN (newdecl, DECL_ALIGN (olddecl));
       DECL_USER_ALIGN (newdecl) |= DECL_USER_ALIGN (olddecl);
     }
   DECL_USER_ALIGN (olddecl) = DECL_USER_ALIGN (newdecl);
@@ -3891,7 +3895,7 @@ record_unknown_type (tree type, const char* name)
   DECL_IGNORED_P (decl) = 1;
   TYPE_DECL_SUPPRESS_DEBUG (decl) = 1;
   TYPE_SIZE (type) = TYPE_SIZE (void_type_node);
-  TYPE_ALIGN (type) = 1;
+  SET_TYPE_ALIGN (type, 1);
   TYPE_USER_ALIGN (type) = 0;
   SET_TYPE_MODE (type, TYPE_MODE (void_type_node));
 }
@@ -4146,7 +4150,7 @@ cxx_init_decl_processing (void)
     TYPE_UNSIGNED (nullptr_type_node) = 1;
     TYPE_PRECISION (nullptr_type_node) = GET_MODE_BITSIZE (ptr_mode);
     if (abi_version_at_least (9))
-      TYPE_ALIGN (nullptr_type_node) = GET_MODE_ALIGNMENT (ptr_mode);
+      SET_TYPE_ALIGN (nullptr_type_node, GET_MODE_ALIGNMENT (ptr_mode));
     SET_TYPE_MODE (nullptr_type_node, ptr_mode);
     record_builtin_type (RID_MAX, "decltype(nullptr)", nullptr_type_node);
     nullptr_node = build_int_cst (nullptr_type_node, 0);
@@ -7896,7 +7900,7 @@ grokfndecl (tree ctype,
       parms = parm;
 
       /* Allocate space to hold the vptr bit if needed.  */
-      DECL_ALIGN (decl) = MINIMUM_METHOD_BOUNDARY;
+      SET_DECL_ALIGN (decl, MINIMUM_METHOD_BOUNDARY);
     }
   DECL_ARGUMENTS (decl) = parms;
   for (t = parms; t; t = DECL_CHAIN (t))
@@ -10365,8 +10369,11 @@ grokdeclarator (const cp_declarator *declarator,
 	      && (decl_context == NORMAL || decl_context == FIELD)
 	      && at_function_scope_p ()
 	      && variably_modified_type_p (type, NULL_TREE))
-	    /* Force evaluation of the SAVE_EXPR.  */
-	    finish_expr_stmt (TYPE_SIZE (type));
+	    {
+	      TYPE_NAME (type) = build_decl (UNKNOWN_LOCATION, TYPE_DECL,
+					     NULL_TREE, type);
+	      add_decl_expr (TYPE_NAME (type));
+	    }
 
 	  if (declarator->kind == cdk_reference)
 	    {
@@ -11391,7 +11398,8 @@ grokdeclarator (const cp_declarator *declarator,
 	      }
 	    else if (current_function_decl)
 	      {
-		/* FIXME need arm citation */
+		/* 7.1.1: There can be no static function declarations within a
+		   block.  */
 		error ("cannot declare static function inside another function");
 		invalid_static = 1;
 	      }
@@ -13087,7 +13095,7 @@ copy_type_enum (tree dst, tree src)
 	valign = MAX (valign, TYPE_ALIGN (t));
       else
 	TYPE_USER_ALIGN (t) = TYPE_USER_ALIGN (src);
-      TYPE_ALIGN (t) = valign;
+      SET_TYPE_ALIGN (t, valign);
       TYPE_UNSIGNED (t) = TYPE_UNSIGNED (src);
     }
 }
@@ -13225,7 +13233,10 @@ start_enum (tree name, tree enumtype, tree underlying_type,
 
   if (underlying_type)
     {
-      if (CP_INTEGRAL_TYPE_P (underlying_type))
+      if (ENUM_UNDERLYING_TYPE (enumtype))
+	/* We already checked that it matches, don't change it to a different
+	   typedef variant.  */;
+      else if (CP_INTEGRAL_TYPE_P (underlying_type))
         {
 	  copy_type_enum (enumtype, underlying_type);
           ENUM_UNDERLYING_TYPE (enumtype) = underlying_type;
@@ -13655,10 +13666,30 @@ incremented enumerator value is too large for %<long%>");
     cplus_decl_attributes (&decl, attributes, 0);
 
   if (context && context == current_class_type && !SCOPED_ENUM_P (enumtype))
-    /* In something like `struct S { enum E { i = 7 }; };' we put `i'
-       on the TYPE_FIELDS list for `S'.  (That's so that you can say
-       things like `S::i' later.)  */
-    finish_member_declaration (decl);
+    {
+      /* In something like `struct S { enum E { i = 7 }; };' we put `i'
+	 on the TYPE_FIELDS list for `S'.  (That's so that you can say
+	 things like `S::i' later.)  */
+
+      /* The enumerator may be getting declared outside of its enclosing
+	 class, like so:
+
+	   class S { public: enum E : int; }; enum S::E : int { i = 7; };
+
+	 For which case we need to make sure that the access of `S::i'
+	 matches the access of `S::E'.  */
+      tree saved_cas = current_access_specifier;
+      if (TREE_PRIVATE (TYPE_NAME (enumtype)))
+	current_access_specifier = access_private_node;
+      else if (TREE_PROTECTED (TYPE_NAME (enumtype)))
+	current_access_specifier = access_protected_node;
+      else
+	current_access_specifier = access_public_node;
+
+      finish_member_declaration (decl);
+
+      current_access_specifier = saved_cas;
+    }
   else
     pushdecl (decl);
 
@@ -14990,7 +15021,8 @@ complete_vars (tree type)
 
 /* If DECL is of a type which needs a cleanup, build and return an
    expression to perform that cleanup here.  Return NULL_TREE if no
-   cleanup need be done.  */
+   cleanup need be done.  DECL can also be a _REF when called from
+   split_nonconstant_init_1.  */
 
 tree
 cxx_maybe_build_cleanup (tree decl, tsubst_flags_t complain)
@@ -15008,7 +15040,10 @@ cxx_maybe_build_cleanup (tree decl, tsubst_flags_t complain)
   /* Handle "__attribute__((cleanup))".  We run the cleanup function
      before the destructor since the destructor is what actually
      terminates the lifetime of the object.  */
-  attr = lookup_attribute ("cleanup", DECL_ATTRIBUTES (decl));
+  if (DECL_P (decl))
+    attr = lookup_attribute ("cleanup", DECL_ATTRIBUTES (decl));
+  else
+    attr = NULL_TREE;
   if (attr)
     {
       tree id;
@@ -15067,6 +15102,7 @@ cxx_maybe_build_cleanup (tree decl, tsubst_flags_t complain)
   protected_set_expr_location (cleanup, UNKNOWN_LOCATION);
 
   if (cleanup
+      && DECL_P (decl)
       && !lookup_attribute ("warn_unused", TYPE_ATTRIBUTES (TREE_TYPE (decl)))
       /* Treat objects with destructors as used; the destructor may do
 	 something substantive.  */

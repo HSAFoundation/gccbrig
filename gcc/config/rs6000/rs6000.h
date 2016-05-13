@@ -418,12 +418,12 @@ extern const char *host_detect_local_cpu (int argc, const char **argv);
    Similarly IFmode is the IBM long double format even if the default is IEEE
    128-bit.  */
 #define FLOAT128_IEEE_P(MODE)						\
-  (((MODE) == TFmode && TARGET_IEEEQUAD)				\
-   || ((MODE) == KFmode))
+  ((TARGET_IEEEQUAD && ((MODE) == TFmode || (MODE) == TCmode))		\
+   || ((MODE) == KFmode) || ((MODE) == KCmode))
 
 #define FLOAT128_IBM_P(MODE)						\
-  (((MODE) == TFmode && !TARGET_IEEEQUAD)				\
-   || ((MODE) == IFmode))
+  ((!TARGET_IEEEQUAD && ((MODE) == TFmode || (MODE) == TCmode))		\
+   || ((MODE) == IFmode) || ((MODE) == ICmode))
 
 /* Helper macros to say whether a 128-bit floating point type can go in a
    single vector register, or whether it needs paired scalar values.  */
@@ -615,6 +615,7 @@ extern int rs6000_vector_align[];
 #define MASK_MULTIPLE			OPTION_MASK_MULTIPLE
 #define MASK_NO_UPDATE			OPTION_MASK_NO_UPDATE
 #define MASK_P8_VECTOR			OPTION_MASK_P8_VECTOR
+#define MASK_P9_VECTOR			OPTION_MASK_P9_VECTOR
 #define MASK_POPCNTB			OPTION_MASK_POPCNTB
 #define MASK_POPCNTD			OPTION_MASK_POPCNTD
 #define MASK_PPC_GFXOPT			OPTION_MASK_PPC_GFXOPT
@@ -635,16 +636,8 @@ extern int rs6000_vector_align[];
 #define MASK_64BIT			OPTION_MASK_64BIT
 #endif
 
-#ifdef TARGET_RELOCATABLE
-#define MASK_RELOCATABLE		OPTION_MASK_RELOCATABLE
-#endif
-
 #ifdef TARGET_LITTLE_ENDIAN
 #define MASK_LITTLE_ENDIAN		OPTION_MASK_LITTLE_ENDIAN
-#endif
-
-#ifdef TARGET_MINIMAL_TOC
-#define MASK_MINIMAL_TOC		OPTION_MASK_MINIMAL_TOC
 #endif
 
 #ifdef TARGET_REGNAMES
@@ -1774,7 +1767,9 @@ extern enum reg_class rs6000_constraints[RS6000_CONSTRAINT_MAX];
 #define ALTIVEC_ARG_RETURN (FIRST_ALTIVEC_REGNO + 2)
 #define FP_ARG_MAX_RETURN (DEFAULT_ABI != ABI_ELFv2 ? FP_ARG_RETURN	\
 			   : (FP_ARG_RETURN + AGGR_ARG_NUM_REG - 1))
-#define ALTIVEC_ARG_MAX_RETURN (DEFAULT_ABI != ABI_ELFv2 ? ALTIVEC_ARG_RETURN \
+#define ALTIVEC_ARG_MAX_RETURN (DEFAULT_ABI != ABI_ELFv2		\
+				? (ALTIVEC_ARG_RETURN			\
+				   + (TARGET_FLOAT128 ? 1 : 0))		\
 			        : (ALTIVEC_ARG_RETURN + AGGR_ARG_NUM_REG - 1))
 
 /* Flags for the call/call_value rtl operations set up by function_arg */
@@ -2055,7 +2050,10 @@ do {									     \
    to allocate such a register (if necessary).  */
 
 #define RS6000_PIC_OFFSET_TABLE_REGNUM 30
-#define PIC_OFFSET_TABLE_REGNUM (flag_pic ? RS6000_PIC_OFFSET_TABLE_REGNUM : INVALID_REGNUM)
+#define PIC_OFFSET_TABLE_REGNUM \
+  (TARGET_TOC ? TOC_REGISTER			\
+   : flag_pic ? RS6000_PIC_OFFSET_TABLE_REGNUM	\
+   : INVALID_REGNUM)
 
 #define TOC_REGISTER (TARGET_MINIMAL_TOC ? RS6000_PIC_OFFSET_TABLE_REGNUM : 2)
 
@@ -2660,6 +2658,7 @@ extern int frame_pointer_needed;
 #define RS6000_BTM_ALTIVEC	MASK_ALTIVEC	/* VMX/altivec vectors.  */
 #define RS6000_BTM_VSX		MASK_VSX	/* VSX (vector/scalar).  */
 #define RS6000_BTM_P8_VECTOR	MASK_P8_VECTOR	/* ISA 2.07 vector.  */
+#define RS6000_BTM_P9_VECTOR	MASK_P9_VECTOR	/* ISA 3.0 vector.  */
 #define RS6000_BTM_CRYPTO	MASK_CRYPTO	/* crypto funcs.  */
 #define RS6000_BTM_HTM		MASK_HTM	/* hardware TM funcs.  */
 #define RS6000_BTM_SPE		MASK_STRING	/* E500 */
@@ -2677,6 +2676,7 @@ extern int frame_pointer_needed;
 #define RS6000_BTM_COMMON	(RS6000_BTM_ALTIVEC			\
 				 | RS6000_BTM_VSX			\
 				 | RS6000_BTM_P8_VECTOR			\
+				 | RS6000_BTM_P9_VECTOR			\
 				 | RS6000_BTM_CRYPTO			\
 				 | RS6000_BTM_FRE			\
 				 | RS6000_BTM_FRES			\

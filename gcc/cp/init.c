@@ -798,7 +798,8 @@ perform_member_init (tree member, tree init)
 						tf_warning_or_error);
 
       if (init)
-	finish_expr_stmt (cp_build_modify_expr (decl, INIT_EXPR, init,
+	finish_expr_stmt (cp_build_modify_expr (input_location, decl,
+						INIT_EXPR, init,
 						tf_warning_or_error));
     }
 
@@ -1254,8 +1255,8 @@ expand_virtual_init (tree binfo, tree decl)
 
   /* Assign the vtable to the vptr.  */
   vtbl = convert_force (TREE_TYPE (vtbl_ptr), vtbl, 0, tf_warning_or_error);
-  finish_expr_stmt (cp_build_modify_expr (vtbl_ptr, NOP_EXPR, vtbl,
-					  tf_warning_or_error));
+  finish_expr_stmt (cp_build_modify_expr (input_location, vtbl_ptr, NOP_EXPR,
+					  vtbl, tf_warning_or_error));
 }
 
 /* If an exception is thrown in a constructor, those base classes already
@@ -2812,8 +2813,7 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
 
 	  unsigned shift = (max_outer_nelts.get_precision ()) - 7
 	    - wi::clz (max_outer_nelts);
-	  max_outer_nelts = wi::lshift (wi::lrshift (max_outer_nelts, shift),
-				        shift);
+	  max_outer_nelts = (max_outer_nelts >> shift) << shift;
 
           outer_nelts_check = fold_build2 (LE_EXPR, boolean_type_node,
 					   outer_nelts,
@@ -3209,8 +3209,8 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
 
 	      ie = build_x_compound_expr_from_vec (*init, "new initializer",
 						   complain);
-	      init_expr = cp_build_modify_expr (init_expr, INIT_EXPR, ie,
-						complain);
+	      init_expr = cp_build_modify_expr (input_location, init_expr,
+						INIT_EXPR, ie, complain);
 	    }
 	  stable = stabilize_init (init_expr, &init_preeval_expr);
 	}
@@ -3597,7 +3597,7 @@ build_vec_delete_1 (tree base, tree maxindex, tree type,
 
   tbase = create_temporary_var (ptype);
   tbase_init
-    = cp_build_modify_expr (tbase, NOP_EXPR,
+    = cp_build_modify_expr (input_location, tbase, NOP_EXPR,
 			    fold_build_pointer_plus_loc (input_location,
 							 fold_convert (ptype,
 								       base),
@@ -3614,7 +3614,7 @@ build_vec_delete_1 (tree base, tree maxindex, tree type,
 			 fold_convert (ptype, base)));
   tmp = fold_build1_loc (input_location, NEGATE_EXPR, sizetype, size_exp);
   tmp = fold_build_pointer_plus (tbase, tmp);
-  tmp = cp_build_modify_expr (tbase, NOP_EXPR, tmp, complain);
+  tmp = cp_build_modify_expr (input_location, tbase, NOP_EXPR, tmp, complain);
   if (tmp == error_mark_node)
     return error_mark_node;
   body = build_compound_expr (input_location, body, tmp);
@@ -3673,7 +3673,9 @@ build_vec_delete_1 (tree base, tree maxindex, tree type,
   else if (!body)
     body = deallocate_expr;
   else
-    body = build_compound_expr (input_location, body, deallocate_expr);
+    /* The delete operator mist be called, even if a destructor
+       throws.  */
+    body = build2 (TRY_FINALLY_EXPR, void_type_node, body, deallocate_expr);
 
   if (!body)
     body = integer_zero_node;
@@ -3734,8 +3736,8 @@ get_temp_regvar (tree type, tree init)
   decl = create_temporary_var (type);
   add_decl_expr (decl);
 
-  finish_expr_stmt (cp_build_modify_expr (decl, INIT_EXPR, init, 
-					  tf_warning_or_error));
+  finish_expr_stmt (cp_build_modify_expr (input_location, decl, INIT_EXPR,
+					  init, tf_warning_or_error));
 
   return decl;
 }
@@ -3999,8 +4001,8 @@ build_vec_init (tree base, tree maxindex, tree init,
 	  else if (MAYBE_CLASS_TYPE_P (type) || TREE_CODE (type) == ARRAY_TYPE)
 	    one_init = build_aggr_init (baseref, elt, 0, complain);
 	  else
-	    one_init = cp_build_modify_expr (baseref, NOP_EXPR,
-					     elt, complain);
+	    one_init = cp_build_modify_expr (input_location, baseref,
+					     NOP_EXPR, elt, complain);
 	  if (one_init == error_mark_node)
 	    errors = true;
 	  if (try_const)
@@ -4127,12 +4129,12 @@ build_vec_init (tree base, tree maxindex, tree init,
 	    from = NULL_TREE;
 
 	  if (from_array == 2)
-	    elt_init = cp_build_modify_expr (to, NOP_EXPR, from, 
-					     complain);
+	    elt_init = cp_build_modify_expr (input_location, to, NOP_EXPR,
+					     from, complain);
 	  else if (type_build_ctor_call (type))
 	    elt_init = build_aggr_init (to, from, 0, complain);
 	  else if (from)
-	    elt_init = cp_build_modify_expr (to, NOP_EXPR, from,
+	    elt_init = cp_build_modify_expr (input_location, to, NOP_EXPR, from,
 					     complain);
 	  else
 	    gcc_unreachable ();
@@ -4510,7 +4512,13 @@ build_delete (tree otype, tree addr, special_function_kind auto_delete,
       if (expr == error_mark_node)
 	return error_mark_node;
       if (do_delete)
-	expr = build2 (COMPOUND_EXPR, void_type_node, expr, do_delete);
+	/* The delete operator must be called, regardless of whether
+	   the destructor throws.
+
+	   [expr.delete]/7 The deallocation function is called
+	   regardless of whether the destructor for the object or some
+	   element of the array throws an exception.  */
+	expr = build2 (TRY_FINALLY_EXPR, void_type_node, expr, do_delete);
 
       /* We need to calculate this before the dtor changes the vptr.  */
       if (head)

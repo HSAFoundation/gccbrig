@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -479,7 +479,7 @@ package body Sem_Aggr is
          else
             if Compile_Time_Known_Value (This_Low) then
                if not Compile_Time_Known_Value (Aggr_Low (Dim)) then
-                  Aggr_Low (Dim)  := This_Low;
+                  Aggr_Low (Dim) := This_Low;
 
                elsif Expr_Value (This_Low) /= Expr_Value (Aggr_Low (Dim)) then
                   Set_Raises_Constraint_Error (N);
@@ -491,7 +491,7 @@ package body Sem_Aggr is
 
             if Compile_Time_Known_Value (This_High) then
                if not Compile_Time_Known_Value (Aggr_High (Dim)) then
-                  Aggr_High (Dim)  := This_High;
+                  Aggr_High (Dim) := This_High;
 
                elsif
                  Expr_Value (This_High) /= Expr_Value (Aggr_High (Dim))
@@ -1610,9 +1610,12 @@ package body Sem_Aggr is
          --  If an aggregate component has a type with predicates, an explicit
          --  predicate check must be applied, as for an assignment statement,
          --  because the aggegate might not be expanded into individual
-         --  component assignments.
+         --  component assignments. If the expression covers several components
+         --  the analysis and the predicate check take place later.
 
-         if Present (Predicate_Function (Component_Typ)) then
+         if Present (Predicate_Function (Component_Typ))
+           and then Analyzed (Expr)
+         then
             Apply_Predicate_Check (Expr, Component_Typ);
          end if;
 
@@ -1842,7 +1845,7 @@ package body Sem_Aggr is
             Errors_Posted_On_Choices : Boolean := False;
             --  Keeps track of whether any choices have semantic errors
 
-            function Empty_Range (A : Node_Id)  return Boolean;
+            function Empty_Range (A : Node_Id) return Boolean;
             --  If an association covers an empty range, some warnings on the
             --  expression of the association can be disabled.
 
@@ -1850,7 +1853,7 @@ package body Sem_Aggr is
             -- Empty_Range --
             -----------------
 
-            function Empty_Range (A : Node_Id)  return Boolean is
+            function Empty_Range (A : Node_Id) return Boolean is
                R : constant Node_Id := First (Choices (A));
             begin
                return No (Next (R))
@@ -2051,6 +2054,13 @@ package body Sem_Aggr is
 
                      Set_Parent (Expr, Parent (Expression (Assoc)));
                      Analyze (Expr);
+
+                     --  Compute its dimensions now, rather than at the end of
+                     --  resolution, because in the case of multidimensional
+                     --  aggregates subsequent expansion may lead to spurious
+                     --  errors.
+
+                     Check_Expression_Dimensions (Expr, Component_Typ);
 
                      --  If the expression is a literal, propagate this info
                      --  to the expression in the association, to enable some
@@ -2972,14 +2982,20 @@ package body Sem_Aggr is
       --
       --  This variable is updated as a side effect of function Get_Value.
 
+      Box_Node       : Node_Id;
       Is_Box_Present : Boolean := False;
-      Others_Box     : Boolean := False;
+      Others_Box     : Integer := 0;
+
       --  Ada 2005 (AI-287): Variables used in case of default initialization
       --  to provide a functionality similar to Others_Etype. Box_Present
       --  indicates that the component takes its default initialization;
-      --  Others_Box indicates that at least one component takes its default
-      --  initialization. Similar to Others_Etype, they are also updated as a
+      --  Others_Box counts the number of components of the current aggregate
+      --  (which may be a sub-aggregate of a larger one) that are default-
+      --  initialized. A value of One indicates that an others_box is present.
+      --  Any larger value indicates that the others_box is not redundant.
+      --  These variables, similar to Others_Etype, are also updated as a
       --  side effect of function Get_Value.
+      --  Box_Node is used to place a warning on a redundant others_box.
 
       procedure Add_Association
         (Component      : Entity_Id;
@@ -3231,7 +3247,7 @@ package body Sem_Aggr is
                      --  checks when the default includes function calls.
 
                      if Box_Present (Assoc) then
-                        Others_Box     := True;
+                        Others_Box     := Others_Box + 1;
                         Is_Box_Present := True;
 
                         if Expander_Active then
@@ -3552,7 +3568,9 @@ package body Sem_Aggr is
          --  because the aggegate might not be expanded into individual
          --  component assignments.
 
-         if Present (Predicate_Function (Expr_Type)) then
+         if Present (Predicate_Function (Expr_Type))
+           and then Analyzed (Expr)
+         then
             Apply_Predicate_Check (Expr, Expr_Type);
          end if;
 
@@ -3704,7 +3722,8 @@ package body Sem_Aggr is
                   --  any component.
 
                   elsif Box_Present (Assoc) then
-                     Others_Box := True;
+                     Others_Box := 1;
+                     Box_Node   := Assoc;
                   end if;
 
                else
@@ -4439,7 +4458,8 @@ package body Sem_Aggr is
 
                               Comp_Elmt := First_Elmt (Components);
                               while Present (Comp_Elmt) loop
-                                 if Ekind (Node (Comp_Elmt)) /= E_Discriminant
+                                 if Ekind (Node (Comp_Elmt)) /=
+                                      E_Discriminant
                                  then
                                     Process_Component (Node (Comp_Elmt));
                                  end if;
@@ -4585,9 +4605,14 @@ package body Sem_Aggr is
 
                --  Ada 2005 (AI-287): others choice may have expression or box
 
-               if No (Others_Etype) and then not Others_Box then
+               if No (Others_Etype) and then Others_Box = 0 then
                   Error_Msg_N
                     ("OTHERS must represent at least one component", Selectr);
+
+               elsif Others_Box = 1 and then Warn_On_Redundant_Constructs then
+                  Error_Msg_N ("others choice is redundant?", Box_Node);
+                  Error_Msg_N
+                    ("\previous choices cover all components?", Box_Node);
                end if;
 
                exit Verification;

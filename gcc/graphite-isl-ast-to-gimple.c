@@ -24,6 +24,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #ifdef HAVE_isl
 
+#define INCLUDE_MAP
 #include "system.h"
 #include "coretypes.h"
 #include "backend.h"
@@ -54,7 +55,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfganal.h"
 #include "value-prof.h"
 #include "graphite.h"
-#include <map>
 
 /* We always try to use signed 128 bit types, but fall back to smaller types
    in case a platform does not provide types of these sizes. In the future we
@@ -2439,7 +2439,7 @@ copy_cond_phi_args (gphi *phi, gphi *new_phi, vec<tree> iv_map, bool postpone)
 		  fprintf (dump_file, "\n");
 		}
 	      gsi_insert_earliest (stmts);
-	      new_phi_args [i] = new_name;
+	      new_phi_args[i] = new_expr;
 	      continue;
 	    }
 

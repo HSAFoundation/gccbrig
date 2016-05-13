@@ -81,11 +81,14 @@ struct die_struct;
 /* The function does not lead to calls within current function unit.  */
 #define ECF_LEAF		  (1 << 10)
 
+/* Nonzero if this call returns its first argument.  */
+#define ECF_RET1		  (1 << 11)
+
 /* Nonzero if this call does not affect transactions.  */
-#define ECF_TM_PURE		  (1 << 11)
+#define ECF_TM_PURE		  (1 << 12)
 
 /* Nonzero if this call is into the transaction runtime library.  */
-#define ECF_TM_BUILTIN		  (1 << 12)
+#define ECF_TM_BUILTIN		  (1 << 13)
 
 /* Call argument flags.  */
 /* Nonzero if the argument is not dereferenced recursively, thus only
@@ -765,7 +768,11 @@ enum operand_equal_flag {
   OEP_ONLY_CONST = 1,
   OEP_PURE_SAME = 2,
   OEP_MATCH_SIDE_EFFECTS = 4,
-  OEP_ADDRESS_OF = 8
+  OEP_ADDRESS_OF = 8,
+  /* Internal within operand_equal_p:  */
+  OEP_NO_HASH_CHECK = 16,
+  /* Internal within inchash::add_expr:  */
+  OEP_HASH_CHECK = 32
 };
 
 /* Enum and arrays used for tree allocation stats.
@@ -1441,7 +1448,13 @@ struct GTY(()) tree_type_common {
   unsigned lang_flag_5 : 1;
   unsigned lang_flag_6 : 1;
 
-  unsigned int align;
+  /* TYPE_ALIGN in log2; this has to be large enough to hold values
+     of the maximum of BIGGEST_ALIGNMENT and MAX_OFILE_ALIGNMENT,
+     the latter being usually the larger.  For ELF it is 8<<28,
+     so we need to store the value 32 (not 31, as we need the zero
+     as well), hence six bits.  */
+  unsigned align : 6;
+  unsigned spare : 26;
   alias_set_type alias_set;
   tree pointer_to;
   tree reference_to;
@@ -1542,12 +1555,12 @@ struct GTY(()) tree_decl_common {
   unsigned decl_nonshareable_flag : 1;
 
   /* DECL_OFFSET_ALIGN, used only for FIELD_DECLs.  */
-  unsigned int off_align : 8;
-
-  /* 24 bits unused.  */
+  unsigned int off_align : 6;
 
   /* DECL_ALIGN.  It should have the same size as TYPE_ALIGN.  */
-  unsigned int align;
+  unsigned int align : 6;
+
+  /* 20 bits unused.  */
 
   /* UID for points-to sets, stable over copying from inlining.  */
   unsigned int pt_uid;

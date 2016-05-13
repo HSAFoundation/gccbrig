@@ -542,7 +542,7 @@ gimplify_and_update_call_from_tree (gimple_stmt_iterator *si_p, tree expr)
     }
   else
     {
-      tree tmp = get_initialized_tmp_var (expr, &stmts, NULL);
+      tree tmp = force_gimple_operand (expr, &stmts, false, NULL_TREE);
       new_stmt = gimple_build_assign (lhs, tmp);
       i = gsi_last (stmts);
       gsi_insert_after_without_update (&i, new_stmt,
@@ -3376,8 +3376,7 @@ replace_stmt_with_simplification (gimple_stmt_iterator *gsi,
 	  || gimple_num_ops (stmt) > get_gimple_rhs_num_ops (rcode))
 	{
 	  maybe_build_generic_op (rcode,
-				  TREE_TYPE (gimple_assign_lhs (stmt)),
-				  &ops[0], ops[1], ops[2]);
+				  TREE_TYPE (gimple_assign_lhs (stmt)), ops);
 	  gimple_assign_set_rhs_with_ops (gsi, rcode, ops[0], ops[1], ops[2]);
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
@@ -3526,7 +3525,9 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 {
   bool changed = false;
   gimple *stmt = gsi_stmt (*gsi);
+  bool nowarning = gimple_no_warning_p (stmt);
   unsigned i;
+  fold_defer_overflow_warnings ();
 
   /* First do required canonicalization of [TARGET_]MEM_REF addresses
      after propagation.
@@ -3819,6 +3820,7 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace, tree (*valueize) (tree))
 	}
     }
 
+  fold_undefer_overflow_warnings (changed && !nowarning, stmt, 0);
   return changed;
 }
 
@@ -5381,7 +5383,7 @@ fold_array_ctor_reference (tree type, tree ctor,
      be larger than size of array element.  */
   if (!TYPE_SIZE_UNIT (type)
       || TREE_CODE (TYPE_SIZE_UNIT (type)) != INTEGER_CST
-      || wi::lts_p (elt_size, wi::to_offset (TYPE_SIZE_UNIT (type)))
+      || elt_size < wi::to_offset (TYPE_SIZE_UNIT (type))
       || elt_size == 0)
     return NULL_TREE;
 
@@ -5436,8 +5438,7 @@ fold_nonarray_ctor_reference (tree type, tree ctor,
 
       /* Compute bit offset of the field.  */
       bitoffset = (wi::to_offset (field_offset)
-		   + wi::lshift (wi::to_offset (byte_offset),
-				 LOG2_BITS_PER_UNIT));
+		   + (wi::to_offset (byte_offset) << LOG2_BITS_PER_UNIT));
       /* Compute bit offset where the field ends.  */
       if (field_size != NULL_TREE)
 	bitoffset_end = bitoffset + wi::to_offset (field_size);
@@ -5458,7 +5459,7 @@ fold_nonarray_ctor_reference (tree type, tree ctor,
 	     fields.  */
 	  if (wi::cmps (access_end, bitoffset_end) > 0)
 	    return NULL_TREE;
-	  if (wi::lts_p (offset, bitoffset))
+	  if (offset < bitoffset)
 	    return NULL_TREE;
 	  return fold_ctor_reference (type, cval,
 				      inner_offset.to_uhwi (), size,

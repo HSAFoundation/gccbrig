@@ -437,7 +437,9 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
 	      /* Bool ops don't participate in vectorization factor
 		 computation.  For comparison use compared types to
 		 compute a factor.  */
-	      if (TREE_CODE (scalar_type) == BOOLEAN_TYPE)
+	      if (TREE_CODE (scalar_type) == BOOLEAN_TYPE
+		  && is_gimple_assign (stmt)
+		  && gimple_assign_rhs_code (stmt) != COND_EXPR)
 		{
 		  if (STMT_VINFO_RELEVANT_P (stmt_info))
 		    mask_producers.safe_push (stmt_info);
@@ -2063,8 +2065,6 @@ start_over:
 
   estimated_niter
     = estimated_stmt_executions_int (LOOP_VINFO_LOOP (loop_vinfo));
-  if (estimated_niter != -1)
-    estimated_niter = max_niter;
   if (estimated_niter != -1
       && ((unsigned HOST_WIDE_INT) estimated_niter
           <= MAX (th, (unsigned)min_profitable_estimate)))
@@ -6923,11 +6923,13 @@ vect_transform_loop (loop_vec_info loop_vinfo)
   /* Reduce loop iterations by the vectorization factor.  */
   scale_loop_profile (loop, GCOV_COMPUTE_SCALE (1, vectorization_factor),
 		      expected_iterations / vectorization_factor);
-  loop->nb_iterations_upper_bound
-    = wi::udiv_floor (loop->nb_iterations_upper_bound, vectorization_factor);
   if (LOOP_VINFO_PEELING_FOR_GAPS (loop_vinfo)
       && loop->nb_iterations_upper_bound != 0)
     loop->nb_iterations_upper_bound = loop->nb_iterations_upper_bound - 1;
+  loop->nb_iterations_upper_bound
+    = wi::udiv_floor (loop->nb_iterations_upper_bound + 1,
+		      vectorization_factor) - 1;
+
   if (loop->any_estimate)
     {
       loop->nb_iterations_estimate

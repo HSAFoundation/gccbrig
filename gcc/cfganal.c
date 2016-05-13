@@ -26,6 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfghooks.h"
 #include "timevar.h"
 #include "cfganal.h"
+#include "cfgloop.h"
 
 /* Store the data structures necessary for depth-first search.  */
 struct depth_first_search_ds {
@@ -747,7 +748,21 @@ dfs_find_deadend (basic_block bb)
           return bb;
         }
 
-      bb = EDGE_SUCC (bb, 0)->dest;
+      /* If we are in an analyzed cycle make sure to try exiting it.
+         Note this is a heuristic only and expected to work when loop
+	 fixup is needed as well.  */
+      if (! bb->loop_father
+	  || ! loop_outer (bb->loop_father))
+	bb = EDGE_SUCC (bb, 0)->dest;
+      else
+	{
+	  edge_iterator ei;
+	  edge e;
+	  FOR_EACH_EDGE (e, ei, bb->succs)
+	    if (loop_exit_edge_p (bb->loop_father, e))
+	      break;
+	  bb = e ? e->dest : EDGE_SUCC (bb, 0)->dest;
+	}
     }
 
   gcc_unreachable ();
@@ -1378,8 +1393,6 @@ bitmap_intersection_of_succs (sbitmap dst, sbitmap *src, basic_block b)
   edge e;
   unsigned ix;
 
-  gcc_assert (!dst->popcount);
-
   for (e = NULL, ix = 0; ix < EDGE_COUNT (b->succs); ix++)
     {
       e = EDGE_SUCC (b, ix);
@@ -1418,8 +1431,6 @@ bitmap_intersection_of_preds (sbitmap dst, sbitmap *src, basic_block b)
   unsigned int set_size = dst->size;
   edge e;
   unsigned ix;
-
-  gcc_assert (!dst->popcount);
 
   for (e = NULL, ix = 0; ix < EDGE_COUNT (b->preds); ix++)
     {
@@ -1460,8 +1471,6 @@ bitmap_union_of_succs (sbitmap dst, sbitmap *src, basic_block b)
   edge e;
   unsigned ix;
 
-  gcc_assert (!dst->popcount);
-
   for (ix = 0; ix < EDGE_COUNT (b->succs); ix++)
     {
       e = EDGE_SUCC (b, ix);
@@ -1500,8 +1509,6 @@ bitmap_union_of_preds (sbitmap dst, sbitmap *src, basic_block b)
   unsigned int set_size = dst->size;
   edge e;
   unsigned ix;
-
-  gcc_assert (!dst->popcount);
 
   for (ix = 0; ix < EDGE_COUNT (b->preds); ix++)
     {

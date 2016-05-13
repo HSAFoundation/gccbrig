@@ -6736,7 +6736,7 @@ simplify_set (rtx x)
 	       + (UNITS_PER_WORD - 1)) / UNITS_PER_WORD))
       && (WORD_REGISTER_OPERATIONS
 	  || (GET_MODE_SIZE (GET_MODE (src))
-	      < GET_MODE_SIZE (GET_MODE (SUBREG_REG (src)))))
+	      <= GET_MODE_SIZE (GET_MODE (SUBREG_REG (src)))))
 #ifdef CANNOT_CHANGE_MODE_CLASS
       && ! (REG_P (dest) && REGNO (dest) < FIRST_PSEUDO_REGISTER
 	    && REG_CANNOT_CHANGE_MODE_P (REGNO (dest),
@@ -11096,6 +11096,7 @@ change_zero_ext (rtx *src)
 				   XEXP (x, 0), GEN_INT (start));
 	}
       else if (GET_CODE (x) == ZERO_EXTEND
+	       && SCALAR_INT_MODE_P (mode)
 	       && GET_CODE (XEXP (x, 0)) == SUBREG
 	       && GET_MODE (SUBREG_REG (XEXP (x, 0))) == mode
 	       && subreg_lowpart_p (XEXP (x, 0)))
@@ -11106,11 +11107,8 @@ change_zero_ext (rtx *src)
       else
 	continue;
 
-      unsigned HOST_WIDE_INT mask = 1;
-      mask <<= size;
-      mask--;
-
-      x = gen_rtx_AND (mode, x, GEN_INT (mask));
+      wide_int mask = wi::mask (size, false, GET_MODE_PRECISION (mode));
+      x = gen_rtx_AND (mode, x, immed_wide_int_const (mask, mode));
 
       SUBST (**iter, x);
       changed = true;

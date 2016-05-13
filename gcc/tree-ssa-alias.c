@@ -321,6 +321,69 @@ ptr_deref_may_alias_ref_p_1 (tree ptr, ao_ref *ref)
   return true;
 }
 
+/* Returns true if PTR1 and PTR2 compare unequal because of points-to.  */
+
+bool
+ptrs_compare_unequal (tree ptr1, tree ptr2)
+{
+  /* First resolve the pointers down to a SSA name pointer base or
+     a VAR_DECL, PARM_DECL or RESULT_DECL.  This explicitely does
+     not yet try to handle LABEL_DECLs, FUNCTION_DECLs, CONST_DECLs
+     or STRING_CSTs which needs points-to adjustments to track them
+     in the points-to sets.  */
+  tree obj1 = NULL_TREE;
+  tree obj2 = NULL_TREE;
+  if (TREE_CODE (ptr1) == ADDR_EXPR)
+    {
+      tree tem = get_base_address (TREE_OPERAND (ptr1, 0));
+      if (! tem)
+	return false;
+      if (TREE_CODE (tem) == VAR_DECL
+	  || TREE_CODE (tem) == PARM_DECL
+	  || TREE_CODE (tem) == RESULT_DECL)
+	obj1 = tem;
+      else if (TREE_CODE (tem) == MEM_REF)
+	ptr1 = TREE_OPERAND (tem, 0);
+    }
+  if (TREE_CODE (ptr2) == ADDR_EXPR)
+    {
+      tree tem = get_base_address (TREE_OPERAND (ptr2, 0));
+      if (! tem)
+	return false;
+      if (TREE_CODE (tem) == VAR_DECL
+	  || TREE_CODE (tem) == PARM_DECL
+	  || TREE_CODE (tem) == RESULT_DECL)
+	obj2 = tem;
+      else if (TREE_CODE (tem) == MEM_REF)
+	ptr2 = TREE_OPERAND (tem, 0);
+    }
+
+  if (obj1 && obj2)
+    /* Other code handles this correctly, no need to duplicate it here.  */;
+  else if (obj1 && TREE_CODE (ptr2) == SSA_NAME)
+    {
+      struct ptr_info_def *pi = SSA_NAME_PTR_INFO (ptr2);
+      /* We may not use restrict to optimize pointer comparisons.
+         See PR71062.  So we have to assume that restrict-pointed-to
+	 may be in fact obj1.  */
+      if (!pi || pi->pt.vars_contains_restrict)
+	return false;
+      return !pt_solution_includes (&pi->pt, obj1);
+    }
+  else if (TREE_CODE (ptr1) == SSA_NAME && obj2)
+    {
+      struct ptr_info_def *pi = SSA_NAME_PTR_INFO (ptr1);
+      if (!pi || pi->pt.vars_contains_restrict)
+	return false;
+      return !pt_solution_includes (&pi->pt, obj2);
+    }
+
+  /* ???  We'd like to handle ptr1 != NULL and ptr1 != ptr2
+     but those require pt.null to be conservatively correct.  */
+
+  return false;
+}
+
 /* Returns whether reference REF to BASE may refer to global memory.  */
 
 static bool
@@ -461,17 +524,31 @@ dump_points_to_solution (FILE *file, struct pt_solution *pt)
       fprintf (file, ", points-to vars: ");
       dump_decl_set (file, pt->vars);
       if (pt->vars_contains_nonlocal
-	  && pt->vars_contains_escaped_heap)
-	fprintf (file, " (nonlocal, escaped heap)");
-      else if (pt->vars_contains_nonlocal
-	       && pt->vars_contains_escaped)
-	fprintf (file, " (nonlocal, escaped)");
-      else if (pt->vars_contains_nonlocal)
-	fprintf (file, " (nonlocal)");
-      else if (pt->vars_contains_escaped_heap)
-	fprintf (file, " (escaped heap)");
-      else if (pt->vars_contains_escaped)
-	fprintf (file, " (escaped)");
+	  || pt->vars_contains_escaped
+	  || pt->vars_contains_escaped_heap
+	  || pt->vars_contains_restrict)
+	{
+	  const char *comma = "";
+	  fprintf (file, " (");
+	  if (pt->vars_contains_nonlocal)
+	    {
+	      fprintf (file, "nonlocal");
+	      comma = ", ";
+	    }
+	  if (pt->vars_contains_escaped)
+	    {
+	      fprintf (file, "%sescaped", comma);
+	      comma = ", ";
+	    }
+	  if (pt->vars_contains_escaped_heap)
+	    {
+	      fprintf (file, "%sescaped heap", comma);
+	      comma = ", ";
+	    }
+	  if (pt->vars_contains_restrict)
+	    fprintf (file, "%srestrict", comma);
+	  fprintf (file, ")");
+	}
     }
 }
 
@@ -1041,7 +1118,7 @@ indirect_ref_may_alias_decl_p (tree ref1 ATTRIBUTE_UNUSED, tree base1,
   /* The offset embedded in MEM_REFs can be negative.  Bias them
      so that the resulting offset adjustment is positive.  */
   offset_int moff = mem_ref_offset (base1);
-  moff = wi::lshift (moff, LOG2_BITS_PER_UNIT);
+  moff <<= LOG2_BITS_PER_UNIT;
   if (wi::neg_p (moff))
     offset2p += (-moff).to_short_addr ();
   else
@@ -1113,7 +1190,7 @@ indirect_ref_may_alias_decl_p (tree ref1 ATTRIBUTE_UNUSED, tree base1,
       || TREE_CODE (dbase2) == TARGET_MEM_REF)
     {
       offset_int moff = mem_ref_offset (dbase2);
-      moff = wi::lshift (moff, LOG2_BITS_PER_UNIT);
+      moff <<= LOG2_BITS_PER_UNIT;
       if (wi::neg_p (moff))
 	doffset1 -= (-moff).to_short_addr ();
       else
@@ -1211,13 +1288,13 @@ indirect_refs_may_alias_p (tree ref1 ATTRIBUTE_UNUSED, tree base1,
       /* The offset embedded in MEM_REFs can be negative.  Bias them
 	 so that the resulting offset adjustment is positive.  */
       moff = mem_ref_offset (base1);
-      moff = wi::lshift (moff, LOG2_BITS_PER_UNIT);
+      moff <<= LOG2_BITS_PER_UNIT;
       if (wi::neg_p (moff))
 	offset2 += (-moff).to_short_addr ();
       else
 	offset1 += moff.to_shwi ();
       moff = mem_ref_offset (base2);
-      moff = wi::lshift (moff, LOG2_BITS_PER_UNIT);
+      moff <<= LOG2_BITS_PER_UNIT;
       if (wi::neg_p (moff))
 	offset1 += (-moff).to_short_addr ();
       else
@@ -2298,10 +2375,10 @@ stmt_kills_ref_p (gimple *stmt, ao_ref *ref)
 				       TREE_OPERAND (ref->base, 1)))
 		{
 		  offset_int off1 = mem_ref_offset (base);
-		  off1 = wi::lshift (off1, LOG2_BITS_PER_UNIT);
+		  off1 <<= LOG2_BITS_PER_UNIT;
 		  off1 += offset;
 		  offset_int off2 = mem_ref_offset (ref->base);
-		  off2 = wi::lshift (off2, LOG2_BITS_PER_UNIT);
+		  off2 <<= LOG2_BITS_PER_UNIT;
 		  off2 += ref_offset;
 		  if (wi::fits_shwi_p (off1) && wi::fits_shwi_p (off2))
 		    {
@@ -2372,18 +2449,15 @@ stmt_kills_ref_p (gimple *stmt, ao_ref *ref)
 		  if (TREE_CODE (rbase) != MEM_REF)
 		    return false;
 		  // Compare pointers.
-		  offset += wi::lshift (mem_ref_offset (base),
-					LOG2_BITS_PER_UNIT);
-		  roffset += wi::lshift (mem_ref_offset (rbase),
-					 LOG2_BITS_PER_UNIT);
+		  offset += mem_ref_offset (base) << LOG2_BITS_PER_UNIT;
+		  roffset += mem_ref_offset (rbase) << LOG2_BITS_PER_UNIT;
 		  base = TREE_OPERAND (base, 0);
 		  rbase = TREE_OPERAND (rbase, 0);
 		}
 	      if (base == rbase
-		  && wi::les_p (offset, roffset)
-		  && wi::les_p (roffset + ref->max_size,
-				offset + wi::lshift (wi::to_offset (len),
-						     LOG2_BITS_PER_UNIT)))
+		  && offset <= roffset
+		  && (roffset + ref->max_size
+		      <= offset + (wi::to_offset (len) << LOG2_BITS_PER_UNIT)))
 		return true;
 	      break;
 	    }

@@ -639,12 +639,12 @@ HOST_LIB_PATH_gmp = \
 
 @if mpfr
 HOST_LIB_PATH_mpfr = \
-  $$r/$(HOST_SUBDIR)/mpfr/.libs:$$r/$(HOST_SUBDIR)/prev-mpfr/.libs:
+  $$r/$(HOST_SUBDIR)/mpfr/src/.libs:$$r/$(HOST_SUBDIR)/prev-mpfr/src/.libs:
 @endif mpfr
 
 @if mpc
 HOST_LIB_PATH_mpc = \
-  $$r/$(HOST_SUBDIR)/mpc/.libs:$$r/$(HOST_SUBDIR)/prev-mpc/.libs:
+  $$r/$(HOST_SUBDIR)/mpc/src/.libs:$$r/$(HOST_SUBDIR)/prev-mpc/src/.libs:
 @endif mpc
 
 @if isl
@@ -2331,7 +2331,7 @@ local-clean:
 
 local-distclean:
 	-rm -f Makefile config.status config.cache mh-frag mt-frag
-	-rm -f maybedep.tmp serdep.tmp
+	-rm -f maybedep.tmp serdep.tmp stage_final
 	-if [ "$(TARGET_SUBDIR)" != "." ]; then \
 	  rm -rf $(TARGET_SUBDIR); \
 	else true; fi
@@ -2343,7 +2343,8 @@ local-distclean:
 	-rm -f texinfo/doc/Makefile texinfo/po/POTFILES
 	-rmdir texinfo/doc texinfo/info texinfo/intl texinfo/lib 2>/dev/null
 	-rmdir texinfo/makeinfo texinfo/po texinfo/util 2>/dev/null
-	-rmdir fastjar gcc libiberty texinfo zlib 2>/dev/null
+	-rmdir fastjar gcc gnattools gotools libcc1 libiberty 2>/dev/null
+	-rmdir texinfo zlib 2>/dev/null
 	-find . -name config.cache -exec rm -f {} \; \; 2>/dev/null
 
 local-maintainer-clean:
@@ -11317,7 +11318,7 @@ all-gmp: configure-gmp
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS)  \
 	(cd $(HOST_SUBDIR)/gmp && \
-	  $(MAKE) $(BASE_FLAGS_TO_PASS) $(EXTRA_HOST_FLAGS) $(STAGE1_FLAGS_TO_PASS)  \
+	  $(MAKE) $(BASE_FLAGS_TO_PASS) $(EXTRA_HOST_FLAGS) $(STAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		$(TARGET-gmp))
 @endif gmp
 
@@ -11346,7 +11347,7 @@ all-stage1-gmp: configure-stage1-gmp
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
 		$(EXTRA_HOST_FLAGS)  \
-		$(STAGE1_FLAGS_TO_PASS)  \
+		$(STAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGE1_TFLAGS)" \
 		$(TARGET-stage1-gmp)
 
@@ -11361,7 +11362,7 @@ clean-stage1-gmp:
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
 	$(MAKE) $(EXTRA_HOST_FLAGS)  \
-	$(STAGE1_FLAGS_TO_PASS)  clean
+	$(STAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11388,7 +11389,7 @@ all-stage2-gmp: configure-stage2-gmp
 		CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" \
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
-		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  \
+		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGE2_TFLAGS)" \
 		$(TARGET-stage2-gmp)
 
@@ -11402,7 +11403,7 @@ clean-stage2-gmp:
 	  $(MAKE) stage2-start; \
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
-	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  clean
+	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11429,7 +11430,7 @@ all-stage3-gmp: configure-stage3-gmp
 		CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" \
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
-		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  \
+		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGE3_TFLAGS)" \
 		$(TARGET-stage3-gmp)
 
@@ -11443,7 +11444,7 @@ clean-stage3-gmp:
 	  $(MAKE) stage3-start; \
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
-	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  clean
+	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11470,7 +11471,7 @@ all-stage4-gmp: configure-stage4-gmp
 		CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" \
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
-		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  \
+		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGE4_TFLAGS)" \
 		$(TARGET-stage4-gmp)
 
@@ -11484,7 +11485,7 @@ clean-stage4-gmp:
 	  $(MAKE) stage4-start; \
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
-	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  clean
+	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11511,7 +11512,7 @@ all-stageprofile-gmp: configure-stageprofile-gmp
 		CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" \
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
-		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  \
+		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGEprofile_TFLAGS)" \
 		$(TARGET-stageprofile-gmp)
 
@@ -11525,7 +11526,7 @@ clean-stageprofile-gmp:
 	  $(MAKE) stageprofile-start; \
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
-	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  clean
+	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11552,7 +11553,7 @@ all-stagefeedback-gmp: configure-stagefeedback-gmp
 		CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" \
 		CXXFLAGS_FOR_TARGET="$(CXXFLAGS_FOR_TARGET)" \
 		LIBCFLAGS_FOR_TARGET="$(LIBCFLAGS_FOR_TARGET)" \
-		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  \
+		$(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" \
 		TFLAGS="$(STAGEfeedback_TFLAGS)" \
 		$(TARGET-stagefeedback-gmp)
 
@@ -11566,7 +11567,7 @@ clean-stagefeedback-gmp:
 	  $(MAKE) stagefeedback-start; \
 	fi; \
 	cd $(HOST_SUBDIR)/gmp && \
-	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS)  clean
+	$(MAKE) $(EXTRA_HOST_FLAGS) $(POSTSTAGE1_FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" clean
 @endif gmp-bootstrap
 
 
@@ -11584,7 +11585,7 @@ check-gmp:
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) $(EXTRA_HOST_EXPORTS) \
 	(cd $(HOST_SUBDIR)/gmp && \
-	  $(MAKE) $(FLAGS_TO_PASS)  $(EXTRA_BOOTSTRAP_FLAGS) check)
+	  $(MAKE) $(FLAGS_TO_PASS) AM_CFLAGS="-DNO_ASM" $(EXTRA_BOOTSTRAP_FLAGS) check)
 
 @endif gmp
 
@@ -11619,7 +11620,7 @@ info-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing info in gmp"; \
@@ -11644,7 +11645,7 @@ dvi-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing dvi in gmp"; \
@@ -11669,7 +11670,7 @@ pdf-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing pdf in gmp"; \
@@ -11694,7 +11695,7 @@ html-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing html in gmp"; \
@@ -11719,7 +11720,7 @@ TAGS-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing TAGS in gmp"; \
@@ -11745,7 +11746,7 @@ install-info-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing install-info in gmp"; \
@@ -11771,7 +11772,7 @@ install-pdf-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing install-pdf in gmp"; \
@@ -11797,7 +11798,7 @@ install-html-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing install-html in gmp"; \
@@ -11822,7 +11823,7 @@ installcheck-gmp: \
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing installcheck in gmp"; \
@@ -11846,7 +11847,7 @@ mostlyclean-gmp:
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing mostlyclean in gmp"; \
@@ -11870,7 +11871,7 @@ clean-gmp:
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing clean in gmp"; \
@@ -11894,7 +11895,7 @@ distclean-gmp:
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing distclean in gmp"; \
@@ -11918,7 +11919,7 @@ maintainer-clean-gmp:
 	r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) \
-	for flag in $(EXTRA_HOST_FLAGS) ; do \
+	for flag in $(EXTRA_HOST_FLAGS) AM_CFLAGS="-DNO_ASM"; do \
 	  eval `echo "$$flag" | sed -e "s|^\([^=]*\)=\(.*\)|\1='\2'; export \1|"`; \
 	done; \
 	echo "Doing maintainer-clean in gmp"; \

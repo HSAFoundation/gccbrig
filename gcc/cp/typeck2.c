@@ -451,8 +451,8 @@ cxx_incomplete_type_inform (const_tree type)
    type of diagnostic (see diagnostic.def).  */
 
 void
-cxx_incomplete_type_diagnostic (const_tree value, const_tree type, 
-				diagnostic_t diag_kind)
+cxx_incomplete_type_diagnostic (location_t loc, const_tree value,
+				const_tree type, diagnostic_t diag_kind)
 {
   bool is_decl = false, complained = false;
 
@@ -474,8 +474,6 @@ cxx_incomplete_type_diagnostic (const_tree value, const_tree type,
     } 
  retry:
   /* We must print an error message.  Be clever about what it says.  */
-
-  location_t loc = EXPR_LOC_OR_LOC (value, input_location);
 
   switch (TREE_CODE (type))
     {
@@ -570,13 +568,14 @@ cxx_incomplete_type_diagnostic (const_tree value, const_tree type,
     }
 }
 
-/* Backward-compatibility interface to incomplete_type_diagnostic;
-   required by ../tree.c.  */
-#undef cxx_incomplete_type_error
+/* Print an error message for invalid use of an incomplete type.
+   VALUE is the expression that was used (or 0 if that isn't known)
+   and TYPE is the type that was invalid.  */
+
 void
-cxx_incomplete_type_error (const_tree value, const_tree type)
+cxx_incomplete_type_error (location_t loc, const_tree value, const_tree type)
 {
-  cxx_incomplete_type_diagnostic (value, type, DK_ERROR);
+  cxx_incomplete_type_diagnostic (loc, value, type, DK_ERROR);
 }
 
 
@@ -688,14 +687,9 @@ split_nonconstant_init_1 (tree dest, tree init)
 		  code = build_stmt (input_location, EXPR_STMT, code);
 		  code = maybe_cleanup_point_expr_void (code);
 		  add_stmt (code);
-		  if (type_build_dtor_call (inner_type))
-		    {
-		      code = (build_special_member_call
-			      (sub, complete_dtor_identifier, NULL, inner_type,
-			       LOOKUP_NORMAL, tf_warning_or_error));
-		      if (!TYPE_HAS_TRIVIAL_DESTRUCTOR (inner_type))
-			finish_eh_cleanup (code);
-		    }
+		  if (tree cleanup
+		      = cxx_maybe_build_cleanup (sub, tf_warning_or_error))
+		    finish_eh_cleanup (cleanup);
 		}
 
 	      num_split_elts++;

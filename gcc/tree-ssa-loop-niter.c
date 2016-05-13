@@ -3115,6 +3115,7 @@ idx_infer_loop_bounds (tree base, tree *idx, void *dta)
   tree low, high, type, next;
   bool sign, upper = true, at_end = false;
   struct loop *loop = data->loop;
+  bool reliable = true;
 
   if (TREE_CODE (base) != ARRAY_REF)
     return true;
@@ -3186,14 +3187,14 @@ idx_infer_loop_bounds (tree base, tree *idx, void *dta)
       && tree_int_cst_compare (next, high) <= 0)
     return true;
 
-  /* If access is not executed on every iteration, we must ensure that overlow
-     may not make the access valid later.  */
+  /* If access is not executed on every iteration, we must ensure that overlow may
+     not make the access valid later.  */
   if (!dominated_by_p (CDI_DOMINATORS, loop->latch, gimple_bb (data->stmt))
       && scev_probably_wraps_p (initial_condition_in_loop_num (ev, loop->num),
 				step, data->stmt, loop, true))
-    upper = false;
+    reliable = false;
 
-  record_nonwrapping_iv (loop, init, step, data->stmt, low, high, false, upper);
+  record_nonwrapping_iv (loop, init, step, data->stmt, low, high, reliable, upper);
   return true;
 }
 
@@ -4140,7 +4141,11 @@ loop_exits_before_overflow (tree base, tree step,
 	    continue;
 
 	  /* Done proving if this is a no-overflow control IV.  */
-	  if (operand_equal_p (base, civ->base, 0))
+	  if (operand_equal_p (base, civ->base, 0)
+	      /* Control IV is recorded after expanding simple operations,
+		 Here we compare it against expanded base too.  */
+	      || operand_equal_p (expand_simple_operations (base),
+				  civ->base, 0))
 	    return true;
 
 	  /* If this is a before stepping control IV, in other words, we have

@@ -539,13 +539,6 @@
   if (flag_pic && DEFAULT_ABI == ABI_V4)
     return 0;
 
-#ifdef TARGET_RELOCATABLE
-  /* Similarly if we are using -mrelocatable, consider all constants
-     to be hard.  */
-  if (TARGET_RELOCATABLE)
-    return 0;
-#endif
-
   /* If we have real FPRs, consider floating point constants hard (other than
      0.0 under VSX), so that the constant gets pushed to memory during the
      early RTL phases.  This has the advantage that double precision constants
@@ -698,48 +691,25 @@
 (define_predicate "quad_memory_operand"
   (match_code "mem")
 {
-  rtx addr, op0, op1;
-  int ret;
-
   if (!TARGET_QUAD_MEMORY && !TARGET_SYNC_TI)
-    ret = 0;
+    return false;
 
-  else if (!memory_operand (op, mode))
-    ret = 0;
+  if (GET_MODE_SIZE (mode) != 16 || !MEM_P (op) || MEM_ALIGN (op) < 128)
+    return false;
 
-  else if (GET_MODE_SIZE (GET_MODE (op)) != 16)
-    ret = 0;
+  return quad_address_p (XEXP (op, 0), mode, true);
+})
 
-  else if (MEM_ALIGN (op) < 128)
-    ret = 0;
+;; Return 1 if the operand is suitable for load/store to vector registers with
+;; d-form addressing (register+offset), which was added in ISA 3.0.
+;; Unlike quad_memory_operand, we do not have to check for alignment.
+(define_predicate "vsx_quad_dform_memory_operand"
+  (match_code "mem")
+{
+  if (!TARGET_P9_DFORM_VECTOR || !MEM_P (op) || GET_MODE_SIZE (mode) != 16)
+    return false;
 
-  else
-    {
-      addr = XEXP (op, 0);
-      if (int_reg_operand (addr, Pmode))
-	ret = 1;
-
-      else if (GET_CODE (addr) != PLUS)
-	ret = 0;
-
-      else
-	{
-	  op0 = XEXP (addr, 0);
-	  op1 = XEXP (addr, 1);
-	  ret = (int_reg_operand (op0, Pmode)
-		 && GET_CODE (op1) == CONST_INT
-		 && IN_RANGE (INTVAL (op1), -32768, 32767)
-		 && (INTVAL (op1) & 15) == 0);
-	}
-    }
-
-  if (TARGET_DEBUG_ADDR)
-    {
-      fprintf (stderr, "\nquad_memory_operand, ret = %s\n", ret ? "true" : "false");
-      debug_rtx (op);
-    }
-
-  return ret;
+  return quad_address_p (XEXP (op, 0), mode, false);
 })
 
 ;; Return 1 if the operand is an indexed or indirect memory operand.

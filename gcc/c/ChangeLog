@@ -1,3 +1,188 @@
+2016-05-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70756
+	* c-decl.c (build_compound_literal): Pass LOC down to
+	c_incomplete_type_error.
+	* c-tree.h (require_complete_type): Adjust declaration.
+	(c_incomplete_type_error): Likewise.
+	* c-typeck.c (require_complete_type): Add location parameter, pass it
+	down to c_incomplete_type_error.
+	(c_incomplete_type_error): Add location parameter, pass it down to
+	error_at.
+	(build_component_ref): Pass location down to c_incomplete_type_error.
+	(default_conversion): Pass location down to require_complete_type.
+	(build_array_ref): Likewise.
+	(build_function_call_vec): Likewise.
+	(convert_arguments): Likewise.
+	(build_unary_op): Likewise.
+	(build_c_cast): Likewise.
+	(build_modify_expr): Likewise.
+	(convert_for_assignment): Likewise.
+	(c_finish_omp_clauses): Likewise.
+
+2016-05-11  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR c/43651
+	* c-decl.c (declspecs_add_qual): Warn when -Wduplicate-decl-specifier
+	is enabled.
+	* c-errors.c (pedwarn_c90): Return true if warned.
+	* c-tree.h (pedwarn_c90): Change return type to bool.
+	(enum c_declspec_word): Add new enumerator cdw_atomic.
+
+2016-05-11  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/71024
+	* c-decl.c (diagnose_mismatched_decls): Factor out code to
+	diagnose_mismatched_attributes and call it.
+
+2016-05-10  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70255
+	* c-decl.c (diagnose_mismatched_decls): Warn for optimize attribute
+	on a declaration following the definition.
+
+2016-05-05  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-parser.c (c_parser_switch_statement): Add IF_P argument,
+	parse it through to c_parser_c99_block_statement.
+	(c_parser_statement_after_labels): Adjust c_parser_switch_statement
+	caller.
+
+2016-05-04  Marek Polacek  <polacek@redhat.com>
+
+	* c-parser.c (c_parser_if_statement): Replace OPT_Wparentheses with
+	OPT_Wdangling_else.
+
+2016-05-04  Marek Polacek  <polacek@redhat.com>
+
+	PR c/48778
+	* c-typeck.c (build_binary_op): Don't issue -Waddress warnings
+	for macro expansions.
+
+2016-05-03  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70859
+	* c-typeck.c (build_function_call_vec): Pass LOC and ARG_LOC down to
+	check_builtin_function_arguments.
+
+2016-05-03  Richard Biener  <rguenther@suse.de>
+
+	* Make-lang.in (cc1-checksum.c): For stage-final re-use
+	the checksum from the previous stage.
+
+2016-05-02  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* c-parser.c (c_parser_oacc_all_clauses): Update call to
+	c_finish_omp_clauses.
+	(c_parser_omp_all_clauses): Likewise.
+	(c_parser_oacc_cache): Likewise.
+	(c_parser_oacc_loop): Likewise.
+	(omp_split_clauses): Likewise.
+	(c_parser_omp_declare_target): Likewise.
+	(c_parser_cilk_all_clauses): Likewise.
+	(c_parser_cilk_for): Likewise.
+	* c-typeck.c (c_finish_omp_clauses): Replace bool arguments
+	is_omp, declare_simd, and is_cilk with enum c_omp_region_type ort.
+
+2016-05-02  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70851
+	* c-decl.c (grokdeclarator): Diagnose when array's size has an
+	incomplete type.
+
+2016-04-29  Cesar Philippidis  <cesar@codesourcery.com>
+
+	PR middle-end/70626
+	* c-parser.c (c_parser_oacc_loop): Don't augment mask with
+	OACC_LOOP_CLAUSE_MASK.
+	(c_parser_oacc_kernels_parallel): Update call to
+	c_oacc_split_loop_clauses.
+
+2016-04-28  Andrew MacLeod  <amacleod@redhat.com>
+
+	* c-array-notation.c (fix_builtin_array_notation_fn): Fix final
+	argument to build_modify_expr in two cases.
+
+2016-04-27  Bernd Schmidt  <bschmidt@redhat.com>
+
+	* c-parser.c (c_parser_postfix_expression_after_primary): Call
+	warn_for_memset instead of warning directly here.
+
+2016-04-26  Marek Polacek  <polacek@redhat.com>
+
+	PR c/67784
+	* c-parser.c (c_parser_maybe_reclassify_token): New function factored
+	out of ...
+	(c_parser_for_statement): ... here.
+	(c_parser_if_statement): Use it.
+	(c_parser_switch_statement): Use it.
+	(c_parser_while_statement): Use it.
+
+	PR c/70791
+	* c-decl.c (pushdecl): Pass LOCUS down to warning.
+
+2016-04-20  Ilya Verbin  <ilya.verbin@intel.com>
+
+	PR c++/69363
+	* c-parser.c (c_parser_cilk_all_clauses): Use c_finish_omp_clauses
+	instead of c_finish_cilk_clauses.
+	* c-tree.h (c_finish_omp_clauses): Add new default argument.
+	* c-typeck.c (c_finish_omp_clauses): Add new argument.  Allow
+	floating-point variables in the linear clause for Cilk Plus.
+
+2016-04-18  Michael Matz  <matz@suse.de>
+
+	* c-decl.c (merge_decls): Use SET_DECL_ALIGN and SET_TYPE_ALIGN.
+	(grokdeclarator, parser_xref_tag, finish_enum): Use SET_TYPE_ALIGN.
+
+2016-04-15  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70671
+	* c-typeck.c (build_unary_op): Pass location down to error and
+	warning call.
+
+2016-04-15  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/70436
+	* c-parser.c (c_parser_pragma): Add IF_P argument, pass it down
+	where needed.
+	(c_parser_external_declaration, c_parser_struct_or_union_specifier,
+	c_parser_parameter_declaration, c_parser_compound_statement_nostart,
+	c_parser_objc_class_instance_variables, c_parser_objc_methodprotolist):
+	Adjust c_parser_pragma callers.
+	(c_parser_statement_after_labels): Likewise.  Adjust c_parser_cilk_for
+	caller.
+	(c_parser_omp_structured_block): Add IF_P argument, pass it down to
+	c_parser_statement.
+	(c_parser_oacc_data, c_parser_oacc_host_data, c_parser_oacc_loop,
+	c_parser_oacc_kernels_parallel, c_parser_omp_critical,
+	c_parser_omp_simd, c_parser_omp_for, c_parser_omp_master,
+	c_parser_omp_ordered, c_parser_omp_parallel, c_parser_omp_single,
+	c_parser_omp_task, c_parser_omp_taskgroup, c_parser_omp_distribute,
+	c_parser_omp_teams, c_parser_omp_target_data, c_parser_omp_target,
+	c_parser_omp_taskloop, c_parser_omp_construct, c_parser_cilk_grainsize,
+	c_parser_cilk_simd, c_parser_cilk_for): Add IF_P argument, pass it
+	down where needed.
+	(c_parser_omp_for_loop): Likewise.  Clear IF_P if nbraces.
+	(c_parser_omp_sections_scope): Adjust c_parser_omp_structured_block
+	calls.
+
+2016-04-13  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70436
+	* c-parser.c (c_parser_statement_after_labels): Add IF_P argument and
+	adjust callers.
+	(c_parser_statement): Likewise.
+	(c_parser_c99_block_statement): Likewise.
+	(c_parser_while_statement): Likewise.
+	(c_parser_for_statement): Likewise.
+	(c_parser_if_body): Don't set IF_P here.
+	(c_parser_if_statement): Add IF_P argument.  Set IF_P here.  Warn
+	about dangling else here.
+	* c-tree.h (c_finish_if_stmt): Adjust declaration.
+	* c-typeck.c (c_finish_if_stmt): Remove NESTED_IF parameter.  Don't
+	warn about dangling else here.
+
 2016-04-04  Marek Polacek  <polacek@redhat.com>
 
 	PR c/70307

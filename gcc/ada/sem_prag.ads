@@ -244,6 +244,16 @@ package Sem_Prag is
    procedure Analyze_Test_Case_In_Decl_Part (N : Node_Id);
    --  Perform preanalysis of pragma Test_Case
 
+   function Build_Pragma_Check_Equivalent
+     (Prag     : Node_Id;
+      Subp_Id  : Entity_Id := Empty;
+      Inher_Id : Entity_Id := Empty) return Node_Id;
+   --  Transform a [refined] pre- or postcondition denoted by Prag into an
+   --  equivalent pragma Check. When the pre- or postcondition is inherited,
+   --  the routine replaces the references of all formals of Inher_Id and
+   --  primitive operations of its controlling type by references to the
+   --  corresponding entities of Subp_Id and the descendant type.
+
    procedure Check_Applicable_Policy (N : Node_Id);
    --  N is either an N_Aspect or an N_Pragma node. There are two cases. If
    --  the name of the aspect or pragma is not one of those recognized as
@@ -300,6 +310,13 @@ package Sem_Prag is
    --  Determine whether the placement within the state space of an abstract
    --  state, variable or package instantiation denoted by Item_Id requires the
    --  use of indicator/option Part_Of. If this is the case, emit an error.
+
+   procedure Collect_Inherited_Class_Wide_Conditions (Subp : Entity_Id);
+   --  In GNATprove mode, when analyzing an overriding subprogram, check
+   --  whether the overridden operations have class-wide pre/postconditions,
+   --  and generate the corresponding pragmas. The pragmas are inserted after
+   --  the subprogram declaration, together with those generated for other
+   --  aspects of the subprogram.
 
    procedure Collect_Subprogram_Inputs_Outputs
      (Subp_Id      : Entity_Id;
@@ -380,8 +397,9 @@ package Sem_Prag is
    --  Context denotes the entity of the function, package or procedure where
    --  Prag resides.
 
-   function Get_SPARK_Mode_From_Pragma (N : Node_Id) return SPARK_Mode_Type;
-   --  Given a pragma SPARK_Mode node, return corresponding mode id
+   function Get_SPARK_Mode_From_Annotation
+     (N : Node_Id) return SPARK_Mode_Type;
+   --  Given an aspect or pragma SPARK_Mode node, return corresponding mode id
 
    procedure Initialize;
    --  Initializes data structures used for pragma processing. Must be called

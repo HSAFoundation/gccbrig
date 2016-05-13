@@ -2104,7 +2104,7 @@ find_bswap_or_nop_load (gimple *stmt, tree ref, struct symbolic_number *n)
       if (!integer_zerop (off))
 	{
 	  offset_int boff, coff = mem_ref_offset (base_addr);
-	  boff = wi::lshift (coff, LOG2_BITS_PER_UNIT);
+	  boff = coff << LOG2_BITS_PER_UNIT;
 	  bit_offset += boff;
 	}
 
@@ -2118,7 +2118,7 @@ find_bswap_or_nop_load (gimple *stmt, tree ref, struct symbolic_number *n)
 	  /* TEM is the bitpos rounded to BITS_PER_UNIT towards -Inf.
 	     Subtract it to BIT_OFFSET and add it (scaled) to OFFSET.  */
 	  bit_offset -= tem;
-	  tem = wi::arshift (tem, LOG2_BITS_PER_UNIT);
+	  tem >>= LOG2_BITS_PER_UNIT;
 	  if (offset)
 	    offset = size_binop (PLUS_EXPR, offset,
 				    wide_int_to_tree (sizetype, tem));
@@ -2160,9 +2160,16 @@ perform_symbolic_merge (gimple *source_stmt1, struct symbolic_number *n1,
   gimple *source_stmt;
   struct symbolic_number *n_start;
 
+  tree rhs1 = gimple_assign_rhs1 (source_stmt1);
+  if (TREE_CODE (rhs1) == BIT_FIELD_REF)
+    rhs1 = TREE_OPERAND (rhs1, 0);
+  tree rhs2 = gimple_assign_rhs1 (source_stmt2);
+  if (TREE_CODE (rhs2) == BIT_FIELD_REF)
+    rhs2 = TREE_OPERAND (rhs2, 0);
+
   /* Sources are different, cancel bswap if they are not memory location with
      the same base (array, structure, ...).  */
-  if (gimple_assign_rhs1 (source_stmt1) != gimple_assign_rhs1 (source_stmt2))
+  if (rhs1 != rhs2)
     {
       uint64_t inc;
       HOST_WIDE_INT start_sub, end_sub, end1, end2, end;
@@ -2284,6 +2291,39 @@ find_bswap_or_nop_1 (gimple *stmt, struct symbolic_number *n, int limit)
 
   if (find_bswap_or_nop_load (stmt, rhs1, n))
     return stmt;
+
+  /* Handle BIT_FIELD_REF.  */
+  if (TREE_CODE (rhs1) == BIT_FIELD_REF
+      && TREE_CODE (TREE_OPERAND (rhs1, 0)) == SSA_NAME)
+    {
+      unsigned HOST_WIDE_INT bitsize = tree_to_uhwi (TREE_OPERAND (rhs1, 1));
+      unsigned HOST_WIDE_INT bitpos = tree_to_uhwi (TREE_OPERAND (rhs1, 2));
+      if (bitpos % BITS_PER_UNIT == 0
+	  && bitsize % BITS_PER_UNIT == 0
+	  && init_symbolic_number (n, TREE_OPERAND (rhs1, 0)))
+	{
+	  /* Shift.  */
+	  if (!do_shift_rotate (RSHIFT_EXPR, n, bitpos))
+	    return NULL;
+
+	  /* Mask.  */
+	  uint64_t mask = 0;
+	  uint64_t tmp = (1 << BITS_PER_UNIT) - 1;
+	  for (unsigned i = 0; i < bitsize / BITS_PER_UNIT;
+	       i++, tmp <<= BITS_PER_UNIT)
+	    mask |= (uint64_t) MARKER_MASK << (i * BITS_PER_MARKER);
+	  n->n &= mask;
+
+	  /* Convert.  */
+	  n->type = TREE_TYPE (rhs1);
+	  if (!n->base_addr)
+	    n->range = TYPE_PRECISION (n->type) / BITS_PER_UNIT;
+
+	  return verify_symbolic_number_p (n, stmt) ? stmt : NULL;
+	}
+
+      return NULL;
+    }
 
   if (TREE_CODE (rhs1) != SSA_NAME)
     return NULL;
@@ -2683,6 +2723,8 @@ bswap_replace (gimple *cur_stmt, gimple *src_stmt, tree fndecl,
 	}
       src = val_tmp;
     }
+  else if (TREE_CODE (src) == BIT_FIELD_REF)
+    src = TREE_OPERAND (src, 0);
 
   if (n->range == 16)
     bswap_stats.found_16bit++;

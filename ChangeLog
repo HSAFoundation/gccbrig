@@ -1,3 +1,66 @@
+2016-05-09  Aaron Sawdey  <acsawdey@linux.vnet.ibm.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2016-05-02  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* configure.ac (mpfr): Remove pre-3.1.0 mpfr compatibility code.
+	* configure: Regenerated.
+	* Makefile.def (gmp): Explicitly disable assembler.
+	(mpfr): Adjust lib_path.
+	(mpc): Likewise.
+	* Makefile.in: Regenerated.
+
+2016-05-01  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/70704
+	* configure.ac (--enable-stage1-checking): Add missing
+	--enable-checking=.
+	* configure: Regenerated.
+
+2016-04-30  Oleg Endo  <olegendo@gcc.gnu.org>
+
+	* config.guess: Revert r235676.
+	* config.sub: Revert r235676.
+
+2016-04-30  Oleg Endo  <olegendo@gcc.gnu.org>
+
+	* config.guess: Remove SH5 support.
+	* config.sub: Likewise.
+	* configure: Likewise.
+	* configure.ac: Likewise.
+
+2016-04-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/70704
+	* configure.ac (--enable-stage1-checking): For --disable-checking or
+	implicit --enable-checking, make sure extra flag matches in between
+	stage1 and later checking.
+	* configure: Regenerated.
+
+2016-04-22  Trevor Saunders  <tbsaunde+gcc@tbsaunde.org>
+
+	* .gitattributes: New file.
+
+2016-04-22  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	* MAINTAINERS (rs6000/powerpc port): Add myself.
+
+2016-04-13  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR bootstrap/70173
+	* Makefile.tpl (local-distclean): Delete the libcc1, gnattools,
+	and gotools directories.  Delete the stage_final file.
+	* Makefile.in: Regenerate.
+
+2016-04-12  Andre Vieira  <andre.simoesdiasvieira@arm.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2016-04-09  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	* MAINTAINERS (Fortran maintainer): Remove myself.
+
 2016-04-04  Bill Seurer  <seurer@linux.vnet.ibm.com>
 
 	* MAINTAINERS (Write After Approval): Add myself.

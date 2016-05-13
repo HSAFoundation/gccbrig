@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -583,6 +583,48 @@ package body Sem_Ch4 is
             --  so that the bounds of the subtype indication are attached to
             --  the tree in case the allocator is inside a generic unit.
 
+            --  Finally, if there is no subtype indication and the type is
+            --  a tagged unconstrained type with discriminants, the designated
+            --  object is constrained by their default values, and it is
+            --  simplest to introduce an explicit constraint now. In some cases
+            --  this is done during expansion, but freeze actions are certain
+            --  to be emitted in the proper order if constraint is explicit.
+
+            if Is_Entity_Name (E) and then Expander_Active then
+               Find_Type (E);
+               Type_Id := Entity (E);
+
+               if Is_Tagged_Type (Type_Id)
+                 and then Has_Discriminants (Type_Id)
+                 and then not Is_Constrained (Type_Id)
+                 and then
+                   Present
+                     (Discriminant_Default_Value
+                       (First_Discriminant (Type_Id)))
+               then
+                  declare
+                     Constr : constant List_Id    := New_List;
+                     Loc    : constant Source_Ptr := Sloc (E);
+                     Discr  : Entity_Id := First_Discriminant (Type_Id);
+
+                  begin
+                     if Present (Discriminant_Default_Value (Discr)) then
+                        while Present (Discr) loop
+                           Append (Discriminant_Default_Value (Discr), Constr);
+                           Next_Discriminant (Discr);
+                        end loop;
+
+                        Rewrite (E,
+                          Make_Subtype_Indication (Loc,
+                            Subtype_Mark => New_Occurrence_Of (Type_Id, Loc),
+                            Constraint   =>
+                              Make_Index_Or_Discriminant_Constraint (Loc,
+                                Constraints => Constr)));
+                     end if;
+                  end;
+               end if;
+            end if;
+
             if Nkind (E) = N_Subtype_Indication then
 
                --  A constraint is only allowed for a composite type in Ada
@@ -599,7 +641,7 @@ package body Sem_Ch4 is
                      Error_Msg_N ("constraint not allowed here", E);
 
                      if Nkind (Constraint (E)) =
-                       N_Index_Or_Discriminant_Constraint
+                          N_Index_Or_Discriminant_Constraint
                      then
                         Error_Msg_N -- CODEFIX
                           ("\if qualified expression was meant, " &
@@ -2175,12 +2217,12 @@ package body Sem_Ch4 is
          begin
             Set_Etype (N, Any_Type);
 
-            --  Loop through intepretations of Then_Expr
+            --  Loop through interpretations of Then_Expr
 
             Get_First_Interp (Then_Expr, I, It);
             while Present (It.Nam) loop
 
-               --  Add possible intepretation of Then_Expr if no Else_Expr, or
+               --  Add possible interpretation of Then_Expr if no Else_Expr, or
                --  Else_Expr is present and has a compatible type.
 
                if No (Else_Expr)
@@ -3124,10 +3166,10 @@ package body Sem_Ch4 is
          --  a visible integer type.
 
          return Hides_Op (Fun, Nam)
-           or else Is_Descendent_Of_Address (Etype (Form1))
+           or else Is_Descendant_Of_Address (Etype (Form1))
            or else
              (Present (Form2)
-               and then Is_Descendent_Of_Address (Etype (Form2)));
+               and then Is_Descendant_Of_Address (Etype (Form2)));
       end Operator_Hidden_By;
 
    --  Start of processing for Analyze_One_Call
@@ -3316,13 +3358,13 @@ package body Sem_Ch4 is
                --  The actual can be compatible with the formal, but we must
                --  also check that the context is not an address type that is
                --  visibly an integer type. In this case the use of literals is
-               --  illegal, except in the body of descendents of system, where
+               --  illegal, except in the body of descendants of system, where
                --  arithmetic operations on address are of course used.
 
                if Has_Compatible_Type (Actual, Etype (Formal))
                  and then
                   (Etype (Actual) /= Universal_Integer
-                    or else not Is_Descendent_Of_Address (Etype (Formal))
+                    or else not Is_Descendant_Of_Address (Etype (Formal))
                     or else
                       Is_Predefined_File_Name
                         (Unit_File_Name (Get_Source_Unit (N))))
@@ -4108,6 +4150,9 @@ package body Sem_Ch4 is
       --  conformant. If the parent node is not analyzed yet it may be an
       --  indexed component rather than a function call.
 
+      function Has_Dereference (Nod : Node_Id) return Boolean;
+      --  Check whether prefix includes a dereference at any level.
+
       --------------------------------
       -- Find_Component_In_Instance --
       --------------------------------
@@ -4208,6 +4253,30 @@ package body Sem_Ch4 is
 
          return True;
       end Has_Mode_Conformant_Spec;
+
+      ---------------------
+      -- Has_Dereference --
+      ---------------------
+
+      function Has_Dereference (Nod : Node_Id) return Boolean is
+      begin
+         if Nkind (Nod) = N_Explicit_Dereference then
+            return True;
+
+         --  When expansion is disabled an explicit dereference may not have
+         --  been inserted, but if this is an access type the indirection makes
+         --  the call safe.
+
+         elsif Is_Access_Type (Etype (Nod)) then
+            return True;
+
+         elsif Nkind_In (Nod, N_Indexed_Component, N_Selected_Component) then
+            return Has_Dereference (Prefix (Nod));
+
+         else
+            return False;
+         end if;
+      end Has_Dereference;
 
    --  Start of processing for Analyze_Selected_Component
 
@@ -4657,21 +4726,32 @@ package body Sem_Ch4 is
          end loop;
 
          --  If the scope is a current instance, the prefix cannot be an
-         --  expression of the same type (that would represent an attempt
-         --  to reach an internal operation of another synchronized object).
+         --  expression of the same type, unless the selector designates a
+         --  public operation (otherwise that would represent an attempt to
+         --  reach an internal entity of another synchronized object).
          --  This is legal if prefix is an access to such type and there is
-         --  a dereference.
+         --  a dereference, or is a component with a dereferenced prefix.
+         --  It is also legal if the prefix is a component of a task type,
+         --  and the selector is one of the task operations.
 
          if In_Scope
            and then not Is_Entity_Name (Name)
-           and then Nkind (Name) /= N_Explicit_Dereference
+           and then not Has_Dereference (Name)
          then
-            Error_Msg_NE
-              ("invalid reference to internal operation of some object of "
-               & "type &", N, Type_To_Use);
-            Set_Entity (Sel, Any_Id);
-            Set_Etype  (Sel, Any_Type);
-            return;
+            if Is_Task_Type (Prefix_Type)
+              and then Present (Entity (Sel))
+              and then Ekind_In (Entity (Sel), E_Entry, E_Entry_Family)
+            then
+               null;
+
+            else
+               Error_Msg_NE
+                 ("invalid reference to internal operation of some object of "
+                  & "type &", N, Type_To_Use);
+               Set_Entity (Sel, Any_Id);
+               Set_Etype  (Sel, Any_Type);
+               return;
+            end if;
          end if;
 
          --  If there is no visible entity with the given name or none of the
@@ -5158,9 +5238,13 @@ package body Sem_Ch4 is
 
       --  A formal parameter of a specific tagged type whose related subprogram
       --  is subject to pragma Extensions_Visible with value "False" cannot
-      --  appear in a class-wide conversion (SPARK RM 6.1.7(3)).
+      --  appear in a class-wide conversion (SPARK RM 6.1.7(3)). Do not check
+      --  internally generated expressions.
 
-      if Is_Class_Wide_Type (Typ) and then Is_EVF_Expression (Expr) then
+      if Is_Class_Wide_Type (Typ)
+        and then Comes_From_Source (Expr)
+        and then Is_EVF_Expression (Expr)
+      then
          Error_Msg_N
            ("formal parameter with Extensions_Visible False cannot be "
             & "converted to class-wide type", Expr);
@@ -6602,7 +6686,7 @@ package body Sem_Ch4 is
             --  Boolean, then we know that the other operand cannot resolve to
             --  Boolean (since we got no interpretations), but in that case we
             --  pretty much know that the other operand should be Boolean, so
-            --  resolve it that way (generating an error)
+            --  resolve it that way (generating an error).
 
             elsif Nkind_In (N, N_Op_And, N_Op_Or, N_Op_Xor) then
                if Etype (L) = Standard_Boolean then
@@ -6673,8 +6757,8 @@ package body Sem_Ch4 is
                   return;
 
                elsif Allow_Integer_Address
-                 and then Is_Descendent_Of_Address (Etype (L))
-                 and then Is_Descendent_Of_Address (Etype (R))
+                 and then Is_Descendant_Of_Address (Etype (L))
+                 and then Is_Descendant_Of_Address (Etype (R))
                  and then not Error_Posted (N)
                then
                   declare
@@ -6909,7 +6993,7 @@ package body Sem_Ch4 is
 
    procedure Remove_Abstract_Operations (N : Node_Id) is
       Abstract_Op        : Entity_Id := Empty;
-      Address_Descendent : Boolean := False;
+      Address_Descendant : Boolean := False;
       I                  : Interp_Index;
       It                 : Interp;
 
@@ -6946,8 +7030,8 @@ package body Sem_Ch4 is
                   Formal := Next_Entity (Formal);
                end if;
 
-               if Is_Descendent_Of_Address (Etype (Formal)) then
-                  Address_Descendent := True;
+               if Is_Descendant_Of_Address (Etype (Formal)) then
+                  Address_Descendant := True;
                   Remove_Interp (I);
                end if;
 
@@ -6974,8 +7058,8 @@ package body Sem_Ch4 is
             then
                Abstract_Op := It.Nam;
 
-               if Is_Descendent_Of_Address (It.Typ) then
-                  Address_Descendent := True;
+               if Is_Descendant_Of_Address (It.Typ) then
+                  Address_Descendant := True;
                   Remove_Interp (I);
                   exit;
 
@@ -7068,7 +7152,7 @@ package body Sem_Ch4 is
 
                      Get_First_Interp (N, I, It);
                      while Present (It.Nam) loop
-                        if Is_Descendent_Of_Address (It.Typ) then
+                        if Is_Descendant_Of_Address (It.Typ) then
                            Remove_Interp (I);
 
                         elsif not Is_Type (It.Nam) then
@@ -7143,7 +7227,7 @@ package body Sem_Ch4 is
             --  predefined operators when addresses are involved since this
             --  case is handled separately.
 
-            elsif Ada_Version >= Ada_2005 and then not Address_Descendent then
+            elsif Ada_Version >= Ada_2005 and then not Address_Descendant then
                while Present (It.Nam) loop
                   if Is_Numeric_Type (It.Typ)
                     and then Scope (It.Typ) = Standard_Standard
@@ -7172,10 +7256,21 @@ package body Sem_Ch4 is
       Prefix : Node_Id;
       Exprs  : List_Id) return Boolean
    is
+      Pref_Typ : constant Entity_Id := Etype (Prefix);
+
       function Constant_Indexing_OK return Boolean;
       --  Constant_Indexing is legal if there is no Variable_Indexing defined
       --  for the type, or else node not a target of assignment, or an actual
       --  for an IN OUT or OUT formal (RM 4.1.6 (11)).
+
+      function Find_Indexing_Operations
+        (T           : Entity_Id;
+         Nam         : Name_Id;
+         Is_Constant : Boolean) return Node_Id;
+      --  Return a reference to the primitive operation of type T denoted by
+      --  name Nam. If the operation is overloaded, the reference carries all
+      --  interpretations. Flag Is_Constant should be set when the context is
+      --  constant indexing.
 
       --------------------------
       -- Constant_Indexing_OK --
@@ -7185,9 +7280,7 @@ package body Sem_Ch4 is
          Par : Node_Id;
 
       begin
-         if No (Find_Value_Of_Aspect
-                 (Etype (Prefix), Aspect_Variable_Indexing))
-         then
+         if No (Find_Value_Of_Aspect (Pref_Typ, Aspect_Variable_Indexing)) then
             return True;
 
          elsif not Is_Variable (Prefix) then
@@ -7318,7 +7411,7 @@ package body Sem_Ch4 is
                   end if;
                end;
 
-            elsif Nkind ((Par)) in N_Op then
+            elsif Nkind (Par) in N_Op then
                return True;
             end if;
 
@@ -7330,6 +7423,217 @@ package body Sem_Ch4 is
          return True;
       end Constant_Indexing_OK;
 
+      ------------------------------
+      -- Find_Indexing_Operations --
+      ------------------------------
+
+      function Find_Indexing_Operations
+        (T           : Entity_Id;
+         Nam         : Name_Id;
+         Is_Constant : Boolean) return Node_Id
+      is
+         procedure Inspect_Declarations
+           (Typ : Entity_Id;
+            Ref : in out Node_Id);
+         --  Traverse the declarative list where type Typ resides and collect
+         --  all suitable interpretations in node Ref.
+
+         procedure Inspect_Primitives
+           (Typ : Entity_Id;
+            Ref : in out Node_Id);
+         --  Traverse the list of primitive operations of type Typ and collect
+         --  all suitable interpretations in node Ref.
+
+         function Is_OK_Candidate
+           (Subp_Id : Entity_Id;
+            Typ     : Entity_Id) return Boolean;
+         --  Determine whether subprogram Subp_Id is a suitable indexing
+         --  operation for type Typ. To qualify as such, the subprogram must
+         --  be a function, have at least two parameters, and the type of the
+         --  first parameter must be either Typ, or Typ'Class, or access [to
+         --  constant] with designated type Typ or Typ'Class.
+
+         procedure Record_Interp (Subp_Id : Entity_Id; Ref : in out Node_Id);
+         --  Store subprogram Subp_Id as an interpretation in node Ref
+
+         --------------------------
+         -- Inspect_Declarations --
+         --------------------------
+
+         procedure Inspect_Declarations
+           (Typ : Entity_Id;
+            Ref : in out Node_Id)
+         is
+            Typ_Decl : constant Node_Id := Declaration_Node (Typ);
+            Decl     : Node_Id;
+            Subp_Id  : Entity_Id;
+
+         begin
+            --  Ensure that the routine is not called with itypes, which lack a
+            --  declarative node.
+
+            pragma Assert (Present (Typ_Decl));
+            pragma Assert (Is_List_Member (Typ_Decl));
+
+            Decl := First (List_Containing (Typ_Decl));
+            while Present (Decl) loop
+               if Nkind (Decl) = N_Subprogram_Declaration then
+                  Subp_Id := Defining_Entity (Decl);
+
+                  if Is_OK_Candidate (Subp_Id, Typ) then
+                     Record_Interp (Subp_Id, Ref);
+                  end if;
+               end if;
+
+               Next (Decl);
+            end loop;
+         end Inspect_Declarations;
+
+         ------------------------
+         -- Inspect_Primitives --
+         ------------------------
+
+         procedure Inspect_Primitives
+           (Typ : Entity_Id;
+            Ref : in out Node_Id)
+         is
+            Prim_Elmt : Elmt_Id;
+            Prim_Id   : Entity_Id;
+
+         begin
+            Prim_Elmt := First_Elmt (Primitive_Operations (Typ));
+            while Present (Prim_Elmt) loop
+               Prim_Id := Node (Prim_Elmt);
+
+               if Is_OK_Candidate (Prim_Id, Typ) then
+                  Record_Interp (Prim_Id, Ref);
+               end if;
+
+               Next_Elmt (Prim_Elmt);
+            end loop;
+         end Inspect_Primitives;
+
+         ---------------------
+         -- Is_OK_Candidate --
+         ---------------------
+
+         function Is_OK_Candidate
+           (Subp_Id : Entity_Id;
+            Typ     : Entity_Id) return Boolean
+         is
+            Formal     : Entity_Id;
+            Formal_Typ : Entity_Id;
+            Param_Typ  : Node_Id;
+
+         begin
+            --  To classify as a suitable candidate, the subprogram must be a
+            --  function whose name matches the argument of aspect Constant or
+            --  Variable_Indexing.
+
+            if Ekind (Subp_Id) = E_Function and then Chars (Subp_Id) = Nam then
+               Formal := First_Formal (Subp_Id);
+
+               --  The candidate requires at least two parameters
+
+               if Present (Formal) and then Present (Next_Formal (Formal)) then
+                  Formal_Typ := Empty;
+                  Param_Typ  := Parameter_Type (Parent (Formal));
+
+                  --  Use the designated type when the first parameter is of an
+                  --  access type.
+
+                  if Nkind (Param_Typ) = N_Access_Definition
+                    and then Present (Subtype_Mark (Param_Typ))
+                  then
+                     --  When the context is a constant indexing, the access
+                     --  definition must be access-to-constant. This does not
+                     --  apply to variable indexing.
+
+                     if not Is_Constant
+                       or else Constant_Present (Param_Typ)
+                     then
+                        Formal_Typ := Etype (Subtype_Mark (Param_Typ));
+                     end if;
+
+                  --  Otherwise use the parameter type
+
+                  else
+                     Formal_Typ := Etype (Param_Typ);
+                  end if;
+
+                  if Present (Formal_Typ) then
+
+                     --  Use the specific type when the parameter type is
+                     --  class-wide.
+
+                     if Is_Class_Wide_Type (Formal_Typ) then
+                        Formal_Typ := Etype (Base_Type (Formal_Typ));
+                     end if;
+
+                     --  Use the full view when the parameter type is private
+                     --  or incomplete.
+
+                     if Is_Incomplete_Or_Private_Type (Formal_Typ)
+                       and then Present (Full_View (Formal_Typ))
+                     then
+                        Formal_Typ := Full_View (Formal_Typ);
+                     end if;
+
+                     --  The type of the first parameter must denote the type
+                     --  of the container or acts as its ancestor type.
+
+                     return
+                       Formal_Typ = Typ
+                         or else Is_Ancestor (Formal_Typ, Typ);
+                  end if;
+               end if;
+            end if;
+
+            return False;
+         end Is_OK_Candidate;
+
+         -------------------
+         -- Record_Interp --
+         -------------------
+
+         procedure Record_Interp (Subp_Id : Entity_Id; Ref : in out Node_Id) is
+         begin
+            if Present (Ref) then
+               Add_One_Interp (Ref, Subp_Id, Etype (Subp_Id));
+
+            --  Otherwise this is the first interpretation. Create a reference
+            --  where all remaining interpretations will be collected.
+
+            else
+               Ref := New_Occurrence_Of (Subp_Id, Sloc (T));
+            end if;
+         end Record_Interp;
+
+         --  Local variables
+
+         Ref : Node_Id;
+         Typ : Entity_Id;
+
+      --  Start of processing for Find_Indexing_Operations
+
+      begin
+         Typ := T;
+
+         --  Use the specific type when the parameter type is class-wide
+
+         if Is_Class_Wide_Type (Typ) then
+            Typ := Root_Type (Typ);
+         end if;
+
+         Ref := Empty;
+         Typ := Underlying_Type (Base_Type (Typ));
+
+         Inspect_Primitives   (Typ, Ref);
+         Inspect_Declarations (Typ, Ref);
+
+         return Ref;
+      end Find_Indexing_Operations;
+
       --  Local variables
 
       Loc       : constant Source_Ptr := Sloc (N);
@@ -7338,6 +7642,11 @@ package body Sem_Ch4 is
       Func      : Entity_Id;
       Func_Name : Node_Id;
       Indexing  : Node_Id;
+
+      Is_Constant_Indexing : Boolean := False;
+      --  This flag reflects the nature of the container indexing. Note that
+      --  the context may be suited for constant indexing, but the type may
+      --  lack a Constant_Indexing annotation.
 
    --  Start of processing for Try_Container_Indexing
 
@@ -7349,7 +7658,7 @@ package body Sem_Ch4 is
          return True;
       end if;
 
-      C_Type := Etype (Prefix);
+      C_Type := Pref_Typ;
 
       --  If indexing a class-wide container, obtain indexing primitive from
       --  specific type.
@@ -7358,32 +7667,42 @@ package body Sem_Ch4 is
          C_Type := Etype (Base_Type (C_Type));
       end if;
 
-      --  Check whether type has a specified indexing aspect
+      --  Check whether the type has a specified indexing aspect
 
       Func_Name := Empty;
 
+      --  The context is suitable for constant indexing, so obtain the name of
+      --  the indexing function from aspect Constant_Indexing.
+
       if Constant_Indexing_OK then
          Func_Name :=
-           Find_Value_Of_Aspect (Etype (Prefix), Aspect_Constant_Indexing);
+           Find_Value_Of_Aspect (Pref_Typ, Aspect_Constant_Indexing);
       end if;
 
-      if No (Func_Name) then
+      if Present (Func_Name) then
+         Is_Constant_Indexing := True;
+
+      --  Otherwise attempt variable indexing
+
+      else
          Func_Name :=
-           Find_Value_Of_Aspect (Etype (Prefix), Aspect_Variable_Indexing);
+           Find_Value_Of_Aspect (Pref_Typ, Aspect_Variable_Indexing);
       end if;
 
-      --  If aspect does not exist the expression is illegal. Error is
-      --  diagnosed in caller.
+      --  The type is not subject to either form of indexing, therefore the
+      --  indexed component does not denote container indexing. If this is a
+      --  true error, it is diagnosed by the caller.
 
       if No (Func_Name) then
 
-         --  The prefix itself may be an indexing of a container: rewrite as
-         --  such and re-analyze.
+         --  The prefix itself may be an indexing of a container. Rewrite it
+         --  as such and retry.
 
-         if Has_Implicit_Dereference (Etype (Prefix)) then
-            Build_Explicit_Dereference
-              (Prefix, First_Discriminant (Etype (Prefix)));
+         if Has_Implicit_Dereference (Pref_Typ) then
+            Build_Explicit_Dereference (Prefix, First_Discriminant (Pref_Typ));
             return Try_Container_Indexing (N, Prefix, Exprs);
+
+         --  Otherwise this is definitely not container indexing
 
          else
             return False;
@@ -7403,9 +7722,13 @@ package body Sem_Ch4 is
       --  are derived from other types with a Reference aspect.
 
       elsif Is_Derived_Type (C_Type)
-        and then Etype (First_Formal (Entity (Func_Name))) /= Etype (Prefix)
+        and then Etype (First_Formal (Entity (Func_Name))) /= Pref_Typ
       then
-         Func_Name := Find_Primitive_Operations (C_Type, Chars (Func_Name));
+         Func_Name :=
+           Find_Indexing_Operations
+             (T           => C_Type,
+              Nam         => Chars (Func_Name),
+              Is_Constant => Is_Constant_Indexing);
       end if;
 
       Assoc := New_List (Relocate_Node (Prefix));
@@ -7495,27 +7818,54 @@ package body Sem_Ch4 is
             Get_First_Interp (Func_Name, I, It);
             Set_Etype (Indexing, Any_Type);
 
+            --  Analyze eacn candidae function with the given actuals
+
             while Present (It.Nam) loop
                Analyze_One_Call (Indexing, It.Nam, False, Success);
+               Get_Next_Interp (I, It);
+            end loop;
 
-               if Success then
+            --  If there are several successful candidates, resolution will
+            --  be by result. Mark the interpretations of the function name
+            --  itself.
 
-                  --  Function in current interpretation is a valid candidate.
-                  --  Its result type is also a potential type for the
-                  --  original Indexed_Component node.
+            if Is_Overloaded (Indexing) then
+               Get_First_Interp (Indexing, I, It);
 
+               while Present (It.Nam) loop
                   Add_One_Interp (Name (Indexing), It.Nam, It.Typ);
+                  Get_Next_Interp (I, It);
+               end loop;
+
+            else
+               Set_Etype (Name (Indexing), Etype (Indexing));
+            end if;
+
+            --  Now add the candidate interpretations to the indexing node
+            --  itself, to be replaced later by the function call.
+
+            if Is_Overloaded (Name (Indexing)) then
+               Get_First_Interp (Name (Indexing), I, It);
+
+               while Present (It.Nam) loop
                   Add_One_Interp (N, It.Nam, It.Typ);
 
-                  --  Add implicit dereference interpretation to original node
+                  --  Add dereference interpretation if the result type has
+                  --  implicit reference discriminants.
 
                   if Has_Discriminants (Etype (It.Nam)) then
                      Check_Implicit_Dereference (N, Etype (It.Nam));
                   end if;
-               end if;
 
-               Get_Next_Interp (I, It);
-            end loop;
+                  Get_Next_Interp (I, It);
+               end loop;
+
+            else
+               Set_Etype (N, Etype (Name (Indexing)));
+               if Has_Discriminants (Etype (N)) then
+                  Check_Implicit_Dereference (N, Etype (N));
+               end if;
+            end if;
          end;
       end if;
 
@@ -8467,6 +8817,15 @@ package body Sem_Ch4 is
          --  is visible a direct call to it will dispatch to the private one,
          --  which is therefore a valid candidate.
 
+         function Names_Match
+           (Obj_Type : Entity_Id;
+            Prim_Op  : Entity_Id;
+            Subprog  : Entity_Id) return Boolean;
+         --  Return True if the names of Prim_Op and Subprog match. If Obj_Type
+         --  is a protected type then compare also the original name of Prim_Op
+         --  with the name of Subprog (since the expander may have added a
+         --  prefix to its original name --see Exp_Ch9.Build_Selected_Name).
+
          function Valid_First_Argument_Of (Op : Entity_Id) return Boolean;
          --  Verify that the prefix, dereferenced if need be, is a valid
          --  controlling argument in a call to Op. The remaining actuals
@@ -8643,6 +9002,35 @@ package body Sem_Ch4 is
               and then not Is_Hidden (Visible_Op);
          end Is_Private_Overriding;
 
+         -----------------
+         -- Names_Match --
+         -----------------
+
+         function Names_Match
+           (Obj_Type : Entity_Id;
+            Prim_Op  : Entity_Id;
+            Subprog  : Entity_Id) return Boolean is
+         begin
+            --  Common case: exact match
+
+            if Chars (Prim_Op) = Chars (Subprog) then
+               return True;
+
+            --  For protected type primitives the expander may have built the
+            --  name of the dispatching primitive prepending the type name to
+            --  avoid conflicts with the name of the protected subprogram (see
+            --  Exp_Ch9.Build_Selected_Name).
+
+            elsif Is_Protected_Type (Obj_Type) then
+               return
+                 Present (Original_Protected_Subprogram (Prim_Op))
+                   and then Chars (Original_Protected_Subprogram (Prim_Op)) =
+                              Chars (Subprog);
+            end if;
+
+            return False;
+         end Names_Match;
+
          -----------------------------
          -- Valid_First_Argument_Of --
          -----------------------------
@@ -8709,7 +9097,7 @@ package body Sem_Ch4 is
          while Present (Elmt) loop
             Prim_Op := Node (Elmt);
 
-            if Chars (Prim_Op) = Chars (Subprog)
+            if Names_Match (Obj_Type, Prim_Op, Subprog)
               and then Present (First_Formal (Prim_Op))
               and then Valid_First_Argument_Of (Prim_Op)
               and then

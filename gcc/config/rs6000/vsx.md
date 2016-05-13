@@ -301,24 +301,6 @@
    UNSPEC_VSX_XVCVDPUXDS
   ])
 
-;; VSX (P9) moves
-
-(define_insn "*p9_vecload_<mode>"
-  [(set (match_operand:VSX_M2 0 "vsx_register_operand" "=<VSa>")
-        (match_operand:VSX_M2 1 "memory_operand" "Z"))]
-  "TARGET_P9_VECTOR"
-  "lxvx %x0,%y1"
-  [(set_attr "type" "vecload")
-   (set_attr "length" "4")])
-
-(define_insn "*p9_vecstore_<mode>"
-  [(set (match_operand:VSX_M2 0 "memory_operand" "=Z")
-        (match_operand:VSX_M2 1 "vsx_register_operand" "<VSa>"))]
-  "TARGET_P9_VECTOR"
-  "stxvx %x1,%y0"
-  [(set_attr "type" "vecstore")
-   (set_attr "length" "4")])
-
 ;; VSX moves
 
 ;; The patterns for LE permuted loads and stores come before the general
@@ -788,8 +770,8 @@
   "")
 
 (define_insn "*vsx_mov<mode>"
-  [(set (match_operand:VSX_M 0 "nonimmediate_operand" "=Z,<VSr>,<VSr>,?Z,?<VSa>,?<VSa>,r,we,wQ,?&r,??Y,??r,??r,<VSr>,?<VSa>,*r,v,wZ,v")
-	(match_operand:VSX_M 1 "input_operand" "<VSr>,Z,<VSr>,<VSa>,Z,<VSa>,we,b,r,wQ,r,Y,r,j,j,j,W,v,wZ"))]
+  [(set (match_operand:VSX_M 0 "nonimmediate_operand" "=ZwO,<VSr>,<VSr>,?ZwO,?<VSa>,?<VSa>,r,we,wQ,?&r,??Y,??r,??r,<VSr>,?<VSa>,*r,v,wZ,v")
+	(match_operand:VSX_M 1 "input_operand" "<VSr>,ZwO,<VSr>,<VSa>,ZwO,<VSa>,we,b,r,wQ,r,Y,r,j,j,j,W,v,wZ"))]
   "VECTOR_MEM_VSX_P (<MODE>mode)
    && (register_operand (operands[0], <MODE>mode) 
        || register_operand (operands[1], <MODE>mode))"
@@ -803,8 +785,8 @@
 ;; use of TImode is for unions.  However for plain data movement, slightly
 ;; favor the vector loads
 (define_insn "*vsx_movti_64bit"
-  [(set (match_operand:TI 0 "nonimmediate_operand" "=Z,wa,wa,wa,r,we,v,v,wZ,wQ,&r,Y,r,r,?r")
-	(match_operand:TI 1 "input_operand" "wa,Z,wa,O,we,b,W,wZ,v,r,wQ,r,Y,r,n"))]
+  [(set (match_operand:TI 0 "nonimmediate_operand" "=ZwO,wa,wa,wa,r,we,v,v,wZ,wQ,&r,Y,r,r,?r")
+	(match_operand:TI 1 "input_operand" "wa,ZwO,wa,O,we,b,W,wZ,v,r,wQ,r,Y,r,n"))]
   "TARGET_POWERPC64 && VECTOR_MEM_VSX_P (TImode)
    && (register_operand (operands[0], TImode) 
        || register_operand (operands[1], TImode))"
@@ -815,8 +797,8 @@
    (set_attr "length" "4,4,4,4,8,4,16,4,4,8,8,8,8,8,8")])
 
 (define_insn "*vsx_movti_32bit"
-  [(set (match_operand:TI 0 "nonimmediate_operand" "=Z,wa,wa,wa,v, v,wZ,Q,Y,????r,????r,????r,r")
-	(match_operand:TI 1 "input_operand"        "wa, Z,wa, O,W,wZ, v,r,r,    Q,    Y,    r,n"))]
+  [(set (match_operand:TI 0 "nonimmediate_operand" "=ZwO,wa,wa,wa,v,v,wZ,Q,Y,????r,????r,????r,r")
+	(match_operand:TI 1 "input_operand"        "wa,ZwO,wa,O,W,wZ,v,r,r,Q,Y,r,n"))]
   "! TARGET_POWERPC64 && VECTOR_MEM_VSX_P (TImode)
    && (register_operand (operands[0], TImode)
        || register_operand (operands[1], TImode))"
@@ -886,6 +868,140 @@
 	(match_operand:VSX_M 1 "vsx_register_operand" ""))]
   "VECTOR_MEM_VSX_P (<MODE>mode)"
   "")
+
+;; Explicit load/store expanders for the builtin functions for lxvd2x, etc.,
+;; when you really want their element-reversing behavior.
+(define_insn "vsx_ld_elemrev_v2di"
+  [(set (match_operand:V2DI 0 "vsx_register_operand" "=wa")
+        (vec_select:V2DI
+	  (match_operand:V2DI 1 "memory_operand" "Z")
+	  (parallel [(const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V2DImode) && !BYTES_BIG_ENDIAN"
+  "lxvd2x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_ld_elemrev_v2df"
+  [(set (match_operand:V2DF 0 "vsx_register_operand" "=wa")
+        (vec_select:V2DF
+	  (match_operand:V2DF 1 "memory_operand" "Z")
+	  (parallel [(const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V2DFmode) && !BYTES_BIG_ENDIAN"
+  "lxvd2x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_ld_elemrev_v4si"
+  [(set (match_operand:V4SI 0 "vsx_register_operand" "=wa")
+        (vec_select:V4SI
+	  (match_operand:V4SI 1 "memory_operand" "Z")
+	  (parallel [(const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V4SImode) && !BYTES_BIG_ENDIAN"
+  "lxvw4x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_ld_elemrev_v4sf"
+  [(set (match_operand:V4SF 0 "vsx_register_operand" "=wa")
+        (vec_select:V4SF
+	  (match_operand:V4SF 1 "memory_operand" "Z")
+	  (parallel [(const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V4SFmode) && !BYTES_BIG_ENDIAN"
+  "lxvw4x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_ld_elemrev_v8hi"
+  [(set (match_operand:V8HI 0 "vsx_register_operand" "=wa")
+        (vec_select:V8HI
+	  (match_operand:V8HI 1 "memory_operand" "Z")
+	  (parallel [(const_int 7) (const_int 6)
+	             (const_int 5) (const_int 4)
+		     (const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V8HImode) && !BYTES_BIG_ENDIAN && TARGET_P9_VECTOR"
+  "lxvh8x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_ld_elemrev_v16qi"
+  [(set (match_operand:V16QI 0 "vsx_register_operand" "=wa")
+        (vec_select:V16QI
+	  (match_operand:V16QI 1 "memory_operand" "Z")
+	  (parallel [(const_int 15) (const_int 14)
+	             (const_int 13) (const_int 12)
+		     (const_int 11) (const_int 10)
+		     (const_int  9) (const_int  8)
+		     (const_int  7) (const_int  6)
+	             (const_int  5) (const_int  4)
+		     (const_int  3) (const_int  2)
+	             (const_int  1) (const_int  0)])))]
+  "VECTOR_MEM_VSX_P (V16QImode) && !BYTES_BIG_ENDIAN && TARGET_P9_VECTOR"
+  "lxvb16x %x0,%y1"
+  [(set_attr "type" "vecload")])
+
+(define_insn "vsx_st_elemrev_v2df"
+  [(set (match_operand:V2DF 0 "memory_operand" "=Z")
+        (vec_select:V2DF
+	  (match_operand:V2DF 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V2DFmode) && !BYTES_BIG_ENDIAN"
+  "stxvd2x %x1,%y0"
+  [(set_attr "type" "vecstore")])
+
+(define_insn "vsx_st_elemrev_v2di"
+  [(set (match_operand:V2DI 0 "memory_operand" "=Z")
+        (vec_select:V2DI
+	  (match_operand:V2DI 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V2DImode) && !BYTES_BIG_ENDIAN"
+  "stxvd2x %x1,%y0"
+  [(set_attr "type" "vecstore")])
+
+(define_insn "vsx_st_elemrev_v4sf"
+  [(set (match_operand:V4SF 0 "memory_operand" "=Z")
+        (vec_select:V4SF
+	  (match_operand:V4SF 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V4SFmode) && !BYTES_BIG_ENDIAN"
+  "stxvw4x %x1,%y0"
+  [(set_attr "type" "vecstore")])
+
+(define_insn "vsx_st_elemrev_v4si"
+  [(set (match_operand:V4SI 0 "memory_operand" "=Z")
+        (vec_select:V4SI
+	  (match_operand:V4SI 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V4SImode) && !BYTES_BIG_ENDIAN"
+  "stxvw4x %x1,%y0"
+  [(set_attr "type" "vecstore")])
+
+(define_insn "vsx_st_elemrev_v8hi"
+  [(set (match_operand:V8HI 0 "memory_operand" "=Z")
+        (vec_select:V8HI
+	  (match_operand:V8HI 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 7) (const_int 6)
+	             (const_int 5) (const_int 4)
+		     (const_int 3) (const_int 2)
+	             (const_int 1) (const_int 0)])))]
+  "VECTOR_MEM_VSX_P (V8HImode) && !BYTES_BIG_ENDIAN && TARGET_P9_VECTOR"
+  "stxvh8x %x1,%y0"
+  [(set_attr "type" "vecstore")])
+
+(define_insn "vsx_st_elemrev_v16qi"
+  [(set (match_operand:V16QI 0 "memory_operand" "=Z")
+        (vec_select:V16QI
+	  (match_operand:V16QI 1 "vsx_register_operand" "wa")
+	  (parallel [(const_int 15) (const_int 14)
+	             (const_int 13) (const_int 12)
+		     (const_int 11) (const_int 10)
+		     (const_int  9) (const_int  8)
+	             (const_int  7) (const_int  6)
+	             (const_int  5) (const_int  4)
+		     (const_int  3) (const_int  2)
+	             (const_int  1) (const_int  0)])))]
+  "VECTOR_MEM_VSX_P (V16QImode) && !BYTES_BIG_ENDIAN && TARGET_P9_VECTOR"
+  "stxvb16x %x1,%y0"
+  [(set_attr "type" "vecstore")])
 
 
 ;; VSX vector floating point arithmetic instructions.  The VSX scalar
@@ -1583,10 +1699,15 @@
 {
   rtx op0 = operands[0];
   rtx op1 = operands[1];
-  rtx tmp = gen_reg_rtx (V2DFmode);
-  int scale = INTVAL(operands[2]);
-  if (scale != 0)
-    rs6000_scale_v2df (tmp, op1, scale);
+  rtx tmp;
+  int scale = INTVAL (operands[2]);
+  if (scale == 0)
+    tmp = op1;
+  else
+    {
+      tmp  = gen_reg_rtx (V2DFmode);
+      rs6000_scale_v2df (tmp, op1, scale);
+    }
   emit_insn (gen_vsx_xvcvdpsxds (op0, tmp));
   DONE;
 })
@@ -1607,10 +1728,15 @@
 {
   rtx op0 = operands[0];
   rtx op1 = operands[1];
-  rtx tmp = gen_reg_rtx (V2DFmode);
-  int scale = INTVAL(operands[2]);
-  if (scale != 0)
-    rs6000_scale_v2df (tmp, op1, scale);
+  rtx tmp;
+  int scale = INTVAL (operands[2]);
+  if (scale == 0)
+    tmp = op1;
+  else
+    {
+      tmp = gen_reg_rtx (V2DFmode);
+      rs6000_scale_v2df (tmp, op1, scale);
+    }
   emit_insn (gen_vsx_xvcvdpuxds (op0, tmp));
   DONE;
 })

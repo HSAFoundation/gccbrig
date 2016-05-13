@@ -87,8 +87,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "xcoffout.h"		/* Needed for external data declarations. */
 #endif
 
-#include <new>
-
 static void general_init (const char *, bool);
 static void do_compile ();
 static void process_options (void);
@@ -1620,7 +1618,8 @@ backend_init_target (void)
   init_alias_target ();
 
   /* Depends on HARD_FRAME_POINTER_REGNUM.  */
-  init_reload ();
+  if (!ira_use_lra_p)
+    init_reload ();
 
   /* Depends on the enabled attribute.  */
   recog_init ();

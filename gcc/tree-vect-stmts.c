@@ -4532,6 +4532,16 @@ vectorizable_shift (gimple *stmt, gimple_stmt_iterator *gsi,
 	    if (!operand_equal_p (gimple_assign_rhs2 (slpstmt), op1, 0))
 	      scalar_shift_arg = false;
 	}
+
+      /* If the shift amount is computed by a pattern stmt we cannot
+         use the scalar amount directly thus give up and use a vector
+	 shift.  */
+      if (dt[1] == vect_internal_def)
+	{
+	  gimple *def = SSA_NAME_DEF_STMT (op1);
+	  if (is_pattern_stmt_p (vinfo_for_stmt (def)))
+	    scalar_shift_arg = false;
+	}
     }
   else
     {
@@ -5131,7 +5141,7 @@ ensure_base_align (stmt_vec_info stmt_info, struct data_reference *dr)
 	symtab_node::get (base_decl)->increase_alignment (TYPE_ALIGN (vectype));
       else
 	{
-          DECL_ALIGN (base_decl) = TYPE_ALIGN (vectype);
+          SET_DECL_ALIGN (base_decl, TYPE_ALIGN (vectype));
           DECL_USER_ALIGN (base_decl) = 1;
 	}
       DR_VECT_AUX (dr)->base_misaligned = false;

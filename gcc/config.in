@@ -31,7 +31,8 @@
 
 
 /* Define to 1 if you want more run-time sanity checks. This one gets a grab
-   bag of miscellaneous but relatively cheap checks. */
+   bag of miscellaneous but relatively cheap checks. Define to 2 if you want
+   also extra run-time checking that might affect code generation. */
 #ifndef USED_FOR_TARGET
 #undef CHECKING_P
 #endif
@@ -230,6 +231,12 @@
    valgrind (a memory checker). This is extremely expensive. */
 #ifndef USED_FOR_TARGET
 #undef ENABLE_VALGRIND_CHECKING
+#endif
+
+
+/* Define 0/1 if vtable verification feature is enabled. */
+#ifndef USED_FOR_TARGET
+#undef ENABLE_VTABLE_VERIFY
 #endif
 
 

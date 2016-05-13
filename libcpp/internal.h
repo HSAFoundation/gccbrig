@@ -502,6 +502,10 @@ struct cpp_reader
   const unsigned char *date;
   const unsigned char *time;
 
+  /* Externally set timestamp to replace current date and time useful for
+     reproducibility.  */
+  time_t source_date_epoch;
+
   /* EOF token, and a token forcing paste avoidance.  */
   cpp_token avoid_paste;
   cpp_token eof;
@@ -626,7 +630,8 @@ extern bool _cpp_save_parameter (cpp_reader *, cpp_macro *, cpp_hashnode *,
 extern bool _cpp_arguments_ok (cpp_reader *, cpp_macro *, const cpp_hashnode *,
 			       unsigned int);
 extern const unsigned char *_cpp_builtin_macro_text (cpp_reader *,
-						     cpp_hashnode *);
+						     cpp_hashnode *,
+						     source_location = 0);
 extern int _cpp_warn_if_unused_macro (cpp_reader *, cpp_hashnode *, void *);
 extern void _cpp_push_token_context (cpp_reader *, cpp_hashnode *,
 				     const cpp_token *, unsigned int);

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -879,9 +879,9 @@ package Sinfo is
    --    Present in subprogram declarations. Denotes analyzed but unexpanded
    --    body of subprogram, to be used when inlining calls. Present when the
    --    subprogram has an Inline pragma and inlining is enabled. If the
-   --    declaration is completed by a renaming_as_body, and the renamed en-
-   --    tity is a subprogram, the Body_To_Inline is the name of that entity,
-   --    which is used directly in later calls to the original subprogram.
+   --    declaration is completed by a renaming_as_body, and the renamed entity
+   --    is a subprogram, the Body_To_Inline is the name of that entity, which
+   --    is used directly in later calls to the original subprogram.
 
    --  Body_Required (Flag13-Sem)
    --    A flag that appears in the N_Compilation_Unit node indicating that
@@ -1709,6 +1709,12 @@ package Sinfo is
    --    implementation of a protected subprogram. Such a body needs cleanup
    --    handler to make sure that the associated protected object is unlocked
    --    when the subprogram completes.
+
+   --  Is_Qualified_Universal_Literal (Flag4-Sem)
+   --    Present in N_Qualified_Expression nodes. Set when the qualification is
+   --    converting a universal literal to a specific type. Such qualifiers aid
+   --    the resolution of accidental overloading of binary or unary operators
+   --    which may occur in instances.
 
    --  Is_Static_Coextension (Flag14-Sem)
    --    Present in N_Allocator nodes. Set if the allocator is a coextension
@@ -2748,7 +2754,7 @@ package Sinfo is
 
       --  Note: aliased is not permitted in Ada 83 mode
 
-      --  The N_Object_Declaration node is only for the first two cases.
+      --  The N_Object_Declaration node is only for the first three cases.
       --  Single task declaration is handled by P_Task (9.1)
       --  Single protected declaration is handled by P_protected (9.5)
 
@@ -4542,6 +4548,7 @@ package Sinfo is
       --  Subtype_Mark (Node4)
       --  Expression (Node3) expression or aggregate
       --  plus fields for expression
+      --  Is_Qualified_Universal_Literal (Flag4-Sem)
 
       --------------------
       -- 4.8  Allocator --
@@ -5268,7 +5275,7 @@ package Sinfo is
       --  argument expression has the Do_Range_Check flag set, and the range
       --  check is done against the formal type. Note that this argument
       --  expression may appear directly in the Parameter_Associations list,
-      --  or may be a descendent of an N_Parameter_Association node that
+      --  or may be a descendant of an N_Parameter_Association node that
       --  appears in this list.
 
       ------------------------
@@ -8993,7 +9000,7 @@ package Sinfo is
      (N : Node_Id) return Uint;       -- Uint4
 
    function Corresponding_Spec
-     (N : Node_Id) return Node_Id;    -- Node5
+     (N : Node_Id) return Entity_Id;  -- Node5
 
    function Corresponding_Spec_Of_Stub
      (N : Node_Id) return Node_Id;    -- Node2
@@ -9398,6 +9405,9 @@ package Sinfo is
 
    function Is_Protected_Subprogram_Body
      (N : Node_Id) return Boolean;    -- Flag7
+
+   function Is_Qualified_Universal_Literal
+     (N : Node_Id) return Boolean;    -- Flag4
 
    function Is_Static_Coextension
      (N : Node_Id) return Boolean;    -- Flag14
@@ -10033,7 +10043,7 @@ package Sinfo is
      (N : Node_Id; Val : Uint);               -- Uint4
 
    procedure Set_Corresponding_Spec
-     (N : Node_Id; Val : Node_Id);            -- Node5
+     (N : Node_Id; Val : Entity_Id);          -- Node5
 
    procedure Set_Corresponding_Spec_Of_Stub
      (N : Node_Id; Val : Node_Id);            -- Node2
@@ -10436,6 +10446,9 @@ package Sinfo is
 
    procedure Set_Is_Protected_Subprogram_Body
      (N : Node_Id; Val : Boolean := True);    -- Flag7
+
+   procedure Set_Is_Qualified_Universal_Literal
+     (N : Node_Id; Val : Boolean := True);    -- Flag4
 
    procedure Set_Is_Static_Coextension
      (N : Node_Id; Val : Boolean := True);    -- Flag14
@@ -12819,6 +12832,7 @@ package Sinfo is
    pragma Inline (Is_Power_Of_2_For_Shift);
    pragma Inline (Is_Prefixed_Call);
    pragma Inline (Is_Protected_Subprogram_Body);
+   pragma Inline (Is_Qualified_Universal_Literal);
    pragma Inline (Is_Static_Coextension);
    pragma Inline (Is_Static_Expression);
    pragma Inline (Is_Subprogram_Descriptor);
@@ -13160,6 +13174,7 @@ package Sinfo is
    pragma Inline (Set_Is_Power_Of_2_For_Shift);
    pragma Inline (Set_Is_Prefixed_Call);
    pragma Inline (Set_Is_Protected_Subprogram_Body);
+   pragma Inline (Set_Is_Qualified_Universal_Literal);
    pragma Inline (Set_Is_Static_Coextension);
    pragma Inline (Set_Is_Static_Expression);
    pragma Inline (Set_Is_Subprogram_Descriptor);

@@ -257,7 +257,8 @@ Objective-C and Objective-C++ Dialects}.
 -Wc90-c99-compat -Wc99-c11-compat @gol
 -Wc++-compat -Wc++11-compat -Wc++14-compat -Wcast-align  -Wcast-qual  @gol
 -Wchar-subscripts -Wclobbered  -Wcomment -Wconditionally-supported  @gol
--Wconversion -Wcoverage-mismatch -Wno-cpp -Wdate-time -Wdelete-incomplete @gol
+-Wconversion -Wcoverage-mismatch -Wno-cpp -Wdangling-else -Wdate-time @gol
+-Wdelete-incomplete @gol
 -Wno-deprecated -Wno-deprecated-declarations -Wno-designated-init @gol
 -Wdisabled-optimization @gol
 -Wno-discarded-qualifiers -Wno-discarded-array-qualifiers @gol
@@ -273,7 +274,7 @@ Objective-C and Objective-C++ Dialects}.
 -Wno-int-to-pointer-cast -Winvalid-memory-model -Wno-invalid-offsetof @gol
 -Winvalid-pch -Wlarger-than=@var{len} @gol
 -Wlogical-op -Wlogical-not-parentheses -Wlong-long @gol
--Wmain -Wmaybe-uninitialized -Wmemset-transposed-args @gol
+-Wmain -Wmaybe-uninitialized -Wmemset-elt-size -Wmemset-transposed-args @gol
 -Wmisleading-indentation -Wmissing-braces @gol
 -Wmissing-field-initializers -Wmissing-include-dirs @gol
 -Wno-multichar -Wnonnull -Wnonnull-compare @gol
@@ -501,7 +502,8 @@ Objective-C and Objective-C++ Dialects}.
 @item Developer Options
 @xref{Developer Options,,GCC Developer Options}.
 @gccoptlist{-d@var{letters}  -dumpspecs  -dumpmachine  -dumpversion @gol
--fchecking -fdbg-cnt-list -fdbg-cnt=@var{counter-value-list} @gol
+-fchecking -fchecking=@var{n} -fdbg-cnt-list @gol
+-fdbg-cnt=@var{counter-value-list} @gol
 -fdisable-ipa-@var{pass_name} @gol
 -fdisable-rtl-@var{pass_name} @gol
 -fdisable-rtl-@var{pass-name}=@var{range-list} @gol
@@ -592,7 +594,7 @@ Objective-C and Objective-C++ Dialects}.
 -mcrc -mdsp-packa -mdvbf -mlock -mmac-d16 -mmac-24 -mrtsc -mswape @gol
 -mtelephony -mxy -misize -mannotate-align -marclinux -marclinux_prof @gol
 -mlong-calls -mmedium-calls -msdata @gol
--mucb-mcount -mvolatile-cache @gol
+-mucb-mcount -mvolatile-cache -mtp-regno=@var{regno} @gol
 -malign-call -mauto-modify-reg -mbbit-peephole -mno-brcc @gol
 -mcase-vector-pcrel -mcompact-casesi -mno-cond-exec -mearly-cbranchsi @gol
 -mexpand-adddi -mindexed-loads -mlra -mlra-priority-none @gol
@@ -847,6 +849,7 @@ Objective-C and Objective-C++ Dialects}.
 -mvirt -mno-virt @gol
 -mxpa -mno-xpa @gol
 -mmicromips -mno-micromips @gol
+-mmsa -mno-msa @gol
 -mfpu=@var{fpu-type} @gol
 -msmartmips  -mno-smartmips @gol
 -mpaired-single  -mno-paired-single  -mdmx  -mno-mdmx @gol
@@ -945,7 +948,7 @@ See RS/6000 and PowerPC Options.
 @emph{RL78 Options}
 @gccoptlist{-msim -mmul=none -mmul=g13 -mmul=g14 -mallregs @gol
 -mcpu=g10 -mcpu=g13 -mcpu=g14 -mg10 -mg13 -mg14 @gol
--m64bit-doubles -m32bit-doubles}
+-m64bit-doubles -m32bit-doubles -msave-mduc-in-interrupts}
 
 @emph{RS/6000 and PowerPC Options}
 @gccoptlist{-mcpu=@var{cpu-type} @gol
@@ -1003,7 +1006,8 @@ See RS/6000 and PowerPC Options.
 -mupper-regs-df -mno-upper-regs-df -mupper-regs-sf -mno-upper-regs-sf @gol
 -mupper-regs -mno-upper-regs -mmodulo -mno-modulo @gol
 -mfloat128 -mno-float128 -mfloat128-hardware -mno-float128-hardware @gol
--mpower9-fusion -mno-mpower9-fusion -mpower9-vector -mno-power9-vector}
+-mpower9-fusion -mno-mpower9-fusion -mpower9-vector -mno-power9-vector @gol
+-mpower9-dform -mno-power9-dform -mlra -mno-lra}
 
 @emph{RX Options}
 @gccoptlist{-m64bit-doubles  -m32bit-doubles  -fpu  -nofpu@gol
@@ -1049,7 +1053,7 @@ See RS/6000 and PowerPC Options.
 -mb  -ml  -mdalign  -mrelax @gol
 -mbigtable -mfmovd -mrenesas -mno-renesas -mnomacsave @gol
 -mieee -mno-ieee -mbitops  -misize  -minline-ic_invalidate -mpadstruct @gol
--mspace -mprefergot  -musermode -multcost=@var{number} -mdiv=@var{strategy} @gol
+-mprefergot -musermode -multcost=@var{number} -mdiv=@var{strategy} @gol
 -mdivsi3_libfunc=@var{name} -mfixed-range=@var{register-range} @gol
 -maccumulate-outgoing-args @gol
 -matomic-model=@var{atomic-model} @gol
@@ -3538,6 +3542,7 @@ Options} and @ref{Objective-C and Objective-C++ Dialect Options}.
 -Wc++11-compat  -Wc++14-compat@gol
 -Wchar-subscripts  @gol
 -Wcomment  @gol
+-Wduplicate-decl-specifier @r{(C and Objective-C only)} @gol
 -Wenum-compare @r{(in C/ObjC; this is on by default in C++)} @gol
 -Wformat   @gol
 -Wimplicit @r{(C and Objective-C only)} @gol
@@ -3547,6 +3552,7 @@ Options} and @ref{Objective-C and Objective-C++ Dialect Options}.
 -Wlogical-not-parentheses
 -Wmain @r{(only for C/ObjC and unless} @option{-ffreestanding}@r{)}  @gol
 -Wmaybe-uninitialized @gol
+-Wmemset-elt-size @gol
 -Wmemset-transposed-args @gol
 -Wmisleading-indentation @r{(only for C/C++)} @gol
 -Wmissing-braces @r{(only for C/ObjC)} @gol
@@ -3693,6 +3699,13 @@ float area(float radius)
 @end smallexample
 the compiler performs the entire computation with @code{double}
 because the floating-point literal is a @code{double}.
+
+@item -Wduplicate-decl-specifier @r{(C and Objective-C only)}
+@opindex Wduplicate-decl-specifier
+@opindex Wno-duplicate-decl-specifier
+Warn if a declaration has duplicate @code{const}, @code{volatile},
+@code{restrict} or @code{_Atomic} specifier.  This warning is enabled by
+@option{-Wall}.
 
 @item -Wformat
 @itemx -Wformat=@var{n}
@@ -3973,46 +3986,6 @@ often get confused about.
 Also warn if a comparison like @code{x<=y<=z} appears; this is
 equivalent to @code{(x<=y ? 1 : 0) <= z}, which is a different
 interpretation from that of ordinary mathematical notation.
-
-Also warn about constructions where there may be confusion to which
-@code{if} statement an @code{else} branch belongs.  Here is an example of
-such a case:
-
-@smallexample
-@group
-@{
-  if (a)
-    if (b)
-      foo ();
-  else
-    bar ();
-@}
-@end group
-@end smallexample
-
-In C/C++, every @code{else} branch belongs to the innermost possible
-@code{if} statement, which in this example is @code{if (b)}.  This is
-often not what the programmer expected, as illustrated in the above
-example by indentation the programmer chose.  When there is the
-potential for this confusion, GCC issues a warning when this flag
-is specified.  To eliminate the warning, add explicit braces around
-the innermost @code{if} statement so there is no way the @code{else}
-can belong to the enclosing @code{if}.  The resulting code
-looks like this:
-
-@smallexample
-@group
-@{
-  if (a)
-    @{
-      if (b)
-        foo ();
-      else
-        bar ();
-    @}
-@}
-@end group
-@end smallexample
 
 Also warn for dangerous uses of the GNU extension to
 @code{?:} with omitted middle operand. When the condition
@@ -5146,6 +5119,51 @@ compiler doesn't give this warning for types defined in the main .C
 file, as those are unlikely to have multiple definitions.
 @option{-Wsubobject-linkage} is enabled by default.
 
+@item -Wdangling-else
+@opindex Wdangling-else
+@opindex Wno-dangling-else
+Warn about constructions where there may be confusion to which
+@code{if} statement an @code{else} branch belongs.  Here is an example of
+such a case:
+
+@smallexample
+@group
+@{
+  if (a)
+    if (b)
+      foo ();
+  else
+    bar ();
+@}
+@end group
+@end smallexample
+
+In C/C++, every @code{else} branch belongs to the innermost possible
+@code{if} statement, which in this example is @code{if (b)}.  This is
+often not what the programmer expected, as illustrated in the above
+example by indentation the programmer chose.  When there is the
+potential for this confusion, GCC issues a warning when this flag
+is specified.  To eliminate the warning, add explicit braces around
+the innermost @code{if} statement so there is no way the @code{else}
+can belong to the enclosing @code{if}.  The resulting code
+looks like this:
+
+@smallexample
+@group
+@{
+  if (a)
+    @{
+      if (b)
+        foo ();
+      else
+        bar ();
+    @}
+@}
+@end group
+@end smallexample
+
+This warning is enabled by @option{-Wparentheses}.
+
 @item -Wdate-time
 @opindex Wdate-time
 @opindex Wno-date-time
@@ -5255,6 +5273,15 @@ but a pointer, and suggests a possible fix, or about
 Warn when the @code{sizeof} operator is applied to a parameter that is
 declared as an array in a function definition.  This warning is enabled by
 default for C and C++ programs.
+
+@item -Wmemset-elt-size
+@opindex Wmemset-elt-size
+@opindex Wno-memset-elt-size
+Warn for suspicious calls to the @code{memset} built-in function, if the
+first argument references an array, and the third argument is a number
+equal to the number of elements, but not equal to the size of the array
+in memory.  This indicates that the user has omitted a multiplication by
+the element size.  This warning is enabled by @option{-Wall}.
 
 @item -Wmemset-transposed-args
 @opindex Wmemset-transposed-args
@@ -9007,6 +9034,10 @@ Large expressions slow the analyzer.
 Bound on the complexity of the expressions in the scalar evolutions analyzer.
 Complex expressions slow the analyzer.
 
+@item max-tree-if-conversion-phi-args
+Maximum number of arguments in a PHI supported by TREE if conversion
+unless the loop is marked with simd pragma.
+
 @item vect-max-version-for-alignment-checks
 The maximum number of run-time checks that can be performed when
 doing loop versioning for alignment in the vectorizer.
@@ -9476,6 +9507,11 @@ The default value is 32.
 Size of minimal partition for WHOPR (in estimated instructions).
 This prevents expenses of splitting very small programs into too many
 partitions.
+
+@item lto-max-partition
+Size of max partition for WHOPR (in estimated instructions).
+to provide an upper bound for individual size of partition.
+Meant to be used only with balanced partitioning.
 
 @item cxx-max-namespaces-for-diagnostic-help
 The maximum number of namespaces to consult for suggestions when C++
@@ -9970,6 +10006,13 @@ for which this feature is experimental.
 @option{-fsanitize-recover=all} and @option{-fno-sanitize-recover=all} is also
 accepted, the former enables recovery for all sanitizers that support it,
 the latter disables recovery for all sanitizers that support it.
+
+Even if a recovery mode is turned on the compiler side, it needs to be also
+enabled on the runtime library side, otherwise the failures are still fatal.
+The runtime library defaults to @code{halt_on_error=0} for
+ThreadSanitizer and UndefinedBehaviorSanitizer, while default value for
+AddressSanitizer is @code{halt_on_error=1}. This can be overridden through
+setting the @code{halt_on_error} flag in the corresponding environment variable.
 
 Syntax without explicit @var{opts} parameter is deprecated.  It is equivalent to
 @smallexample
@@ -12368,10 +12411,12 @@ Here are some examples showing uses of these options.
 @end smallexample
 
 @item -fchecking
+@itemx -fchecking=@var{n}
 @opindex fchecking
 @opindex fno-checking
 Enable internal consistency checking.  The default depends on
-the compiler configuration.
+the compiler configuration.  @option{-fchecking=2} enables further
+internal consistency checking that might affect code generation.
 
 @item -frandom-seed=@var{string}
 @opindex frandom-seed
@@ -13340,6 +13385,10 @@ Enable code density instructions for ARC EM, default on for ARC HS.
 @opindex mll64
 Enable double load/store operations for ARC HS cores.
 
+@item -mtp-regno=@var{regno}
+@opindex mtp-regno
+Specify thread pointer register number.
+
 @item -mmpy-option=@var{multo}
 @opindex mmpy-option
 Compile ARCv2 code with a multiplier design option.  @samp{wlh1} is
@@ -13669,7 +13718,6 @@ Enable the use of indexed loads.  This can be problematic because some
 optimizers then assume that indexed stores exist, which is not
 the case.
 
-@item -mlra
 @opindex mlra
 Enable Local Register Allocation.  This is still experimental for ARC,
 so by default the compiler uses standard reload
@@ -13973,6 +14021,8 @@ of the @option{-mcpu=} option.  Permissible names are: @samp{armv2},
 @samp{armv7}, @samp{armv7-a}, @samp{armv7-r}, @samp{armv7-m}, @samp{armv7e-m},
 @samp{armv7ve}, @samp{armv8-a}, @samp{armv8-a+crc}, @samp{armv8.1-a},
 @samp{armv8.1-a+crc}, @samp{iwmmxt}, @samp{iwmmxt2}, @samp{ep9312}.
+
+Architecture revisions older than @option{armv4t} are deprecated.
 
 @option{-march=armv7ve} is the armv7-a architecture with virtualization
 extensions.
@@ -19749,6 +19799,20 @@ Make the @code{double} data type be 64 bits (@option{-m64bit-doubles})
 or 32 bits (@option{-m32bit-doubles}) in size.  The default is
 @option{-m32bit-doubles}.
 
+@item -msave-mduc-in-interrupts
+@item -mno-save-mduc-in-interrupts
+@opindex msave-mduc-in-interrupts
+@opindex mno-save-mduc-in-interrupts
+Specifies that interrupt handler functions should preserve the
+MDUC registers.  This is only necessary if normal code might use
+the MDUC registers, for example because it performs multiplication
+and division operations.  The default is to ignore the MDUC registers
+as this makes the interrupt handlers faster.  The target option -mg13
+needs to be passed for this to work as this feature is only available
+on the G13 target (S2 core).  The MDUC registers will only be saved
+if the interrupt handler performs a multiplication or division
+operation or it calls another function.
+
 @end table
 
 @node RS/6000 and PowerPC Options
@@ -19879,7 +19943,7 @@ following options:
 -msimple-fpu -mstring  -mmulhw  -mdlmzb  -mmfpgpr -mvsx @gol
 -mcrypto -mdirect-move -mpower8-fusion -mpower8-vector @gol
 -mquad-memory -mquad-memory-atomic -mmodulo -mfloat128 -mfloat128-hardware @gol
--mpower9-fusion -mpower9-vector}
+-mpower9-fusion -mpower9-vector -mpower9-dform}
 
 The particular options set for any particular CPU varies between
 compiler versions, depending on what setting seems to produce optimal
@@ -20002,6 +20066,12 @@ This switch enables or disables the generation of ISEL instructions.
 @item -misel=@var{yes/no}
 This switch has been deprecated.  Use @option{-misel} and
 @option{-mno-isel} instead.
+
+@item -mlra
+@opindex mlra
+Enable Local Register Allocation.  This is still experimental for PowerPC,
+so by default the compiler uses standard reload
+(i.e. @option{-mno-lra}).
 
 @item -mspe
 @itemx -mno-spe
@@ -20152,9 +20222,18 @@ processors.
 @opindex mpower9-vector
 @opindex mno-power9-vector
 Generate code that uses (does not use) the vector and scalar
-instructions that were added in version 2.07 of the PowerPC ISA.  Also
+instructions that were added in version 3.0 of the PowerPC ISA.  Also
 enable the use of built-in functions that allow more direct access to
 the vector instructions.
+
+@item -mpower9-dform
+@itemx -mno-power9-dform
+@opindex mpower9-dform
+@opindex mno-power9-dform
+Enable (disable) scalar d-form (register + offset) memory instructions
+to load/store traditional Altivec registers. If the @var{LRA} register
+allocator is enabled, also enable (disable) vector d-form memory
+instructions.
 
 @item -mfloat-gprs=@var{yes/single/double/no}
 @itemx -mfloat-gprs
@@ -24155,7 +24234,7 @@ useful together with @option{-mrecord-mcount}.
 @itemx -mno-skip-rax-setup
 @opindex mskip-rax-setup
 When generating code for the x86-64 architecture with SSE extensions
-disabled, @option{-skip-rax-setup} can be used to skip setting up RAX
+disabled, @option{-mskip-rax-setup} can be used to skip setting up RAX
 register when there are no variable arguments passed in vector registers.
 
 @strong{Warning:} Since RAX register is used to avoid unnecessarily

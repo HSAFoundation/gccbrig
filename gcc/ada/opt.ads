@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -112,6 +112,11 @@ package Opt is
    --  case of some binder variables, Gnatbind.Scan_Bind_Arg may modify
    --  the default values.
 
+   Latest_Ada_Only : Boolean := False;
+   --  If True, the only value valid for Ada_Version is Ada_Version_Type'Last,
+   --  trying to specify other values will be ignored (in case of pragma
+   --  Ada_xxx) or generate an error (in case of -gnat83/95/xx switches).
+
    type Ada_Version_Type is (Ada_83, Ada_95, Ada_2005, Ada_2012);
    pragma Ordered (Ada_Version_Type);
    --  Versions of Ada for Ada_Version below. Note that these are ordered,
@@ -202,6 +207,11 @@ package Opt is
    --  GNATBIND
    --  Set to non-null when Bind_Alternate_Main_Name is True. This value
    --  is modified as needed by Gnatbind.Scan_Bind_Arg.
+
+   ASIS_GNSA_Mode : Boolean := False;
+   --  GNAT
+   --  Enable GNSA back-end processing assuming ASIS_Mode is already set to
+   --  True. ASIS_GNSA mode suppresses the call to gigi.
 
    ASIS_Mode : Boolean := False;
    --  GNAT
@@ -1060,6 +1070,12 @@ package Opt is
    Minimal_Recompilation : Boolean := False;
    --  GNATMAKE
    --  Set to True if minimal recompilation mode requested
+
+   Minimize_Expression_With_Actions : Boolean := False;
+   --  GNAT
+   --  If True, minimize the use of N_Expression_With_Actions node.
+   --  This can be used in particular on some back-ends where this node is
+   --  difficult to support.
 
    Modify_Tree_For_C : Boolean := False;
    --  GNAT

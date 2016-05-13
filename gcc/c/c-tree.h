@@ -253,6 +253,7 @@ enum c_declspec_word {
   cdw_const,
   cdw_volatile,
   cdw_restrict,
+  cdw_atomic,
   cdw_saturating,
   cdw_alignas,
   cdw_address_space,
@@ -588,13 +589,13 @@ extern tree c_last_sizeof_arg;
 extern struct c_switch *c_switch_stack;
 
 extern tree c_objc_common_truthvalue_conversion (location_t, tree);
-extern tree require_complete_type (tree);
+extern tree require_complete_type (location_t, tree);
 extern int same_translation_unit_p (const_tree, const_tree);
 extern int comptypes (tree, tree);
 extern int comptypes_check_different_types (tree, tree, bool *);
 extern bool c_vla_type_p (const_tree);
 extern bool c_mark_addressable (tree);
-extern void c_incomplete_type_error (const_tree, const_tree);
+extern void c_incomplete_type_error (location_t, const_tree, const_tree);
 extern tree c_type_promotes_to (tree);
 extern struct c_expr default_function_array_conversion (location_t,
 							struct c_expr);
@@ -641,7 +642,7 @@ extern tree build_asm_stmt (tree, tree);
 extern int c_types_compatible_p (tree, tree);
 extern tree c_begin_compound_stmt (bool);
 extern tree c_end_compound_stmt (location_t, tree, bool);
-extern void c_finish_if_stmt (location_t, tree, tree, tree, bool);
+extern void c_finish_if_stmt (location_t, tree, tree, tree);
 extern void c_finish_loop (location_t, tree, tree, tree, tree, tree, bool);
 extern tree c_begin_stmt_expr (void);
 extern tree c_finish_stmt_expr (location_t, tree);
@@ -661,7 +662,7 @@ extern tree c_begin_omp_task (void);
 extern tree c_finish_omp_task (location_t, tree, tree);
 extern void c_finish_omp_cancel (location_t, tree);
 extern void c_finish_omp_cancellation_point (location_t, tree);
-extern tree c_finish_omp_clauses (tree, bool, bool = false);
+extern tree c_finish_omp_clauses (tree, enum c_omp_region_type);
 extern tree c_build_va_arg (location_t, tree, location_t, tree);
 extern tree c_finish_transaction (location_t, tree, int);
 extern bool c_tree_equal (tree, tree);
@@ -716,7 +717,7 @@ extern void c_bind (location_t, tree, bool);
 extern bool tag_exists_p (enum tree_code, tree);
 
 /* In c-errors.c */
-extern void pedwarn_c90 (location_t, int opt, const char *, ...)
+extern bool pedwarn_c90 (location_t, int opt, const char *, ...)
     ATTRIBUTE_GCC_DIAG(3,4);
 extern bool pedwarn_c99 (location_t, int opt, const char *, ...)
     ATTRIBUTE_GCC_DIAG(3,4);

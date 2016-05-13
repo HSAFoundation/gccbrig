@@ -369,7 +369,7 @@ align_local_variable (tree decl)
   else
     {
       align = LOCAL_DECL_ALIGNMENT (decl);
-      DECL_ALIGN (decl) = align;
+      SET_DECL_ALIGN (decl, align);
     }
   return align / BITS_PER_UNIT;
 }
@@ -1018,7 +1018,7 @@ expand_one_stack_var_at (tree decl, rtx base, unsigned base_align,
 	 alignment here, but (at least) the i386 port does exactly this
 	 via the MINIMUM_ALIGNMENT hook.  */
 
-      DECL_ALIGN (decl) = align;
+      SET_DECL_ALIGN (decl, align);
       DECL_USER_ALIGN (decl) = 0;
     }
 
@@ -1137,7 +1137,7 @@ expand_stack_vars (bool (*pred) (size_t), struct stack_vars_data *data)
 	      HOST_WIDE_INT prev_offset
 		= align_base (frame_offset,
 			      MAX (alignb, ASAN_RED_ZONE_SIZE),
-			      FRAME_GROWS_DOWNWARD);
+			      !FRAME_GROWS_DOWNWARD);
 	      tree repr_decl = NULL_TREE;
 	      offset
 		= alloc_stack_frame_space (stack_vars[i].size
@@ -4473,7 +4473,7 @@ expand_debug_expr (tree exp)
 	      {
 		HOST_WIDE_INT units
 		  = (-bitpos + BITS_PER_UNIT - 1) / BITS_PER_UNIT;
-		op0 = adjust_address_nv (op0, mode1, units);
+		op0 = adjust_address_nv (op0, mode1, -units);
 		bitpos += units * BITS_PER_UNIT;
 	      }
 	    else if (bitpos == 0 && bitsize == GET_MODE_BITSIZE (mode))

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -187,13 +187,18 @@ package Freeze is
    --  If Initialization_Statements (E) is an N_Compound_Statement, insert its
    --  actions in the enclosing list and reset the attribute.
 
-   function Freeze_Entity (E : Entity_Id; N : Node_Id) return List_Id;
+   function Freeze_Entity
+     (E                 : Entity_Id;
+      N                 : Node_Id;
+      Do_Freeze_Profile : Boolean := True) return List_Id;
    --  Freeze an entity, and return Freeze nodes, to be inserted at the point
    --  of call. N is a node whose source location corresponds to the freeze
    --  point. This is used in placing warning messages in the situation where
    --  it appears that a type has been frozen too early, e.g. when a primitive
    --  operation is declared after the freezing point of its tagged type.
-   --  Returns No_List if no freeze nodes needed.
+   --  Returns No_List if no freeze nodes needed. Parameter Do_Freeze_Profile
+   --  is used when E is a subprogram, and determines whether the profile of
+   --  the subprogram should be frozen as well.
 
    procedure Freeze_All (From : Entity_Id; After : in out Node_Id);
    --  Before a non-instance body, or at the end of a declarative part,
@@ -209,8 +214,13 @@ package Freeze is
    --  in the scope. It is used to prevent a quadratic traversal over already
    --  frozen entities.
 
-   procedure Freeze_Before (N : Node_Id; T : Entity_Id);
-   --  Freeze T then Insert the generated Freeze nodes before the node N
+   procedure Freeze_Before
+     (N                 : Node_Id;
+      T                 : Entity_Id;
+      Do_Freeze_Profile : Boolean := True);
+   --  Freeze T then Insert the generated Freeze nodes before the node N. Flag
+   --  Do_Freeze_Profile is used when T is an overloadable entity and indicates
+   --  whether its profile should be frozen at the same time.
 
    procedure Freeze_Expression (N : Node_Id);
    --  Freezes the required entities when the Expression N causes freezing.

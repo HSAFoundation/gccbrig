@@ -3696,6 +3696,8 @@ make_pack_expansion (tree arg)
       /* Propagate type and const-expression information.  */
       TREE_TYPE (result) = TREE_TYPE (arg);
       TREE_CONSTANT (result) = TREE_CONSTANT (arg);
+      /* Mark this read now, since the expansion might be length 0.  */
+      mark_exp_read (arg);
     }
   else
     /* Just use structural equality for these TYPE_PACK_EXPANSIONS;
@@ -5655,8 +5657,7 @@ instantiate_non_dependent_expr_sfinae (tree expr, tsubst_flags_t complain)
 
      as two declarations of the same function, for example.  */
   if (processing_template_decl
-      && !instantiation_dependent_expression_p (expr)
-      && potential_constant_expression (expr))
+      && potential_nondependent_constant_expression (expr))
     {
       processing_template_decl_sentinel s;
       expr = instantiate_non_dependent_expr_internal (expr, complain);
@@ -5680,8 +5681,7 @@ instantiate_non_dependent_or_null (tree expr)
     return NULL_TREE;
   if (processing_template_decl)
     {
-      if (instantiation_dependent_expression_p (expr)
-	  || !potential_constant_expression (expr))
+      if (!potential_nondependent_constant_expression (expr))
 	expr = NULL_TREE;
       else
 	{
@@ -6240,10 +6240,8 @@ convert_nontype_argument (tree type, tree expr, tsubst_flags_t complain)
   if (TYPE_REF_OBJ_P (type)
       && has_value_dependent_address (expr))
     /* If we want the address and it's value-dependent, don't fold.  */;
-  else if (!type_unknown_p (expr)
-	   && processing_template_decl
-	   && !instantiation_dependent_expression_p (expr)
-	   && potential_constant_expression (expr))
+  else if (processing_template_decl
+	   && potential_nondependent_constant_expression (expr))
     non_dep = true;
   if (error_operand_p (expr))
     return error_mark_node;
@@ -9565,7 +9563,8 @@ can_complete_type_without_circularity (tree type)
     return 1;
 }
 
-static tree tsubst_omp_clauses (tree, bool, bool, tree, tsubst_flags_t, tree);
+static tree tsubst_omp_clauses (tree, enum c_omp_region_type, tree,
+				tsubst_flags_t, tree);
 
 /* Instantiate a single dependent attribute T (a TREE_LIST), and return either
    T or a new TREE_LIST, possibly a chain in the case of a pack expansion.  */
@@ -9584,10 +9583,10 @@ tsubst_attribute (tree t, tree *decl_p, tree args,
 			      get_attribute_name (t)))
     {
       tree clauses = TREE_VALUE (val);
-      clauses = tsubst_omp_clauses (clauses, true, false, args,
+      clauses = tsubst_omp_clauses (clauses, C_ORT_OMP_DECLARE_SIMD, args,
 				    complain, in_decl);
       c_omp_declare_simd_clauses_to_decls (*decl_p, clauses);
-      clauses = finish_omp_clauses (clauses, false, true);
+      clauses = finish_omp_clauses (clauses, C_ORT_OMP_DECLARE_SIMD);
       tree parms = DECL_ARGUMENTS (*decl_p);
       clauses
 	= c_omp_declare_simd_clauses_to_numbers (parms, clauses);
@@ -9860,7 +9859,7 @@ instantiate_class_template_1 (tree type)
     DECL_SOURCE_LOCATION (typedecl);
 
   TYPE_PACKED (type) = TYPE_PACKED (pattern);
-  TYPE_ALIGN (type) = TYPE_ALIGN (pattern);
+  SET_TYPE_ALIGN (type, TYPE_ALIGN (pattern));
   TYPE_USER_ALIGN (type) = TYPE_USER_ALIGN (pattern);
   TYPE_FOR_JAVA (type) = TYPE_FOR_JAVA (pattern); /* For libjava's JArray<T> */
   if (ANON_AGGR_TYPE_P (pattern))
@@ -10965,6 +10964,7 @@ tsubst_pack_expansion (tree t, tree args, tsubst_flags_t complain,
 	  /* We can't substitute for this parameter pack.  We use a flag as
 	     well as the missing_level counter because function parameter
 	     packs don't have a level.  */
+	  gcc_assert (processing_template_decl);
 	  unsubstituted_packs = true;
 	}
     }
@@ -13407,7 +13407,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
 	if (TYPE_USER_ALIGN (t))
 	  {
-	    TYPE_ALIGN (r) = TYPE_ALIGN (t);
+	    SET_TYPE_ALIGN (r, TYPE_ALIGN (t));
 	    TYPE_USER_ALIGN (r) = 1;
 	  }
 
@@ -13670,9 +13670,10 @@ tsubst_baselink (tree baselink, tree object_type,
     /* Add back the template arguments, if present.  */
     if (BASELINK_P (baselink) && template_id_p)
       BASELINK_FUNCTIONS (baselink)
-	= build_nt (TEMPLATE_ID_EXPR,
-		    BASELINK_FUNCTIONS (baselink),
-		    template_args);
+	= build2 (TEMPLATE_ID_EXPR,
+		  unknown_type_node,
+		  BASELINK_FUNCTIONS (baselink),
+		  template_args);
     /* Update the conversion operator type.  */
     BASELINK_OPTYPE (baselink) = optype;
 
@@ -14535,7 +14536,7 @@ tsubst_omp_clause_decl (tree decl, tree args, tsubst_flags_t complain,
 /* Like tsubst_copy, but specifically for OpenMP clauses.  */
 
 static tree
-tsubst_omp_clauses (tree clauses, bool declare_simd, bool allow_fields,
+tsubst_omp_clauses (tree clauses, enum c_omp_region_type ort,
 		    tree args, tsubst_flags_t complain, tree in_decl)
 {
   tree new_clauses = NULL_TREE, nc, oc;
@@ -14685,7 +14686,7 @@ tsubst_omp_clauses (tree clauses, bool declare_simd, bool allow_fields,
 	default:
 	  gcc_unreachable ();
 	}
-      if (allow_fields)
+      if ((ort & C_ORT_OMP_DECLARE_SIMD) == C_ORT_OMP)
 	switch (OMP_CLAUSE_CODE (nc))
 	  {
 	  case OMP_CLAUSE_SHARED:
@@ -14747,9 +14748,9 @@ tsubst_omp_clauses (tree clauses, bool declare_simd, bool allow_fields,
     }
 
   new_clauses = nreverse (new_clauses);
-  if (!declare_simd)
+  if (ort != C_ORT_OMP_DECLARE_SIMD)
     {
-      new_clauses = finish_omp_clauses (new_clauses, allow_fields);
+      new_clauses = finish_omp_clauses (new_clauses, ort);
       if (linear_no_step)
 	for (nc = new_clauses; nc; nc = OMP_CLAUSE_CHAIN (nc))
 	  if (nc == linear_no_step)
@@ -14970,7 +14971,7 @@ tsubst_omp_for_iterator (tree t, int i, tree declv, tree orig_declv,
 	{
 	  tree c = build_omp_clause (input_location, OMP_CLAUSE_PRIVATE);
 	  OMP_CLAUSE_DECL (c) = decl;
-	  c = finish_omp_clauses (c, true);
+	  c = finish_omp_clauses (c, C_ORT_OMP);
 	  if (c)
 	    {
 	      OMP_CLAUSE_CHAIN (c) = *clauses;
@@ -15138,7 +15139,6 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 	  {
 	    tree scope = USING_DECL_SCOPE (decl);
 	    tree name = DECL_NAME (decl);
-	    tree decl;
 
 	    scope = tsubst (scope, args, complain, in_decl);
 	    decl = lookup_qualified_name (scope, name,
@@ -15453,7 +15453,7 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 
     case OACC_KERNELS:
     case OACC_PARALLEL:
-      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), false, false, args, complain,
+      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), C_ORT_ACC, args, complain,
 				in_decl);
       stmt = begin_omp_parallel ();
       RECUR (OMP_BODY (t));
@@ -15462,8 +15462,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 
     case OMP_PARALLEL:
       r = push_omp_privatization_clauses (OMP_PARALLEL_COMBINED (t));
-      tmp = tsubst_omp_clauses (OMP_PARALLEL_CLAUSES (t), false, true,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_PARALLEL_CLAUSES (t), C_ORT_OMP, args,
+				complain, in_decl);
       if (OMP_PARALLEL_COMBINED (t))
 	omp_parallel_combined_clauses = &tmp;
       stmt = begin_omp_parallel ();
@@ -15476,8 +15476,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 
     case OMP_TASK:
       r = push_omp_privatization_clauses (false);
-      tmp = tsubst_omp_clauses (OMP_TASK_CLAUSES (t), false, true,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_TASK_CLAUSES (t), C_ORT_OMP, args,
+				complain, in_decl);
       stmt = begin_omp_task ();
       RECUR (OMP_TASK_BODY (t));
       finish_omp_task (tmp, stmt);
@@ -15496,12 +15496,17 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 	tree declv = NULL_TREE, initv = NULL_TREE, condv = NULL_TREE;
 	tree orig_declv = NULL_TREE;
 	tree incrv = NULL_TREE;
+	enum c_omp_region_type ort = C_ORT_OMP;
 	int i;
 
+	if (TREE_CODE (t) == CILK_SIMD || TREE_CODE (t) == CILK_FOR)
+	  ort = C_ORT_CILK;
+	else if (TREE_CODE (t) == OACC_LOOP)
+	  ort = C_ORT_ACC;
+
 	r = push_omp_privatization_clauses (OMP_FOR_INIT (t) == NULL_TREE);
-	clauses = tsubst_omp_clauses (OMP_FOR_CLAUSES (t), false,
-				      TREE_CODE (t) != OACC_LOOP,
-				      args, complain, in_decl);
+	clauses = tsubst_omp_clauses (OMP_FOR_CLAUSES (t), ort, args, complain,
+				      in_decl);
 	if (OMP_FOR_INIT (t) != NULL_TREE)
 	  {
 	    declv = make_tree_vec (TREE_VEC_LENGTH (OMP_FOR_INIT (t)));
@@ -15557,8 +15562,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
     case OMP_CRITICAL:
       r = push_omp_privatization_clauses (TREE_CODE (t) == OMP_TEAMS
 					  && OMP_TEAMS_COMBINED (t));
-      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), false, true,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), C_ORT_OMP, args, complain,
+				in_decl);
       stmt = push_stmt_list ();
       RECUR (OMP_BODY (t));
       stmt = pop_stmt_list (stmt);
@@ -15573,9 +15578,9 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
     case OACC_DATA:
     case OMP_TARGET_DATA:
     case OMP_TARGET:
-      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), false,
-				TREE_CODE (t) != OACC_DATA,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_CLAUSES (t), (TREE_CODE (t) == OACC_DATA)
+				? C_ORT_ACC : C_ORT_OMP, args, complain,
+				in_decl);
       keep_next_level (true);
       stmt = begin_omp_structured_block ();
 
@@ -15620,8 +15625,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 
     case OACC_DECLARE:
       t = copy_node (t);
-      tmp = tsubst_omp_clauses (OACC_DECLARE_CLAUSES (t), false, false,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OACC_DECLARE_CLAUSES (t), C_ORT_ACC, args,
+				complain, in_decl);
       OACC_DECLARE_CLAUSES (t) = tmp;
       add_stmt (t);
       break;
@@ -15629,8 +15634,8 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
     case OMP_TARGET_UPDATE:
     case OMP_TARGET_ENTER_DATA:
     case OMP_TARGET_EXIT_DATA:
-      tmp = tsubst_omp_clauses (OMP_STANDALONE_CLAUSES (t), false, true,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_STANDALONE_CLAUSES (t), C_ORT_OMP, args,
+				complain, in_decl);
       t = copy_node (t);
       OMP_STANDALONE_CLAUSES (t) = tmp;
       add_stmt (t);
@@ -15639,16 +15644,16 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
     case OACC_ENTER_DATA:
     case OACC_EXIT_DATA:
     case OACC_UPDATE:
-      tmp = tsubst_omp_clauses (OMP_STANDALONE_CLAUSES (t), false, false,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_STANDALONE_CLAUSES (t), C_ORT_ACC, args,
+				complain, in_decl);
       t = copy_node (t);
       OMP_STANDALONE_CLAUSES (t) = tmp;
       add_stmt (t);
       break;
 
     case OMP_ORDERED:
-      tmp = tsubst_omp_clauses (OMP_ORDERED_CLAUSES (t), false, true,
-				args, complain, in_decl);
+      tmp = tsubst_omp_clauses (OMP_ORDERED_CLAUSES (t), C_ORT_OMP, args,
+				complain, in_decl);
       stmt = push_stmt_list ();
       RECUR (OMP_BODY (t));
       stmt = pop_stmt_list (stmt);
@@ -22674,6 +22679,7 @@ value_dependent_expression_p (tree expression)
 	  && (TREE_CODE (DECL_INITIAL (expression)) == TREE_LIST
 	      /* cp_finish_decl doesn't fold reference initializers.  */
 	      || TREE_CODE (TREE_TYPE (expression)) == REFERENCE_TYPE
+	      || type_dependent_expression_p (DECL_INITIAL (expression))
 	      || value_dependent_expression_p (DECL_INITIAL (expression))))
 	return true;
       return false;
@@ -22724,7 +22730,7 @@ value_dependent_expression_p (tree expression)
         return true;
       else if (TYPE_P (expression))
 	return dependent_type_p (expression);
-      return instantiation_dependent_expression_p (expression);
+      return instantiation_dependent_uneval_expression_p (expression);
 
     case AT_ENCODE_EXPR:
       /* An 'encode' expression is value-dependent if the operand is
@@ -22734,7 +22740,7 @@ value_dependent_expression_p (tree expression)
 
     case NOEXCEPT_EXPR:
       expression = TREE_OPERAND (expression, 0);
-      return instantiation_dependent_expression_p (expression);
+      return instantiation_dependent_uneval_expression_p (expression);
 
     case SCOPE_REF:
       /* All instantiation-dependent expressions should also be considered
@@ -23105,13 +23111,6 @@ instantiation_dependent_r (tree *tp, int *walk_subtrees,
     case TREE_VEC:
       return NULL_TREE;
 
-    case VAR_DECL:
-    case CONST_DECL:
-      /* A constant with a dependent initializer is dependent.  */
-      if (value_dependent_expression_p (*tp))
-	return *tp;
-      break;
-
     case TEMPLATE_PARM_INDEX:
       return *tp;
 
@@ -23136,12 +23135,6 @@ instantiation_dependent_r (tree *tp, int *walk_subtrees,
 	  }
 	break;
       }
-
-    case TRAIT_EXPR:
-      if (value_dependent_expression_p (*tp))
-	return *tp;
-      *walk_subtrees = false;
-      return NULL_TREE;
 
     case COMPONENT_REF:
       if (identifier_p (TREE_OPERAND (*tp, 1)))
@@ -23193,10 +23186,15 @@ instantiation_dependent_r (tree *tp, int *walk_subtrees,
 
    "An expression is instantiation-dependent if it is type-dependent
    or value-dependent, or it has a subexpression that is type-dependent
-   or value-dependent."  */
+   or value-dependent."
+
+   Except don't actually check value-dependence for unevaluated expressions,
+   because in sizeof(i) we don't care about the value of i.  Checking
+   type-dependence will in turn check value-dependence of array bounds/template
+   arguments as needed.  */
 
 bool
-instantiation_dependent_expression_p (tree expression)
+instantiation_dependent_uneval_expression_p (tree expression)
 {
   tree result;
 
@@ -23209,6 +23207,15 @@ instantiation_dependent_expression_p (tree expression)
   result = cp_walk_tree_without_duplicates (&expression,
 					    instantiation_dependent_r, NULL);
   return result != NULL_TREE;
+}
+
+/* As above, but also check value-dependence of the expression as a whole.  */
+
+bool
+instantiation_dependent_expression_p (tree expression)
+{
+  return (instantiation_dependent_uneval_expression_p (expression)
+	  || value_dependent_expression_p (expression));
 }
 
 /* Like type_dependent_expression_p, but it also works while not processing
@@ -23598,9 +23605,9 @@ resolve_typename_type (tree type, bool only_current_p)
     {
       /* Ill-formed programs can cause infinite recursion here, so we
 	 must catch that.  */
-      TYPENAME_IS_RESOLVING_P (type) = 1;
+      TYPENAME_IS_RESOLVING_P (result) = 1;
       result = resolve_typename_type (result, only_current_p);
-      TYPENAME_IS_RESOLVING_P (type) = 0;
+      TYPENAME_IS_RESOLVING_P (result) = 0;
     }
   
   /* Qualify the resulting type.  */
@@ -23622,8 +23629,10 @@ build_non_dependent_expr (tree expr)
 
   /* When checking, try to get a constant value for all non-dependent
      expressions in order to expose bugs in *_dependent_expression_p
-     and constexpr.  */
-  if (flag_checking && cxx_dialect >= cxx11
+     and constexpr.  This can affect code generation, see PR70704, so
+     only do this for -fchecking=2.  */
+  if (flag_checking > 1
+      && cxx_dialect >= cxx11
       /* Don't do this during nsdmi parsing as it can lead to
 	 unexpected recursive instantiations.  */
       && !parsing_nsdmi ())

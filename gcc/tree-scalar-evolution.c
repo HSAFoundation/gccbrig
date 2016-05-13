@@ -1510,6 +1510,9 @@ analyze_evolution_in_loop (gphi *loop_phi_node,
       /* When there are multiple back edges of the loop (which in fact never
 	 happens currently, but nevertheless), merge their evolutions.  */
       evolution_function = chrec_merge (evolution_function, ev_fn);
+
+      if (evolution_function == chrec_dont_know)
+	break;
     }
 
   if (dump_file && (dump_flags & TDF_SCEV))
@@ -1687,6 +1690,8 @@ interpret_condition_phi (struct loop *loop, gphi *condition_phi)
 	(loop, PHI_ARG_DEF (condition_phi, i));
 
       res = chrec_merge (res, branch_chrec);
+      if (res == chrec_dont_know)
+	break;
     }
 
   return res;
@@ -1930,6 +1935,36 @@ interpret_rhs_expr (struct loop *loop, gimple *at_stmt,
       else
 	chrec1 = analyze_scalar_evolution (loop, rhs1);
       res = chrec_convert (type, chrec1, at_stmt);
+      break;
+
+    case BIT_AND_EXPR:
+      /* Given int variable A, handle A&0xffff as (int)(unsigned short)A.
+	 If A is SCEV and its value is in the range of representable set
+	 of type unsigned short, the result expression is a (no-overflow)
+	 SCEV.  */
+      res = chrec_dont_know;
+      if (tree_fits_uhwi_p (rhs2))
+	{
+	  int precision;
+	  unsigned HOST_WIDE_INT val = tree_to_uhwi (rhs2);
+
+	  val ++;
+	  /* Skip if value of rhs2 wraps in unsigned HOST_WIDE_INT or
+	     it's not the maximum value of a smaller type than rhs1.  */
+	  if (val != 0
+	      && (precision = exact_log2 (val)) > 0
+	      && (unsigned) precision < TYPE_PRECISION (TREE_TYPE (rhs1)))
+	    {
+	      tree utype = build_nonstandard_integer_type (precision, 1);
+
+	      if (TYPE_PRECISION (utype) < TYPE_PRECISION (TREE_TYPE (rhs1)))
+		{
+		  chrec1 = analyze_scalar_evolution (loop, rhs1);
+		  chrec1 = chrec_convert (utype, chrec1, at_stmt);
+		  res = chrec_convert (TREE_TYPE (rhs1), chrec1, at_stmt);
+		}
+	    }
+	}
       break;
 
     default:

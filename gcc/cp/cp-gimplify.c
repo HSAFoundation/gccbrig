@@ -32,6 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimplify.h"
 #include "c-family/c-ubsan.h"
 #include "cilk.h"
+#include "cp-cilkplus.h"
 
 /* Forward declarations.  */
 
@@ -576,11 +577,6 @@ cp_gimplify_expr (tree *expr_p, gimple_seq *pre_p, gimple_seq *post_p)
 
   switch (code)
     {
-    case PTRMEM_CST:
-      *expr_p = cplus_expand_constant (*expr_p);
-      ret = GS_OK;
-      break;
-
     case AGGR_INIT_EXPR:
       simplify_aggr_init_expr (expr_p);
       ret = GS_OK;
@@ -620,7 +616,7 @@ cp_gimplify_expr (tree *expr_p, gimple_seq *pre_p, gimple_seq *post_p)
     case INIT_EXPR:
       if (fn_contains_cilk_spawn_p (cfun))
 	{
-	  if (cilk_detect_spawn_and_unwrap (expr_p))
+	  if (cilk_cp_detect_spawn_and_unwrap (expr_p))
 	    {
 	      cilk_cp_gimplify_call_params_in_spawned_fn (expr_p,
 							  pre_p, post_p);
@@ -638,7 +634,7 @@ cp_gimplify_expr (tree *expr_p, gimple_seq *pre_p, gimple_seq *post_p)
     modify_expr_case:
       {
 	if (fn_contains_cilk_spawn_p (cfun)
-	    && cilk_detect_spawn_and_unwrap (expr_p)
+	    && cilk_cp_detect_spawn_and_unwrap (expr_p)
 	    && !seen_error ())
 	  {
 	    cilk_cp_gimplify_call_params_in_spawned_fn (expr_p, pre_p, post_p);
@@ -739,7 +735,7 @@ cp_gimplify_expr (tree *expr_p, gimple_seq *pre_p, gimple_seq *post_p)
 
     case CILK_SPAWN_STMT:
       gcc_assert(fn_contains_cilk_spawn_p (cfun)
-		 && cilk_detect_spawn_and_unwrap (expr_p));
+		 && cilk_cp_detect_spawn_and_unwrap (expr_p));
 
       if (!seen_error ())
 	{
@@ -750,7 +746,7 @@ cp_gimplify_expr (tree *expr_p, gimple_seq *pre_p, gimple_seq *post_p)
 
     case CALL_EXPR:
       if (fn_contains_cilk_spawn_p (cfun)
-	  && cilk_detect_spawn_and_unwrap (expr_p)
+	  && cilk_cp_detect_spawn_and_unwrap (expr_p)
 	  && !seen_error ())
 	{
 	  cilk_cp_gimplify_call_params_in_spawned_fn (expr_p, pre_p, post_p);
@@ -1388,6 +1384,13 @@ cp_genericize_r (tree *stmt_p, int *walk_subtrees, void *data)
 	   || TREE_CODE (stmt) == OMP_SIMD
 	   || TREE_CODE (stmt) == OMP_DISTRIBUTE)
     genericize_omp_for_stmt (stmt_p, walk_subtrees, data);
+  else if (TREE_CODE (stmt) == PTRMEM_CST)
+    {
+      /* By the time we get here we're handing off to the back end, so we don't
+	 need or want to preserve PTRMEM_CST anymore.  */
+      *stmt_p = cplus_expand_constant (stmt);
+      *walk_subtrees = 0;
+    }
   else if ((flag_sanitize
 	    & (SANITIZE_NULL | SANITIZE_ALIGNMENT | SANITIZE_VPTR))
 	   && !wtd->no_sanitize_p)

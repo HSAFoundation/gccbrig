@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -2354,11 +2354,13 @@ package body Checks is
 
       --  Local variables
 
-      Actual_1 : Node_Id;
-      Actual_2 : Node_Id;
-      Check    : Node_Id;
-      Formal_1 : Entity_Id;
-      Formal_2 : Entity_Id;
+      Actual_1   : Node_Id;
+      Actual_2   : Node_Id;
+      Check      : Node_Id;
+      Formal_1   : Entity_Id;
+      Formal_2   : Entity_Id;
+      Orig_Act_1 : Node_Id;
+      Orig_Act_2 : Node_Id;
 
    --  Start of processing for Apply_Parameter_Aliasing_Checks
 
@@ -2368,35 +2370,38 @@ package body Checks is
       Actual_1 := First_Actual (Call);
       Formal_1 := First_Formal (Subp);
       while Present (Actual_1) and then Present (Formal_1) loop
+         Orig_Act_1 := Original_Actual (Actual_1);
 
          --  Ensure that the actual is an object that is not passed by value.
          --  Elementary types are always passed by value, therefore actuals of
          --  such types cannot lead to aliasing. An aggregate is an object in
          --  Ada 2012, but an actual that is an aggregate cannot overlap with
-         --  another actual.
+         --  another actual. A type that is By_Reference (such as an array of
+         --  controlled types) is not subject to the check because any update
+         --  will be done in place and a subsequent read will always see the
+         --  correct value, see RM 6.2 (12/3).
 
-         if Nkind (Original_Actual (Actual_1)) = N_Aggregate
-           or else
-             (Nkind (Original_Actual (Actual_1)) = N_Qualified_Expression
-                and then Nkind (Expression (Original_Actual (Actual_1))) =
-                           N_Aggregate)
+         if Nkind (Orig_Act_1) = N_Aggregate
+           or else (Nkind (Orig_Act_1) = N_Qualified_Expression
+                     and then Nkind (Expression (Orig_Act_1)) = N_Aggregate)
          then
             null;
 
-         elsif Is_Object_Reference (Original_Actual (Actual_1))
-           and then not Is_Elementary_Type (Etype (Original_Actual (Actual_1)))
+         elsif Is_Object_Reference (Orig_Act_1)
+           and then not Is_Elementary_Type (Etype (Orig_Act_1))
+           and then not Is_By_Reference_Type (Etype (Orig_Act_1))
          then
             Actual_2 := Next_Actual (Actual_1);
             Formal_2 := Next_Formal (Formal_1);
             while Present (Actual_2) and then Present (Formal_2) loop
+               Orig_Act_2 := Original_Actual (Actual_2);
 
                --  The other actual we are testing against must also denote
                --  a non pass-by-value object. Generate the check only when
                --  the mode of the two formals may lead to aliasing.
 
-               if Is_Object_Reference (Original_Actual (Actual_2))
-                 and then not
-                   Is_Elementary_Type (Etype (Original_Actual (Actual_2)))
+               if Is_Object_Reference (Orig_Act_2)
+                 and then not Is_Elementary_Type (Etype (Orig_Act_2))
                  and then May_Cause_Aliasing (Formal_1, Formal_2)
                then
                   Overlap_Check
@@ -2662,8 +2667,13 @@ package body Checks is
       S : Entity_Id;
 
    begin
-      if Present (Predicate_Function (Typ)) then
+      if Predicate_Checks_Suppressed (Empty) then
+         return;
 
+      elsif Predicates_Ignored (Typ) then
+         return;
+
+      elsif Present (Predicate_Function (Typ)) then
          S := Current_Scope;
          while Present (S) and then not Is_Subprogram (S) loop
             S := Scope (S);
@@ -2698,8 +2708,21 @@ package body Checks is
 
             Check_Expression_Against_Static_Predicate (N, Typ);
 
-            Insert_Action (N,
-              Make_Predicate_Check (Typ, Duplicate_Subexpr (N)));
+            if Is_Entity_Name (N) then
+               Insert_Action (N,
+                 Make_Predicate_Check
+                   (Typ, New_Occurrence_Of (Entity (N), Sloc (N))));
+
+            --  If the expression is not an entity it may have side effects,
+            --  and the following call will create an object declaration for
+            --  it. We disable checks during its analysis, to prevent an
+            --  infinite recursion.
+
+            else
+               Insert_Action (N,
+                 Make_Predicate_Check
+                   (Typ, Duplicate_Subexpr (N)), Suppress => All_Checks);
+            end if;
          end if;
       end if;
    end Apply_Predicate_Check;
@@ -2749,19 +2772,22 @@ package body Checks is
       --  Set to True if Expr should be regarded as a real value even though
       --  the type of Expr might be discrete.
 
-      procedure Bad_Value;
-      --  Procedure called if value is determined to be out of range
+      procedure Bad_Value (Warn : Boolean := False);
+      --  Procedure called if value is determined to be out of range. Warn is
+      --  True to force a warning instead of an error, even when SPARK_Mode is
+      --  On.
 
       ---------------
       -- Bad_Value --
       ---------------
 
-      procedure Bad_Value is
+      procedure Bad_Value (Warn : Boolean := False) is
       begin
          Apply_Compile_Time_Constraint_Error
            (Expr, "value not in range of}??", CE_Range_Check_Failed,
-            Ent => Target_Typ,
-            Typ => Target_Typ);
+            Ent  => Target_Typ,
+            Typ  => Target_Typ,
+            Warn => Warn);
       end Bad_Value;
 
    --  Start of processing for Apply_Scalar_Range_Check
@@ -2968,18 +2994,17 @@ package body Checks is
 
                   if Lov > Hiv then
 
-                     --  In GNATprove mode, do not issue a message in that case
-                     --  (which would be an error stopping analysis), as this
-                     --  likely corresponds to deactivated code based on a
-                     --  given configuration (say, dead code inside a loop over
-                     --  the empty range). Instead, we enable the range check
-                     --  so that GNATprove will issue a message if it cannot be
-                     --  proved.
+                     --  When SPARK_Mode is On, force a warning instead of
+                     --  an error in that case, as this likely corresponds
+                     --  to deactivated code.
+
+                     Bad_Value (Warn => SPARK_Mode = On);
+
+                     --  In GNATprove mode, we enable the range check so that
+                     --  GNATprove will issue a message if it cannot be proved.
 
                      if GNATprove_Mode then
                         Enable_Range_Check (Expr);
-                     else
-                        Bad_Value;
                      end if;
 
                      return;
@@ -6170,8 +6195,8 @@ package body Checks is
       --  twice (once for the check, once for the actual reference). Such a
       --  double evaluation is always a potential source of inefficiency, and
       --  is functionally incorrect in the volatile case, or when the prefix
-      --  may have side-effects. A non-volatile entity or a component of a
-      --  non-volatile entity requires no evaluation.
+      --  may have side effects. A nonvolatile entity or a component of a
+      --  nonvolatile entity requires no evaluation.
 
       if Is_Entity_Name (Pref) then
          if Treat_As_Volatile (Entity (Pref)) then
@@ -6393,7 +6418,7 @@ package body Checks is
                   Set_Do_Range_Check (Sub, False);
 
                   --  Force evaluation except for the case of a simple name of
-                  --  a non-volatile entity.
+                  --  a nonvolatile entity.
 
                   if not Is_Entity_Name (Sub)
                     or else Treat_As_Volatile (Entity (Sub))

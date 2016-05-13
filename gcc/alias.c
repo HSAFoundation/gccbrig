@@ -769,6 +769,10 @@ reference_alias_ptr_type_1 (tree *t)
 tree
 reference_alias_ptr_type (tree t)
 {
+  /* If the frontend assigns this alias-set zero, preserve that.  */
+  if (lang_hooks.get_alias_set (t) == 0)
+    return ptr_type_node;
+
   tree ptype = reference_alias_ptr_type_1 (&t);
   /* If there is a given pointer type for aliasing purposes, return it.  */
   if (ptype != NULL_TREE)
@@ -2651,8 +2655,8 @@ adjust_offset_for_component_ref (tree x, bool *known_p,
 
       offset_int woffset
 	= (wi::to_offset (xoffset)
-	   + wi::lrshift (wi::to_offset (DECL_FIELD_BIT_OFFSET (field)),
-			  LOG2_BITS_PER_UNIT));
+	   + (wi::to_offset (DECL_FIELD_BIT_OFFSET (field))
+	      >> LOG2_BITS_PER_UNIT));
       if (!wi::fits_uhwi_p (woffset))
 	{
 	  *known_p = false;

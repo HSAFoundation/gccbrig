@@ -1,3 +1,313 @@
+2016-05-13  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71073
+	* include/debug/bitset: Add #pragma GCC system_header.
+	* include/debug/deque: Likewise.
+	* include/debug/list: Likewise.
+	* include/debug/map: Likewise.
+	* include/debug/set: Likewise.
+	* include/debug/string: Likewise.
+	* include/debug/unordered_map: Likewise.
+	* include/debug/unordered_set: Likewise.
+	* include/debug/vector: Likewise.
+	* include/debug/functions.h: Adjust whitespace.
+
+2016-05-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71081
+	* testsuite/experimental/memory_resource/1.cc: Require atomics.
+
+2016-05-11  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71049
+	* src/c++11/cow-stdexcept.cc [!_GLIBCXX_USE_DUAL_ABI]: Don't define
+	exception constructors with __sso_string parameters.
+
+2016-05-10  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/experimental/bits/fs_dir.h (begin, end): Add noexcept.
+	* testsuite/experimental/filesystem/iterators/directory_iterator.cc:
+	Test begin and end functions.
+	* testsuite/experimental/filesystem/iterators/
+	recursive_directory_iterator.cc: Likewise.
+
+	PR libstdc++/71038
+	* src/filesystem/ops.cc (do_copy_file): Fix backwards conditions.
+	* testsuite/experimental/filesystem/operations/copy_file.cc: New test.
+
+	* include/experimental/bits/fs_dir.h (__directory_iterator_proxy):
+	Overload operator* to move from rvalues.
+
+	PR libstdc++/71036
+	* src/filesystem/ops.cc (create_dir): Handle EEXIST from mkdir.
+	* testsuite/experimental/filesystem/operations/create_directory.cc:
+	New test.
+
+	PR libstdc++/71037
+	* src/filesystem/ops.cc (canonical(const path&, const path&)): Add
+	base path to exception.
+	* testsuite/experimental/filesystem/operations/canonical.cc: Test
+	paths contained in exception.
+
+	* testsuite/experimental/type_erased_allocator/2.cc: Remove unused
+	using declaration.
+
+	PR libstdc++/71005
+	* include/experimental/bits/fs_dir.h (__directory_iterator_proxy):
+	New type.
+	(directory_iterator::operator++(int)): Return proxy.
+	(recursive_directory_iterator::operator++(int)): Likewise.
+	* testsuite/experimental/filesystem/iterators/directory_iterator.cc:
+	Test post-increment.
+	* testsuite/experimental/filesystem/iterators/
+	recursive_directory_iterator.cc: Likewise.
+
+2016-05-09  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71004
+	* testsuite/experimental/filesystem/iterators/
+	recursive_directory_iterator.cc: Fix test02 to not call member
+	functions on invalid iterator, and use VERIFY not assert.
+
+2016-05-09  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Avoid endless run-time recursion for copying single-element
+	tuples where the element type is by-value constructible
+	from any type.
+	* include/std/tuple (_NotSameTuple): New.
+	* include/std/tuple (tuple(_UElements&&...): Use it.
+	* testsuite/20_util/tuple/cons/element_accepts_anything_byval.cc: New.
+
+2016-05-09  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71004
+	* include/experimental/bits/fs_dir.h (recursive_directory_iterator):
+	Initialize scalar member variables in default constructor.
+	* testsuite/experimental/filesystem/iterators/
+	recursive_directory_iterator.cc: Test default construction.
+
+2016-05-05  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* testsuite/lib/libstdc++.exp (libstdc++_init): Enable on *-*-solaris*.
+
+2016-05-05  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/experimental/filesystem/path/native/string.cc: Add
+	dg-require-filesystem-ts directive.
+
+2016-05-04  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/70940
+	* include/experimental/memory_resource
+	(__resource_adaptor_imp::do_allocate): Do not default-construct
+	rebound allocator.
+	(__resource_adaptor_imp::do_deallocate): Likewise. Use
+	allocator_traits to get pointer type.
+	(__null_memory_resource::do_allocate): Remove unused parameters.
+	(__null_memory_resource::do_deallocate): Likewise.
+	(__null_memory_resource::do_is_equal): Likewise. Add return statement.
+	* testsuite/experimental/type_erased_allocator/1.cc: Combine with ...
+	* testsuite/experimental/type_erased_allocator/1_neg.cc: This, and
+	move to ...
+	* testsuite/experimental/memory_resource/1.cc: Here.
+	* testsuite/experimental/memory_resource/null_memory_resource.cc: New.
+	* testsuite/experimental/memory_resource/resource_adaptor.cc: New.
+
+2016-04-29  Chris Gregory  <czipperz@gmail.com>
+
+	* config/*: Remove trailing whitespace.
+	* src/*: Likewise.
+	* testsuite/tr1/*: Likewise.
+	* testsuite/util/*: Likewise.
+
+2016-04-28  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/70766
+	* include/bits/basic_ios.tcc (basic_ios::_M_cache_locale): Use
+	__addressof.
+	* include/bits/stream_iterator.h (istream_iterator, ostream_iterator):
+	Likewise.
+	* include/std/atomic (atomic<_Tp>): Likewise.
+	* include/std/shared_mutex (shared_lock): Likewise.
+	* testsuite/24_iterators/istream_iterator/70766.cc: New test.
+	* testsuite/24_iterators/ostream_iterator/70766.cc : New test.
+	* testsuite/29_atomics/atomic/60695.cc: Adjust dg-error line number.
+	* testsuite/29_atomics/atomic/70766.cc: New test.
+	* testsuite/30_threads/shared_lock/70766.cc: New test.
+
+	* include/bits/hashtable_policy.h (__detail::_Insert_base,
+	__detail::_Insert): Improve comments.
+
+2016-04-27  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/70767
+	* include/std/limits: Update comments about DRs.
+	(numeric_limits<const _Tp>, numeric_limits<volatile _Tp>,
+	numeric_limits<const volatile _Tp>): Define unconditionally.
+
+2016-04-24  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/70762
+	* testsuite/util/testsuite_fs.h (__gnu_test::nonexistent_path): Use
+	static counter to return a different path on every call.
+
+2016-04-22  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/70745
+	* include/bits/regex_executor.tcc (_Executor<>::_M_word_boundary):
+	Fix the match_not_bow and match_not_eow behavior.
+	* testsuite/28_regex/regression.cc: Add testcase.
+
+2016-04-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/69703
+	* src/c++11/codecvt.cc (__codecvt_utf8_base<char16_t>::do_in,
+	__codecvt_utf8_utf16_base<char16_t>::do_in): Fix mask operations.
+
+2016-04-19  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/69703
+	* src/c++11/codecvt.cc (__codecvt_utf8_base<char16_t>::do_in):
+	Override endianness bit in mode.
+	* testsuite/22_locale/codecvt/codecvt_utf8/69703.cc: New test.
+	* testsuite/22_locale/codecvt/codecvt_utf8_utf16/66855.cc: Test
+	that little_endian mode is ignored.
+	* testsuite/experimental/filesystem/path/native/string.cc: New test.
+
+	PR libstdc++/70609
+	* src/filesystem/ops.cc (close_fd): New function.
+	(do_copy_file): Set permissions before copying file contents. Check
+	result of closing file descriptors. Don't copy streambuf when file
+	is empty.
+	(copy(const path&, const path&, copy_options, error_code&)): Use
+	lstat for source file when copy_symlinks is set.
+	* testsuite/experimental/filesystem/operations/copy.cc: Test copy().
+
+	* include/experimental/bits/fs_fwd.h (operator&, operator|, operator^,
+	operator~ operator&=, operator|=, operator^=): Add noexcept to
+	overloaded operators for copy_options, perms and directory_options.
+	* src/filesystem/ops.cc (make_file_type, make_file_status,
+	is_not_found_errno, file_time): Add noexcept.
+
+2016-04-19  Edward Smith-Rowland  <3dw4rd@verizon.net>
+
+	* include/bits/c++14_warning.h: Do not refer C++14 as experimental.
+
+2016-04-18  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/41759
+	* include/bits/random.h: Reword static assertion messages to state
+	positive conditions.
+	* include/bits/random.tcc: Likewise.
+	* include/bits/uniform_int_dist.h: Likewise.
+	* testsuite/26_numerics/random/pr60037-neg.cc: Adjust dg-error
+	patterns.
+
+	* include/std/function (_Bind, _Bind_result): Remove unused typedefs.
+
+	* config/cpu/sh/atomicity.h: Fix typo in comment.
+
+	PR libstdc++/70294
+	* include/std/thread (operator<, operator==): Move definitions to
+	namespace-scope.
+	* testsuite/30_threads/thread/id/70294.cc: New test.
+
+	* testsuite/18_support/bad_exception/23591_thread-1.c: Add
+	-Wno-pedantic to dg-options.
+	* testsuite/20_util/align/2.cc: Use type as operand of alignof.
+	* testsuite/20_util/is_floating_point/value.cc: Add -Wno-pedantic
+	to dg-options.
+	* testsuite/20_util/specialized_algorithms/uninitialized_fill/32158.cc:
+	Remove extra semi-colon.
+	* testsuite/23_containers/array/tuple_interface/tuple_element.cc:
+	Always supply second argument to static_assert.
+	* testsuite/25_algorithms/lower_bound/no_operator_ne.cc: Remove extra
+	semi-colon.
+	* testsuite/26_numerics/complex/c99.cc: Add -Wno-pedantic to
+	dg-options.
+	* testsuite/26_numerics/complex/literals/values.cc: Likewise.
+	* testsuite/29_atomics/atomic/60695.cc: Likewise.
+	* testsuite/29_atomics/atomic/62259.cc: use __alignof__ instead of
+	alignof when operand is an object not a type.
+	* testsuite/decimal/ctor.cc: Add -Wno-pedantic to dg-options.
+	* testsuite/decimal/make-decimal.cc: Likewise.
+	* testsuite/experimental/type_traits/value.cc: Always supply second
+	argument to static_assert.
+	* testsuite/util/testsuite_common_types.h: Use __extension__ for
+	__int128 types.
+
+	* testsuite/experimental/type_erased_allocator/1.cc: Don't include
+	internal header.
+	* testsuite/experimental/type_erased_allocator/1_neg.cc: Likewise.
+	* testsuite/experimental/type_erased_allocator/2.cc: Likewise.
+	* testsuite/experimental/type_erased_allocator/uses_allocator.cc:
+	Likewise. Add licence and change to compile-only test.
+
+	* include/bits/locale_facets.h (ctype::do_narrow): Add attribute to
+	unused parameter.
+	* include/bits/regex_automaton.h (_NFA::_M_insert_alt): Likewise.
+
+	* include/ext/string_conversions.h (__stoa): Avoid -Wsign-compare
+	warnings.
+
+2016-04-17  Edward Smith-Rowland  <3dw4rd@verizon.net>
+
+	* include/bits/specfun.h: Trivial comment misspelling.
+
+2016-04-14  Jason Merrill  <jason@redhat.com>
+
+	Revert Jonathan's empty ABI change from yesterday.
+
+2016-04-13  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/69517
+	* testsuite/25_algorithms/rotate/moveable2.cc: Make sure VLA
+	upper bound is positive.
+
+2016-04-13  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/c++config (_GLIBCXX_BEGIN_NAMESPACE_EMPTY_TYPES,
+	_GLIBCXX_END_NAMESPACE_EMPTY_TYPES, _GLIBCXX_ABI_TAG_EMPTY): Define.
+	* include/bits/hashtable.h (_Hashtable::_M_emplace): Change signatures
+	of functions taking empty structs by value. Add a template parameter
+	to overloads without hints. Rename overloads with hints to
+	_M_emplace_hint.
+	(_Hashtable::_M_erase(true_type, const_iterator),
+	_Hashtable::_M_erase(false_type, const_iterator)): Change signatures
+	by reordering parameters.
+	* include/bits/hashtable_policy.h (_Insert::insert): Adjust to call
+	_M_emplace_hint instead of _M_emplace.
+	* include/bits/shared_ptr.h (shared_ptr(_Tp1*, _Deleter, _Alloc),
+	shared_ptr(nullptr_t, _Deleter, _Alloc)): Use _GLIBCXX_ABI_TAG_EMPTY.
+	* include/bits/shared_ptr_base.h (_Sp_counted_deleter, __shared_count,
+	__shared_ptr): Likewise.
+	* include/bits/stl_algo.h (replace_if): Likewise.
+	* include/bits/stl_pair.h (piecewise_construct_t,
+	piecewise_construct): Use _GLIBCXX_BEGIN_NAMESPACE_EMPTY_TYPES.
+	* include/bits/uses_allocator.h (allocator_arg_t, allocator_arg,
+	__uses_alloc0): Likewise.
+	* include/ext/pb_ds/assoc_container.hpp (basic_hash_table): Likewise.
+	* testsuite/20_util/scoped_allocator/69293_neg.cc: Adjust dg-error.
+	* testsuite/20_util/shared_ptr/cons/43820_neg.cc: Likewise.
+	* testsuite/20_util/shared_ptr/cons/void_neg.cc: Likewise.
+	* testsuite/20_util/uses_allocator/69293_neg.cc: Likewise.
+	* testsuite/20_util/uses_allocator/cons_neg.cc: Likewise.
+	* testsuite/ext/profile/mutex_extensions_neg.cc: Likewise.
+
+2016-04-12  Edward Smith-Rowland  <3dw4rd@verizon.net>
+
+	Document C++17/TR29124 C++ Special Math Functions.
+	* include/bits/specfun.h: Add Doxygen markup.
+
+2016-04-07  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/30_threads/thread/70503.cc: Adjust from xfail to pass.
+
+2016-04-06  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* src/Makefile.am (libstdc++-symbols.ver): Remove useless /dev/null.
+	* src/Makefile.in: Regenerate.
+
 2016-04-05  Jonathan Wakely  <jwakely@redhat.com>
 
 	PR libstdc++/70554

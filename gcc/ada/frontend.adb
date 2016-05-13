@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -30,8 +30,8 @@ with Checks;
 with CStand;
 with Debug;    use Debug;
 with Elists;
-with Exp_Ch6;
 with Exp_Dbug;
+with Exp_Unst;
 with Fmap;
 with Fname.UF;
 with Ghost;    use Ghost;
@@ -90,7 +90,6 @@ begin
    Checks.Initialize;
    Sem_Warn.Initialize;
    Prep.Initialize;
-   Exp_Ch6.Initialize;
 
    if Generate_SCIL then
       SCIL_LL.Initialize;
@@ -440,7 +439,7 @@ begin
 
          --  At this stage we can unnest subprogram bodies if required
 
-         Exp_Ch6.Unnest_Subprograms;
+         Exp_Unst.Unnest_Subprograms (Cunit (Main_Unit));
 
          --  List library units if requested
 

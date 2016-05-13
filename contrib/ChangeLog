@@ -1,3 +1,30 @@
+2016-05-02  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* download_prerequisites: Adjust gmp/mpfr/mpc versions.
+
+2016-04-30  Oleg Endo  <olegendo@gcc.gnu.org>
+
+	* compare-all-tests: Remove SH5 support.
+	* config-list.mk: Likewise.
+
+2016-04-28  Martin Liska  <mliska@suse.cz>
+
+	* analyze_brprob: Remove.
+	* analyze_brprob.py: New file.
+
+2016-04-27  Jakub Jelinek  <jakub@redhat.com>
+
+	* gennews (files): Add files for GCC 6.
+
+2016-04-17  Jan Hubicka  <jh@suse.cz>
+
+	* analyze_brprob: Update comment.
+
+2016-04-13  Martin Sebor  <msebor@redhat.com>
+
+	* check_GNU_style.sh: Avoid false posivies in trailing operator
+	checks.
+
 2016-03-07  Martin Sebor  <msebor@redhat.com>
 
 	* check_GNU_style.sh (color): New global variable.

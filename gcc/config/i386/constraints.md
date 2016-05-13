@@ -145,6 +145,10 @@
  "TARGET_SSE ? (X86_TUNE_AVOID_4BYTE_PREFIXES ? NO_REX_SSE_REGS : ALL_SSE_REGS) : NO_REGS"
  "@internal Lower SSE register when avoiding REX prefix and all SSE registers otherwise.")
 
+(define_register_constraint "Yv"
+ "TARGET_AVX512VL ? ALL_SSE_REGS : TARGET_SSE ? SSE_REGS : NO_REGS"
+ "@internal For AVX512VL, any EVEX encodable SSE register (@code{%xmm0-%xmm31}), otherwise any SSE register.")
+
 ;; We use the B prefix to denote any number of internal operands:
 ;;  f  FLAGS_REG
 ;;  g  GOT memory operand.
@@ -185,8 +189,10 @@
   (match_operand 0 "constant_call_address_operand"))
 
 (define_constraint "BC"
-  "@internal SSE constant operand."
-  (match_test "standard_sse_constant_p (op)"))
+  "@internal SSE constant -1 operand."
+  (and (match_test "TARGET_SSE")
+       (ior (match_test "op == constm1_rtx")
+	    (match_operand 0 "vector_all_ones_operand"))))
 
 ;; Integer constant constraints.
 (define_constraint "I"
@@ -239,7 +245,9 @@
 ;; This can theoretically be any mode's CONST0_RTX.
 (define_constraint "C"
   "SSE constant zero operand."
-  (match_test "standard_sse_constant_p (op) == 1"))
+  (and (match_test "TARGET_SSE")
+       (ior (match_test "op == const0_rtx")
+	    (match_operand 0 "const0_operand"))))
 
 ;; Constant-or-symbol-reference constraints.
 
@@ -265,6 +273,11 @@
    require non-VOIDmode immediate operands)."
   (and (match_operand 0 "x86_64_zext_immediate_operand")
        (match_test "GET_MODE (op) != VOIDmode")))
+
+(define_constraint "Wd"
+  "128-bit integer constant where both the high and low 64-bit word
+   of it satisfies the e constraint."
+  (match_operand 0 "x86_64_hilo_int_operand"))
 
 (define_constraint "Z"
   "32-bit unsigned integer constant, or a symbolic reference known

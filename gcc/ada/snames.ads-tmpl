@@ -1204,6 +1204,7 @@ package Snames is
    --  convention name. So is To_Address, which is a GNAT attribute.
 
    First_Intrinsic_Name                  : constant Name_Id := N + $;
+   Name_Compilation_ISO_Date             : constant Name_Id := N + $;
    Name_Compilation_Date                 : constant Name_Id := N + $;
    Name_Compilation_Time                 : constant Name_Id := N + $;
    Name_Divide                           : constant Name_Id := N + $;
@@ -1676,11 +1677,11 @@ package Snames is
       Attribute_Dispatching_Domain,
       Attribute_Interrupt_Priority);
 
-      subtype Internal_Attribute_Id is Attribute_Id range
-        Attribute_CPU .. Attribute_Interrupt_Priority;
+   subtype Internal_Attribute_Id is Attribute_Id range
+     Attribute_CPU .. Attribute_Interrupt_Priority;
 
-      type Attribute_Class_Array is array (Attribute_Id) of Boolean;
-      --  Type used to build attribute classification flag arrays
+   type Attribute_Class_Array is array (Attribute_Id) of Boolean;
+   --  Type used to build attribute classification flag arrays
 
    ------------------------------------
    -- Convention Name ID Definitions --

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -583,12 +583,14 @@ package body Exp_Attr is
          end if;
       end Make_VS_If;
 
-      --  Local Declarations
+      --  Local variables
 
       Def    : constant Node_Id := Parent (R_Type);
       Comps  : constant Node_Id := Component_List (Type_Definition (Def));
       Stmts  : constant List_Id := New_List;
       Pspecs : constant List_Id := New_List;
+
+   --  Start of processing for Build_Record_VS_Func
 
    begin
       Append_To (Pspecs,
@@ -6352,96 +6354,93 @@ package body Exp_Attr is
             --  Start of processing for Float_Valid
 
             begin
-               case Float_Rep (Btyp) is
+               --  The C and AAMP back-ends handle Valid for fpt types
 
-                  --  The AAMP back end handles Valid for floating-point types
+               if Generate_C_Code or else Float_Rep (Btyp) = AAMP then
+                  Analyze_And_Resolve (Pref, Ptyp);
+                  Set_Etype (N, Standard_Boolean);
+                  Set_Analyzed (N);
 
-                  when AAMP =>
-                     Analyze_And_Resolve (Pref, Ptyp);
-                     Set_Etype (N, Standard_Boolean);
-                     Set_Analyzed (N);
+               else
+                  Find_Fat_Info (Ptyp, Ftp, Pkg);
 
-                  when IEEE_Binary =>
-                     Find_Fat_Info (Ptyp, Ftp, Pkg);
+                  --  If the prefix is a reverse SSO component, or is possibly
+                  --  unaligned, first create a temporary copy that is in
+                  --  native SSO, and properly aligned. Make it Volatile to
+                  --  prevent folding in the back-end. Note that we use an
+                  --  intermediate constrained string type to initialize the
+                  --  temporary, as the value at hand might be invalid, and in
+                  --  that case it cannot be copied using a floating point
+                  --  register.
 
-                     --  If the prefix is a reverse SSO component, or is
-                     --  possibly unaligned, first create a temporary copy
-                     --  that is in native SSO, and properly aligned. Make it
-                     --  Volatile to prevent folding in the back-end. Note
-                     --  that we use an intermediate constrained string type
-                     --  to initialize the temporary, as the value at hand
-                     --  might be invalid, and in that case it cannot be copied
-                     --  using a floating point register.
+                  if In_Reverse_Storage_Order_Object (Pref)
+                    or else Is_Possibly_Unaligned_Object (Pref)
+                  then
+                     declare
+                        Temp : constant Entity_Id :=
+                                 Make_Temporary (Loc, 'F');
 
-                     if In_Reverse_Storage_Order_Object (Pref)
-                          or else
-                        Is_Possibly_Unaligned_Object (Pref)
-                     then
-                        declare
-                           Temp : constant Entity_Id :=
-                                    Make_Temporary (Loc, 'F');
+                        Fat_S : constant Entity_Id :=
+                                  Get_Fat_Entity (Name_S);
+                        --  Constrained string subtype of appropriate size
 
-                           Fat_S : constant Entity_Id :=
-                                     Get_Fat_Entity (Name_S);
-                           --  Constrained string subtype of appropriate size
+                        Fat_P : constant Entity_Id :=
+                                  Get_Fat_Entity (Name_P);
+                        --  Access to Fat_S
 
-                           Fat_P : constant Entity_Id :=
-                                     Get_Fat_Entity (Name_P);
-                           --  Access to Fat_S
+                        Decl : constant Node_Id :=
+                                 Make_Object_Declaration (Loc,
+                                   Defining_Identifier => Temp,
+                                   Aliased_Present     => True,
+                                   Object_Definition   =>
+                                     New_Occurrence_Of (Ptyp, Loc));
 
-                           Decl : constant Node_Id :=
-                                    Make_Object_Declaration (Loc,
-                                      Defining_Identifier => Temp,
-                                      Aliased_Present     => True,
-                                      Object_Definition   =>
-                                        New_Occurrence_Of (Ptyp, Loc));
+                     begin
+                        Set_Aspect_Specifications (Decl, New_List (
+                          Make_Aspect_Specification (Loc,
+                            Identifier =>
+                              Make_Identifier (Loc, Name_Volatile))));
 
-                        begin
-                           Set_Aspect_Specifications (Decl, New_List (
-                             Make_Aspect_Specification (Loc,
-                               Identifier =>
-                                 Make_Identifier (Loc, Name_Volatile))));
+                        Insert_Actions (N,
+                          New_List (
+                            Decl,
 
-                           Insert_Actions (N,
-                             New_List (
-                               Decl,
+                            Make_Assignment_Statement (Loc,
+                              Name =>
+                                Make_Explicit_Dereference (Loc,
+                                  Prefix =>
+                                    Unchecked_Convert_To (Fat_P,
+                                      Make_Attribute_Reference (Loc,
+                                        Prefix =>
+                                          New_Occurrence_Of (Temp, Loc),
+                                        Attribute_Name =>
+                                          Name_Unrestricted_Access))),
+                              Expression =>
+                                Unchecked_Convert_To (Fat_S,
+                                  Relocate_Node (Pref)))),
 
-                               Make_Assignment_Statement (Loc,
-                                 Name =>
-                                   Make_Explicit_Dereference (Loc,
-                                     Prefix =>
-                                       Unchecked_Convert_To (Fat_P,
-                                         Make_Attribute_Reference (Loc,
-                                           Prefix =>
-                                             New_Occurrence_Of (Temp, Loc),
-                                           Attribute_Name =>
-                                             Name_Unrestricted_Access))),
-                                 Expression =>
-                                   Unchecked_Convert_To (Fat_S,
-                                     Relocate_Node (Pref)))),
+                          Suppress => All_Checks);
 
-                             Suppress => All_Checks);
+                        Rewrite (Pref, New_Occurrence_Of (Temp, Loc));
+                     end;
+                  end if;
 
-                           Rewrite (Pref, New_Occurrence_Of (Temp, Loc));
-                        end;
-                     end if;
+                  --  We now have an object of the proper endianness and
+                  --  alignment, and can construct a Valid attribute.
 
-                     --  We now have an object of the proper endianness and
-                     --  alignment, and can construct a Valid attribute.
+                  --  We make sure the prefix of this valid attribute is
+                  --  marked as not coming from source, to avoid losing
+                  --  warnings from 'Valid looking like a possible update.
 
-                     --  We make sure the prefix of this valid attribute is
-                     --  marked as not coming from source, to avoid losing
-                     --  warnings from 'Valid looking like a possible update.
+                  Set_Comes_From_Source (Pref, False);
 
-                     Set_Comes_From_Source (Pref, False);
-
-                     Expand_Fpt_Attribute
-                       (N, Pkg, Name_Valid,
-                        New_List (
-                          Make_Attribute_Reference (Loc,
-                            Prefix         => Unchecked_Convert_To (Ftp, Pref),
-                            Attribute_Name => Name_Unrestricted_Access)));
-               end case;
+                  Expand_Fpt_Attribute
+                    (N, Pkg, Name_Valid,
+                     New_List (
+                       Make_Attribute_Reference (Loc,
+                         Prefix         => Unchecked_Convert_To (Ftp, Pref),
+                         Attribute_Name => Name_Unrestricted_Access)));
+               end if;
 
                --  One more task, we still need a range check. Required
                --  only if we have a constraint, since the Valid routine
@@ -7505,9 +7504,6 @@ package body Exp_Attr is
       --  that appear in GNAT's library, but will generate calls via rtsfind
       --  to library routines for user code.
 
-      --  This is disabled for AAMP, to avoid creating dependences on files not
-      --  supported in the AAMP library (such as s-fileio.adb).
-
       --  Note: In the case of using a configurable run time, it is very likely
       --  that stream routines for string types are not present (they require
       --  file system support). In this case, the specific stream routines for
@@ -7515,10 +7511,7 @@ package body Exp_Attr is
       --  instead. That is why we include the test Is_Available when dealing
       --  with these cases.
 
-      if not AAMP_On_Target
-        and then
-          not Is_Predefined_File_Name (Unit_File_Name (Current_Sem_Unit))
-      then
+      if not Is_Predefined_File_Name (Unit_File_Name (Current_Sem_Unit)) then
          --  Storage_Array as defined in package System.Storage_Elements
 
          if Is_RTE (Base_Typ, RE_Storage_Array) then
@@ -7991,16 +7984,18 @@ package body Exp_Attr is
 
       function Is_GCC_Target return Boolean is
       begin
-         return not CodePeer_Mode and then not AAMP_On_Target;
+         return not CodePeer_Mode
+           and then not AAMP_On_Target
+           and then not Generate_C_Code;
       end Is_GCC_Target;
 
-   --  Start of processing for Exp_Attr
+   --  Start of processing for Is_Inline_Floating_Point_Attribute
 
    begin
-      --  Machine and Model can be expanded by the GCC backend only
+      --  Machine and Model can be expanded by the GCC and AAMP back ends only
 
       if Id = Attribute_Machine or else Id = Attribute_Model then
-         return Is_GCC_Target;
+         return Is_GCC_Target or else AAMP_On_Target;
 
       --  Remaining cases handled by all back ends are Rounding and Truncation
       --  when appearing as the operand of a conversion to some integer type.

@@ -2227,43 +2227,7 @@ diagnose_mismatched_decls (tree newdecl, tree olddecl,
     }
 
   if (TREE_CODE (newdecl) == FUNCTION_DECL)
-    {
-      /* Diagnose inline __attribute__ ((noinline)) which is silly.  */
-      if (DECL_DECLARED_INLINE_P (newdecl)
-	  && lookup_attribute ("noinline", DECL_ATTRIBUTES (olddecl)))
-	warned |= warning (OPT_Wattributes,
-			   "inline declaration of %qD follows "
-			   "declaration with attribute noinline", newdecl);
-      else if (DECL_DECLARED_INLINE_P (olddecl)
-	       && lookup_attribute ("noinline", DECL_ATTRIBUTES (newdecl)))
-	warned |= warning (OPT_Wattributes,
-			   "declaration of %q+D with attribute "
-			   "noinline follows inline declaration ", newdecl);
-      else if (lookup_attribute ("noinline", DECL_ATTRIBUTES (newdecl))
-	       && lookup_attribute ("always_inline", DECL_ATTRIBUTES (olddecl)))
-	warned |= warning (OPT_Wattributes,
-			   "declaration of %q+D with attribute "
-			   "%qs follows declaration with attribute %qs",
-			   newdecl, "noinline", "always_inline");
-      else if (lookup_attribute ("always_inline", DECL_ATTRIBUTES (newdecl))
-	       && lookup_attribute ("noinline", DECL_ATTRIBUTES (olddecl)))
-	warned |= warning (OPT_Wattributes,
-			   "declaration of %q+D with attribute "
-			   "%qs follows declaration with attribute %qs",
-			   newdecl, "always_inline", "noinline");
-      else if (lookup_attribute ("cold", DECL_ATTRIBUTES (newdecl))
-	       && lookup_attribute ("hot", DECL_ATTRIBUTES (olddecl)))
-	warned |= warning (OPT_Wattributes,
-			   "declaration of %q+D with attribute %qs follows "
-			   "declaration with attribute %qs", newdecl, "cold",
-			   "hot");
-      else if (lookup_attribute ("hot", DECL_ATTRIBUTES (newdecl))
-	       && lookup_attribute ("cold", DECL_ATTRIBUTES (olddecl)))
-	warned |= warning (OPT_Wattributes,
-			   "declaration of %q+D with attribute %qs follows "
-			   "declaration with attribute %qs", newdecl, "hot",
-			   "cold");
-    }
+    warned |= diagnose_mismatched_attributes (olddecl, newdecl);
   else /* PARM_DECL, VAR_DECL */
     {
       /* Redeclaration of a parameter is a constraint violation (this is
@@ -2369,7 +2333,7 @@ merge_decls (tree newdecl, tree olddecl, tree newtype, tree oldtype)
       if (TYPE_USER_ALIGN (tem))
 	{
 	  if (TYPE_ALIGN (tem) > TYPE_ALIGN (newtype))
-	    TYPE_ALIGN (newtype) = TYPE_ALIGN (tem);
+	    SET_TYPE_ALIGN (newtype, TYPE_ALIGN (tem));
 	  TYPE_USER_ALIGN (newtype) = true;
 	}
 
@@ -2410,7 +2374,7 @@ merge_decls (tree newdecl, tree olddecl, tree newtype, tree oldtype)
       DECL_MODE (newdecl) = DECL_MODE (olddecl);
       if (DECL_ALIGN (olddecl) > DECL_ALIGN (newdecl))
 	{
-	  DECL_ALIGN (newdecl) = DECL_ALIGN (olddecl);
+	  SET_DECL_ALIGN (newdecl, DECL_ALIGN (olddecl));
 	  DECL_USER_ALIGN (newdecl) |= DECL_USER_ALIGN (olddecl);
 	}
     }
@@ -2949,7 +2913,8 @@ pushdecl (tree x)
 	}
       if (scope != file_scope
 	  && !DECL_IN_SYSTEM_HEADER (x))
-	warning (OPT_Wnested_externs, "nested extern declaration of %qD", x);
+	warning_at (locus, OPT_Wnested_externs,
+		    "nested extern declaration of %qD", x);
 
       while (b && !B_IN_EXTERNAL_SCOPE (b))
 	{
@@ -5111,7 +5076,7 @@ build_compound_literal (location_t loc, tree type, tree init, bool non_const)
 
   if (type == error_mark_node || !COMPLETE_TYPE_P (type))
     {
-      c_incomplete_type_error (NULL_TREE, type);
+      c_incomplete_type_error (loc, NULL_TREE, type);
       return error_mark_node;
     }
 
@@ -5798,10 +5763,21 @@ grokdeclarator (const struct c_declarator *declarator,
 		  {
 		    if (name)
 		      error_at (loc, "size of array %qE has non-integer type",
-			  	name);
+				name);
 		    else
 		      error_at (loc,
-			  	"size of unnamed array has non-integer type");
+				"size of unnamed array has non-integer type");
+		    size = integer_one_node;
+		  }
+		/* This can happen with enum forward declaration.  */
+		else if (!COMPLETE_TYPE_P (TREE_TYPE (size)))
+		  {
+		    if (name)
+		      error_at (loc, "size of array %qE has incomplete type",
+				name);
+		    else
+		      error_at (loc, "size of unnamed array has incomplete "
+				"type");
 		    size = integer_one_node;
 		  }
 
@@ -6763,7 +6739,7 @@ grokdeclarator (const struct c_declarator *declarator,
     /* Apply _Alignas specifiers.  */
     if (alignas_align)
       {
-	DECL_ALIGN (decl) = alignas_align * BITS_PER_UNIT;
+	SET_DECL_ALIGN (decl, alignas_align * BITS_PER_UNIT);
 	DECL_USER_ALIGN (decl) = 1;
       }
 
@@ -7205,7 +7181,7 @@ parser_xref_tag (location_t loc, enum tree_code code, tree name)
       /* Give the type a default layout like unsigned int
 	 to avoid crashing if it does not get defined.  */
       SET_TYPE_MODE (ref, TYPE_MODE (unsigned_type_node));
-      TYPE_ALIGN (ref) = TYPE_ALIGN (unsigned_type_node);
+      SET_TYPE_ALIGN (ref, TYPE_ALIGN (unsigned_type_node));
       TYPE_USER_ALIGN (ref) = 0;
       TYPE_UNSIGNED (ref) = 1;
       TYPE_PRECISION (ref) = TYPE_PRECISION (unsigned_type_node);
@@ -8101,7 +8077,7 @@ finish_enum (tree enumtype, tree values, tree attributes)
   TYPE_MIN_VALUE (enumtype) = TYPE_MIN_VALUE (tem);
   TYPE_MAX_VALUE (enumtype) = TYPE_MAX_VALUE (tem);
   TYPE_UNSIGNED (enumtype) = TYPE_UNSIGNED (tem);
-  TYPE_ALIGN (enumtype) = TYPE_ALIGN (tem);
+  SET_TYPE_ALIGN (enumtype, TYPE_ALIGN (tem));
   TYPE_SIZE (enumtype) = 0;
   TYPE_PRECISION (enumtype) = TYPE_PRECISION (tem);
 
@@ -8163,7 +8139,7 @@ finish_enum (tree enumtype, tree values, tree attributes)
       TYPE_SIZE_UNIT (tem) = TYPE_SIZE_UNIT (enumtype);
       SET_TYPE_MODE (tem, TYPE_MODE (enumtype));
       TYPE_PRECISION (tem) = TYPE_PRECISION (enumtype);
-      TYPE_ALIGN (tem) = TYPE_ALIGN (enumtype);
+      SET_TYPE_ALIGN (tem, TYPE_ALIGN (enumtype));
       TYPE_USER_ALIGN (tem) = TYPE_USER_ALIGN (enumtype);
       TYPE_UNSIGNED (tem) = TYPE_UNSIGNED (enumtype);
       TYPE_LANG_SPECIFIC (tem) = TYPE_LANG_SPECIFIC (enumtype);
@@ -9539,32 +9515,48 @@ declspecs_add_qual (source_location loc,
   gcc_assert (TREE_CODE (qual) == IDENTIFIER_NODE
 	      && C_IS_RESERVED_WORD (qual));
   i = C_RID_CODE (qual);
+  location_t prev_loc = 0;
   switch (i)
     {
     case RID_CONST:
       dupe = specs->const_p;
       specs->const_p = true;
+      prev_loc = specs->locations[cdw_const];
       specs->locations[cdw_const] = loc;
       break;
     case RID_VOLATILE:
       dupe = specs->volatile_p;
       specs->volatile_p = true;
+      prev_loc = specs->locations[cdw_volatile];
       specs->locations[cdw_volatile] = loc;
       break;
     case RID_RESTRICT:
       dupe = specs->restrict_p;
       specs->restrict_p = true;
+      prev_loc = specs->locations[cdw_restrict];
       specs->locations[cdw_restrict] = loc;
       break;
     case RID_ATOMIC:
       dupe = specs->atomic_p;
       specs->atomic_p = true;
+      prev_loc = specs->locations[cdw_atomic];
+      specs->locations[cdw_atomic] = loc;
       break;
     default:
       gcc_unreachable ();
     }
   if (dupe)
-    pedwarn_c90 (loc, OPT_Wpedantic, "duplicate %qE", qual);
+    {
+      bool warned = pedwarn_c90 (loc, OPT_Wpedantic,
+				 "duplicate %qE declaration specifier", qual);
+      if (!warned
+	  && warn_duplicate_decl_specifier
+	  && prev_loc >= RESERVED_LOCATION_COUNT
+	  && !from_macro_expansion_at (prev_loc)
+	  && !from_macro_expansion_at (loc))
+	warning_at (loc, OPT_Wduplicate_decl_specifier,
+		    "duplicate %qE declaration specifier", qual);
+    }
   return specs;
 }
 

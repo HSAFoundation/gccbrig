@@ -1355,7 +1355,8 @@ gimple_call_same_target_p (const gimple *c1, const gimple *c2)
   if (gimple_call_internal_p (c1))
     return (gimple_call_internal_p (c2)
 	    && gimple_call_internal_fn (c1) == gimple_call_internal_fn (c2)
-	    && !gimple_call_internal_unique_p (as_a <const gcall *> (c1)));
+	    && (!gimple_call_internal_unique_p (as_a <const gcall *> (c1))
+		|| c1 == c2));
   else
     return (gimple_call_fn (c1) == gimple_call_fn (c2)
 	    || (gimple_call_fndecl (c1)
@@ -2486,7 +2487,16 @@ gimple_builtin_call_types_compatible_p (const gimple *stmt, tree fndecl)
       if (!targs)
 	return true;
       tree arg = gimple_call_arg (stmt, i);
-      if (!useless_type_conversion_p (TREE_VALUE (targs), TREE_TYPE (arg)))
+      tree type = TREE_VALUE (targs);
+      if (!useless_type_conversion_p (type, TREE_TYPE (arg))
+	  /* char/short integral arguments are promoted to int
+	     by several frontends if targetm.calls.promote_prototypes
+	     is true.  Allow such promotion too.  */
+	  && !(INTEGRAL_TYPE_P (type)
+	       && TYPE_PRECISION (type) < TYPE_PRECISION (integer_type_node)
+	       && targetm.calls.promote_prototypes (TREE_TYPE (fndecl))
+	       && useless_type_conversion_p (integer_type_node,
+					     TREE_TYPE (arg))))
 	return false;
       targs = TREE_CHAIN (targs);
     }

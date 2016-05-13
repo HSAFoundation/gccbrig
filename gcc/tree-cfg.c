@@ -2135,13 +2135,8 @@ remove_bb (basic_block bb)
 	    }
 	  else
 	    {
-	      /* Release SSA definitions if we are in SSA.  Note that we
-		 may be called when not in SSA.  For example,
-		 final_cleanup calls this function via
-		 cleanup_tree_cfg.  */
-	      if (gimple_in_ssa_p (cfun))
-		release_defs (stmt);
-
+	      /* Release SSA definitions.  */
+	      release_defs (stmt);
 	      gsi_remove (&i, true);
 	    }
 
@@ -2834,6 +2829,22 @@ verify_expr (tree *tp, int *walk_subtrees, void *data ATTRIBUTE_UNUSED)
 	}
       break;
 
+    case PARM_DECL:
+    case VAR_DECL:
+    case RESULT_DECL:
+      {
+	tree context = decl_function_context (t);
+	if (context != cfun->decl
+	    && !SCOPE_FILE_SCOPE_P (context)
+	    && !TREE_STATIC (t)
+	    && !DECL_EXTERNAL (t))
+	  {
+	    error ("Local declaration from a different function");
+	    return t;
+	  }
+      }
+      break;
+
     case INDIRECT_REF:
       error ("INDIRECT_REF in gimple IL");
       return t;
@@ -2852,9 +2863,14 @@ verify_expr (tree *tp, int *walk_subtrees, void *data ATTRIBUTE_UNUSED)
 	  error ("invalid offset operand of MEM_REF");
 	  return TREE_OPERAND (t, 1);
 	}
-      if (TREE_CODE (x) == ADDR_EXPR
-	  && (x = verify_address (x, TREE_OPERAND (x, 0))))
-	return x;
+      if (TREE_CODE (x) == ADDR_EXPR)
+	{
+	  tree va = verify_address (x, TREE_OPERAND (x, 0));
+	  if (va)
+	    return va;
+	  x = TREE_OPERAND (x, 0);
+	}
+      walk_tree (&x, verify_expr, data, NULL);
       *walk_subtrees = 0;
       break;
 
@@ -3016,6 +3032,7 @@ verify_expr (tree *tp, int *walk_subtrees, void *data ATTRIBUTE_UNUSED)
 	  error ("invalid reference prefix");
 	  return t;
 	}
+      walk_tree (&t, verify_expr, data, NULL);
       *walk_subtrees = 0;
       break;
     case PLUS_EXPR:
@@ -3412,6 +3429,30 @@ verify_gimple_call (gcall *stmt)
     {
       error ("static chain with function that doesn%'t use one");
       return true;
+    }
+
+  if (fndecl && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+    {
+      switch (DECL_FUNCTION_CODE (fndecl))
+	{
+	case BUILT_IN_UNREACHABLE:
+	case BUILT_IN_TRAP:
+	  if (gimple_call_num_args (stmt) > 0)
+	    {
+	      /* Built-in unreachable with parameters might not be caught by
+		 undefined behavior sanitizer.  Front-ends do check users do not
+		 call them that way but we also produce calls to
+		 __builtin_unreachable internally, for example when IPA figures
+		 out a call cannot happen in a legal program.  In such cases,
+		 we must make sure arguments are stripped off.  */
+	      error ("__builtin_unreachable or __builtin_trap call with "
+		     "arguments");
+	      return true;
+	    }
+	  break;
+	default:
+	  break;
+	}
     }
 
   /* ???  The C frontend passes unpromoted arguments in case it

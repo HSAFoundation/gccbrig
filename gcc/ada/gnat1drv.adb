@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -46,6 +46,7 @@ with Namet;    use Namet;
 with Nlists;
 with Opt;      use Opt;
 with Osint;    use Osint;
+with Osint.C;  use Osint.C;
 with Output;   use Output;
 with Par_SCO;
 with Prepcomp;
@@ -95,10 +96,10 @@ procedure Gnat1drv is
    --  Kind of main compilation unit node
 
    Back_End_Mode : Back_End.Back_End_Mode_Type;
-   --  Record back end mode
+   --  Record back-end mode
 
    procedure Adjust_Global_Switches;
-   --  There are various interactions between front end switch settings,
+   --  There are various interactions between front-end switch settings,
    --  including debug switch settings and target dependent parameters.
    --  This procedure takes care of properly handling these interactions.
    --  We do it after scanning out all the switches, so that we are not
@@ -147,6 +148,7 @@ procedure Gnat1drv is
       if Generate_C_Code then
          Modify_Tree_For_C := True;
          Unnest_Subprogram_Mode := True;
+         Minimize_Expression_With_Actions := True;
 
          --  Set operating mode to Generate_Code to benefit from full front-end
          --  expansion (e.g. generics).
@@ -177,6 +179,12 @@ procedure Gnat1drv is
 
       if Operating_Mode = Check_Semantics and then Tree_Output then
          ASIS_Mode := True;
+
+         --  Set ASIS GNSA mode if -gnatd.H is set
+
+         if Debug_Flag_Dot_HH then
+            ASIS_GNSA_Mode := True;
+         end if;
 
          --  Turn off inlining in ASIS mode, since ASIS cannot handle the extra
          --  information in the trees caused by inlining being active.
@@ -342,7 +350,7 @@ procedure Gnat1drv is
          Force_ALI_Tree_File := True;
          Try_Semantics := True;
 
-         --  Make the Ada front-end more liberal so that the compiler will
+         --  Make the Ada front end more liberal so that the compiler will
          --  allow illegal code that is allowed by other compilers. CodePeer
          --  is in the business of finding problems, not enforcing rules.
          --  This is useful when using CodePeer mode with other compilers.
@@ -519,7 +527,7 @@ procedure Gnat1drv is
          Ttypes.Bytes_Big_Endian := not Ttypes.Bytes_Big_Endian;
       end if;
 
-      --  Activate front end layout if debug flag -gnatdF is set
+      --  Activate front-end layout if debug flag -gnatdF is set
 
       if Debug_Flag_FF then
          Targparm.Frontend_Layout_On_Target := True;
@@ -660,31 +668,31 @@ procedure Gnat1drv is
          Front_End_Inlining := AAMP_On_Target or Generate_C_Code;
       end if;
 
-      --  Set back end inlining indication
+      --  Set back-end inlining indication
 
       Back_End_Inlining :=
 
-        --  No back end inlining available on AAMP
+        --  No back-end inlining available on AAMP
 
         not AAMP_On_Target
 
-        --  No back end inlining available on C generation
+        --  No back-end inlining available on C generation
 
         and then not Generate_C_Code
 
-        --  No back end inlining in GNATprove mode, since it just confuses
+        --  No back-end inlining in GNATprove mode, since it just confuses
         --  the formal verification process.
 
         and then not GNATprove_Mode
 
-        --  No back end inlining if front end inlining explicitly enabled.
+        --  No back-end inlining if front-end inlining explicitly enabled.
         --  Done to minimize the output differences to customers still using
         --  this deprecated switch; in addition, this behavior reduces the
         --  output differences in old tests.
 
         and then not Front_End_Inlining
 
-        --  Back end inlining is disabled if debug flag .z is set
+        --  Back-end inlining is disabled if debug flag .z is set
 
         and then not Debug_Flag_Dot_Z;
 
@@ -1045,6 +1053,19 @@ begin
       Original_Operating_Mode := Operating_Mode;
       Frontend;
 
+      --  In GNATprove mode, force loading of System unit to ensure that
+      --  System.Interrupt_Priority is available to GNATprove for the
+      --  generation of VCs related to ceiling priority.
+
+      if GNATprove_Mode then
+         declare
+            Unused_E : constant Entity_Id :=
+                         Rtsfind.RTE (Rtsfind.RE_Interrupt_Priority);
+         begin
+            null;
+         end;
+      end if;
+
       --  Exit with errors if the main source could not be parsed
 
       if Sinput.Main_Source_File = No_Source_File then
@@ -1063,6 +1084,13 @@ begin
 
       if CodePeer_Mode then
          Comperr.Delete_SCIL_Files;
+      end if;
+
+      --  Ditto for old C files before regenerating new ones
+
+      if Generate_C_Code then
+         Delete_C_File;
+         Delete_H_File;
       end if;
 
       --  Exit if compilation errors detected
@@ -1154,13 +1182,11 @@ begin
       --  We can generate code for a package declaration or a subprogram
       --  declaration only if it does not required a body.
 
-      elsif Nkind_In (Main_Kind,
-              N_Package_Declaration,
-              N_Subprogram_Declaration)
+      elsif Nkind_In (Main_Kind, N_Package_Declaration,
+                                 N_Subprogram_Declaration)
         and then
           (not Body_Required (Main_Unit_Node)
-             or else
-           Distribution_Stub_Mode = Generate_Caller_Stub_Body)
+             or else Distribution_Stub_Mode = Generate_Caller_Stub_Body)
       then
          Back_End_Mode := Generate_Object;
 
@@ -1225,8 +1251,7 @@ begin
 
       if Back_End_Mode = Skip then
          Set_Standard_Error;
-         Write_Str ("cannot generate code for ");
-         Write_Str ("file ");
+         Write_Str ("cannot generate code for file ");
          Write_Name (Unit_File_Name (Main_Unit));
 
          if Subunits_Missing then
@@ -1293,16 +1318,21 @@ begin
       --  as indicated by Back_Annotate_Rep_Info being set to True.
 
       --  We don't call for annotations on a subunit, because to process those
-      --  the back-end requires that the parent(s) be properly compiled.
+      --  the back end requires that the parent(s) be properly compiled.
 
       --  Annotation is suppressed for targets where front-end layout is
       --  enabled, because the front end determines representations.
+
+      --  The back end is not invoked in ASIS mode with GNSA because all type
+      --  representation information will be provided by the GNSA back end, not
+      --  gigi.
 
       if Back_End_Mode = Declarations_Only
         and then
           (not (Back_Annotate_Rep_Info or Generate_SCIL or GNATprove_Mode)
             or else Main_Kind = N_Subunit
-            or else Frontend_Layout_On_Target)
+            or else Frontend_Layout_On_Target
+            or else ASIS_GNSA_Mode)
       then
          Post_Compilation_Validation_Checks;
          Errout.Finalize (Last_Call => True);

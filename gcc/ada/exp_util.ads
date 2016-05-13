@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -237,6 +237,10 @@ package Exp_Util is
    --  represents the expression of the original allocator node, otherwise N
    --  must be a free statement. If flag Is_Allocate is set, the generated
    --  routine is allocate, deallocate otherwise.
+
+   procedure Build_Procedure_Form (N : Node_Id);
+   --  Create a procedure declaration which emulates the behavior of a function
+   --  that returns an array type, for C-compatible generation.
 
    function Build_Runtime_Call (Loc : Source_Ptr; RE : RE_Id) return Node_Id;
    --  Build an N_Procedure_Call_Statement calling the given runtime entity.
@@ -469,13 +473,6 @@ package Exp_Util is
    --  Ada 2005 (AI-251): Given a type T implementing the interface Iface,
    --  return the record component containing the tag of Iface.
 
-   function Find_Primitive_Operations
-     (T    : Entity_Id;
-      Name : Name_Id) return Node_Id;
-   --  Return a reference to a primitive operation with given name. If
-   --  operation is overloaded, the node carries the corresponding set
-   --  of overloaded interpretations.
-
    function Find_Prim_Op (T : Entity_Id; Name : Name_Id) return Entity_Id;
    --  Find the first primitive operation of a tagged type T with name Name.
    --  This function allows the use of a primitive operation which is not
@@ -529,19 +526,25 @@ package Exp_Util is
    --  Note: currently this function does not scan the private part, that seems
    --  like a potential bug ???
 
+   type Force_Evaluation_Mode is (Relaxed, Strict);
+
    procedure Force_Evaluation
      (Exp           : Node_Id;
       Name_Req      : Boolean   := False;
       Related_Id    : Entity_Id := Empty;
       Is_Low_Bound  : Boolean   := False;
-      Is_High_Bound : Boolean   := False);
+      Is_High_Bound : Boolean   := False;
+      Mode          : Force_Evaluation_Mode := Relaxed);
    --  Force the evaluation of the expression right away. Similar behavior
    --  to Remove_Side_Effects when Variable_Ref is set to TRUE. That is to
    --  say, it removes the side effects and captures the values of the
    --  variables. Remove_Side_Effects guarantees that multiple evaluations
    --  of the same expression won't generate multiple side effects, whereas
    --  Force_Evaluation further guarantees that all evaluations will yield
-   --  the same result.
+   --  the same result. If Mode is Relaxed then calls to this subprogram have
+   --  no effect if Exp is side-effect free; if Mode is Strict and Exp is not
+   --  a static expression then no side-effect check is performed on Exp and
+   --  temporaries are unconditionally generated.
    --
    --  Related_Id denotes the entity of the context where Expr appears. Flags
    --  Is_Low_Bound and Is_High_Bound specify whether the expression to check
@@ -864,13 +867,14 @@ package Exp_Util is
    --  associated with Var, and if found, remove and return that call node.
 
    procedure Remove_Side_Effects
-     (Exp           : Node_Id;
-      Name_Req      : Boolean   := False;
-      Renaming_Req  : Boolean   := False;
-      Variable_Ref  : Boolean   := False;
-      Related_Id    : Entity_Id := Empty;
-      Is_Low_Bound  : Boolean   := False;
-      Is_High_Bound : Boolean   := False);
+     (Exp                : Node_Id;
+      Name_Req           : Boolean   := False;
+      Renaming_Req       : Boolean   := False;
+      Variable_Ref       : Boolean   := False;
+      Related_Id         : Entity_Id := Empty;
+      Is_Low_Bound       : Boolean   := False;
+      Is_High_Bound      : Boolean   := False;
+      Check_Side_Effects : Boolean   := True);
    --  Given the node for a subexpression, this function replaces the node if
    --  necessary by an equivalent subexpression that is guaranteed to be side
    --  effect free. This is done by extracting any actions that could cause
@@ -883,7 +887,8 @@ package Exp_Util is
    --  expression. If Variable_Ref is set to True, a variable is considered as
    --  side effect (used in implementing Force_Evaluation). Note: after call to
    --  Remove_Side_Effects, it is safe to call New_Copy_Tree to obtain a copy
-   --  of the resulting expression.
+   --  of the resulting expression. If Check_Side_Effects is set to True then
+   --  no action is performed if Exp is known to be side-effect free.
    --
    --  Related_Id denotes the entity of the context where Expr appears. Flags
    --  Is_Low_Bound and Is_High_Bound specify whether the expression to check
@@ -980,7 +985,7 @@ package Exp_Util is
      (L            : List_Id;
       Name_Req     : Boolean := False;
       Variable_Ref : Boolean := False) return Boolean;
-   --  Determines if all elements of the list L are side effect free. Name_Req
+   --  Determines if all elements of the list L are side-effect free. Name_Req
    --  and Variable_Ref are as described above.
 
    procedure Silly_Boolean_Array_Not_Test (N : Node_Id; T : Entity_Id);

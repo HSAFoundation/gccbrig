@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -301,6 +301,9 @@ package body Exp_Ch7 is
                      Finalize_Case   => TSS_Deep_Finalize,
                      Address_Case    => TSS_Finalize_Address);
 
+   function Allows_Finalization_Master (Typ : Entity_Id) return Boolean;
+   --  Determine whether access type Typ may have a finalization master
+
    procedure Build_Array_Deep_Procs (Typ : Entity_Id);
    --  Build the deep Initialize/Adjust/Finalize for a record Typ with
    --  Has_Controlled_Component set and store them using the TSS mechanism.
@@ -426,6 +429,332 @@ package body Exp_Ch7 is
    --    begin
    --       [Deep_]Finalize (Acc_Typ (V).all);
    --    end;
+
+   --------------------------------
+   -- Allows_Finalization_Master --
+   --------------------------------
+
+   function Allows_Finalization_Master (Typ : Entity_Id) return Boolean is
+      function In_Deallocation_Instance (E : Entity_Id) return Boolean;
+      --  Determine whether entity E is inside a wrapper package created for
+      --  an instance of Ada.Unchecked_Deallocation.
+
+      ------------------------------
+      -- In_Deallocation_Instance --
+      ------------------------------
+
+      function In_Deallocation_Instance (E : Entity_Id) return Boolean is
+         Pkg : constant Entity_Id := Scope (E);
+         Par : Node_Id := Empty;
+
+      begin
+         if Ekind (Pkg) = E_Package
+           and then Present (Related_Instance (Pkg))
+           and then Ekind (Related_Instance (Pkg)) = E_Procedure
+         then
+            Par := Generic_Parent (Parent (Related_Instance (Pkg)));
+
+            return
+              Present (Par)
+                and then Chars (Par) = Name_Unchecked_Deallocation
+                and then Chars (Scope (Par)) = Name_Ada
+                and then Scope (Scope (Par)) = Standard_Standard;
+         end if;
+
+         return False;
+      end In_Deallocation_Instance;
+
+      --  Local variables
+
+      Desig_Typ : constant Entity_Id := Designated_Type (Typ);
+      Ptr_Typ   : constant Entity_Id :=
+                    Root_Type_Of_Full_View (Base_Type (Typ));
+
+   --  Start of processing for Allows_Finalization_Master
+
+   begin
+      --  Certain run-time configurations and targets do not provide support
+      --  for controlled types and therefore do not need masters.
+
+      if Restriction_Active (No_Finalization) then
+         return False;
+
+      --  Do not consider C and C++ types since it is assumed that the non-Ada
+      --  side will handle their clean up.
+
+      elsif Convention (Desig_Typ) = Convention_C
+        or else Convention (Desig_Typ) = Convention_CPP
+      then
+         return False;
+
+      --  Do not consider types that return on the secondary stack
+
+      elsif Present (Associated_Storage_Pool (Ptr_Typ))
+        and then Is_RTE (Associated_Storage_Pool (Ptr_Typ), RE_SS_Pool)
+      then
+         return False;
+
+      --  Do not consider types which may never allocate an object
+
+      elsif No_Pool_Assigned (Ptr_Typ) then
+         return False;
+
+      --  Do not consider access types coming from Ada.Unchecked_Deallocation
+      --  instances. Even though the designated type may be controlled, the
+      --  access type will never participate in allocation.
+
+      elsif In_Deallocation_Instance (Ptr_Typ) then
+         return False;
+
+      --  Do not consider non-library access types when restriction
+      --  No_Nested_Finalization is in effect since masters are controlled
+      --  objects.
+
+      elsif Restriction_Active (No_Nested_Finalization)
+        and then not Is_Library_Level_Entity (Ptr_Typ)
+      then
+         return False;
+
+      --  Do not create finalization masters in GNATprove mode because this
+      --  causes unwanted extra expansion. A compilation in this mode must
+      --  keep the tree as close as possible to the original sources.
+
+      elsif GNATprove_Mode then
+         return False;
+
+      --  Otherwise the access type may use a finalization master
+
+      else
+         return True;
+      end if;
+   end Allows_Finalization_Master;
+
+   ----------------------------
+   -- Build_Anonymous_Master --
+   ----------------------------
+
+   procedure Build_Anonymous_Master (Ptr_Typ : Entity_Id) is
+      function Create_Anonymous_Master
+        (Desig_Typ : Entity_Id;
+         Unit_Id   : Entity_Id;
+         Unit_Decl : Node_Id) return Entity_Id;
+      --  Create a new anonymous finalization master for access type Ptr_Typ
+      --  with designated type Desig_Typ. The declaration of the master along
+      --  with its specialized initialization is inserted in the declarative
+      --  part of unit Unit_Decl. Unit_Id denotes the entity of Unit_Decl.
+
+      function In_Subtree (N : Node_Id; Root : Node_Id) return Boolean;
+      --  Determine whether arbitrary node N appears within the subtree rooted
+      --  at node Root.
+
+      -----------------------------
+      -- Create_Anonymous_Master --
+      -----------------------------
+
+      function Create_Anonymous_Master
+        (Desig_Typ : Entity_Id;
+         Unit_Id   : Entity_Id;
+         Unit_Decl : Node_Id) return Entity_Id
+      is
+         Loc       : constant Source_Ptr := Sloc (Unit_Id);
+         Spec_Id   : constant Entity_Id  := Unique_Defining_Entity (Unit_Decl);
+         Decls     : List_Id;
+         FM_Decl   : Node_Id;
+         FM_Id     : Entity_Id;
+         FM_Init   : Node_Id;
+         Pref      : Character;
+         Unit_Spec : Node_Id;
+
+      begin
+         --  Find the declarative list of the unit
+
+         if Nkind (Unit_Decl) = N_Package_Declaration then
+            Unit_Spec := Specification (Unit_Decl);
+            Decls     := Visible_Declarations (Unit_Spec);
+
+            if No (Decls) then
+               Decls := New_List;
+               Set_Visible_Declarations (Unit_Spec, Decls);
+            end if;
+
+         --  Package body or subprogram case
+
+         --  ??? A subprogram spec or body that acts as a compilation unit may
+         --  contain a formal parameter of an anonymous access-to-controlled
+         --  type initialized by an allocator.
+
+         --    procedure Comp_Unit_Proc (Param : access Ctrl := new Ctrl);
+
+         --  There is no suitable place to create the anonymous master as the
+         --  subprogram is not in a declarative list.
+
+         else
+            Decls := Declarations (Unit_Decl);
+
+            if No (Decls) then
+               Decls := New_List;
+               Set_Declarations (Unit_Decl, Decls);
+            end if;
+         end if;
+
+         --  Step 1: Anonymous master creation
+
+         --  Use a unique prefix in case the same unit requires two anonymous
+         --  masters, one for the spec (S) and one for the body (B).
+
+         if Ekind_In (Unit_Id, E_Function, E_Package, E_Procedure) then
+            Pref := 'S';
+         else
+            Pref := 'B';
+         end if;
+
+         --  The name of the anonymous master has the following format:
+
+         --    [BS]scopN__scop1__chars_of_desig_typAM
+
+         --  The name utilizes the fully qualified name of the designated type
+         --  in case two controlled types with the same name are declared in
+         --  different scopes and both have anonymous access types.
+
+         FM_Id :=
+           Make_Defining_Identifier (Loc,
+             New_External_Name
+               (Related_Id => Get_Qualified_Name (Desig_Typ),
+                Suffix     => "AM",
+                Prefix     => Pref));
+
+         --  Associate the anonymous master with the designated type. This
+         --  ensures that any additional anonymous access types with the same
+         --  designated type will share the same anonymous master within the
+         --  same unit.
+
+         Set_Anonymous_Master (Desig_Typ, FM_Id);
+
+         --  Generate:
+         --    <FM_Id> : Finalization_Master;
+
+         FM_Decl :=
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => FM_Id,
+             Object_Definition   =>
+               New_Occurrence_Of (RTE (RE_Finalization_Master), Loc));
+
+         --  Step 2: Initialization actions
+
+         --  Generate:
+         --    Set_Base_Pool
+         --      (<FM_Id>, Global_Pool_Object'Unrestricted_Access);
+
+         FM_Init :=
+           Make_Procedure_Call_Statement (Loc,
+             Name                   =>
+               New_Occurrence_Of (RTE (RE_Set_Base_Pool), Loc),
+             Parameter_Associations => New_List (
+               New_Occurrence_Of (FM_Id, Loc),
+               Make_Attribute_Reference (Loc,
+                 Prefix         =>
+                   New_Occurrence_Of (RTE (RE_Global_Pool_Object), Loc),
+                 Attribute_Name => Name_Unrestricted_Access)));
+
+         Prepend_To (Decls, FM_Init);
+         Prepend_To (Decls, FM_Decl);
+
+         --  Since the anonymous master and all its initialization actions are
+         --  inserted at top level, use the scope of the unit when analyzing.
+
+         Push_Scope (Spec_Id);
+         Analyze (FM_Decl);
+         Analyze (FM_Init);
+         Pop_Scope;
+
+         return FM_Id;
+      end Create_Anonymous_Master;
+
+      ----------------
+      -- In_Subtree --
+      ----------------
+
+      function In_Subtree (N : Node_Id; Root : Node_Id) return Boolean is
+         Par : Node_Id;
+
+      begin
+         --  Traverse the parent chain until reaching the same root
+
+         Par := N;
+         while Present (Par) loop
+            if Par = Root then
+               return True;
+            end if;
+
+            Par := Parent (Par);
+         end loop;
+
+         return False;
+      end In_Subtree;
+
+      --  Local variables
+
+      Desig_Typ : Entity_Id;
+      FM_Id     : Entity_Id;
+      Priv_View : Entity_Id;
+      Unit_Decl : Node_Id;
+      Unit_Id   : Entity_Id;
+
+   --  Start of processing for Build_Anonymous_Master
+
+   begin
+      --  Nothing to do if the circumstances do not allow for a finalization
+      --  master.
+
+      if not Allows_Finalization_Master (Ptr_Typ) then
+         return;
+      end if;
+
+      Unit_Decl := Unit (Cunit (Current_Sem_Unit));
+      Unit_Id   := Defining_Entity (Unit_Decl);
+
+      --  The compilation unit is a package instantiation. In this case the
+      --  anonymous master is associated with the package spec as both the
+      --  spec and body appear at the same level.
+
+      if Nkind (Unit_Decl) = N_Package_Body
+        and then Nkind (Original_Node (Unit_Decl)) = N_Package_Instantiation
+      then
+         Unit_Id   := Corresponding_Spec (Unit_Decl);
+         Unit_Decl := Unit_Declaration_Node (Unit_Id);
+      end if;
+
+      --  Use the initial declaration of the designated type when it denotes
+      --  the full view of an incomplete or private type. This ensures that
+      --  types with one and two views are treated the same.
+
+      Desig_Typ := Directly_Designated_Type (Ptr_Typ);
+      Priv_View := Incomplete_Or_Partial_View (Desig_Typ);
+
+      if Present (Priv_View) then
+         Desig_Typ := Priv_View;
+      end if;
+
+      FM_Id := Anonymous_Master (Desig_Typ);
+
+      --  The designated type already has at least one anonymous access type
+      --  pointing to it within the current unit. Reuse the anonymous master
+      --  because the designated type is the same.
+
+      if Present (FM_Id)
+        and then In_Subtree (Declaration_Node (FM_Id), Root => Unit_Decl)
+      then
+         null;
+
+      --  Otherwise the designated type lacks an anonymous master or it is
+      --  declared in a different unit. Create a brand new master.
+
+      else
+         FM_Id := Create_Anonymous_Master (Desig_Typ, Unit_Id, Unit_Decl);
+      end if;
+
+      Set_Finalization_Master (Ptr_Typ, FM_Id);
+   end Build_Anonymous_Master;
 
    ----------------------------
    -- Build_Array_Deep_Procs --
@@ -762,7 +1091,6 @@ package body Exp_Ch7 is
 
    procedure Build_Finalization_Master
      (Typ            : Entity_Id;
-      For_Anonymous  : Boolean   := False;
       For_Lib_Level  : Boolean   := False;
       For_Private    : Boolean   := False;
       Context_Scope  : Entity_Id := Empty;
@@ -772,10 +1100,6 @@ package body Exp_Ch7 is
         (Typ     : Entity_Id;
          Ptr_Typ : Entity_Id);
       --  Add access type Ptr_Typ to the pending access type list for type Typ
-
-      function In_Deallocation_Instance (E : Entity_Id) return Boolean;
-      --  Determine whether entity E is inside a wrapper package created for
-      --  an instance of Ada.Unchecked_Deallocation.
 
       -----------------------------
       -- Add_Pending_Access_Type --
@@ -798,31 +1122,6 @@ package body Exp_Ch7 is
          Prepend_Elmt (Ptr_Typ, List);
       end Add_Pending_Access_Type;
 
-      ------------------------------
-      -- In_Deallocation_Instance --
-      ------------------------------
-
-      function In_Deallocation_Instance (E : Entity_Id) return Boolean is
-         Pkg : constant Entity_Id := Scope (E);
-         Par : Node_Id := Empty;
-
-      begin
-         if Ekind (Pkg) = E_Package
-           and then Present (Related_Instance (Pkg))
-           and then Ekind (Related_Instance (Pkg)) = E_Procedure
-         then
-            Par := Generic_Parent (Parent (Related_Instance (Pkg)));
-
-            return
-              Present (Par)
-                and then Chars (Par) = Name_Unchecked_Deallocation
-                and then Chars (Scope (Par)) = Name_Ada
-                and then Scope (Scope (Par)) = Standard_Standard;
-         end if;
-
-         return False;
-      end In_Deallocation_Instance;
-
       --  Local variables
 
       Desig_Typ : constant Entity_Id := Designated_Type (Typ);
@@ -836,66 +1135,16 @@ package body Exp_Ch7 is
    --  Start of processing for Build_Finalization_Master
 
    begin
-      --  Certain run-time configurations and targets do not provide support
-      --  for controlled types.
+      --  Nothing to do if the circumstances do not allow for a finalization
+      --  master.
 
-      if Restriction_Active (No_Finalization) then
-         return;
-
-      --  Do not process C, C++ types since it is assumed that the non-Ada side
-      --  will handle their clean up.
-
-      elsif Convention (Desig_Typ) = Convention_C
-        or else Convention (Desig_Typ) = Convention_CPP
-      then
+      if not Allows_Finalization_Master (Typ) then
          return;
 
       --  Various machinery such as freezing may have already created a
       --  finalization master.
 
       elsif Present (Finalization_Master (Ptr_Typ)) then
-         return;
-
-      --  Do not process types that return on the secondary stack
-
-      elsif Present (Associated_Storage_Pool (Ptr_Typ))
-        and then Is_RTE (Associated_Storage_Pool (Ptr_Typ), RE_SS_Pool)
-      then
-         return;
-
-      --  Do not process types which may never allocate an object
-
-      elsif No_Pool_Assigned (Ptr_Typ) then
-         return;
-
-      --  Do not process access types coming from Ada.Unchecked_Deallocation
-      --  instances. Even though the designated type may be controlled, the
-      --  access type will never participate in allocation.
-
-      elsif In_Deallocation_Instance (Ptr_Typ) then
-         return;
-
-      --  Ignore the general use of anonymous access types unless the context
-      --  requires a finalization master.
-
-      elsif Ekind (Ptr_Typ) = E_Anonymous_Access_Type
-        and then not For_Anonymous
-      then
-         return;
-
-      --  Do not process non-library access types when restriction No_Nested_
-      --  Finalization is in effect since masters are controlled objects.
-
-      elsif Restriction_Active (No_Nested_Finalization)
-        and then not Is_Library_Level_Entity (Ptr_Typ)
-      then
-         return;
-
-      --  Do not create finalization masters in GNATprove mode because this
-      --  unwanted extra expansion. A compilation in this mode keeps the tree
-      --  as close as possible to the original sources.
-
-      elsif GNATprove_Mode then
          return;
       end if;
 
@@ -1013,11 +1262,11 @@ package body Exp_Ch7 is
             Add_Pending_Access_Type (Desig_Typ, Ptr_Typ);
          end if;
 
-         --  A finalization master created for an anonymous access type or an
-         --  access designating a type with private components must be inserted
-         --  before a context-dependent node.
+         --  A finalization master created for an access designating a type
+         --  with private components is inserted before a context-dependent
+         --  node.
 
-         if For_Anonymous or For_Private then
+         if For_Private then
 
             --  At this point both the scope of the context and the insertion
             --  mode must be known.
@@ -1096,7 +1345,7 @@ package body Exp_Ch7 is
       --    Jump_Alts
 
       Counter_Id  : Entity_Id := Empty;
-      Counter_Val : Int       := 0;
+      Counter_Val : Nat       := 0;
       --  Name and value of the state counter
 
       Decls : List_Id := No_List;
@@ -1725,7 +1974,7 @@ package body Exp_Ch7 is
          Spec    : Node_Id;
          Typ     : Entity_Id;
 
-         Old_Counter_Val : Int;
+         Old_Counter_Val : Nat;
          --  This variable is used to determine whether a nested package or
          --  instance contains at least one controlled object.
 
@@ -2160,7 +2409,7 @@ package body Exp_Ch7 is
 
          Init_Typ : Entity_Id;
          --  The initialization type of the related object declaration. Note
-         --  that this is not necessarely the same type as Obj_Typ because of
+         --  that this is not necessarily the same type as Obj_Typ because of
          --  possible type derivations.
 
          Obj_Typ : Entity_Id;
@@ -3693,15 +3942,6 @@ package body Exp_Ch7 is
       end if;
    end Check_Visibly_Controlled;
 
-   -------------------------------
-   -- CW_Or_Has_Controlled_Part --
-   -------------------------------
-
-   function CW_Or_Has_Controlled_Part (T : Entity_Id) return Boolean is
-   begin
-      return Is_Class_Wide_Type (T) or else Needs_Finalization (T);
-   end CW_Or_Has_Controlled_Part;
-
    ------------------
    -- Convert_View --
    ------------------
@@ -3763,6 +4003,15 @@ package body Exp_Ch7 is
          return Arg;
       end if;
    end Convert_View;
+
+   -------------------------------
+   -- CW_Or_Has_Controlled_Part --
+   -------------------------------
+
+   function CW_Or_Has_Controlled_Part (T : Entity_Id) return Boolean is
+   begin
+      return Is_Class_Wide_Type (T) or else Needs_Finalization (T);
+   end CW_Or_Has_Controlled_Part;
 
    ------------------------
    -- Enclosing_Function --
@@ -4640,19 +4889,20 @@ package body Exp_Ch7 is
 
          function Is_Subprogram_Call (N : Node_Id) return Traverse_Result is
          begin
-            --  Complex constructs are factored out by the expander and their
-            --  occurrences are replaced with references to temporaries or
-            --  object renamings. Due to this expansion activity, inspect the
-            --  original tree to detect subprogram calls.
+            --  A regular procedure or function call
 
-            if Nkind_In (N, N_Identifier,
-                            N_Object_Renaming_Declaration)
-              and then Original_Node (N) /= N
-            then
+            if Nkind (N) in N_Subprogram_Call then
+               Must_Hook := True;
+               return Abandon;
+
+            --  Special cases
+
+            --  Heavy expansion may relocate function calls outside the related
+            --  node. Inspect the original node to detect the initial placement
+            --  of the call.
+
+            elsif Original_Node (N) /= N then
                Detect_Subprogram_Call (Original_Node (N));
-
-               --  The original construct contains a subprogram call, there is
-               --  no point in continuing the tree traversal.
 
                if Must_Hook then
                   return Abandon;
@@ -4660,19 +4910,11 @@ package body Exp_Ch7 is
                   return OK;
                end if;
 
-            --  The original construct contains a subprogram call, there is no
-            --  point in continuing the tree traversal.
+            --  Generalized indexing always involves a function call
 
-            elsif Nkind (N) = N_Object_Declaration
-              and then Present (Expression (N))
-              and then Nkind (Original_Node (Expression (N))) = N_Function_Call
+            elsif Nkind (N) = N_Indexed_Component
+              and then Present (Generalized_Indexing (N))
             then
-               Must_Hook := True;
-               return Abandon;
-
-            --  A regular procedure or function call
-
-            elsif Nkind (N) in N_Subprogram_Call then
                Must_Hook := True;
                return Abandon;
 
@@ -6227,7 +6469,7 @@ package body Exp_Ch7 is
 
       procedure Preprocess_Components
         (Comps     : Node_Id;
-         Num_Comps : out Int;
+         Num_Comps : out Nat;
          Has_POC   : out Boolean);
       --  Examine all components in component list Comps, count all controlled
       --  components and determine whether at least one of them is per-object
@@ -6265,7 +6507,7 @@ package body Exp_Ch7 is
             Decl_Id   : Entity_Id;
             Decl_Typ  : Entity_Id;
             Has_POC   : Boolean;
-            Num_Comps : Int;
+            Num_Comps : Nat;
 
             procedure Process_Component_For_Adjust (Decl : Node_Id);
             --  Process the declaration of a single controlled component
@@ -6679,7 +6921,7 @@ package body Exp_Ch7 is
             Jump_Block : Node_Id;
             Label      : Node_Id;
             Label_Id   : Entity_Id;
-            Num_Comps  : Int;
+            Num_Comps  : Nat;
             Stmts      : List_Id;
 
             procedure Process_Component_For_Finalize
@@ -7236,7 +7478,7 @@ package body Exp_Ch7 is
 
       procedure Preprocess_Components
         (Comps     : Node_Id;
-         Num_Comps : out Int;
+         Num_Comps : out Nat;
          Has_POC   : out Boolean)
       is
          Decl : Node_Id;
@@ -8000,14 +8242,22 @@ package body Exp_Ch7 is
                elsif Ekind_In (S, E_Entry, E_Loop) then
                   exit;
 
-               --  In a procedure or a block, we release on exit of the
-               --  procedure or block. ??? memory leak can be created by
-               --  recursive calls.
+               --  In a procedure or a block, release the sec stack on exit
+               --  from the construct. Note that an exception handler with a
+               --  choice parameter requires a declarative region in the form
+               --  of a block. The block does not physically manifest in the
+               --  tree as it only serves as a scope. Do not consider such a
+               --  block because it will never release the sec stack.
 
-               elsif Ekind_In (S, E_Block, E_Procedure) then
+               --  ??? Memory leak can be created by recursive calls
+
+               elsif Ekind (S) = E_Procedure
+                 or else (Ekind (S) = E_Block
+                           and then not Is_Exception_Handler (S))
+               then
+                  Set_Uses_Sec_Stack (Current_Scope, False);
                   Set_Uses_Sec_Stack (S, True);
                   Check_Restriction (No_Secondary_Stack, Action);
-                  Set_Uses_Sec_Stack (Current_Scope, False);
                   exit;
 
                else

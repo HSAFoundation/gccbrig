@@ -25,8 +25,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "pretty-print.h"
 #include "diagnostic-color.h"
 
-#include <new>                    // For placement-new.
-
 #if HAVE_ICONV
 #include <iconv.h>
 #endif
@@ -159,37 +157,48 @@ pp_write_text_as_dot_label_to_stream (pretty_printer *pp, bool for_record)
   const char *p = text;
   FILE *fp = pp_buffer (pp)->stream;
 
-  while (*p)
+  for (;*p; p++)
     {
+      bool escape_char;
       switch (*p)
 	{
 	/* Print newlines as a left-aligned newline.  */
 	case '\n':
-	  fputs ("\\l\\\n", fp);
+	  fputs ("\\l", fp);
+	  escape_char = true;
 	  break;
 
-	/* A pipe is only special for record-shape nodes.  */
+	/* The following characters are only special for record-shape nodes.  */
 	case '|':
-	  if (for_record)
-	    fputc ('\\', fp);
-	  fputc (*p, fp);
-	  break;
-
-	/* The following characters always have to be escaped
-	   for use in labels.  */
 	case '{':
 	case '}':
 	case '<':
 	case '>':
-	case '"':
 	case ' ':
-	  fputc ('\\', fp);
-	  /* fall through */
+	  escape_char = for_record;
+	  break;
+
+	/* The following characters always have to be escaped
+	   for use in labels.  */
+	case '\\':
+	  /* There is a bug in some (f.i. 2.36.0) versions of graphiz
+	     ( http://www.graphviz.org/mantisbt/view.php?id=2524 ) related to
+	     backslash as last char in label.  Let's avoid triggering it.  */
+	  gcc_assert (*(p + 1) != '\0');
+	  /* Fall through.  */
+	case '"':
+	  escape_char = true;
+	  break;
+
 	default:
-	  fputc (*p, fp);
+	  escape_char = false;
 	  break;
 	}
-      p++;
+
+      if (escape_char)
+	fputc ('\\', fp);
+
+      fputc (*p, fp);
     }
 
   pp_clear_output_area (pp);
