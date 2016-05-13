@@ -142,12 +142,6 @@ brig.man:
 #	-cp -p $^ $(srcdir)/doc
 
 lang_checks += check-brig
-lang_checks_parallelized += check-brig
-check_brig_parallelize = brig-test.exp=*/test/\[0-57-9a-bd-hj-qs-zA-Z\]* \
-		       brig-test.exp=*/test/c* \
-		       brig-test.exp=*/test/i* \
-		       brig-test.exp=*/test/r* \
-		       brig-test.exp=*/test/6*
 
 # Install hooks.
 

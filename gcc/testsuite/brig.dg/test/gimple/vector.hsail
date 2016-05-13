@@ -32,7 +32,7 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* { dg-final { scan-tree-dump " = MEM\\\[\\\(vector\\\(2\\\) <float:32> \\\*\\\)D.\[0-9\]+\\\];" "gimple"} } */
 
 /* The v3 load is scalarized (at the moment) due to GENERIC requiring 2's exponent width vectors. */
-/* { dg-final { scan-tree-dump " = VIEW_CONVERT_EXPR<<float:32> \\\*>.*\[\n \]+D.\[0-9\]+ = D.\[0-9\]+;\[\n \]+mem_read.\[0-9\]+ = \\\*D.\[0-9\]+;\[\n \]+s2 = VIEW_CONVERT_EXPR" "gimple"} } */
+/* { dg-final { scan-tree-dump " = \\\(<float:32> \\\*\\\) D.\[0-9\]+;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+;\[\n \]+mem_read.\[0-9\]+ = \\\*D.\[0-9\]+;\[\n \]+s2 = VIEW_CONVERT_EXPR" "gimple"} } */
 
 /* The v4 load is done via casting to a vector datatype ptr. */
 /* { dg-final { scan-tree-dump " = MEM\\\[\\\(vector\\\(4\\\) <float:32> \\\*\\\)D.\[0-9\]+\\\];" "gimple"} } */
