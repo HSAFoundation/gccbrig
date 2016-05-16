@@ -3,7 +3,7 @@ module &module:1:0:$full:$large:$default;
 /* Test for atomic instructions. */
 
 /* { dg-do compile } */
-/* { dg-options "-fdump-tree-gimple" } */
+/* { dg-options "-fdump-tree-original" } */
 
 prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 {
@@ -21,13 +21,13 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 };
 
 /* The atomic loads are implemented by casting to an atomic pointer. */
-/* { dg-final { scan-tree-dump "s0 = MEM\\\[\\\(atomic unsigned int \\\*\\\)D.\[0-9\]+\\\];" "gimple"} } */
+/* { dg-final { scan-tree-dump "s0 = VIEW_CONVERT_EXPR<unsigned int>\\\(\\\*\\\(atomic unsigned int \\\*\\\)" "original"} } */
 
 /* The atomic add should call a gcc builtin. */
-/* { dg-final { scan-tree-dump "builtin_out.\[0-9\]+ = __sync_fetch_and_add_4 \\\(D.\[0-9\]+, D.\[0-9\]+\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "= __sync_fetch_and_add_4 \\\(" "original"} } */
 
 /* The atomic stores are implemented by casting to an atomic pointer. */
-/* { dg-final { scan-tree-dump "MEM\\\[\\\(atomic unsigned int \\\*\\\)D.\[0-9\]+\\\] = s2;" "gimple"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(atomic unsigned int \\\*\\\) VIEW_CONVERT_EXPR<unsigned int \\\*>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d0\\\)\\\) = s2;" "original"} } */
 
 /* The atomic min is implemented by a custom builtin. */
-/* { dg-final { scan-tree-dump "builtin_out.\[0-9\]+ = __phsa_builtin_atomic_min_u32 \\\(D.\[0-9\]+, s1\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "builtin_out.\[0-9\]+ = __phsa_builtin_atomic_min_u32 \\\(" "original"} } */

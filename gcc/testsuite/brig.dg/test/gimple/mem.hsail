@@ -3,7 +3,7 @@ module &module:1:0:$full:$large:$default;
 /* Tests for load/store addressing modes. */
 
 /* { dg-do compile } */
-/* { dg-options "-fdump-tree-gimple" } */
+/* { dg-options "-fdump-tree-original" } */
 
 prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %input_ptr2, kernarg_u64 %output_ptr)
 {
@@ -25,16 +25,15 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %input_ptr2, kernarg_u64
 };
 
 /* %input_ptr, %input_ptr2 and %output_ptr accesses should generate offsets to the __args array */
-/* { dg-final { scan-tree-dump " mem_read.\[0-9\]+ = MEM\\\[\\\(unsigned long \\\*\\\)__args\\\];\[\n \]+d0 = mem_read" "gimple"} } */
-/* { dg-final { scan-tree-dump "D.\[0-9\]+ = \\\(unsigned long\\\) __args;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+ \\\+ 8;" "gimple"} } */
-/* { dg-final { scan-tree-dump "D.\[0-9\]+ = \\\(unsigned long\\\) __args;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+ \\\+ 16;" "gimple"} } */
+/* { dg-final { scan-tree-dump "\\\(__args\\\);\[\n \]+d0 =" "original"} } */
+/* { dg-final { scan-tree-dump "\\\(__args\\\) \\\+ 8\\\);\[\n \]+d2 =" "original"} } */
+/* { dg-final { scan-tree-dump "\\\(__args\\\) \\\+ 16\\\);\[\n \]+d0 =" "original"} } */
 
 /* ld_global_u32 $s0, [$d0] */
-/* { dg-final { scan-tree-dump "D.\[0-9\]+ = \\\(unsigned char \\\*\\\) d0;\[\n \]+mem_read.\[0-9\]+ = MEM\\\[\\\(unsigned int \\\*\\\)D.\[0-9\]+\\\];\[\n \]+s0 = mem_read.\[0-9\]+;" "gimple"} } */
+/* { dg-final { scan-tree-dump "<unsigned char \\\*>\\\(d0\\\)\\\);\[\n \]+s0 =" "original"} } */
 
 /* ld_global_u64 $d1, [$d2 + 4] pointer arithmetics*/
-/* { dg-final { scan-tree-dump "D.\[0-9\]+ = \\\(unsigned char \\\*\\\) d2;\[\n \]+D.\[0-9\]+ = \\\(unsigned long\\\) D.\[0-9\]+;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+ \\\+ 4;" "gimple"} } */
+/* { dg-final { scan-tree-dump "\\\(d2\\\)\\\) \\\+ 4\\\);\[\n \]+d1 = " "original"} } */
 
 /* ld_global_u32 $s2, [%global_array][$d1 + 4]; is the most complex form */
-/* { dg-final { scan-tree-dump " = \\\(unsigned long\\\) &_Kernel.global_array;\[\n \]+D.\[0-9\]+ = \\\(unsigned char \\\*\\\) d1;\[\n \]+D.\[0-9\]+ = \\\(unsigned long\\\) D.\[0-9\]+;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+ \\\+ 4;\[\n \]+D.\[0-9\]+ = \\\(unsigned int \\\*\\\) D.\[0-9\]+;\[\n \]+D.\[0-9\]+ = \\\(unsigned long\\\) D.\[0-9\]+;\[\n \]+D.\[0-9\]+ = D.\[0-9\]+ \\\+ D.\[0-9\]+;" "gimple" } } */
-
+/* { dg-final { scan-tree-dump "&_Kernel.global_array\\\) \\\+ VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned int \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 4\\\)\\\)\\\);\[\n \]+s2 = " "original" } } */

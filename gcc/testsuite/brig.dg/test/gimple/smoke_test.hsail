@@ -49,7 +49,7 @@ prog kernel &KernelWithBarrier(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 /* The latter ld_global_u32 should be visible as a pointer dereference (after pointer arithmetics on a temporary var): */
 /* mem_read.2 = *D.1691; */
-/* { dg-final { scan-tree-dump "mem_read.\[0-9\] = \\\*D\\\.\[0-9\]+;" "gimple"} } */
+/* { dg-final { scan-tree-dump "mem_read.\[0-9\] = \\\*\[_0-9\]+;" "gimple"} } */
 
 /* add_u32s should generate +operators */
 /* { dg-final { scan-tree-dump "s2 = s0 \\\+ s1;" "gimple"} } */
@@ -57,7 +57,7 @@ prog kernel &KernelWithBarrier(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 /* The latter st_global_u32 should be visible as a pointer dereference (after pointer arithmetics on a temporary var): */
 /* *D.1694 = s3; */
-/* { dg-final { scan-tree-dump "\\\*D.\[0-9\]+ = s3;" "gimple"} } */
+/* { dg-final { scan-tree-dump "\\\*\[_0-9\]+ = s3;" "gimple"} } */
 
 /* The return inside the kernel should be generated to a goto to the end of the kernel. */
 /*  goto __kernel_exit; */
