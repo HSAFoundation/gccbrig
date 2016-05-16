@@ -73,7 +73,7 @@ brig_to_generic::brig_to_generic ()
   TYPE_PRECISION (s_fp16_type) = 16;
   TYPE_SIZE (s_fp16_type) = bitsize_int (16);
   TYPE_SIZE_UNIT (s_fp16_type) = size_int (2);
-  TYPE_ALIGN (s_fp16_type) = 16;
+  SET_TYPE_ALIGN (s_fp16_type, 16);
   layout_type (s_fp16_type);
 
   // TODO: make sure that the alignment of these types created in tree.c

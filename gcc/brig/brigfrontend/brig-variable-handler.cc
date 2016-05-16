@@ -79,7 +79,7 @@ brig_directive_variable_handler::build_variable (
 
   var_decl = build_decl (UNKNOWN_LOCATION, var_decltype, name_identifier, t);
 
-  DECL_ALIGN (var_decl) = alignment * 8;
+  SET_DECL_ALIGN (var_decl, alignment * 8);
 
   // Force the HSA alignments.
   DECL_USER_ALIGN (var_decl) = 1;
