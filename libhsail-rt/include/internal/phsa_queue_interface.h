@@ -33,8 +33,10 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-#include "hsa.h"
+#include "hsa-interface.h"
 
 typedef __attribute__((aligned(64))) struct phsa_queue_s
 {

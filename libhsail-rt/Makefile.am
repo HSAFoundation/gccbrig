@@ -58,6 +58,7 @@ WARN_CFLAGS = $(WARN_FLAGS) $(WERROR)
 AM_CPPFLAGS = -I$(srcdir)/rt -I$(srcdir)/include/internal
 
 AM_CFLAGS = \
+	-I $(srcdir)/../include \
 	-I $(srcdir)/../libgcc \
 	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS)
 

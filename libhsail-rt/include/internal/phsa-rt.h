@@ -28,7 +28,9 @@
 #ifndef PHSA_RT_H
 #define PHSA_RT_H
 
-#include "hsa.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include "hsa-interface.h"
 
 #define PHSA_MAX_WG_SIZE 1024 * 10
 
