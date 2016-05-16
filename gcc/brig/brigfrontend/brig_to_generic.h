@@ -148,6 +148,8 @@ public:
   std::string m_module_name;
 
 private:
+  void dump_function (brig_function *f);
+
   // The BRIG blob and its different sections of the file currently being
   // parsed.
   const char *m_brig;
@@ -185,6 +187,12 @@ private:
 
   // The parsed BRIG blobs.  Owned and will be deleted after use.
   std::vector<const char *> m_brig_blobs;
+
+  // original dump file
+  FILE *m_dump_file;
+
+  // original dump file flags
+  int m_dump_flags;
 };
 
 template <typename T>

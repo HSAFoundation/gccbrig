@@ -49,6 +49,8 @@
 #include "errors.h"
 #include "fold-const.h"
 #include "cgraph.h"
+#include "dumpfile.h"
+#include "tree-pretty-print.h"
 
 extern int gccbrig_verbose;
 
@@ -86,6 +88,8 @@ brig_to_generic::brig_to_generic ()
   // the machine by default.  This can be redefined by each BRIG module
   // header.
   m_default_float_rounding_mode = BRIG_ROUND_FLOAT_ZERO;
+
+  m_dump_file = dump_begin (TDI_original, &m_dump_flags);
 }
 
 class unimplemented_entry_handler : public brig_code_entry_handler
@@ -529,6 +533,7 @@ brig_to_generic::finish_function ()
   if (!m_cf->m_is_kernel)
     {
       m_cf->finish ();
+      dump_function (m_cf);
       gimplify_function_tree (m_cf->m_func_decl);
       cgraph_node::finalize_function (m_cf->m_func_decl, true);
     }
@@ -703,6 +708,21 @@ call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
 }
 
 void
+brig_to_generic::dump_function (brig_function *f)
+{
+  /* Dump the BRIG-specific tree IR.  */
+  if (m_dump_file)
+    {
+      fprintf (m_dump_file, "\n;; Function %s", f->m_name.c_str ());
+      fprintf (m_dump_file, "\n;; enabled by -%s\n\n",
+	       dump_flag_name (TDI_original));
+      print_generic_decl (m_dump_file, f->m_func_decl, 0);
+      print_generic_expr (m_dump_file, f->m_current_bind_expr, 0);
+      fprintf (m_dump_file, "\n");
+    }
+}
+
+void
 brig_to_generic::write_globals ()
 {
   // Now that the whole BRIG module has been processed, build a launcher
@@ -716,6 +736,7 @@ brig_to_generic::write_globals ()
       // barrier usage.
       f->finish_kernel ();
 
+      dump_function (f);
       gimplify_function_tree (f->m_func_decl);
       cgraph_node::finalize_function (f->m_func_decl, true);
 
