@@ -197,8 +197,8 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 	    {
 
 	      const BrigDirectiveVariable *brigVar
-		= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry (
-		  arg_offset);
+		= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry
+		(arg_offset);
 
 	      assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 

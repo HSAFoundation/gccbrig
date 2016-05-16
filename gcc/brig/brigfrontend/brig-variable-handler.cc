@@ -28,8 +28,8 @@
 #include "print-tree.h"
 
 tree
-brig_directive_variable_handler::build_variable (
-  const BrigDirectiveVariable *brigVar, tree_code var_decltype)
+brig_directive_variable_handler::build_variable
+  (const BrigDirectiveVariable *brigVar, tree_code var_decltype)
 {
   std::string var_name = m_parent.get_mangled_name (brigVar);
 
@@ -103,8 +103,8 @@ brig_directive_variable_handler::build_variable (
       tree initializer = NULL_TREE;
       if (cst_operand_data->kind == BRIG_KIND_OPERAND_CONSTANT_BYTES)
 	{
-	  initializer = get_tree_cst_for_hsa_operand (
-	    (const BrigOperandConstantBytes *) cst_operand_data, t);
+	  initializer = get_tree_cst_for_hsa_operand
+	    ((const BrigOperandConstantBytes *) cst_operand_data, t);
 	}
       else
 	{
