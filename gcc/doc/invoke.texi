@@ -1300,6 +1300,9 @@ traditional preprocessor).
 @item @var{file}.go
 Go source code.
 
+@item @var{file}.brig
+BRIG files (binary representation of HSAIL).
+
 @c FIXME: Descriptions of Java file types.
 @c @var{file}.java
 @c @var{file}.class
@@ -1355,6 +1358,7 @@ ada
 f77  f77-cpp-input f95  f95-cpp-input
 go
 java
+brig
 @end smallexample
 
 @item -x none
