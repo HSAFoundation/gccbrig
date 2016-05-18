@@ -257,8 +257,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       tree src0_type
 	= TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in))));
 
-      tree src1_type = TREE_VALUE (
-	TREE_CHAIN (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in)))));
+      tree src1_type = TREE_VALUE
+	(TREE_CHAIN (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in)))));
 
       instr_expr = call_builtin (&built_in, NULL, 3, instr_type, ptype, ptr,
 				 src0_type, src0, src1_type, src1);

@@ -615,8 +615,8 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 }
 
 tree
-brig_code_entry_handler::build_address_operand (
-  const BrigInstBase &brig_inst, const BrigOperandAddress &addr_operand)
+brig_code_entry_handler::build_address_operand
+  (const BrigInstBase &brig_inst, const BrigOperandAddress &addr_operand)
 {
   tree instr_type = get_tree_type_for_hsa_type (brig_inst.type);
 
@@ -635,8 +635,8 @@ brig_code_entry_handler::build_address_operand (
   if (addr_operand.symbol != 0)
     {
       const BrigDirectiveVariable *arg_symbol
-	= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry (
-	  addr_operand.symbol);
+	= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry
+	(addr_operand.symbol);
       gcc_assert (arg_symbol->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
       std::string var_name = m_parent.get_mangled_name (arg_symbol);
@@ -677,12 +677,14 @@ brig_code_entry_handler::build_address_operand (
 	  tree_stl_vec uint32_1
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, 1));
 
-	  tree local_size = build2 (
-	    MULT_EXPR, uint32_type_node,
-	    expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE, BRIG_TYPE_U32,
-				    uint32_type_node, uint32_0),
-	    expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE, BRIG_TYPE_U32,
-				    uint32_type_node, uint32_1));
+	  tree local_size
+	    = build2 (MULT_EXPR, uint32_type_node,
+		      expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE,
+					      BRIG_TYPE_U32,
+					      uint32_type_node, uint32_0),
+		      expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE,
+					      BRIG_TYPE_U32,
+					      uint32_type_node, uint32_1));
 
 	  local_size
 	    = build2 (MULT_EXPR, uint32_type_node,
@@ -696,12 +698,13 @@ brig_code_entry_handler::build_address_operand (
 		      build_int_cst (uint32_type_node, offset), local_size);
 
 	  tree_stl_vec operands;
-	  tree pos = build2 (
-	    MULT_EXPR, uint32_type_node,
-	    build_int_cst (uint32_type_node,
-			   m_parent.private_variable_size (var_name)),
-	    expand_or_call_builtin (BRIG_OPCODE_WORKITEMFLATID, BRIG_TYPE_U32,
-				    uint32_type_node, operands));
+	  tree pos
+	    = build2 (MULT_EXPR, uint32_type_node,
+		      build_int_cst (uint32_type_node,
+				     m_parent.private_variable_size (var_name)),
+		      expand_or_call_builtin (BRIG_OPCODE_WORKITEMFLATID,
+					      BRIG_TYPE_U32,
+					      uint32_type_node, operands));
 
 	  tree var_offset
 	    = build2 (PLUS_EXPR, uint32_type_node, var_region, pos);
@@ -794,8 +797,8 @@ brig_code_entry_handler::build_address_operand (
   if (addr_operand.reg != 0)
     {
       const BrigOperandRegister *mem_base_reg
-	= (const BrigOperandRegister *) m_parent.get_brig_operand_entry (
-	  addr_operand.reg);
+	= (const BrigOperandRegister *) m_parent.get_brig_operand_entry
+	(addr_operand.reg);
       // BRIG offsets are always bytes, therefore always cast the reg
       // variable to a char* for the pointer arithmetics.
       tree ptr_type = build_pointer_type (char_type_node);
@@ -873,8 +876,8 @@ brig_code_entry_handler::build_address_operand (
 // Builds a tree operand with the given OPERAND_INDEX for the given
 // BRIG_INST.
 tree
-brig_code_entry_handler::build_tree_operand_from_brig (
-  const BrigInstBase *brig_inst, tree operand_type, size_t operand_index)
+brig_code_entry_handler::build_tree_operand_from_brig
+  (const BrigInstBase *brig_inst, tree operand_type, size_t operand_index)
 {
   const BrigData *operand_entries
     = m_parent.get_brig_data_entry (brig_inst->operands);
@@ -889,8 +892,8 @@ brig_code_entry_handler::build_tree_operand_from_brig (
 // Builds a single (scalar) constant initialized element of type
 // ELEMENT_TYPE from the buffer pointed to by DATA.
 tree
-brig_code_entry_handler::build_tree_cst_element (
-  BrigType16_t element_type, const unsigned char *next_data) const
+brig_code_entry_handler::build_tree_cst_element
+  (BrigType16_t element_type, const unsigned char *next_data) const
 {
 
   tree tree_element_type = get_tree_type_for_hsa_type (element_type);
@@ -965,8 +968,8 @@ brig_code_entry_handler::build_tree_cst_element (
 // TYPE should be the instruction type in case it should not
 // be dictated by the brigConst.
 tree
-brig_code_entry_handler::get_tree_cst_for_hsa_operand (
-  const BrigOperandConstantBytes *brigConst, tree type) const
+brig_code_entry_handler::get_tree_cst_for_hsa_operand
+  (const BrigOperandConstantBytes *brigConst, tree type) const
 {
   const BrigData *data = m_parent.get_brig_data_entry (brigConst->bytes);
 
@@ -1000,10 +1003,10 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand (
 	  // create a vector ctor.
 	  size_t element_count = TYPE_VECTOR_SUBPARTS (tree_element_type);
 	  if (bytes_left < scalar_element_size * element_count)
-	    fatal_error (
-	      UNKNOWN_LOCATION,
-	      "Not enough bytes left for the initializer (%lu need %lu).",
-	      bytes_left, scalar_element_size * element_count);
+	    fatal_error (UNKNOWN_LOCATION,
+			 "Not enough bytes left for the initializer "
+			 "(%lu need %lu).",
+			 bytes_left, scalar_element_size * element_count);
 
 	  vec<constructor_elt, va_gc> *vec_els = NULL;
 	  for (size_t i = 0; i < element_count; ++i)
@@ -1019,10 +1022,10 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand (
       else
 	{
 	  if (bytes_left < scalar_element_size)
-	    fatal_error (
-	      UNKNOWN_LOCATION,
-	      "Not enough bytes left for the initializer (%lu need %lu).",
-	      bytes_left, scalar_element_size);
+	    fatal_error (UNKNOWN_LOCATION,
+			 "Not enough bytes left for the initializer "
+			 "(%lu need %lu).",
+			 bytes_left, scalar_element_size);
 	  cst = build_tree_cst_element (scalar_element_type, next_data);
 	  bytes_left -= scalar_element_size;
 	  next_data += scalar_element_size;
@@ -1038,8 +1041,8 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand (
 
 // Produce a tree type for the given BRIG type.
 tree
-brig_code_entry_handler::get_tree_type_for_hsa_type (
-  BrigType16_t brig_type) const
+brig_code_entry_handler::get_tree_type_for_hsa_type
+  (BrigType16_t brig_type) const
 {
   tree tree_type = NULL_TREE;
 
@@ -1075,8 +1078,9 @@ brig_code_entry_handler::get_tree_type_for_hsa_type (
 	case BRIG_TYPE_S32:
 	case BRIG_TYPE_S64:
 	  // Ensure a fixed width integer.
-	  tree_type = build_nonstandard_integer_type (
-	    gccbrig_hsa_type_bit_size (brig_type), false);
+	  tree_type
+	    = build_nonstandard_integer_type
+	    (gccbrig_hsa_type_bit_size (brig_type), false);
 	  break;
 	case BRIG_TYPE_U8:
 	  return unsigned_char_type_node;
@@ -1090,8 +1094,8 @@ brig_code_entry_handler::get_tree_type_for_hsa_type (
 	case BRIG_TYPE_B128:
 	case BRIG_TYPE_SIG32: // handle signals as integers for now
 	case BRIG_TYPE_SIG64:
-	  tree_type = build_nonstandard_integer_type (
-	    gccbrig_hsa_type_bit_size (brig_type), true);
+	  tree_type = build_nonstandard_integer_type
+	    (gccbrig_hsa_type_bit_size (brig_type), true);
 	  break;
 	case BRIG_TYPE_F16:
 	  tree_type = uint16_type_node;
@@ -1127,8 +1131,8 @@ brig_code_entry_handler::get_tree_type_for_hsa_type (
 }
 
 tree
-brig_code_entry_handler::get_tree_expr_type_for_hsa_type (
-  BrigType16_t brig_type) const
+brig_code_entry_handler::get_tree_expr_type_for_hsa_type
+  (BrigType16_t brig_type) const
 {
   BrigType16_t brig_inner_type = brig_type & 0x01F;
   if (brig_inner_type == BRIG_TYPE_F16)
@@ -1144,8 +1148,8 @@ brig_code_entry_handler::get_tree_expr_type_for_hsa_type (
 
 // TO CLEANUP: move to brig-basic-inst.handler.cc
 tree_code
-brig_code_entry_handler::get_tree_code_for_hsa_opcode (
-  BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
+brig_code_entry_handler::get_tree_code_for_hsa_opcode
+  (BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
 {
   BrigType16_t brig_inner_type = brig_type & 0x01F;
   switch (brig_opcode)
@@ -1243,14 +1247,14 @@ brig_code_entry_handler::get_tree_code_for_hsa_opcode (
 	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
       if (i != s_custom_builtins.end ())
 	return CALL_EXPR;
-      else if (s_custom_builtins.find (
-		 std::make_pair (brig_opcode, brig_inner_type))
+      else if (s_custom_builtins.find
+	       (std::make_pair (brig_opcode, brig_inner_type))
 	       != s_custom_builtins.end ())
 	return CALL_EXPR;
       if (brig_inner_type == BRIG_TYPE_F16
-	  && s_custom_builtins.find (
-	       std::make_pair (brig_opcode, BRIG_TYPE_F32))
-	       != s_custom_builtins.end ())
+	  && s_custom_builtins.find
+	  (std::make_pair (brig_opcode, BRIG_TYPE_F32))
+	  != s_custom_builtins.end ())
 	return CALL_EXPR;
       break;
     }
@@ -1258,8 +1262,8 @@ brig_code_entry_handler::get_tree_code_for_hsa_opcode (
 }
 
 tree
-brig_code_entry_handler::get_builtin_for_hsa_opcode (
-  tree type, BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
+brig_code_entry_handler::get_builtin_for_hsa_opcode
+  (tree type, BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
 {
   tree builtin = NULL_TREE;
   tree builtin_type = type;
@@ -1318,8 +1322,8 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode (
       if (brig_inner_type != brig_type)
 	{
 	  // Try to find a scalar built-in we could use.
-	  i = s_custom_builtins.find (
-	    std::make_pair (brig_opcode, brig_inner_type));
+	  i = s_custom_builtins.find
+	    (std::make_pair (brig_opcode, brig_inner_type));
 	  if (i != s_custom_builtins.end ())
 	    return (*i).second;
 	}
@@ -1328,8 +1332,8 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode (
       // try to find a fp32 scalar built-in.
       if (brig_inner_type == BRIG_TYPE_F16)
 	{
-	  i = s_custom_builtins.find (
-	    std::make_pair (brig_opcode, BRIG_TYPE_F32));
+	  i = s_custom_builtins.find
+	    (std::make_pair (brig_opcode, BRIG_TYPE_F32));
 	  if (i != s_custom_builtins.end ())
 	    return (*i).second;
 	}
@@ -1373,8 +1377,8 @@ brig_code_entry_handler::get_comparison_result_type (tree source_type)
 // In such case the context data is passed as a pointer to a work-item context
 // object, as the last argument in the builtin call.
 bool
-brig_code_entry_handler::needs_workitem_context_data (
-  BrigOpcode16_t brig_opcode) const
+brig_code_entry_handler::needs_workitem_context_data
+  (BrigOpcode16_t brig_opcode) const
 {
   switch (brig_opcode)
     {
@@ -1465,9 +1469,10 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 	      if (operand1_elements.size () > 0)
 		call_operands.push_back (operand1_elements.at (i));
 
-	      result_elements.push_back (
-		expand_or_call_builtin (brig_opcode, brig_type,
-					TREE_TYPE (arith_type), call_operands));
+	      result_elements.push_back
+		(expand_or_call_builtin (brig_opcode, brig_type,
+					 TREE_TYPE (arith_type),
+					 call_operands));
 	    }
 	  return pack (result_elements);
 	}
@@ -1888,8 +1893,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	{
 	  if (half_to_float)
 	    {
-	      operand = build_h2f_conversion (
-		build_reinterpret_cast (half_storage_type, operand));
+	      operand = build_h2f_conversion
+		(build_reinterpret_cast (half_storage_type, operand));
 	    }
 	  else if (!(TREE_CODE (operand) == LABEL_DECL)
 		   && !(TREE_CODE (operand) == TREE_VEC)
@@ -1905,10 +1910,11 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 		  // Clip the operand because the instruction's bitwidth
 		  // is smaller than the HSAIL reg width.
 		  if (INTEGRAL_TYPE_P (operand_type))
-		    operand = convert_to_integer (
-		      signed_or_unsigned_type_for (TYPE_UNSIGNED (operand_type),
-						   operand_type),
-		      operand);
+		    operand
+		      = convert_to_integer (signed_or_unsigned_type_for
+					    (TYPE_UNSIGNED (operand_type),
+					     operand_type),
+		       operand);
 		  else
 		    operand = build1 (VIEW_CONVERT_EXPR, operand_type, operand);
 		}

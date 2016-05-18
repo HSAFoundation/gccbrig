@@ -64,8 +64,8 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
     }
   else
     {
-      return m_parent.m_cf->append_statement (
-	build2 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data));
+      tree stmt = build2 (MODIFY_EXPR, TREE_TYPE (mem_ref), mem_ref, data);
+      return m_parent.m_cf->append_statement (stmt);
     }
   return mem_ref;
 }
@@ -115,8 +115,8 @@ brig_mem_inst_handler::operator () (const BrigBase *base)
 
   bool is_three_element_vector_access
     = operand->kind == BRIG_KIND_OPERAND_OPERAND_LIST
-      && (operandData = m_parent.get_brig_data_entry (
-	    ((const BrigOperandOperandList *) operand)->elements))
+      && (operandData = m_parent.get_brig_data_entry
+	  (((const BrigOperandOperandList *) operand)->elements))
       && operandData->byteCount / 4 == 3;
 
   if (is_three_element_vector_access)
@@ -132,8 +132,8 @@ brig_mem_inst_handler::operator () (const BrigBase *base)
       memcpy (&addr_operand_offset, &operand_entries->bytes + 4, 4);
 
       const BrigOperandAddress *addr_operand
-	= (const BrigOperandAddress *) m_parent.get_brig_operand_entry (
-	  addr_operand_offset);
+	= (const BrigOperandAddress *) m_parent.get_brig_operand_entry
+	(addr_operand_offset);
 
       tree address_base = build_address_operand (*brig_inst, *addr_operand);
 

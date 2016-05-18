@@ -594,8 +594,8 @@ brig_to_generic::append_private_variable (const std::string &name,
 }
 
 size_t
-brig_to_generic::private_variable_segment_offset (
-  const std::string &name) const
+brig_to_generic::private_variable_segment_offset
+  (const std::string &name) const
 {
   var_offset_table::const_iterator i = m_private_offsets.find (name);
   gcc_assert (i != m_private_offsets.end ());

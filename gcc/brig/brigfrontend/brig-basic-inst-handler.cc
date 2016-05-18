@@ -141,10 +141,12 @@ brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
 
   for (size_t i = 0; i < TYPE_VECTOR_SUBPARTS (arith_type); ++i)
     {
-      tree mask_element = build3 (
-	BIT_FIELD_REF, mask_element_type, mask_operand,
-	build_int_cst (unsigned_char_type_node, input_mask_element_size),
-	build_int_cst (unsigned_char_type_node, i * input_mask_element_size));
+      tree mask_element
+	= build3 (BIT_FIELD_REF, mask_element_type, mask_operand,
+		  build_int_cst (unsigned_char_type_node,
+				 input_mask_element_size),
+		  build_int_cst (unsigned_char_type_node,
+				 i * input_mask_element_size));
 
       mask_element = convert (element_type, mask_element);
 
@@ -216,8 +218,8 @@ brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
 
   tree cleared = build2 (BIT_AND_EXPR, vec_type, perm, and_mask_vec);
 
-  tree raw_type = build_nonstandard_integer_type (
-    int_size_in_bytes (TREE_TYPE (cleared)) * 8, true);
+  size_t s = int_size_in_bytes (TREE_TYPE (cleared)) * 8;
+  tree raw_type = build_nonstandard_integer_type (s, true);
 
   tree as_int = build_reinterpret_cast (raw_type, cleared);
 
@@ -250,10 +252,9 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
 
   // The upper bits of the position can contain garbage.
   // We need to zero them out for defined behavior.
-  pos = add_temp_var (
-    "pos",
-    convert (wide_type, build2 (BIT_AND_EXPR, TREE_TYPE (pos), operands[2],
-				build_int_cstu (TREE_TYPE (pos), ecount - 1))));
+  tree t = build2 (BIT_AND_EXPR, TREE_TYPE (pos), operands[2],
+		   build_int_cstu (TREE_TYPE (pos), ecount - 1));
+  pos = add_temp_var ("pos", convert (wide_type, t));
 
   tree element_type = TREE_TYPE (TREE_TYPE (operands[0]));
   size_t element_width = int_size_in_bytes (element_type) * 8;
@@ -659,8 +660,8 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       tree old_value;
       tree half_storage_type = get_tree_type_for_hsa_type (brig_inst_type);
       if (is_fp16_operation)
-	old_value = build_h2f_conversion (
-	  build_reinterpret_cast (half_storage_type, operands[0]));
+	old_value = build_h2f_conversion
+	  (build_reinterpret_cast (half_storage_type, operands[0]));
       else
 	old_value
 	  = build_reinterpret_cast (TREE_TYPE (instr_expr), operands[0]);

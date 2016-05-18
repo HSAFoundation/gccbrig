@@ -147,8 +147,8 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
 /* Handle Brig specific options.  Return 0 if we didn't do anything.  */
 
 static bool
-brig_langhook_handle_option (
-  size_t scode ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED,
+brig_langhook_handle_option
+  (size_t scode ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED,
   int value ATTRIBUTE_UNUSED, int kind ATTRIBUTE_UNUSED,
   location_t loc ATTRIBUTE_UNUSED,
   const struct cl_option_handlers *handlers ATTRIBUTE_UNUSED)

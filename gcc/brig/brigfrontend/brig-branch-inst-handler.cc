@@ -199,17 +199,17 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
       // FIXME.  We should add attributes (are there suitable ones in gcc?) that
       // ensure the barrier won't be duplicated or moved out of loops etc.
       // Like 'noduplicate' of LLVM.  Same goes for fbarriers.
-      m_parent.m_cf->append_statement (
-	expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE, NULL_TREE,
-				call_operands));
+      m_parent.m_cf->append_statement
+	(expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE, NULL_TREE,
+				 call_operands));
     }
   else if (brig_inst->opcode >= BRIG_OPCODE_ARRIVEFBAR
 	   && brig_inst->opcode <= BRIG_OPCODE_WAITFBAR)
     {
       m_parent.m_cf->m_has_barriers = true;
-      m_parent.m_cf->append_statement (
-	expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE,
-				uint32_type_node, operands));
+      m_parent.m_cf->append_statement
+	(expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE,
+				 uint32_type_node, operands));
     }
   else
     internal_error ("Unsupported branch %u.\n", brig_inst->opcode);

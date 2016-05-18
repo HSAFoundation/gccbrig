@@ -201,8 +201,8 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       for (size_t i = 0; i < wide_elements.size (); ++i)
 	{
 	  tree wide = wide_elements.at (i);
-	  shrunk_elements.push_back (
-	    convert_to_integer (short_integer_type_node, wide));
+	  shrunk_elements.push_back
+	    (convert_to_integer (short_integer_type_node, wide));
 	}
       expr = pack (shrunk_elements);
     }
