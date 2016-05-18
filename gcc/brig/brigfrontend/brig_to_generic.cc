@@ -103,7 +103,7 @@ public:
   size_t
   operator () (const BrigBase *base)
   {
-    internal_error ("BrigKind 0x%x unimplemented", base->kind);
+    sorry ("BrigKind 0x%x", base->kind);
     return base->byteCount;
   }
 };
@@ -168,7 +168,7 @@ brig_to_generic::parse (const char *brig_blob)
 	}
       else
 	{
-	  sorry ("section %s", name);
+	  sorry ("section %qs", name);
 	}
       free (name);
     }
@@ -496,8 +496,8 @@ build_reinterpret_cast (tree destination_type, tree source)
     {
       debug_tree (destination_type);
       debug_tree (source);
-      internal_error ("Unable to truncate the source (%lu > %lu).", src_size,
-		      dst_size);
+      internal_error ("unable to truncate the source (%u > %u)",
+		      (unsigned) src_size, (unsigned) dst_size);
     }
   return NULL_TREE;
 }

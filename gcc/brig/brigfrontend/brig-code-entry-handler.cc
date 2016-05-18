@@ -484,7 +484,7 @@ brig_code_entry_handler::build_code_ref (const BrigBase &ref)
       return build_int_cst (uint32_type_node, offset);
     }
   else
-    internal_error ("Unimplemented code ref %x.\n", ref.kind);
+    internal_error ("unimplemented code ref %x", ref.kind);
 }
 
 // Produce a tree operand for the given brig OPERAND.
@@ -587,7 +587,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	if (!INTEGRAL_TYPE_P (operand_type))
 	  {
 	    debug_tree (operand_type);
-	    error ("%s", "non-integer operand_type with WAVESIZE");
+	    internal_error ("non-integer operand_type with WAVESIZE");
 	    return NULL_TREE;
 	  }
 	return build_int_cstu (operand_type, gccbrig_get_target_wavesize ());
@@ -866,7 +866,7 @@ brig_code_entry_handler::build_address_operand
       addr = ptr_offset;
     }
   else if (addr == NULL_TREE)
-    internal_error ("Illegal address operand.");
+    internal_error ("illegal address operand");
 
   addr = build_reinterpret_cast (ptype, addr);
 
@@ -958,7 +958,7 @@ brig_code_entry_handler::build_tree_cst_element
     default:
       fprintf (stderr, "tree_element_type:\n");
       debug_tree (tree_element_type);
-      internal_error ("Unimplemented const operand type %u.", element_type);
+      internal_error ("unimplemented const operand type %u", element_type);
       return NULL_TREE;
     }
   return cst;
@@ -1355,7 +1355,7 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
 	return builtin;
     }
   if (builtin == NULL_TREE)
-    internal_error ("Couldn't find a built-in for opcode %u", brig_opcode);
+    internal_error ("couldn't find a built-in for opcode %u", brig_opcode);
   return builtin;
 }
 
@@ -1884,7 +1884,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
       tree operand = build_tree_operand (brig_inst, *operand_data, operand_type,
 					 !is_output);
       if (operand == NULL_TREE)
-	internal_error ("Unimplemented operand type (opcode %x).",
+	internal_error ("unimplemented operand type (opcode %x)",
 			brig_inst.opcode);
 
       // Cast/convert the inputs to correct types as expected by the GENERIC
@@ -2233,7 +2233,7 @@ flush_to_zero::visit_element (brig_code_entry_handler &, tree operand)
 			   double_type_node, double_type_node, operand);
     }
   else
-    error ("Unsupported float size %lu for FTZ.", size);
+    error ("unsupported float size %u for FTZ", (unsigned) size);
   return NULL_TREE;
 }
 

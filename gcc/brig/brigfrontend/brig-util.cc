@@ -30,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "hsa-brig-format.h"
 #include "brig-util.h"
 #include "errors.h"
+#include "diagnostic-core.h"
 
 bool
 gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum)
@@ -153,7 +154,7 @@ gccbrig_reg_size (const BrigOperandRegister *brig_reg)
     case BRIG_REGISTER_KIND_QUAD:
       return 128;
     default:
-      internal_error ("reg operand kind %u", brig_reg->regKind);
+      gcc_unreachable ();
       break;
     }
 }
@@ -206,7 +207,7 @@ gccbrig_type_name (BrigType16_t type)
     case BRIG_TYPE_S64:
       return "s64";
     default:
-      internal_error ("Unsupported type %d.", type);
+      sorry ("unsupported type %d", type);
       break;
     }
 }
@@ -221,7 +222,7 @@ gccbrig_segment_name (BrigSegment8_t segment)
   else if (segment == BRIG_SEGMENT_PRIVATE)
     return "private";
   else
-    internal_error ("unknown segment %u", segment);
+    sorry ("unsupported segment %u", segment);
 }
 
 bool
@@ -293,7 +294,7 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
 	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U64 : BRIG_TYPE_S64;
 	  break;
 	default:
-	  internal_error ("Cannot convert the given type to HSA type.");
+	  internal_error ("cannot convert the given tree type to a HSA type");
 	}
 
       BrigType16_t pack_type;
@@ -309,11 +310,11 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
 	  pack_type = BRIG_TYPE_PACK_128;
 	  break;
 	default:
-	  internal_error ("Cannot convert the given type to HSA type.");
+	  internal_error ("cannot convert the given tree type to a HSA type");
 	}
       return brig_element_type | pack_type;
     }
-  internal_error ("Cannot convert the given type to HSA type.");
+  internal_error ("cannot convert the given tree type to a HSA type");
 }
 
 // Returns true in case the operation is a "bit level" operation,

@@ -26,6 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "convert.h"
 #include "tree-pretty-print.h"
 #include "errors.h"
+#include "diagnostic-core.h"
 
 brig_seg_inst_handler::brig_seg_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -39,7 +40,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 
   std::vector<tree> operands = build_operands (inst_base);
 
-  tree expr;
+  tree expr = NULL_TREE;
 
   if (inst_base.opcode == BRIG_OPCODE_STOF)
     {
@@ -57,7 +58,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
-	internal_error ("Unimplemented.");
+       sorry ("unimplemented segment type with STOF");
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
@@ -88,7 +89,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
-	internal_error ("Unimplemented.");
+	sorry ("unimplemented segment type with FTOS");
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
@@ -125,7 +126,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 			   ptr_type_node, m_parent.m_cf->m_context_arg);
     }
   else
-    internal_error ("Unimplemented segment related instruction %x.",
+    internal_error ("unexpected segment related instruction %x",
 		    inst_base.opcode);
 
   build_output_assignment (inst_base, operands[0], expr);

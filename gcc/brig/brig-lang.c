@@ -205,7 +205,7 @@ brig_langhook_parse_file (void)
       char *brig_blob = new char[fsize];
       if (fread (brig_blob, 1, fsize, f) != fsize)
 	{
-	  error ("Could not read the BRIG file.");
+	  error ("could not read the BRIG file");
 	  exit (1);
 	}
       brig_to_gen.parse (brig_blob);
@@ -221,9 +221,6 @@ brig_langhook_type_for_size (unsigned int bits ATTRIBUTE_UNUSED,
 {
   if (bits == 64)
     return unsignedp ? uint64_type_node : long_integer_type_node;
-
-  printf ("brig: type for size %u %u\n", bits, unsignedp);
-  internal_error ("TODO.");
   return NULL_TREE;
 }
 
@@ -242,7 +239,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
       inner = brig_langhook_type_for_mode (GET_MODE_INNER (mode), unsignedp);
       if (inner != NULL_TREE)
 	return build_vector_type_for_mode (inner, mode);
-      internal_error ("unsupported vector mode %s unsignedp %d\n",
+      internal_error ("unsupported vector mode %s unsignedp %d",
 		      GET_MODE_NAME (mode), unsignedp);
 
       return NULL_TREE;
@@ -264,7 +261,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	  if (mode == TYPE_MODE (long_double_type_node))
 	    return long_double_type_node;
 
-	  internal_error ("unsupported float mode %s unsignedp %d\n",
+	  internal_error ("unsupported float mode %s unsignedp %d",
 			  GET_MODE_NAME (mode), unsignedp);
 	  return NULL_TREE;
 	}
@@ -288,7 +285,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	case 128:
 	  return build_nonstandard_integer_type (128, unsignedp);
 	default:
-	  internal_error ("unsupported int mode %s unsignedp %d size %d\n",
+	  internal_error ("unsupported int mode %s unsignedp %d size %d",
 			  GET_MODE_NAME (mode), unsignedp,
 			  GET_MODE_BITSIZE (mode));
 	  return NULL_TREE;
@@ -298,8 +295,6 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
     {
       /* E.g., build_common_builtin_nodes () asks for modes/builtins
 	       we do not generate or need.  Just ignore them silently for now.
-      internal_error ("unsupported mode %s unsignedp %d\n",
-		      GET_MODE_NAME (mode), unsignedp);
       */
       return void_type_node;
     }
@@ -399,9 +394,7 @@ convert (tree type ATTRIBUTE_UNUSED, tree expr ATTRIBUTE_UNUSED)
       break;
     }
 
-  debug_tree (type);
-  debug_tree (expr);
-  internal_error ("Cannot convert!");
+  gcc_unreachable ();
 }
 
 /* FIXME: This is a hack to preserve trees that we create from the

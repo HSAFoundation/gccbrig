@@ -61,7 +61,7 @@ brig_directive_arg_block_handler::operator () (const BrigBase *base)
       m_parent.m_cf->m_generating_arg_block = false;
     }
   else
-    internal_error ("Encountered an illegal kind %x.", base->kind);
+    internal_error ("encountered an illegal kind %x", base->kind);
 
   return base->byteCount;
 }

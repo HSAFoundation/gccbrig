@@ -26,6 +26,7 @@
 #include "brig-machine.h"
 #include "brig-util.h"
 #include "print-tree.h"
+#include "diagnostic-core.h"
 
 tree
 brig_directive_variable_handler::build_variable
@@ -248,7 +249,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	}
     }
   else
-    internal_error ("Unimplemented variable segment %x.", brigVar->segment);
+    sorry ("variable segment %x", brigVar->segment);
 
   return base->byteCount;
 }

@@ -59,7 +59,7 @@ public:
 	builtin_name << "mul";
 	break;
       default:
-	internal_error ("Unsupported saturating opcode %d.", brig_inst.opcode);
+	internal_error ("unsupported saturating opcode %d", brig_inst.opcode);
       }
     BrigType16_t element_type = brig_inst.type & 0x01F;
     builtin_name << "_" << gccbrig_type_name (element_type);
@@ -423,7 +423,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	  return build_zero_cst (arith_type);
 	}
       else
-	sorry ("Unsupported opcode %d.", brig_opcode);
+	sorry ("unsupported opcode %d", brig_opcode);
     }
   else if (opcode == CALL_EXPR)
     return expand_or_call_builtin (brig_opcode, brig_type, arith_type,
@@ -644,8 +644,8 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
   if (instr_expr == NULL_TREE)
     {
-      internal_error ("opcode %u %lu inputs %lu outputs", brig_inst->opcode,
-		      input_count, output_count);
+      internal_error ("opcode %u %u inputs %u outputs", brig_inst->opcode,
+		      (unsigned) input_count, (unsigned) output_count);
       return base->byteCount;
     }
 

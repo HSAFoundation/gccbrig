@@ -27,6 +27,7 @@
 #include "print-tree.h"
 #include "tree-pretty-print.h"
 #include "convert.h"
+#include "diagnostic-core.h"
 
 tree
 brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
@@ -37,7 +38,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
 
   if (!is_load && !is_store)
     {
-      internal_error ("mem inst opcode %u not implemented", brig_inst->opcode);
+      sorry ("mem inst opcode %u not implemented", brig_inst->opcode);
     }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);

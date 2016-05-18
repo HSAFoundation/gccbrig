@@ -21,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "brig-code-entry-handler.h"
 #include "errors.h"
+#include "diagnostic-core.h"
 
 brig_lane_inst_handler::brig_lane_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -74,7 +75,7 @@ brig_lane_inst_handler::operator () (const BrigBase *base)
       expr = build3 (COND_EXPR, TREE_TYPE (src), cmp, identity, src);
     }
   else
-    internal_error ("Unimplemented lane instruction %u.", inst.base.opcode);
+    sorry ("lane instruction %u", inst.base.opcode);
 
   build_output_assignment (inst.base, operands[0], expr);
 
