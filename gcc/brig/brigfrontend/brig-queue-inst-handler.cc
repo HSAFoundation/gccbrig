@@ -27,6 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "convert.h"
 #include "tree-pretty-print.h"
 #include "errors.h"
+#include "diagnostic-core.h"
 
 brig_queue_inst_handler::brig_queue_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -85,8 +86,7 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
       build_output_assignment (inst_base, operands[0], expr);
     }
   else
-    internal_error ("Unimplemented queue related instruction %u.",
-		    inst_base.opcode);
+    sorry ("unimplemented queue related instruction %u", inst_base.opcode);
 
   return base->byteCount;
 }
