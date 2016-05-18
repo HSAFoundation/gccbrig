@@ -503,6 +503,14 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
  (bit_ior:c (bit_and @0 INTEGER_CST@2) (bit_and (bit_not @0) INTEGER_CST@1))
  (if (wi::bit_not (@2) == @1)
   (bit_xor @0 @1)))
+/* Simplify (~X & Y) to X ^ Y if we know that (X & ~Y) is 0.  */
+#if GIMPLE
+(simplify
+ (bit_and (bit_not SSA_NAME@0) INTEGER_CST@1)
+ (if (INTEGRAL_TYPE_P (TREE_TYPE (@0))
+      && (get_nonzero_bits (@0) & wi::bit_not (@1)) == 0)
+  (bit_xor @0 @1)))
+#endif
 
 /* X % Y is smaller than Y.  */
 (for cmp (lt ge)
@@ -554,6 +562,15 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
  (simplify
   (bitop @0 @0)
   (non_lvalue @0)))
+
+/* x & C -> x if we know that x & ~C == 0.  */
+#if GIMPLE
+(simplify
+ (bit_and SSA_NAME@0 INTEGER_CST@1)
+ (if (INTEGRAL_TYPE_P (TREE_TYPE (@0))
+      && (get_nonzero_bits (@0) & wi::bit_not (@1)) == 0)
+  @0))
+#endif
 
 /* x + (x & 1) -> (x + 1) & ~1 */
 (simplify
@@ -1484,6 +1501,27 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
     (with { tree mask = int_const_binop (shift, fold_convert (type, @2), @1); }
      (bit_op (shift (convert @0) @1) { mask; }))))))
 
+/* ~(~X >> Y) -> X >> Y (for arithmetic shift).  */
+(simplify
+ (bit_not (convert1?:s (rshift:s (convert2?@0 (bit_not @1)) @2)))
+  (if (!TYPE_UNSIGNED (TREE_TYPE (@0))
+       && element_precision (TREE_TYPE (@0))
+          <= element_precision (TREE_TYPE (@1))
+       && element_precision (type) <= element_precision (TREE_TYPE (@0)))
+   (with
+    { tree shift_type = TREE_TYPE (@0); }
+     (convert (rshift (convert:shift_type @1) @2)))))
+
+/* ~(~X >>r Y) -> X >>r Y
+   ~(~X <<r Y) -> X <<r Y */
+(for rotate (lrotate rrotate)
+ (simplify
+  (bit_not (convert1?:s (rotate:s (convert2?@0 (bit_not @1)) @2)))
+   (if (element_precision (TREE_TYPE (@0)) <= element_precision (TREE_TYPE (@1))
+        && element_precision (type) <= element_precision (TREE_TYPE (@0)))
+    (with
+     { tree rotate_type = TREE_TYPE (@0); }
+      (convert (rotate (convert:rotate_type @1) @2))))))
 
 /* Simplifications of conversions.  */
 

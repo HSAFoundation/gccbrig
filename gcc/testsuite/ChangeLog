@@ -1,3 +1,250 @@
+2016-05-18  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/70466
+	* g++.dg/template/pr70466-1.C: New.
+	* g++.dg/template/pr70466-2.C: Likewise.
+
+2016-05-18  Michael Meissner  <meissner@linux.vnet.ibm.com>
+
+	* gcc.target/powerpc/p9-splat-1.c: New tests for ISA 3.0 word
+	splat operations and the XXSPLTIB instruction.
+	* gcc.target/powerpc/p9-splat-2.c: Likewise.
+	* gcc.target/powerpc/p9-splat-3.c: Likewise.
+	* gcc.target/powerpc/pr47755.c: Allow vspltisw in addition to
+	xxlxor to clear a register.
+
+2016-05-18  Richard Sandiford  <richard.sandiford@arm.com>
+
+	* gcc.dg/torture/pr71020.c: New test.
+
+2016-05-18  Martin Jambor  <mjambor@suse.cz>
+
+	PR ipa/70646
+	* gcc.dg/ipa/pr70646.c: New test.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/vget_lane.c: Add fp16 tests.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/vreinterpret.c: Add
+	missing tests for vreinterpretq_p{8,16}.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/vsli_n.c: Add checks for
+	vsliq_n_s64 and vsliq_n_u64.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/arm-neon-ref.h (CHECK,
+	CHECK_FP, CHECK_CUMULATIVE_SAT): Print which type was checked.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/vmul.c: Remove useless #ifdef.
+	* gcc.target/aarch64/advsimd-intrinsics/vshl.c: Likewise.
+	* gcc.target/aarch64/advsimd-intrinsics/vtst.c: Likewise.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/advsimd-intrinsics/vreinterpret.c: Fix typo
+	in comment.
+
+2016-05-18  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.target/aarch64/noplt_3.c: Scan for "br\t".
+	* gcc.target/aarch64/tail_indirect_call_1.c: Scan for "br\t",
+	"blr\t" and switch to scan-assembler-times.
+
+2016-05-18  Jiong Wang  <jiong.wang@arm.com>
+
+        * gcc.target/aarch64/advsimd-intrinsics/arm-neon-ref.h: Guard float64_t
+        with __aarch64__.
+        * gcc.target/aarch64/advsimd-intrinsics/vfms_vfma_n.c: Guard variable
+        declarations under __aarch64__ and __ARM_FEATURE_FMA.
+
+2016-05-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.target/i386/avx512bw-vpbroadcast-1.c: New test.
+	* gcc.target/i386/avx512bw-vpbroadcast-2.c: New test.
+	* gcc.target/i386/avx512bw-vpbroadcast-3.c: New test.
+	* gcc.target/i386/avx512vl-vpbroadcast-1.c: New test.
+	* gcc.target/i386/avx512vl-vpbroadcast-2.c: New test.
+	* gcc.target/i386/avx512vl-vpbroadcast-3.c: New test.
+
+	* gcc.target/i386/avx512vl-vpalignr-3.c: New test.
+	* gcc.target/i386/avx512bw-vpalignr-3.c: New test.
+
+	* gcc.target/i386/avx512vl-vpshufb-3.c: New test.
+	* gcc.target/i386/avx512bw-vpshufb-3.c: New test.
+
+	* gcc.target/i386/avx512vl-vpmulhrsw-3.c: New test.
+	* gcc.target/i386/avx512bw-vpmulhrsw-3.c: New test.
+
+	* gcc.target/i386/avx512bw-vpmaddubsw-3.c: New test.
+
+2016-05-18  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71168
+	* gcc.dg/torture/pr71168.c: New testcase.
+
+2016-05-17  Kugan Vivekanandarajah  <kuganv@linaro.org>
+
+	PR middle-end/63586
+	* gcc.dg/tree-ssa/pr63586-2.c: New test.
+	* gcc.dg/tree-ssa/pr63586.c: New test.
+	* gcc.dg/tree-ssa/reassoc-14.c: Adjust multiplication count.
+
+2016-05-17  Nathan Sidwell  <nathan@acm.org>
+
+	* gcc.c-torture/execute/20030222-1.c: Skip on ptx.
+	* gcc.dg/pr68671.c: Fix ptx xfail-if.
+	* gcc.dg/torture/pr54261-1.c: Allocate atomic var statically.
+	* gcc.dg/torture/type-generic-1.c: Enable UNSAFE for ptx.
+
+2016-05-17  Nathan Sidwell  <nathan@acm.org>
+
+	* gcc.target/nvptx/abi-vararg-3.c: New.
+
+2016-05-17  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR tree-optimization/54579
+	PR middle-end/55299
+	* gcc.dg/fold-notrotate-1.c: New test.
+	* gcc.dg/fold-notshift-1.c: New test.
+	* gcc.dg/fold-notshift-2.c: New test.
+
+2016-05-17  Marek Polacek  <polacek@redhat.com>
+
+	PR ipa/71146
+	* g++.dg/ipa/pr71146.C: New test.
+
+2016-05-17  David Malcolm  <dmalcolm@redhat.com>
+
+	* jit.dg/test-error-array-bounds.c: New test case.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* gcc.dg/tree-ssa/and-1.c: New testcase.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* gcc.dg/tree-ssa/pr69270.c: Adjust.
+	* gcc.dg/tree-ssa/andnot-1.c: New testcase.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* gcc.dg/tree-ssa/pr69270.c: Adjust.
+	* gcc.dg/tree-ssa/vrp99.c: New testcase.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* gcc.target/aarch64/simd/vmul_elem_1.c: Use intrinsics.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* gcc.target/aarch64/simd/vmul_elem_1.c: New.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* gcc.target/aarch64/fmla_intrinsic_1.c: Allow ".d[index]" besides
+	".2d[index]" when scan the assembly.
+	* gcc.target/aarch64/fmls_intrinsic_1.c: Likewise.
+	* gcc.target/aarch64/advsimd-intrinsics/arm-neon-ref.h: New entry for
+	float64x1.
+	* gcc.target/aarch64/advsimd-intrinsics/vfms_vfma_n.c: New.
+
+2016-05-17  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71132
+	* gcc.dg/torture/pr71132.c: New testcase.
+
+2016-05-17  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* g++.dg/inherit/think1.C: Fix dg-do and dg-skip order.
+
+2016-05-17  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	PR target/70809
+	* gcc.target/aarch64/pr70809_1.c: New test.
+
+2016-05-17  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* gcc.target/aarch64/cpu-diagnostics-1.c: Skip if -mcpu is overriden.
+	* gcc.target/aarch64/cpu-diagnostics-2.c: Likewise.
+	* gcc.target/aarch64/cpu-diagnostics-3.c: Likewise.
+	* gcc.target/aarch64/cpu-diagnostics-4.c: Likewise.
+
+2016-05-17  Dominique d'Humieres  <dominiq@lps.ens.fr>
+	    Ilya Enkovich  <ilya.enkovich@intel.com>
+
+	PR target/71114
+	* gcc.target/i386/pr70799-1.c: Fix scan for Darwin.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* g++.dg/ipa/ivinline-7.C: Do not xfail.
+	* g++.dg/ipa/ivinline-9.C: Do not xfail.
+
+2016-05-16  Matthew Wahab  <matthew.wahab@arm.com>
+
+	* g++.dg/ext/arm-fp16/fp16-param-1.c: Update expected output.  Add
+	test for __ARM_FP16_ARGS.
+	* g++.dg/ext/arm-fp16/fp16-return-1.c: Update expected output.
+	* gcc.target/arm/aapcs/neon-vect10.c: New.
+	* gcc.target/arm/aapcs/neon-vect9.c: New.
+	* gcc.target/arm/aapcs/vfp18.c: New.
+	* gcc.target/arm/aapcs/vfp19.c: New.
+	* gcc.target/arm/aapcs/vfp20.c: New.
+	* gcc.target/arm/aapcs/vfp21.c: New.
+	* gcc.target/arm/fp16-aapcs-1.c: New.
+	* g++.target/arm/fp16-param-1.c: Update expected output.  Add
+	test for __ARM_FP16_ARGS.
+	* g++.target/arm/fp16-return-1.c: Update expected output.
+
+2016-05-16  Jiong Wang  <jiong.wang@arm.com>
+
+	PR testsuite/70227
+	* g++.dg/lto/pr69589_0.C: Skip arm and aarch64 bare-metal targets.
+
+2016-05-15  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/69603
+	* gfortran.dg/pr69603.f90: New testcase.
+
+2016-05-14  Fritz Reese  <fritzoreese@gmail.com>
+
+	* gfortran.dg/dec_union_4.f90: Fix endian issue.
+
+2016-05-14  Fritz Reese  <fritzoreese@gmail.com>
+
+	PR fortran/71047
+	* gfortran.dg/pr71047.f08: New test.
+
+2016-05-13  Joseph Myers  <joseph@codesourcery.com>
+
+	* gcc.dg/qual-return-5.c, gcc.dg/qual-return-6.c: New tests.
+	* gcc.dg/call-diag-2.c, gcc.dg/qual-return-2.c ,
+	gcc.dg/qual-return-3.c, gcc.dg/qual-return-4.c: Use -std=gnu99.
+
+2016-05-13  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/60049
+	* g++.dg/cpp0x/constexpr-60049.C: New test.
+
+2016-05-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/71071
+	* gcc.dg/pr71071.c: New test.
+
+2016-05-13  Uros Bizjak  <ubizjak@gmail.com>
+
+	* gcc.dg/vect/tree-vect.h (check_vect): Handle AVX2,
+	remove XOP handling.
+	* gcc.dg/vect/pr66636.c (foo): Add __attribute__((noinline,noclone)).
+
 2016-05-13  Nathan Sidwell  <nathan@acm.org>
 
 	* gcc.dg/atomic-noinline-aux.c: Include stddef.h. Fix

@@ -5356,7 +5356,6 @@ grokdeclarator (const struct c_declarator *declarator,
   struct c_arg_info *arg_info = 0;
   addr_space_t as1, as2, address_space;
   location_t loc = UNKNOWN_LOCATION;
-  const char *errmsg;
   tree expr_dummy;
   bool expr_const_operands_dummy;
   enum c_declarator_kind first_non_attr_kind;
@@ -6090,12 +6089,6 @@ grokdeclarator (const struct c_declarator *declarator,
 		      	    "an array");
 		type = integer_type_node;
 	      }
-	    errmsg = targetm.invalid_return_type (type);
-	    if (errmsg)
-	      {
-		error (errmsg);
-		type = integer_type_node;
-	      }
 
 	    /* Construct the function type and go to the next
 	       inner layer of declarator.  */
@@ -6106,20 +6099,35 @@ grokdeclarator (const struct c_declarator *declarator,
 	       qualify the return type, not the function type.  */
 	    if (type_quals)
 	      {
+		int quals_used = type_quals;
 		/* Type qualifiers on a function return type are
 		   normally permitted by the standard but have no
 		   effect, so give a warning at -Wreturn-type.
 		   Qualifiers on a void return type are banned on
 		   function definitions in ISO C; GCC used to used
-		   them for noreturn functions.  */
-		if (VOID_TYPE_P (type) && really_funcdef)
+		   them for noreturn functions.  The resolution of C11
+		   DR#423 means qualifiers (other than _Atomic) are
+		   actually removed from the return type when
+		   determining the function type.  */
+		if (flag_isoc11)
+		  quals_used &= TYPE_QUAL_ATOMIC;
+		if (quals_used && VOID_TYPE_P (type) && really_funcdef)
 		  pedwarn (loc, 0,
 			   "function definition has qualified void return type");
 		else
 		  warning_at (loc, OPT_Wignored_qualifiers,
 			   "type qualifiers ignored on function return type");
 
-		type = c_build_qualified_type (type, type_quals);
+		/* Ensure an error for restrict on invalid types; the
+		   DR#423 resolution is not entirely clear about
+		   this.  */
+		if (flag_isoc11
+		    && (type_quals & TYPE_QUAL_RESTRICT)
+		    && (!POINTER_TYPE_P (type)
+			|| !C_TYPE_OBJECT_OR_INCOMPLETE_P (TREE_TYPE (type))))
+		  error_at (loc, "invalid use of %<restrict%>");
+		if (quals_used)
+		  type = c_build_qualified_type (type, quals_used);
 	      }
 	    type_quals = TYPE_UNQUALIFIED;
 
@@ -6832,7 +6840,6 @@ grokparms (struct c_arg_info *arg_info, bool funcdef_flag)
     {
       tree parm, type, typelt;
       unsigned int parmno;
-      const char *errmsg;
 
       /* If there is a parameter of incomplete type in a definition,
 	 this is an error.  In a declaration this is valid, and a
@@ -6879,15 +6886,6 @@ grokparms (struct c_arg_info *arg_info, bool funcdef_flag)
 				"parameter %u has void type",
 				parmno);
 		}
-	    }
-
-	  errmsg = targetm.invalid_parameter_type (type);
-	  if (errmsg)
-	    {
-	      error (errmsg);
-	      TREE_VALUE (typelt) = error_mark_node;
-	      TREE_TYPE (parm) = error_mark_node;
-	      arg_types = NULL_TREE;
 	    }
 
 	  if (DECL_NAME (parm) && TREE_USED (parm))

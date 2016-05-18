@@ -1786,7 +1786,7 @@
   "aarch64_zero_extend_const_eq (<DWI>mode, operands[2],
 				 <MODE>mode, operands[1])"
   "@
-  cmn\\t%<w>0, %<w>1
+  cmn\\t%<w>0, %1
   cmp\\t%<w>0, #%n1"
   [(set_attr "type" "alus_imm")]
 )
@@ -1818,11 +1818,11 @@
   "aarch64_zero_extend_const_eq (<DWI>mode, operands[3],
                                  <MODE>mode, operands[2])"
   "@
-  adds\\t%<w>0, %<w>1, %<w>2
+  adds\\t%<w>0, %<w>1, %2
   subs\\t%<w>0, %<w>1, #%n2"
   [(set_attr "type" "alus_imm")]
 )
- 
+
 (define_insn "add<mode>3_compareC"
   [(set (reg:CC_C CC_REGNUM)
 	(ne:CC_C
@@ -3425,7 +3425,9 @@
          (LOGICAL:SI (match_operand:SI 1 "register_operand" "%r,r")
 		     (match_operand:SI 2 "aarch64_logical_operand" "r,K"))))]
   ""
-  "<logical>\\t%w0, %w1, %w2"
+  "@
+   <logical>\\t%w0, %w1, %w2
+   <logical>\\t%w0, %w1, %2"
   [(set_attr "type" "logic_reg,logic_imm")]
 )
 
@@ -3438,7 +3440,9 @@
    (set (match_operand:GPI 0 "register_operand" "=r,r")
 	(and:GPI (match_dup 1) (match_dup 2)))]
   ""
-  "ands\\t%<w>0, %<w>1, %<w>2"
+  "@
+   ands\\t%<w>0, %<w>1, %<w>2
+   ands\\t%<w>0, %<w>1, %2"
   [(set_attr "type" "logics_reg,logics_imm")]
 )
 
@@ -3452,7 +3456,9 @@
    (set (match_operand:DI 0 "register_operand" "=r,r")
 	(zero_extend:DI (and:SI (match_dup 1) (match_dup 2))))]
   ""
-  "ands\\t%w0, %w1, %w2"
+  "@
+   ands\\t%w0, %w1, %w2
+   ands\\t%w0, %w1, %2"
   [(set_attr "type" "logics_reg,logics_imm")]
 )
 
@@ -3806,7 +3812,9 @@
 		  (match_operand:GPI 1 "aarch64_logical_operand" "r,<lconst>"))
 	 (const_int 0)))]
   ""
-  "tst\\t%<w>0, %<w>1"
+  "@
+   tst\\t%<w>0, %<w>1
+   tst\\t%<w>0, %1"
   [(set_attr "type" "logics_reg,logics_imm")]
 )
 
@@ -3936,33 +3944,35 @@
 
 ;; Logical left shift using SISD or Integer instruction
 (define_insn "*aarch64_ashl_sisd_or_int_<mode>3"
-  [(set (match_operand:GPI 0 "register_operand" "=r,w,w")
-        (ashift:GPI
-          (match_operand:GPI 1 "register_operand" "r,w,w")
-          (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "rUs<cmode>,Us<cmode>,w")))]
+  [(set (match_operand:GPI 0 "register_operand" "=r,r,w,w")
+	(ashift:GPI
+	  (match_operand:GPI 1 "register_operand" "r,r,w,w")
+	  (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "Us<cmode>,r,Us<cmode>,w")))]
   ""
   "@
+   lsl\t%<w>0, %<w>1, %2
    lsl\t%<w>0, %<w>1, %<w>2
    shl\t%<rtn>0<vas>, %<rtn>1<vas>, %2
    ushl\t%<rtn>0<vas>, %<rtn>1<vas>, %<rtn>2<vas>"
-  [(set_attr "simd" "no,yes,yes")
-   (set_attr "type" "shift_reg,neon_shift_imm<q>, neon_shift_reg<q>")]
+  [(set_attr "simd" "no,no,yes,yes")
+   (set_attr "type" "bfm,shift_reg,neon_shift_imm<q>, neon_shift_reg<q>")]
 )
 
 ;; Logical right shift using SISD or Integer instruction
 (define_insn "*aarch64_lshr_sisd_or_int_<mode>3"
-  [(set (match_operand:GPI 0 "register_operand" "=r,w,&w,&w")
-        (lshiftrt:GPI
-          (match_operand:GPI 1 "register_operand" "r,w,w,w")
-          (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "rUs<cmode>,Us<cmode>,w,0")))]
+  [(set (match_operand:GPI 0 "register_operand" "=r,r,w,&w,&w")
+	(lshiftrt:GPI
+	 (match_operand:GPI 1 "register_operand" "r,r,w,w,w")
+	 (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "Us<cmode>,r,Us<cmode>,w,0")))]
   ""
   "@
+   lsr\t%<w>0, %<w>1, %2
    lsr\t%<w>0, %<w>1, %<w>2
    ushr\t%<rtn>0<vas>, %<rtn>1<vas>, %2
    #
    #"
-  [(set_attr "simd" "no,yes,yes,yes")
-   (set_attr "type" "shift_reg,neon_shift_imm<q>,neon_shift_reg<q>,neon_shift_reg<q>")]
+  [(set_attr "simd" "no,no,yes,yes,yes")
+   (set_attr "type" "bfm,shift_reg,neon_shift_imm<q>,neon_shift_reg<q>,neon_shift_reg<q>")]
 )
 
 (define_split
@@ -3997,18 +4007,19 @@
 
 ;; Arithmetic right shift using SISD or Integer instruction
 (define_insn "*aarch64_ashr_sisd_or_int_<mode>3"
-  [(set (match_operand:GPI 0 "register_operand" "=r,w,&w,&w")
+  [(set (match_operand:GPI 0 "register_operand" "=r,r,w,&w,&w")
         (ashiftrt:GPI
-          (match_operand:GPI 1 "register_operand" "r,w,w,w")
-          (match_operand:QI 2 "aarch64_reg_or_shift_imm_di" "rUs<cmode>,Us<cmode>,w,0")))]
+          (match_operand:GPI 1 "register_operand" "r,r,w,w,w")
+          (match_operand:QI 2 "aarch64_reg_or_shift_imm_di" "Us<cmode>,r,Us<cmode>,w,0")))]
   ""
   "@
+   asr\t%<w>0, %<w>1, %2
    asr\t%<w>0, %<w>1, %<w>2
    sshr\t%<rtn>0<vas>, %<rtn>1<vas>, %2
    #
    #"
-  [(set_attr "simd" "no,yes,yes,yes")
-   (set_attr "type" "shift_reg,neon_shift_imm<q>,neon_shift_reg<q>,neon_shift_reg<q>")]
+  [(set_attr "simd" "no,no,yes,yes,yes")
+   (set_attr "type" "bfm,shift_reg,neon_shift_imm<q>,neon_shift_reg<q>,neon_shift_reg<q>")]
 )
 
 (define_split
@@ -4100,21 +4111,25 @@
   [(set (match_operand:GPI 0 "register_operand" "=r,r")
      (rotatert:GPI
        (match_operand:GPI 1 "register_operand" "r,r")
-       (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "r,Us<cmode>")))]
+       (match_operand:QI 2 "aarch64_reg_or_shift_imm_<mode>" "Us<cmode>,r")))]
   ""
-  "ror\\t%<w>0, %<w>1, %<w>2"
-  [(set_attr "type" "shift_reg, rotate_imm")]
+  "@
+   ror\\t%<w>0, %<w>1, %2
+   ror\\t%<w>0, %<w>1, %<w>2"
+  [(set_attr "type" "rotate_imm,shift_reg")]
 )
 
 ;; zero_extend version of above
 (define_insn "*<optab>si3_insn_uxtw"
-  [(set (match_operand:DI 0 "register_operand" "=r")
+  [(set (match_operand:DI 0 "register_operand" "=r,r")
 	(zero_extend:DI (SHIFT:SI
-	 (match_operand:SI 1 "register_operand" "r")
-	 (match_operand:QI 2 "aarch64_reg_or_shift_imm_si" "rUss"))))]
+	 (match_operand:SI 1 "register_operand" "r,r")
+	 (match_operand:QI 2 "aarch64_reg_or_shift_imm_si" "Uss,r"))))]
   ""
-  "<shift>\\t%w0, %w1, %w2"
-  [(set_attr "type" "shift_reg")]
+  "@
+   <shift>\\t%w0, %w1, %2
+   <shift>\\t%w0, %w1, %w2"
+  [(set_attr "type" "bfm,shift_reg")]
 )
 
 (define_insn "*<optab><mode>3_insn"
@@ -4138,7 +4153,7 @@
   "UINTVAL (operands[3]) < GET_MODE_BITSIZE (<MODE>mode) &&
    (UINTVAL (operands[3]) + UINTVAL (operands[4]) == GET_MODE_BITSIZE (<MODE>mode))"
   "extr\\t%<w>0, %<w>1, %<w>2, %4"
-  [(set_attr "type" "shift_imm")]
+  [(set_attr "type" "rotate_imm")]
 )
 
 ;; There are no canonicalisation rules for ashift and lshiftrt inside an ior
@@ -4153,7 +4168,7 @@
    && (UINTVAL (operands[3]) + UINTVAL (operands[4])
        == GET_MODE_BITSIZE (<MODE>mode))"
   "extr\\t%<w>0, %<w>1, %<w>2, %4"
-  [(set_attr "type" "shift_imm")]
+  [(set_attr "type" "rotate_imm")]
 )
 
 ;; zero_extend version of the above
@@ -4167,7 +4182,7 @@
   "UINTVAL (operands[3]) < 32 &&
    (UINTVAL (operands[3]) + UINTVAL (operands[4]) == 32)"
   "extr\\t%w0, %w1, %w2, %4"
-  [(set_attr "type" "shift_imm")]
+  [(set_attr "type" "rotate_imm")]
 )
 
 (define_insn "*extrsi5_insn_uxtw_alt"
@@ -4180,7 +4195,7 @@
   "UINTVAL (operands[3]) < 32 &&
    (UINTVAL (operands[3]) + UINTVAL (operands[4]) == 32)"
   "extr\\t%w0, %w1, %w2, %4"
-  [(set_attr "type" "shift_imm")]
+  [(set_attr "type" "rotate_imm")]
 )
 
 (define_insn "*ror<mode>3_insn"
@@ -5194,7 +5209,7 @@
 	 UNSPEC_SP_TEST))
    (clobber (match_scratch:PTR 3 "=&r"))]
   ""
-  "ldr\t%<w>3, %x1\;ldr\t%<w>0, %x2\;eor\t%<w>0, %<w>3, %<w>0"
+  "ldr\t%<w>3, %1\;ldr\t%<w>0, %2\;eor\t%<w>0, %<w>3, %<w>0"
   [(set_attr "length" "12")
    (set_attr "type" "multiple")])
 

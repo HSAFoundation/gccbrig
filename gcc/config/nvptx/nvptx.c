@@ -258,7 +258,10 @@ section_for_decl (const_tree decl)
 
 /* Check NAME for special function names and redirect them by returning a
    replacement.  This applies to malloc, free and realloc, for which we
-   want to use libgcc wrappers, and call, which triggers a bug in ptxas.  */
+   want to use libgcc wrappers, and call, which triggers a bug in
+   ptxas.  We can't use TARGET_MANGLE_DECL_ASSEMBLER_NAME, as that's
+   not active in an offload compiler -- the names are all set by the
+   host-side compiler.  */
 
 static const char *
 nvptx_name_replacement (const char *name)
@@ -459,6 +462,17 @@ nvptx_function_arg_advance (cumulative_args_t cum_v,
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
   cum->count++;
+}
+
+/* Implement TARGET_FUNCTION_ARG_BOUNDARY.
+
+   For nvptx This is only used for varadic args.  The type has already
+   been promoted and/or converted to invisible reference.  */
+
+static unsigned
+nvptx_function_arg_boundary (machine_mode mode, const_tree ARG_UNUSED (type))
+{
+  return GET_MODE_ALIGNMENT (mode);
 }
 
 /* Handle the TARGET_STRICT_ARGUMENT_NAMING target hook.
@@ -4832,6 +4846,8 @@ nvptx_goacc_reduction (gcall *call)
 #define TARGET_FUNCTION_INCOMING_ARG nvptx_function_incoming_arg
 #undef TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE nvptx_function_arg_advance
+#undef TARGET_FUNCTION_ARG_BOUNDARY
+#define TARGET_FUNCTION_ARG_BOUNDARY nvptx_function_arg_boundary
 #undef TARGET_PASS_BY_REFERENCE
 #define TARGET_PASS_BY_REFERENCE nvptx_pass_by_reference
 #undef TARGET_FUNCTION_VALUE_REGNO_P

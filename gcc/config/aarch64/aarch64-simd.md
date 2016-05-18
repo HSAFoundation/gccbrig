@@ -371,15 +371,15 @@
   [(set_attr "type" "neon<fp>_mul_<Vetype>_scalar<q>")]
 )
 
-(define_insn "*aarch64_mul3_elt_to_128df"
-  [(set (match_operand:V2DF 0 "register_operand" "=w")
-     (mult:V2DF
-       (vec_duplicate:V2DF
-	 (match_operand:DF 2 "register_operand" "w"))
-      (match_operand:V2DF 1 "register_operand" "w")))]
+(define_insn "*aarch64_mul3_elt_from_dup<mode>"
+ [(set (match_operand:VMUL 0 "register_operand" "=w")
+    (mult:VMUL
+      (vec_duplicate:VMUL
+	    (match_operand:<VEL> 1 "register_operand" "<h_con>"))
+      (match_operand:VMUL 2 "register_operand" "w")))]
   "TARGET_SIMD"
-  "fmul\\t%0.2d, %1.2d, %2.d[0]"
-  [(set_attr "type" "neon_fp_mul_d_scalar_q")]
+  "<f>mul\t%0.<Vtype>, %2.<Vtype>, %1.<Vetype>[0]";
+  [(set_attr "type" "neon<fp>_mul_<Vetype>_scalar<q>")]
 )
 
 (define_insn "aarch64_rsqrte_<mode>2"
@@ -1579,16 +1579,16 @@
   [(set_attr "type" "neon_fp_mla_<Vetype>_scalar<q>")]
 )
 
-(define_insn "*aarch64_fma4_elt_to_128df"
-  [(set (match_operand:V2DF 0 "register_operand" "=w")
-    (fma:V2DF
-      (vec_duplicate:V2DF
-	  (match_operand:DF 1 "register_operand" "w"))
-      (match_operand:V2DF 2 "register_operand" "w")
-      (match_operand:V2DF 3 "register_operand" "0")))]
+(define_insn "*aarch64_fma4_elt_from_dup<mode>"
+  [(set (match_operand:VMUL 0 "register_operand" "=w")
+    (fma:VMUL
+      (vec_duplicate:VMUL
+	  (match_operand:<VEL> 1 "register_operand" "w"))
+      (match_operand:VMUL 2 "register_operand" "w")
+      (match_operand:VMUL 3 "register_operand" "0")))]
   "TARGET_SIMD"
-  "fmla\\t%0.2d, %2.2d, %1.2d[0]"
-  [(set_attr "type" "neon_fp_mla_d_scalar_q")]
+  "fmla\t%0.<Vtype>, %2.<Vtype>, %1.<Vetype>[0]"
+  [(set_attr "type" "neon<fp>_mla_<Vetype>_scalar<q>")]
 )
 
 (define_insn "*aarch64_fma4_elt_to_64v2df"
@@ -1656,17 +1656,17 @@
   [(set_attr "type" "neon_fp_mla_<Vetype>_scalar<q>")]
 )
 
-(define_insn "*aarch64_fnma4_elt_to_128df"
-  [(set (match_operand:V2DF 0 "register_operand" "=w")
-    (fma:V2DF
-      (neg:V2DF
-        (match_operand:V2DF 2 "register_operand" "w"))
-      (vec_duplicate:V2DF
-	(match_operand:DF 1 "register_operand" "w"))
-      (match_operand:V2DF 3 "register_operand" "0")))]
+(define_insn "*aarch64_fnma4_elt_from_dup<mode>"
+  [(set (match_operand:VMUL 0 "register_operand" "=w")
+    (fma:VMUL
+      (neg:VMUL
+        (match_operand:VMUL 2 "register_operand" "w"))
+      (vec_duplicate:VMUL
+	(match_operand:<VEL> 1 "register_operand" "w"))
+      (match_operand:VMUL 3 "register_operand" "0")))]
   "TARGET_SIMD"
-  "fmls\\t%0.2d, %2.2d, %1.2d[0]"
-  [(set_attr "type" "neon_fp_mla_d_scalar_q")]
+  "fmls\t%0.<Vtype>, %2.<Vtype>, %1.<Vetype>[0]"
+  [(set_attr "type" "neon<fp>_mla_<Vetype>_scalar<q>")]
 )
 
 (define_insn "*aarch64_fnma4_elt_to_64v2df"
@@ -1919,16 +1919,6 @@
   }
 )
 
-(define_insn "aarch64_vmls<mode>"
-  [(set (match_operand:VDQF 0 "register_operand" "=w")
-       (minus:VDQF (match_operand:VDQF 1 "register_operand" "0")
-		   (mult:VDQF (match_operand:VDQF 2 "register_operand" "w")
-			      (match_operand:VDQF 3 "register_operand" "w"))))]
-  "TARGET_SIMD"
- "fmls\\t%0.<Vtype>, %2.<Vtype>, %3.<Vtype>"
-  [(set_attr "type" "neon_fp_mla_<Vetype>_scalar<q>")]
-)
-
 ;; FP Max/Min
 ;; Max/Min are introduced by idiom recognition by GCC's mid-end.  An
 ;; expression like:
@@ -1989,19 +1979,6 @@
   }
 )
 
-(define_expand "reduc_plus_scal_<mode>"
-  [(match_operand:<VEL> 0 "register_operand" "=w")
-   (match_operand:V2F 1 "register_operand" "w")]
-  "TARGET_SIMD"
-  {
-    rtx elt = GEN_INT (ENDIAN_LANE_N (<MODE>mode, 0));
-    rtx scratch = gen_reg_rtx (<MODE>mode);
-    emit_insn (gen_aarch64_reduc_plus_internal<mode> (scratch, operands[1]));
-    emit_insn (gen_aarch64_get_lane<mode> (operands[0], scratch, elt));
-    DONE;
-  }
-)
-
 (define_insn "aarch64_reduc_plus_internal<mode>"
  [(set (match_operand:VDQV 0 "register_operand" "=w")
        (unspec:VDQV [(match_operand:VDQV 1 "register_operand" "w")]
@@ -2020,9 +1997,9 @@
   [(set_attr "type" "neon_reduc_add")]
 )
 
-(define_insn "aarch64_reduc_plus_internal<mode>"
- [(set (match_operand:V2F 0 "register_operand" "=w")
-       (unspec:V2F [(match_operand:V2F 1 "register_operand" "w")]
+(define_insn "reduc_plus_scal_<mode>"
+ [(set (match_operand:<VEL> 0 "register_operand" "=w")
+       (unspec:<VEL> [(match_operand:V2F 1 "register_operand" "w")]
 		   UNSPEC_FADDV))]
  "TARGET_SIMD"
  "faddp\\t%<Vetype>0, %1.<Vtype>"

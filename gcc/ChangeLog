@@ -1,4 +1,580 @@
+2016-05-18  Jiong Wang  <jiong.wang@arm.com>
+
+	PR rtl-optimization/71150
+	* lra-constraint (process_addr_reg): Guard "in_class_p" with REG_P
+	check.
+
+2016-05-18  Michael Meissner  <meissner@linux.vnet.ibm.com>
+
+	PR target/70915
+	* config/rs6000/constraints.md (wE constraint): New constraint
+	for a vector constant that can be loaded with XXSPLTIB.
+	(wM constraint): New constraint for a vector constant of a 1's.
+	(wS constraint): New constraint for a vector constant that can be
+	loaded with XXSPLTIB and a vector sign extend instruction.
+	* config/rs6000/predicates.md (xxspltib_constant_split): New
+	predicates for wE/wS constraints.
+	(xxspltib_constant_nosplit): Likewise.
+	(easy_vector_constant): Add support for constants that can be
+	loaded via XXSPLTIB.
+	(all_ones_constant): New predicate for vector constant with all
+	1's set.
+	(splat_input_operand): Add support for ISA 3.0 word splat
+	operations.
+	* config/rs6000/rs6000.c (xxspltib_constant_p): New function to
+	return if a constant can be loaded with the ISA 3.0 XXSPLTIB
+	instruction and possibly with a sign extension.
+	(output_vec_const_move): Add support for XXSPLTIB. If we are
+	loading up 0/-1 into Altivec registers, prefer using VSPLTISW
+	instead of XXLXOR/XXLORC.
+	(rs6000_expand_vector_init): Add support for ISA 3.0 word splat
+	operations.
+	(rs6000_legitimize_reload_address): Likewise.
+	(rs6000_output_move_128bit): Use output_vec_const_move to emit
+	constants.
+	* config/rs6000/vsx.md (VSX_M): Add TImode (if -mvsx-timode) and
+	combine VSX_M and VSX_M2 into one iterator.
+	(VSX_M2): Likewise.
+	(VSINT_84): New iterators for loading constants with XXSPLTIB.
+	(VSINT_842): Likewise.
+	(UNSPEC_VSX_SIGN_EXTEND): New UNSPEC.
+	(xxspltib_v16qi): New insns to load up constants with the ISA 3.0
+	XXSPLTIB instruction.
+	(xxspltib_<mode>_nosplit): Likewise.
+	(xxspltib_<mode>_split): New insn to load up constants with
+	XXSPLTIB and a sign extend instruction.
+	(vsx_mov<mode>): Replace single move that handled all vector types
+	with separate 32-bit and 64-bit moves.  Combine the movti_<bit>
+	moves (when -mvsx-timode is in effect) into the main vector
+	moves.  Eliminate separate moves for <VSr> <VSa>, where the
+	preferred register class (<VSr>) is listed first, and the
+	secondary register class (<VSa>) is listed second with a '?' to
+	discourage use.  Prefer loading 0/-1 in any VSX register for ISA
+	3.0, and Altivec registers for ISA 2.06/2.07 (PR target/70915) so
+	that if the register was involved in a slow operation, the
+	clear/set operation does not wait for the slow operation to
+	finish.  Adjust the length attributes for 32-bit mode.  Use
+	rs6000_output_move_128bit and drop the use of the string
+	instructions for 32-bit movti when -mvsx-timode is in effect.  Use
+	spacing so that the alternatives and attributes don't generate
+	long lines, and put things in columns, so that it is easier to
+	match up the operands and attributes with the insn alternatives.
+	(vsx_mov<mode>_64bit): Likewise.
+	(vsx_mov<mode>_32bit): Likewise.
+	(vsx_movti_64bit): Fold movti into normal vector moves.
+	(vsx_movti_32bit): Likewise.
+	(vsx_splat_<mode>, V4SI/V4SF modes): Add support for ISA 3.0 word
+	spat instructions.
+	(vsx_splat_v4si_internal): Likewise.
+	(vsx_splat_v4sf_internal): Likewise.
+	(vector fusion peepholes): Use VSX_M instead of VSX_M2.
+	(vsx_sign_extend_qi_<mode>): New ISA 3.0 instructions to sign
+	extend vector elements.
+	(vsx_sign_extend_hi_<mode>): Likewise.
+	(vsx_sign_extend_si_v2di): Likewise.
+	* config/rs6000/rs6000-protos.h (xxspltib_constant_p): Add
+	declaration.
+	* doc/md.texi (PowerPC constraints): Document the wE, wM, and wS
+	constraints.  Add trailing period to wL documentation.
+
+2016-05-18  Richard Sandiford  <richard.sandiford@arm.com>
+
+	PR middle-end/71020
+	* tree-dfa.h (replace_abnormal_ssa_names): Declare.
+	* tree-dfa.c (replace_abnormal_ssa_names): New function.
+	* tree-call-cdce.c: Include tree-dfa.h.
+	(can_guard_call_p): New function, extracted from...
+	(can_use_internal_fn): ...here.
+	(shrink_wrap_one_built_in_call_with_conds): Remove failure path
+	and return void.
+	(shrink_wrap_one_built_in_call): Likewise.
+	(use_internal_fn): Likewise.
+	(shrink_wrap_conditional_dead_built_in_calls): Update accordingly
+	and return void.  Call replace_abnormal_ssa_names.
+	(pass_call_cdce::execute): Check can_guard_call_p during the
+	initial walk.  Assume shrink_wrap_conditional_dead_built_in_calls
+	will always change something.
+
+2016-05-18  Martin Jambor  <mjambor@suse.cz>
+
+	PR ipa/70646
+	* ipa-prop.c (determine_locally_known_aggregate_parts): Bail out early
+	if parameter PARAM_IPA_MAX_AGG_ITEMS is zero.
+
+2016-05-18  Martin Jambor  <mjambor@suse.cz>
+
+	PR ipa/70646
+	* ipa-inline.h (condition): New field size.
+	* ipa-inline-analysis.c (add_condition): New parameter SIZE, use it
+	for comaprison and store it into the new condition.
+	(evaluate_conditions_for_known_args): Use condition size to check
+	access sizes for all but CHANGED conditions.
+	(unmodified_parm_1): New parameter size_p, store access size into it.
+	(unmodified_parm): Likewise.
+	(unmodified_parm_or_parm_agg_item): Likewise.
+	(eliminated_by_inlining_prob): Pass NULL to unmodified_parm as size_p.
+	(set_cond_stmt_execution_predicate): Extract access sizes and store
+	them to conditions.
+	(set_switch_stmt_execution_predicate): Likewise.
+	(will_be_nonconstant_expr_predicate): Likewise.
+	(will_be_nonconstant_predicate): Likewise.
+	(inline_read_section): Stream condition size.
+	(inline_write_summary): Likewise.
+
+2016-05-18  Richard Biener  <rguenther@suse.de>
+
+	* tree-ssa-loop-im.c (determine_max_movement): Properly add
+	condition cost to PHI cost instead of total_cost.
+
+2016-05-18  Martin Liska  <mliska@suse.cz>
+
+	PR fortran/70856
+	* ipa-icf.c (sem_variable::merge): Set DECL_PT_UID for
+	merged variables.
+
+2016-05-18  Richard Biener  <rguenther@suse.de>
+
+	* lto-streamer.h (LTO_major_version): Bump to 6.
+
+2016-05-18  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	* function.c (make_split_prologue_seq, make_prologue_seq,
+	make_epilogue_seq): New functions, factored out from...
+	(thread_prologue_and_epilogue_insns): Here.
+
+2016-05-18  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	* function.c (rest_of_handle_thread_prologue_and_epilogue): Call
+	cleanup_cfg with CLEANUP_EXPENSIVE after shrink-wrapping instead
+	of before.  Add a comment.
+
+2016-05-18 Bin Cheng  <bin.cheng@arm.com>
+
+	* tree-ssa-loop-ivopts.c (get_computation_cost_at): Check invariant
+	expression pointer, not pointer to the pointer.
+
+2016-05-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/sse.md (pbroadcast_evex_isa): New mode attr.
+	(avx2_pbroadcast<mode>): Add another alternative with v instead
+	of x constraints in it, using <pbroadcast_evex_isa> isa.
+	(avx2_pbroadcast<mode>_1): Similarly, add two such alternatives.
+
+	* config/i386/sse.md (<ssse3_avx2>_palignr<mode>): Use
+	constraint x instead of v in second alternative, add avx512bw
+	alternative.
+
+	* config/i386/sse.md (<ssse3_avx2>_pshufb<mode>3<mask_name>): Use
+	constraint x instead of v in second alternative, add avx512bw
+	alternative.
+
+	* config/i386/sse.md (*<ssse3_avx2>_pmulhrsw<mode>3<mask_name>): Use
+	constraint x instead of v in second alternative, add avx512bw
+	alternative.
+
+	* config/i386/sse.md (avx2_pmaddubsw256, ssse3_pmaddubsw128): Add
+	avx512bw alternative.
+
+2016-05-18  Kirill Yukhin  <kirill.yukhin@intel.com>
+
+        * gcc/config/i386/sse.md (define_insn "*andnot<mode>3"): Extend static
+	array to 128 chars.
+	(define_insn "*andnottf3"): Ditto.
+	(define_insn "*<code><mode>3"/any_logic): Ditto.
+	(define_insn "*<code>tf3"/any_logic): Ditto.
+	(define_insn "sse2_storehpd"): Use Yv constraint for scalar
+	operand to block AVX-512VL insn variant emit when it is not enabled.
+
+2016-05-18  Kirill Yukhin  <kirill.yukhin@intel.com>
+
+	* config/i386/sse.md (define_insn "*vec_concatv2sf_sse4_1"): Use 'Yv'
+	constraint fot SF mode.
+
+2016-05-18  Petr Murzin  <petr.murzin@intel.com>
+	    Kirill Yukhin  <kirill.yukhin@intel.com>
+
+        * config/i386/sse.md (define_insn "srcp14<mode>"): Use proper operand
+	modifiers.
+	(define_insn "rsqrt14<mode>"): Ditto.
+	(define_insn "<mask_codefor>avx512dq_cvtps2qqv2di<mask_name>"): Ditto.
+	(define_insn "<fixsuffix>fix_truncv2sfv2di2<mask_name>"): Ditto.
+	(define_insn "avx512f_<code>v8div16qi2_mask_store"): Ditto.
+	(define_insn "vec_set_hi_<mode><mask_name>"): Ditto.
+	(define_insn "<mask_codefor>avx512dq_broadcast<mode><mask_name>"):
+	Ditto.
+	(define_insn "*avx512f_gatherdi<mode>"): Ditto.
+	(define_insn "*avx512f_scatterdi<mode>"): Ditto.
+	* config/i386/i386.c (ix86_print_operand): Expand check for size
+	override codes for Intel syntax.
+
+2016-05-18  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71168
+	* tree-loop-distribution.c (distribute_loop): Move *destroy_p
+	initialization earlier.
+
+2016-05-18  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/aarch64-simd.md
+	(aarch64_reduc_plus_internal<mode>): Rename to...
+	(reduc_plus_scal): ...This, and remove previous implementation.
+
+2016-05-18  Richard Biener  <rguenther@suse.de>
+
+	* passes.def: Put late dse and cd_dce in canonical order.
+
+2016-05-17  Jan Hubicka  <hubicka@ucw.cz>
+
+	* ipa-inline-transform.c (preserve_function_body_p): Look for
+	first non-thunk clone.
+	(save_function_body): Save into first non-thunk.
+	* lto-cgraph.c (lto_output_edge): When streaming thunk do not look
+	up call stmt id.
+	(lto_output_node): Inline thunks don't need body in every
+	partition.
+	* lto-streamer-in.c: Do not fixup thunk clones.
+	* cgraphclones.c (cgraph_node::create_edge_including_clone): Skip
+	thunks.
+	* tree-inline.c (copy_bb): Be prepared for target node to be new after
+	folding suceeds.
+
+2016-05-17  Kugan Vivekanandarajah  <kuganv@linaro.org>
+
+	PR middle-end/63586
+	* tree-ssa-reassoc.c (transform_add_to_multiply): New.
+	(reassociate_bb): Call transform_add_to_multiply.
+
+2016-05-17  Kugan Vivekanandarajah  <kuganv@linaro.org>
+
+	* config/aarch64/aarch64.c (all_extensions): Removed unused static variable.
+
+2016-05-17  Nathan Sidwell  <nathan@acm.org>
+
+	* config/nvptx/nvptx.c (nvptx_function_arg_boundary): New.
+	(TARGET_FUNCTION_ARG_BOUNDARY): Override.
+
+2016-05-17  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR tree-optimization/54579
+	PR middle-end/55299
+	* match.pd (~(~X >> Y), ~(~X >>r Y), ~(~X <<r Y)): New patterns.
+
+2016-05-17  Marek Polacek  <polacek@redhat.com>
+
+	PR ipa/71146
+	* tree-inline.c (expand_call_inline): Call
+	maybe_remove_unused_call_args.
+
+2016-05-17  Jim Wilson  <jim.wilson@linaro.org>
+
+	* doc/cpp.texi (__GNUC__): Major version changes are no longer rare.
+	* doc/invoke.texi (-mnan=2008): Change signalling to signaling.
+	* doc/md.texi (fmin@var{m}3): Likewise.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* match.pd (X & C): New transformation.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* match.pd (~X & Y): New transformation.
+
+2016-05-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	* tree-vrp.c (simplify_truth_ops_using_ranges): Set range
+	information for new SSA_NAME.
+	(simplify_conversion_using_ranges): Get range through get_range_info
+	instead of get_value_range.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* config/aarch64/arm_neon.h (vmvn_s8): Reimplement using C operator.
+	Remove inline assembly.
+	(vmvn_s16): Likewise.
+	(vmvn_s32): Likewise.
+	(vmvn_u8): Likewise.
+	(vmvn_u16): Likewise.
+	(vmvn_u32): Likewise.
+	(vmvnq_s8): Likewise.
+	(vmvnq_s16): Likewise.
+	(vmvnq_s32): Likewise.
+	(vmvnq_u8): Likewise.
+	(vmvnq_u16): Likewise.
+	(vmvnq_u32): Likewise.
+	(vmvn_p8): Likewise.
+	(vmvnq_p16): Likewise.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* config/aarch64/aarch64-simd.md (vmul_n_f32): Remove inline assembly.
+	Use builtin.
+	(vmul_n_s16): Likewise.
+	(vmul_n_s32): Likewise.
+	(vmul_n_u16): Likewise.
+	(vmul_n_u32): Likewise.
+	(vmulq_n_f32): Likewise.
+	(vmulq_n_f64): Likewise.
+	(vmulq_n_s16): Likewise.
+	(vmulq_n_s32): Likewise.
+	(vmulq_n_u16): Likewise.
+	(vmulq_n_u32): Likewise.
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* config/aarch64/aarch64-simd.md (*aarch64_mul3_elt_to_128df): Extend to
+	all supported modes.  Rename to "*aarch64_mul3_elt_from_dup".
+
+2016-05-17  Jiong Wang  <jiong.wang@arm.com>
+
+	* config/aarch64/aarch64-simd.md (*aarch64_fma4_elt_to_128df): Rename
+	to *aarch64_fma4_elt_from_dup<mode>.
+	(*aarch64_fnma4_elt_to_128df): Rename to
+	*aarch64_fnma4_elt_from_dup<mode>.
+	* config/aarch64/arm_neon.h (vfma_n_f64): New.
+	(vfms_n_f32): Likewise.
+	(vfms_n_f64): Likewise.
+	(vfmsq_n_f32): Likewise.
+	(vfmsq_n_f64): Likewise.
+
+2016-05-17  Gerald Pfeifer  <gerald@pfeifer.com>
+
+	* wide-int.h: Change fixed_wide_int_storage from class to struct.
+	
+2016-05-17  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71132
+	* tree-loop-distribution.c (create_rdg_cd_edges): Pass in loop.
+	Only add control dependences for blocks in the loop.
+	(build_rdg): Adjust.
+	(generate_code_for_partition): Return whether loop should
+	be destroyed and delay that.
+	(distribute_loop): Likewise.
+	(pass_loop_distribution::execute): Record loops to be destroyed
+	and perform delayed destroying of loops.
+
+2016-05-17  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	PR target/70809
+	* config/aarch64/aarch64-simd.md (aarch64_vmls<mode>): Delete.
+
+2016-05-17  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/aarch64-elf.h (ASM_OUTPUT_DEF): Delete.
+
+2016-05-17  Ilya Enkovich  <ilya.enkovich@intel.com>
+
+	PR target/71114
+	* config/i386/i386.c (dimode_scalar_chain::convert_op): Fix
+	insertion point for instructions generated by validize_mem.
+
+2016-05-17  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/aarch64.c (SHIFT_COUNT_TRUNCATED): Wrap definition
+	in brackets.
+
+2016-05-17  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/aarch64.c
+	(aarch64_output_simd_mov_immediate): Make "buf_size" a variable
+	rather than a macro.
+
+2016-05-16  Wilco Dijkstra  <wdijkstr@arm.com>
+
+        * doc/invoke.texi (AArch64 Options): Various updates.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* ipa-inline-analysis.c (compute_inline_parameters): Disable inlinig
+	into instrumentation thunks.
+	* cif-code.def (CIF_CHKP): New.
+
+2016-05-16  Uros Bizjak  <ubizjak@gmail.com>
+
+	* config/i386/xopintrin.h: Correct "unsinged" typo in the comments.
+
+2016-05-16  Martin Jambor  <mjambor@suse.cz>
+
+	* hsa-gen.c (fillup_for_decl): Increase alignment to natural one.
+	(get_symbol_for_decl): Sorry if a global symbol in under-aligned.
+
+2016-05-16  Marek Polacek  <polacek@redhat.com>
+
+	* gimple.c (maybe_remove_unused_call_args): Fix typos in the
+	commentary.
+
+2016-05-16  Martin Jambor  <mjambor@suse.cz>
+
+	PR hsa/70857
+	* omp-low.c (grid_expand_target_grid_body): Copy RESULT_DECL of
+	the outlined kernel function.
+
+2016-05-16  Robert Suchanek  <robert.suchanek@imgtec.com>
+
+	* config/mips/mips.h (ISA_HAS_LSA): Enable for -mmsa.
+	(ISA_HAS_DLSA): Ditto.
+
+2016-05-16  Matthew Fortune  <matthew.fortune@imgtec.com>
+
+	* config/mips/m5100.md (m51_int_load): Update the latency to 2.
+
+2016-05-16  Nathan Sidwell  <nathan@acm.org>
+
+	* config/nvptx/nvptx.c (nvptx_mangle_decl_assembler_name): Revert.
+	(nvptx_name_replacement): Restore.  Add comment.
+	(write_fn_proto, write_fn_proto_from_insn,
+	nvptx_output_call_insn): Restore
+	(TARGET_MANGLE_DECL_ASSEMBLER_NAME): Delete.
+
+2016-05-16  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	* config/aarch64/aarch64.md
+	(add<mode>3_compareC_cconly_imm): Remove use of %w.
+	(add<mode>3_compareC_imm): Likewise.
+	(<optab>si3_uxtw): Split into register and immediate variants.
+	(andsi3_compare0_uxtw): Likewise.
+	(and<mode>3_compare0): Likewise.
+	(and<mode>3nr_compare0): Likewise.
+	(stack_protect_test_<mode>): Don't use %x for memory operands.
+
+2016-05-16  Matthew Fortune  <matthew.fortune@imgtec.com>
+
+	* config/mips/mips-cpus.def (p5600): Add multi-line brackets.
+
+2016-05-16  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	 * gcc/config/aarch64/aarch64.md (aarch64_ashl_sisd_or_int_<mode>3):
+	Split integer shifts into shift_reg and bfm.
+	(aarch64_lshr_sisd_or_int_<mode>3): Likewise.
+	(aarch64_ashr_sisd_or_int_<mode>3): Likewise.
+	(ror<mode>3_insn): Likewise.
+	(<optab>si3_insn_uxtw): Likewise.
+	(<optab><mode>3_insn): Change to rotate_imm.
+	(extr<mode>5_insn_alt): Likewise.
+	(extrsi5_insn_uxtw): Likewise.
+	(extrsi5_insn_uxtw_alt): Likewise.
+
+2016-05-16  Matthew Wahab  <matthew.wahab@arm.com>
+
+	* doc/tm.texi: Regenerate.
+	* doc/tm.texi.in (TARGET_INVALID_PARAMETER_TYPE): Remove.
+	(TARGET_INVALID_RETURN_TYPE): Remove.
+	* system.h: Poison TARGET_INVALID_PARAMETER_TYPE and
+	TARGET_INVALID_RETURN_TYPE.
+	* target.def (invalid_parameter_type): Remove.
+	(invalid_return_type): Remove.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* ipa-inline-analysis.c (compute_inline_parameters): Be more reailistic
+	on estimating thunk bodies; do not set inline_failed to CIF_THUNK for
+	calls from thunk.
+	* ipa-inline-transform.c (inline_call): When inlining into thunk produce
+	gimple body.
+	(preserve_function_body_p): No need to preserve function body
+	* cif-codes.def (CIF_THUNK): Remove.
+	* cgraphclones.c (duplicate_thunk_for_node): Thunks calls are inlinable.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* tree-inline.c (expand_call_inline): recurse after inlining thunk.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* tree.c (free_lang_data_in_decl): Also set target/optimization flags
+	for thunks.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* ipa-inline.c (report_inline_failed_reason): Look into thunks, too
+	(inline_small_functions): Do not look for function symbol when
+	resetting caches.
+
+2016-05-16  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto-cgraph.c (compute_ltrans_boundary, output_symtab): Fix handling
+	of inline thunks
+
+2016-05-16  Matthew Wahab  <matthew.wahab@arm.com>
+	    Ramana Radhakrishnan  <ramana.radhakrishnan@arm.com>
+	    Jiong Wang  <jiong.wang@arm.com>
+
+	* config/arm/arm-c.c (arm_cpu_builtins): Use def_or_undef_macro
+	for __ARM_FP16_FORMAT_IEEE and __ARM_FP16_FORMAT_ALTERNATIVE.
+	Define __ARM_FP16_ARGS when appropriate.
+	* config/arm/arm.c (arm_invalid_parameter_type): Remove
+	declaration.
+	(arm_invalid_return_type): Likewise.
+	(TARGET_INVALID_PARAMETER_TYPE): Remove.
+	(TARGET_INVALID_RETURN_TYPE): Remove.
+	(aapcs_vfp_sub_candidate): Allow HFmode.
+	(aapcs_vfp_allocate): Add comment.  Support HFmode.
+	(aapcs_vfp_allocate_return_reg): Likewise.
+	(struct aapcs_cp_arg_layout): Slightly reword comments for
+	is_return_candidate and allocate_return_reg.
+	(output_mov_vfp): Update assert.
+	(arm_hard_regno_mode_ok): Remove comment, update HF-mode
+	condition.
+	(arm_invalid_parameter_type): Remove.
+	(amr_invalid_return_type): Remove.
+	* config/arm/arm.h (TARGET_NEON_FP16): Fix definition.
+	* config/arm/arm.md (*arm32_movhf): Disable for TARGET_VFP.
+	* config/arm/vfp.md (*movhf_vfp): Enable for TARGET_VFP.
+
+2016-05-16  Matthew Wahab  <matthew.wahab@arm.com>
+
+	* config/aarch64/aarch64.h (LEGITIMIZE_RELOAD_ADDRESS): Remove.
+	* config/aarch64/arch64-protos.h
+	(aarch64_legitimize_reload_address): Remove.
+	* config/aarch64/aarch64.c (aarch64_legitimize_reload_address):
+	Remove.
+
+2016-05-16  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* configure.ac: Add ACX_NONCANONICAL_HOST.
+	* configure: Regenerate.
+	* Makefile.in: Set host_noncanonical.
+
+2016-05-14  Uros Bizjak  <ubizjak@gmail.com>
+
+	PR target/71097
+	* config/i386/i386.md (*movtf_internal): Before register allocation,
+	do not allow FP constants for CM_MEDIUM memory model, allow only
+	standard FP constants for CM_LARGE and CM_LARGE_PIC models.
+	(*movxf_internal): Ditto.
+	(*movdf_internal): Ditto.
+	(*movsf_internal): Ditto.
+
+2016-05-13  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR rtl-optimization/67483
+	* combine.c (make_compound_operation): Don't call extract_left_shift
+	with negative shift amounts.
+
+2016-05-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/71071
+	* fold-const.c (fold_checksum_tree): Allow modification
+	of TYPE_ALIAS_SET during folding.
+
+	* config/i386/i386.c (ix86_compute_frame_layout, ix86_expand_prologue,
+	ix86_expand_split_stack_prologue): Use HOST_WIDE_INT_C macro.
+	(ix86_split_to_parts): Likewise.  Fix up formatting.
+
+2016-05-13  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* tree-ssa-loop-ivopts.c (create_new_ivs): Cast to
+	unsigned HOST_WIDE_INT with HOST_WIDE_INT_PRINT_UNSIGNED in
+	printf format.
+
 2016-05-13  Nathan Sidwell  <nathan@acm.org>
+
+	* config/nvptx/nvptx.c (nvptx_mangle_decl_assembler_name): New.
+	(nvptx_name_replacement): Delete.
+	(write_fn_proto, write_fn_proto_from_insn,
+	nvptx_output_call_insn): Remove nvptx_name_replacement call.
+	(TARGET_MANGLE_DECL_ASSEMBLER_NAME): Override.
+	* langhooks.c (add_builtin_funcction_common): Call
+	targetm.mangle_decl_assembler_name.
 
 	* config/nvptx/nvptx.c (write_fn_proto): Handle
 	BUILT_IN_ATOMIC_COMPARE_EXCHANGE_n oddity.

@@ -663,16 +663,6 @@ struct aarch64_option_extension
   const unsigned long flags_off;
 };
 
-/* ISA extensions in AArch64.  */
-static const struct aarch64_option_extension all_extensions[] =
-{
-#define AARCH64_OPT_EXTENSION(NAME, X, FLAGS_ON, FLAGS_OFF, FEATURE_STRING) \
-  {NAME, FLAGS_ON, FLAGS_OFF},
-#include "aarch64-option-extensions.def"
-#undef AARCH64_OPT_EXTENSION
-  {NULL, 0, 0}
-};
-
 typedef enum aarch64_cond_code
 {
   AARCH64_EQ = 0, AARCH64_NE, AARCH64_CS, AARCH64_CC, AARCH64_MI, AARCH64_PL,
@@ -5021,120 +5011,6 @@ aarch64_legitimize_address (rtx x, rtx /* orig_x  */, machine_mode mode)
 
   return x;
 }
-
-/* Try a machine-dependent way of reloading an illegitimate address
-   operand.  If we find one, push the reload and return the new rtx.  */
-
-rtx
-aarch64_legitimize_reload_address (rtx *x_p,
-				   machine_mode mode,
-				   int opnum, int type,
-				   int ind_levels ATTRIBUTE_UNUSED)
-{
-  rtx x = *x_p;
-
-  /* Do not allow mem (plus (reg, const)) if vector struct mode.  */
-  if (aarch64_vect_struct_mode_p (mode)
-      && GET_CODE (x) == PLUS
-      && REG_P (XEXP (x, 0))
-      && CONST_INT_P (XEXP (x, 1)))
-    {
-      rtx orig_rtx = x;
-      x = copy_rtx (x);
-      push_reload (orig_rtx, NULL_RTX, x_p, NULL,
-		   BASE_REG_CLASS, GET_MODE (x), VOIDmode, 0, 0,
-		   opnum, (enum reload_type) type);
-      return x;
-    }
-
-  /* We must recognize output that we have already generated ourselves.  */
-  if (GET_CODE (x) == PLUS
-      && GET_CODE (XEXP (x, 0)) == PLUS
-      && REG_P (XEXP (XEXP (x, 0), 0))
-      && CONST_INT_P (XEXP (XEXP (x, 0), 1))
-      && CONST_INT_P (XEXP (x, 1)))
-    {
-      push_reload (XEXP (x, 0), NULL_RTX, &XEXP (x, 0), NULL,
-		   BASE_REG_CLASS, GET_MODE (x), VOIDmode, 0, 0,
-		   opnum, (enum reload_type) type);
-      return x;
-    }
-
-  /* We wish to handle large displacements off a base register by splitting
-     the addend across an add and the mem insn.  This can cut the number of
-     extra insns needed from 3 to 1.  It is only useful for load/store of a
-     single register with 12 bit offset field.  */
-  if (GET_CODE (x) == PLUS
-      && REG_P (XEXP (x, 0))
-      && CONST_INT_P (XEXP (x, 1))
-      && HARD_REGISTER_P (XEXP (x, 0))
-      && mode != TImode
-      && mode != TFmode
-      && aarch64_regno_ok_for_base_p (REGNO (XEXP (x, 0)), true))
-    {
-      HOST_WIDE_INT val = INTVAL (XEXP (x, 1));
-      HOST_WIDE_INT low = val & 0xfff;
-      HOST_WIDE_INT high = val - low;
-      HOST_WIDE_INT offs;
-      rtx cst;
-      machine_mode xmode = GET_MODE (x);
-
-      /* In ILP32, xmode can be either DImode or SImode.  */
-      gcc_assert (xmode == DImode || xmode == SImode);
-
-      /* Reload non-zero BLKmode offsets.  This is because we cannot ascertain
-	 BLKmode alignment.  */
-      if (GET_MODE_SIZE (mode) == 0)
-	return NULL_RTX;
-
-      offs = low % GET_MODE_SIZE (mode);
-
-      /* Align misaligned offset by adjusting high part to compensate.  */
-      if (offs != 0)
-	{
-	  if (aarch64_uimm12_shift (high + offs))
-	    {
-	      /* Align down.  */
-	      low = low - offs;
-	      high = high + offs;
-	    }
-	  else
-	    {
-	      /* Align up.  */
-	      offs = GET_MODE_SIZE (mode) - offs;
-	      low = low + offs;
-	      high = high + (low & 0x1000) - offs;
-	      low &= 0xfff;
-	    }
-	}
-
-      /* Check for overflow.  */
-      if (high + low != val)
-	return NULL_RTX;
-
-      cst = GEN_INT (high);
-      if (!aarch64_uimm12_shift (high))
-	cst = force_const_mem (xmode, cst);
-
-      /* Reload high part into base reg, leaving the low part
-	 in the mem instruction.
-	 Note that replacing this gen_rtx_PLUS with plus_constant is
-	 wrong in this case because we rely on the
-	 (plus (plus reg c1) c2) structure being preserved so that
-	 XEXP (*p, 0) in push_reload below uses the correct term.  */
-      x = gen_rtx_PLUS (xmode,
-			gen_rtx_PLUS (xmode, XEXP (x, 0), cst),
-			GEN_INT (low));
-
-      push_reload (XEXP (x, 0), NULL_RTX, &XEXP (x, 0), NULL,
-		   BASE_REG_CLASS, xmode, VOIDmode, 0, 0,
-		   opnum, (enum reload_type) type);
-      return x;
-    }
-
-  return NULL_RTX;
-}
-
 
 /* Return the reload icode required for a constant pool in mode.  */
 static enum insn_code
@@ -11959,12 +11835,11 @@ aarch64_output_simd_mov_immediate (rtx const_vector,
         info.value = GEN_INT (0);
       else
 	{
-#define buf_size 20
+	  const unsigned int buf_size = 20;
 	  char float_buf[buf_size] = {'\0'};
 	  real_to_decimal_for_mode (float_buf,
 				    CONST_DOUBLE_REAL_VALUE (info.value),
 				    buf_size, buf_size, 1, mode);
-#undef buf_size
 
 	  if (lane_count == 1)
 	    snprintf (templ, sizeof (templ), "fmov\t%%d0, %s", float_buf);

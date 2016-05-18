@@ -6377,8 +6377,9 @@ convert_like_real (conversion *convs, tree expr, tree fn, int argnum,
 	/* When converting from an init list we consider explicit
 	   constructors, but actually trying to call one is an error.  */
 	if (DECL_NONCONVERTING_P (convfn) && DECL_CONSTRUCTOR_P (convfn)
+	    && BRACE_ENCLOSED_INITIALIZER_P (expr)
 	    /* Unless this is for direct-list-initialization.  */
-	    && !DIRECT_LIST_INIT_P (expr)
+	    && !CONSTRUCTOR_IS_DIRECT_INIT (expr)
 	    /* And in C++98 a default constructor can't be explicit.  */
 	    && cxx_dialect >= cxx11)
 	  {
@@ -8407,6 +8408,9 @@ build_new_method_call_1 (tree instance, tree fns, vec<tree, va_gc> **args,
 		     we know we really need it.  */
 		  cand->first_arg = instance;
 		}
+	      else if (any_dependent_bases_p ())
+		/* We can't tell until instantiation time whether we can use
+		   *this as the implicit object argument.  */;
 	      else
 		{
 		  if (complain & tf_error)

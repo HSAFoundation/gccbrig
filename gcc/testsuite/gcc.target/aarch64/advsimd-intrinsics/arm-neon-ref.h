@@ -81,7 +81,7 @@ extern size_t strlen(const char *);
 	  abort();							\
 	}								\
       }									\
-    fprintf(stderr, "CHECKED %s\n", MSG);				\
+    fprintf(stderr, "CHECKED %s %s\n", STR(VECT_TYPE(T, W, N)), MSG);	\
   }
 
 /* Floating-point variant.  */
@@ -110,7 +110,7 @@ extern size_t strlen(const char *);
 	  abort();							\
 	}								\
       }									\
-    fprintf(stderr, "CHECKED %s\n", MSG);				\
+    fprintf(stderr, "CHECKED %s %s\n", STR(VECT_TYPE(T, W, N)), MSG);	\
   }
 
 /* Clean buffer with a non-zero pattern to help diagnose buffer
@@ -137,6 +137,9 @@ static ARRAY(result, poly, 16, 4);
 static ARRAY(result, float, 16, 4);
 #endif
 static ARRAY(result, float, 32, 2);
+#ifdef __aarch64__
+static ARRAY(result, float, 64, 1);
+#endif
 static ARRAY(result, int, 8, 16);
 static ARRAY(result, int, 16, 8);
 static ARRAY(result, int, 32, 4);
@@ -169,6 +172,7 @@ extern ARRAY(expected, poly, 8, 8);
 extern ARRAY(expected, poly, 16, 4);
 extern ARRAY(expected, hfloat, 16, 4);
 extern ARRAY(expected, hfloat, 32, 2);
+extern ARRAY(expected, hfloat, 64, 1);
 extern ARRAY(expected, int, 8, 16);
 extern ARRAY(expected, int, 16, 8);
 extern ARRAY(expected, int, 32, 4);
@@ -335,7 +339,8 @@ extern int VECT_VAR(expected_cumulative_sat, uint, 64, 2);
 	      strlen(COMMENT) > 0 ? " " COMMENT : "");			\
       abort();								\
     }									\
-    fprintf(stderr, "CHECKED CUMULATIVE SAT %s\n", MSG);		\
+    fprintf(stderr, "CHECKED CUMULATIVE SAT %s %s\n",			\
+	    STR(VECT_TYPE(T, W, N)), MSG);				\
   }
 
 #define CHECK_CUMULATIVE_SAT_NAMED(test_name,EXPECTED,comment)		\

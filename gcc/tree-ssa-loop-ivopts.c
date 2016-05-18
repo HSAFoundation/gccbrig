@@ -4874,7 +4874,7 @@ get_computation_cost_at (struct ivopts_data *data,
       *inv_expr = get_loop_invariant_expr (data, ubase, cbase, ratio,
 					   address_p);
       /* Clear depends on.  */
-      if (inv_expr != NULL)
+      if (*inv_expr != NULL)
 	bitmap_clear (*depends_on);
     }
 
@@ -7048,8 +7048,8 @@ create_new_ivs (struct ivopts_data *data, struct iv_ca *set)
 		 LOCATION_LINE (data->loop_loc));
       fprintf (dump_file, ", " HOST_WIDE_INT_PRINT_DEC " avg niters",
 	       avg_loop_niter (data->current_loop));
-      fprintf (dump_file, ", %" PRIu64 " expressions",
-	       set->used_inv_exprs->elements ());
+      fprintf (dump_file, ", " HOST_WIDE_INT_PRINT_UNSIGNED " expressions",
+	       (unsigned HOST_WIDE_INT) set->used_inv_exprs->elements ());
       fprintf (dump_file, ", %lu IVs:\n", bitmap_count_bits (set->cands));
       EXECUTE_IF_SET_IN_BITMAP (set->cands, 0, i, bi)
 	{
