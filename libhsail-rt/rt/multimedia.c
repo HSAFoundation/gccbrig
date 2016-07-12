@@ -24,6 +24,7 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#include <math.h>
 #include <stdint.h>
 
 uint32_t
@@ -64,7 +65,13 @@ __phsa_builtin_lerp (uint32_t a, uint32_t b, uint32_t c)
 static uint8_t
 cvt_neari_sat_u8_f32 (float a)
 {
-  if (a < 0.0)
+  if (isinf(a))
+    {
+      if (signbit(a)) return 0;
+      else return 255;
+    }
+  else if (isnan(a)) return 0;
+  else if (a < 0.0)
     return 0;
   else if (a > 255.0)
     return 255;
