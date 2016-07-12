@@ -61,10 +61,14 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
     = build_function_type_list (float_type_node, float_type_node, NULL_TREE);
   tree f_f_f_fn = build_function_type_list (float_type_node, float_type_node,
 					    float_type_node, NULL_TREE);
+  tree f_f_f_f_fn = build_function_type_list (float_type_node, float_type_node,
+					      float_type_node, float_type_node,
+					      NULL_TREE);
   tree d_d_fn
     = build_function_type_list (double_type_node, double_type_node, NULL_TREE);
-  tree u_u_fn = build_function_type_list (unsigned_type_node,
-					  unsigned_type_node, NULL_TREE);
+
+  tree ul_ul_fn = build_function_type_list (u64_type,
+					    u64_type, NULL_TREE);
 
   // The standard libgcc builtins used by HSAIL:
   tree decl = add_builtin_function ("__builtin_ceilf", f_f_fn, BUILT_IN_CEILF,
@@ -88,7 +92,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 			       BUILT_IN_NORMAL, "floor", NULL_TREE);
   set_builtin_decl (BUILT_IN_FLOOR, decl, true);
 
-  decl = add_builtin_function ("__builtin_fmaf", f_f_fn, BUILT_IN_FMAF,
+  decl = add_builtin_function ("__builtin_fmaf", f_f_f_f_fn, BUILT_IN_FMAF,
 			       BUILT_IN_NORMAL, "fmaf", NULL_TREE);
   set_builtin_decl (BUILT_IN_FMAF, decl, true);
 
@@ -112,17 +116,13 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 			       BUILT_IN_NORMAL, "cosf", NULL_TREE);
   set_builtin_decl (BUILT_IN_COSF, decl, true);
 
-  decl = add_builtin_function ("__builtin_log2f", f_f_fn, BUILT_IN_LOGF,
+  decl = add_builtin_function ("__builtin_log2f", f_f_fn, BUILT_IN_LOG2F,
 			       BUILT_IN_NORMAL, "log2f", NULL_TREE);
   set_builtin_decl (BUILT_IN_LOG2F, decl, true);
 
   decl = add_builtin_function ("__builtin_exp2f", f_f_fn, BUILT_IN_EXP2F,
 			       BUILT_IN_NORMAL, "exp2f", NULL_TREE);
   set_builtin_decl (BUILT_IN_EXP2F, decl, true);
-
-  decl = add_builtin_function ("__builtin_fmaf", f_f_fn, BUILT_IN_FMAF,
-			       BUILT_IN_NORMAL, "fmaf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_FMAF, decl, true);
 
   decl = add_builtin_function ("__builtin_rintf", f_f_fn, BUILT_IN_RINTF,
 			       BUILT_IN_NORMAL, "rintf", NULL_TREE);
@@ -140,7 +140,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 			       BUILT_IN_NORMAL, "trunc", NULL_TREE);
   set_builtin_decl (BUILT_IN_TRUNC, decl, true);
 
-  decl = add_builtin_function ("__builtin_popcount", u_u_fn, BUILT_IN_POPCOUNT,
+  decl = add_builtin_function ("__builtin_popcount", ul_ul_fn, BUILT_IN_POPCOUNT,
 			       BUILT_IN_NORMAL, "popcount", NULL_TREE);
   set_builtin_decl (BUILT_IN_POPCOUNT, decl, true);
 
@@ -169,12 +169,12 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_WORKITEMID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workitemid", 1, uint32_type_node,
-		      ptr_type_node);
+		      "__phsa_builtin_workitemid", 2, uint32_type_node,
+		      uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_WORKGROUPID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workgroupid", 1, uint32_type_node,
-		      ptr_type_node);
+		      "__phsa_builtin_workgroupid", 2, uint32_type_node,
+		      uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_CURRENTWORKITEMFLATID, BRIG_TYPE_U32,
 		      "__phsa_builtin_currentworkitemflatid", 1,
@@ -197,19 +197,19 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_CURRENTWORKGROUPSIZE, BRIG_TYPE_U32,
-		      "__phsa_builtin_currentworkgroupsize", 1,
-		      uint32_type_node, ptr_type_node);
+		      "__phsa_builtin_currentworkgroupsize", 2,
+		      uint32_type_node, uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_WORKGROUPSIZE, BRIG_TYPE_U32,
-		      "__phsa_builtin_workgroupsize", 1, uint32_type_node,
-		      ptr_type_node);
+		      "__phsa_builtin_workgroupsize", 2,
+		      uint32_type_node, uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_DIM, BRIG_TYPE_U32, "__phsa_builtin_dim", 1,
 		      uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_GRIDGROUPS, BRIG_TYPE_U32,
-		      "__phsa_builtin_gridgroups", 1, uint32_type_node,
-		      ptr_type_node);
+		      "__phsa_builtin_gridgroups", 2, uint32_type_node,
+		      uint32_type_node, ptr_type_node);
 
   add_custom_builtin (BRIG_OPCODE_BITEXTRACT, BRIG_TYPE_S32,
 		      "__phsa_builtin_bitextract_s32", 3, s32_type, s32_type,
@@ -230,20 +230,20 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 		      u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S32,
-		      "__phsa_builtin_bitinsert_u32", 3, u32_type, u32_type,
-		      u32_type, u32_type);
+		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
+		      u32_type, u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U32,
-		      "__phsa_builtin_bitinsert_u32", 3, u32_type, u32_type,
-		      u32_type, u32_type);
+		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
+		      u32_type, u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S64,
-		      "__phsa_builtin_bitinsert_u64", 3, u64_type, u64_type,
-		      u32_type, u32_type);
+		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
+		      u64_type, u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U64,
-		      "__phsa_builtin_bitinsert_u64", 3, u64_type, u64_type,
-		      u32_type, u32_type);
+		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
+		      u64_type, u32_type, u32_type);
 
   add_custom_builtin (BRIG_OPCODE_BITMASK, BRIG_TYPE_B32,
 		      "__phsa_builtin_bitmask_u32", 2, u32_type, u32_type,
@@ -1479,10 +1479,14 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
       tree_stl_vec call_operands;
       tree_stl_vec operand_types;
 
+      tree arg_type_chain = TYPE_ARG_TYPES (TREE_TYPE (built_in));
+
       for (size_t i = 0; i < operands.size (); ++i)
 	{
-	  call_operands.push_back (operands[i]);
-	  operand_types.push_back (TREE_TYPE (operands[i]));
+	  tree operand_type = TREE_VALUE (arg_type_chain);
+	  call_operands.push_back (convert(operand_type, operands[i]));
+	  operand_types.push_back (operand_type);
+	  arg_type_chain = TREE_CHAIN (arg_type_chain);
 	}
 
       if (needs_workitem_context_data (brig_opcode))
