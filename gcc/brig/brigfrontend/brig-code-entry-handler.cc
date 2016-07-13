@@ -677,6 +677,9 @@ brig_code_entry_handler::build_address_operand
 	  tree_stl_vec uint32_1
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, 1));
 
+	  tree_stl_vec uint32_2
+	    = tree_stl_vec (1, build_int_cst (uint32_type_node, 2));
+
 	  tree local_size
 	    = build2 (MULT_EXPR, uint32_type_node,
 		      expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE,
@@ -689,8 +692,8 @@ brig_code_entry_handler::build_address_operand
 	  local_size
 	    = build2 (MULT_EXPR, uint32_type_node,
 		      expand_or_call_builtin (BRIG_OPCODE_WORKGROUPSIZE,
-					      BRIG_TYPE_U32, uint32_type_node,
-					      uint32_1),
+					      BRIG_TYPE_U32,
+					      uint32_type_node, uint32_2),
 		      local_size);
 
 	  tree var_region
