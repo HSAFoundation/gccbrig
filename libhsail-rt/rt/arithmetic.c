@@ -317,7 +317,7 @@ __phsa_builtin_fract_f32 (float a)
 {
   int exp;
   if (isinf (a))
-    return 0.0f * isinf (a);
+    return signbit (a) == 0 ? 0.0f : -0.0f;
   if (isnan (a) || a == 0.0f)
     return a;
   else
