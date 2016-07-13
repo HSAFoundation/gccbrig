@@ -136,8 +136,6 @@ m32r*-*-*)
         ;;
 m68k-*-*)
 	;;
-mep*-*-*)
-	;;
 microblaze*-*-*)
 	cpu_type=microblaze
 	;;
@@ -230,7 +228,7 @@ case ${host} in
       ;;
   esac
   ;;
-*-*-linux* | frv-*-*linux* | *-*-kfreebsd*-gnu | *-*-knetbsd*-gnu | *-*-gnu* | *-*-kopensolaris*-gnu)
+*-*-linux* | frv-*-*linux* | *-*-kfreebsd*-gnu | *-*-gnu* | *-*-kopensolaris*-gnu)
   tmake_file="$tmake_file t-crtstuff-pic t-libgcc-pic t-eh-dw2-dip t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver t-linux"
   extra_parts="crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o"
   if test x$enable_vtable_verify = xyes; then
@@ -404,6 +402,13 @@ arm*-*-uclinux*)		# ARM ucLinux
 	unwind_header=config/arm/unwind-arm.h
 	extra_parts="$extra_parts crti.o crtn.o"
 	;;
+arm*-*-phoenix*)
+	tmake_file="t-hardfp t-softfp arm/t-arm arm/t-elf arm/t-softfp arm/t-phoenix"
+	tmake_file="${tmake_file} arm/t-bpabi"
+	tm_file="$tm_file arm/bpabi-lib.h"
+	extra_parts="crtbegin.o crtend.o crti.o crtn.o"
+	unwind_header=config/arm/unwind-arm.h
+	;;
 arm*-*-eabi* | arm*-*-symbianelf* | arm*-*-rtems*)
 	tmake_file="${tmake_file} arm/t-arm arm/t-elf t-fixedpoint-gnu-prefix"
 	tm_file="$tm_file arm/bpabi-lib.h"
@@ -421,12 +426,6 @@ arm*-*-eabi* | arm*-*-symbianelf* | arm*-*-rtems*)
 	tmake_file="$tmake_file t-softfp-sfdf t-softfp-excl arm/t-softfp t-softfp"
 	extra_parts="$extra_parts crtfastmath.o"
 	unwind_header=config/arm/unwind-arm.h
-	;;
-avr-*-rtems*)
-	tmake_file="$tmake_file avr/t-avr avr/t-rtems t-fpbit"
-	tm_file="$tm_file avr/avr-lib.h"
-	# Don't use default.
-	extra_parts=
 	;;
 avr-*-*)
 	# Make HImode functions for AVR
@@ -494,11 +493,6 @@ frv-*-*linux*)
 ft32-*-elf)
 	tmake_file="ft32/t-ft32 t-softfp-sfdf t-softfp-excl t-softfp"
 	extra_parts="$extra_parts crti.o crti-hw.o crtn.o"
-	;;
-h8300-*-rtems*)
-	tmake_file="$tmake_file h8300/t-h8300 t-fpbit"
-	tm_file="$tm_file h8300/h8300-lib.h"
-	extra_parts="$extra_parts crti.o crtn.o"
 	;;
 h8300-*-elf*)
 	tmake_file="$tmake_file h8300/t-h8300 t-fpbit"
@@ -603,8 +597,6 @@ i[34567]86-*-netbsdelf*)
 x86_64-*-netbsd*)
 	tmake_file="${tmake_file} i386/t-crtstuff"
 	;;
-i[34567]86-*-openbsd2.*|i[34567]86-*openbsd3.[0123])
-	;;
 i[34567]86-*-openbsd*)
 	;;
 x86_64-*-openbsd*)
@@ -615,7 +607,7 @@ i[34567]86-*-linux*)
 	tm_file="${tm_file} i386/elf-lib.h"
 	md_unwind_header=i386/linux-unwind.h
 	;;
-i[34567]86-*-kfreebsd*-gnu | i[34567]86-*-knetbsd*-gnu | i[34567]86-*-gnu* | i[34567]86-*-kopensolaris*-gnu)
+i[34567]86-*-kfreebsd*-gnu | i[34567]86-*-gnu* | i[34567]86-*-kopensolaris*-gnu)
 	extra_parts="$extra_parts crtprec32.o crtprec64.o crtprec80.o crtfastmath.o"
 	tmake_file="${tmake_file} i386/t-crtpc t-crtfm i386/t-crtstuff t-dfprules"
 	tm_file="${tm_file} i386/elf-lib.h"
@@ -626,7 +618,7 @@ x86_64-*-linux*)
 	tm_file="${tm_file} i386/elf-lib.h"
 	md_unwind_header=i386/linux-unwind.h
 	;;
-x86_64-*-kfreebsd*-gnu | x86_64-*-knetbsd*-gnu)
+x86_64-*-kfreebsd*-gnu)
 	extra_parts="$extra_parts crtprec32.o crtprec64.o crtprec80.o crtfastmath.o"
 	tmake_file="${tmake_file} i386/t-crtpc t-crtfm i386/t-crtstuff t-dfprules"
 	tm_file="${tm_file} i386/elf-lib.h"
@@ -678,6 +670,9 @@ x86_64-*-cygwin*)
 	# This has to match the logic for DWARF2_UNWIND_INFO in gcc/config/i386/cygming.h
 	if test x$ac_cv_sjlj_exceptions = xyes; then
 		tmake_eh_file="i386/t-sjlj-eh"
+	elif test "${host_address}" = 32; then
+	        # biarch -m32 with --disable-sjlj-exceptions
+	     	tmake_eh_file="i386/t-dw2-eh"
 	else
 		tmake_eh_file="i386/t-seh-eh"
 	fi
@@ -730,6 +725,10 @@ x86_64-*-mingw*)
 	# This has to match the logic for DWARF2_UNWIND_INFO in gcc/config/i386/cygming.h
 	if test x$ac_cv_sjlj_exceptions = xyes; then
 		tmake_eh_file="i386/t-sjlj-eh"
+	elif test "${host_address}" = 32; then
+	        # biarch -m32 with --disable-sjlj-exceptions
+	     	tmake_eh_file="i386/t-dw2-eh"
+		md_unwind_header=i386/w32-unwind.h
 	else
 		tmake_eh_file="i386/t-seh-eh"
 	fi
@@ -744,9 +743,6 @@ x86_64-*-mingw*)
 	if test x$enable_vtable_verify = xyes; then
 		extra_parts="$extra_parts vtv_start.o vtv_end.o vtv_start_preinit.o vtv_end_preinit.o"
 	fi
-	;;
-i[34567]86-*-interix[3-9]*)
-	tmake_file="$tmake_file i386/t-interix i386/t-chkstk"
 	;;
 ia64*-*-elf*)
 	extra_parts="$extra_parts crtbeginS.o crtendS.o crtfastmath.o"
@@ -793,10 +789,6 @@ lm32-*-uclinux*)
 m32r-*-elf*)
 	tmake_file=t-fdpbit
  	;;
-m32r-*-rtems*)
-	tmake_file="$tmake_file m32r/t-m32r t-fdpbit"
-	extra_parts="$extra_parts crtinit.o crtfini.o"
-	;;
 m32rle-*-elf*)
 	tmake_file=t-fdpbit
 	;;
@@ -1309,10 +1301,6 @@ am33_2.0-*-linux*)
 m32c-*-elf*|m32c-*-rtems*)
 	tmake_file="$tmake_file m32c/t-m32c"
  	;;
-mep*-*-*)
-	tmake_file="mep/t-mep t-fdpbit"
-	extra_parts="crtbegin.o crtend.o"
-	;;
 nvptx-*)
 	tmake_file="$tmake_file nvptx/t-nvptx"
 	extra_parts="crt0.o"
@@ -1332,7 +1320,6 @@ esac
 case ${host} in
 i[34567]86-*-linux* | x86_64-*-linux* | \
   i[34567]86-*-kfreebsd*-gnu | x86_64-*-kfreebsd*-gnu | \
-  i[34567]86-*-knetbsd*-gnu | \
   i[34567]86-*-gnu*)
 	tmake_file="${tmake_file} t-tls i386/t-linux t-slibgcc-libgcc"
 	if test "$libgcc_cv_cfi" = "yes"; then

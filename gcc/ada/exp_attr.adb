@@ -3007,11 +3007,47 @@ package body Exp_Attr is
       -- Enum_Rep --
       --------------
 
-      when Attribute_Enum_Rep => Enum_Rep :
-      begin
-         --  X'Enum_Rep (Y) expands to
+      when Attribute_Enum_Rep => Enum_Rep : declare
+         Expr : Node_Id;
 
-         --    target-type (Y)
+      begin
+         --  Get the expression, which is X for Enum_Type'Enum_Rep (X) or
+         --  X'Enum_Rep.
+
+         if Is_Non_Empty_List (Exprs) then
+            Expr := First (Exprs);
+         else
+            Expr := Pref;
+         end if;
+
+         --  If the expression is an enumeration literal, it is replaced by the
+         --  literal value.
+
+         if Nkind (Expr) in N_Has_Entity
+           and then Ekind (Entity (Expr)) = E_Enumeration_Literal
+         then
+            Rewrite (N,
+              Make_Integer_Literal (Loc, Enumeration_Rep (Entity (Expr))));
+
+         --  If this is a renaming of a literal, recover the representation
+         --  of the original. If it renames an expression there is nothing to
+         --  fold.
+
+         elsif Nkind (Expr) in N_Has_Entity
+           and then Ekind (Entity (Expr)) = E_Constant
+           and then Present (Renamed_Object (Entity (Expr)))
+           and then Is_Entity_Name (Renamed_Object (Entity (Expr)))
+           and then Ekind (Entity (Renamed_Object (Entity (Expr)))) =
+                      E_Enumeration_Literal
+         then
+            Rewrite (N,
+              Make_Integer_Literal (Loc,
+                Enumeration_Rep (Entity (Renamed_Object (Entity (Expr))))));
+
+         --  If not constant-folded above, Enum_Type'Enum_Rep (X) or
+         --  X'Enum_Rep expands to
+
+         --    target-type (X)
 
          --  This is simply a direct conversion from the enumeration type to
          --  the target integer type, which is treated by the back end as a
@@ -3020,37 +3056,8 @@ package body Exp_Attr is
          --  make sure that the analyzer does not complain about what otherwise
          --  might be an illegal conversion.
 
-         if Is_Non_Empty_List (Exprs) then
-            Rewrite (N,
-              OK_Convert_To (Typ, Relocate_Node (First (Exprs))));
-
-         --  X'Enum_Rep where X is an enumeration literal is replaced by
-         --  the literal value.
-
-         elsif Ekind (Entity (Pref)) = E_Enumeration_Literal then
-            Rewrite (N,
-              Make_Integer_Literal (Loc, Enumeration_Rep (Entity (Pref))));
-
-         --  If this is a renaming of a literal, recover the representation
-         --  of the original. If it renames an expression there is nothing
-         --  to fold.
-
-         elsif Ekind (Entity (Pref)) = E_Constant
-           and then Present (Renamed_Object (Entity (Pref)))
-           and then Is_Entity_Name (Renamed_Object (Entity (Pref)))
-           and then Ekind (Entity (Renamed_Object (Entity (Pref)))) =
-                      E_Enumeration_Literal
-         then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-                Enumeration_Rep (Entity (Renamed_Object (Entity (Pref))))));
-
-         --  X'Enum_Rep where X is an object does a direct unchecked conversion
-         --  of the object value, as described for the type case above.
-
          else
-            Rewrite (N,
-              OK_Convert_To (Typ, Relocate_Node (Pref)));
+            Rewrite (N, OK_Convert_To (Typ, Relocate_Node (Expr)));
          end if;
 
          Set_Etype (N, Typ);
@@ -4357,10 +4364,24 @@ package body Exp_Attr is
          Typ     : constant Entity_Id := Etype (N);
          CW_Temp : Entity_Id;
          CW_Typ  : Entity_Id;
+         Ins_Nod : Node_Id;
          Subp    : Node_Id;
          Temp    : Entity_Id;
 
       begin
+         --  Generating C code we don't need to expand this attribute when
+         --  we are analyzing the internally built nested postconditions
+         --  procedure since it will be expanded inline (and later it will
+         --  be removed by Expand_N_Subprogram_Body). It this expansion is
+         --  performed in such case then the compiler generates unreferenced
+         --  extra temporaries.
+
+         if Modify_Tree_For_C
+           and then Chars (Current_Scope) = Name_uPostconditions
+         then
+            return;
+         end if;
+
          --  Climb the parent chain looking for subprogram _Postconditions
 
          Subp := N;
@@ -4381,9 +4402,12 @@ package body Exp_Attr is
          end loop;
 
          --  'Old can only appear in a postcondition, the generated body of
-         --  _Postconditions must be in the tree.
+         --  _Postconditions must be in the tree (or inlined if we are
+         --  generating C code).
 
-         pragma Assert (Present (Subp));
+         pragma Assert
+           (Present (Subp)
+             or else (Modify_Tree_For_C and then In_Inlined_Body));
 
          Temp := Make_Temporary (Loc, 'T', Pref);
 
@@ -4397,7 +4421,35 @@ package body Exp_Attr is
          --  resides as this ensures that the object will be analyzed in the
          --  proper context.
 
-         Push_Scope (Scope (Defining_Entity (Subp)));
+         if Present (Subp) then
+            Push_Scope (Scope (Defining_Entity (Subp)));
+
+         --  No need to push the scope when generating C code since the
+         --  _Postcondition procedure has been inlined.
+
+         else pragma Assert (Modify_Tree_For_C);
+            pragma Assert (In_Inlined_Body);
+            null;
+         end if;
+
+         --  Locate the insertion place of the internal temporary that saves
+         --  the 'Old value.
+
+         if Present (Subp) then
+            Ins_Nod := Subp;
+
+         --  Generating C, the postcondition procedure has been inlined and the
+         --  temporary is added before the first declaration of the enclosing
+         --  subprogram.
+
+         else pragma Assert (Modify_Tree_For_C);
+            Ins_Nod := N;
+            while Nkind (Ins_Nod) /= N_Subprogram_Body loop
+               Ins_Nod := Parent (Ins_Nod);
+            end loop;
+
+            Ins_Nod := First (Declarations (Ins_Nod));
+         end if;
 
          --  Preserve the tag of the prefix by offering a specific view of the
          --  class-wide version of the prefix.
@@ -4410,7 +4462,7 @@ package body Exp_Attr is
             CW_Temp := Make_Temporary (Loc, 'T');
             CW_Typ  := Class_Wide_Type (Typ);
 
-            Insert_Before_And_Analyze (Subp,
+            Insert_Before_And_Analyze (Ins_Nod,
               Make_Object_Declaration (Loc,
                 Defining_Identifier => CW_Temp,
                 Constant_Present    => True,
@@ -4421,7 +4473,7 @@ package body Exp_Attr is
             --  Generate:
             --    Temp : Typ renames Typ (CW_Temp);
 
-            Insert_Before_And_Analyze (Subp,
+            Insert_Before_And_Analyze (Ins_Nod,
               Make_Object_Renaming_Declaration (Loc,
                 Defining_Identifier => Temp,
                 Subtype_Mark        => New_Occurrence_Of (Typ, Loc),
@@ -4434,7 +4486,7 @@ package body Exp_Attr is
             --  Generate:
             --    Temp : constant Typ := Pref;
 
-            Insert_Before_And_Analyze (Subp,
+            Insert_Before_And_Analyze (Ins_Nod,
               Make_Object_Declaration (Loc,
                 Defining_Identifier => Temp,
                 Constant_Present    => True,
@@ -4442,7 +4494,9 @@ package body Exp_Attr is
                 Expression          => Relocate_Node (Pref)));
          end if;
 
-         Pop_Scope;
+         if Present (Subp) then
+            Pop_Scope;
+         end if;
 
          --  Ensure that the prefix of attribute 'Old is valid. The check must
          --  be inserted after the expansion of the attribute has taken place

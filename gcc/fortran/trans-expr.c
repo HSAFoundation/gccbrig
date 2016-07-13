@@ -7358,7 +7358,6 @@ gfc_trans_structure_assign (tree dest, gfc_expr * expr, bool init)
     {
       gfc_se se, lse;
 
-      gcc_assert (cm->backend_decl == NULL);
       gfc_init_se (&se, NULL);
       gfc_init_se (&lse, NULL);
       gfc_conv_expr (&se, gfc_constructor_first (expr->value.constructor)->expr);
@@ -7934,11 +7933,11 @@ gfc_trans_pointer_assignment (gfc_expr * expr1, gfc_expr * expr2)
 					       bound, bound, 0,
 					       GFC_ARRAY_POINTER_CONT, false);
 	      tmp = gfc_create_var (tmp, "ptrtemp");
-	      lse.descriptor_only = 0;
-	      lse.expr = tmp;
-	      lse.direct_byref = 1;
-	      gfc_conv_expr_descriptor (&lse, expr2);
-	      strlen_rhs = lse.string_length;
+	      rse.descriptor_only = 0;
+	      rse.expr = tmp;
+	      rse.direct_byref = 1;
+	      gfc_conv_expr_descriptor (&rse, expr2);
+	      strlen_rhs = rse.string_length;
 	      rse.expr = tmp;
 	    }
 	  else

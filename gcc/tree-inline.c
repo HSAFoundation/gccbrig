@@ -367,7 +367,20 @@ remap_decl (tree decl, copy_body_data *id)
       /* Remap types, if necessary.  */
       TREE_TYPE (t) = remap_type (TREE_TYPE (t), id);
       if (TREE_CODE (t) == TYPE_DECL)
-        DECL_ORIGINAL_TYPE (t) = remap_type (DECL_ORIGINAL_TYPE (t), id);
+	{
+	  DECL_ORIGINAL_TYPE (t) = remap_type (DECL_ORIGINAL_TYPE (t), id);
+
+	  /* Preserve the invariant that DECL_ORIGINAL_TYPE != TREE_TYPE,
+	     which is enforced in gen_typedef_die when DECL_ABSTRACT_ORIGIN
+	     is not set on the TYPE_DECL, for example in LTO mode.  */
+	  if (DECL_ORIGINAL_TYPE (t) == TREE_TYPE (t))
+	    {
+	      tree x = build_variant_type_copy (TREE_TYPE (t));
+	      TYPE_STUB_DECL (x) = TYPE_STUB_DECL (TREE_TYPE (t));
+	      TYPE_NAME (x) = TYPE_NAME (TREE_TYPE (t));
+	      DECL_ORIGINAL_TYPE (t) = x;
+	    }
+	}
 
       /* Remap sizes as necessary.  */
       walk_tree (&DECL_SIZE (t), copy_tree_body_r, id, NULL);
@@ -3940,6 +3953,10 @@ estimate_operator_cost (enum tree_code code, eni_weights *weights,
       if (TREE_CODE (op2) != INTEGER_CST)
         return weights->div_mod_cost;
       return 1;
+
+    /* Bit-field insertion needs several shift and mask operations.  */
+    case BIT_INSERT_EXPR:
+      return 3;
 
     default:
       /* We expect a copy assignment with no operator.  */

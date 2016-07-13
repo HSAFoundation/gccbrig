@@ -156,17 +156,22 @@
     {
     case CONST_INT:
       {
-        HOST_WIDE_INT val = trunc_int_for_mode (INTVAL (op), DImode);
+        HOST_WIDE_INT val = INTVAL (op);
         return trunc_int_for_mode (val, SImode) == val;
       }
     case SYMBOL_REF:
+      /* TLS symbols are not constant.  */
+      if (SYMBOL_REF_TLS_MODEL (op))
+	return false;
+
+      /* Load the external function address via the GOT slot.  */
+      if (ix86_force_load_from_GOT_p (op))
+	return false;
+
       /* For certain code models, the symbolic references are known to fit.
 	 in CM_SMALL_PIC model we know it fits if it is local to the shared
 	 library.  Don't count TLS SYMBOL_REFs here, since they should fit
 	 only if inside of UNSPEC handled below.  */
-      /* TLS symbols are not constant.  */
-      if (SYMBOL_REF_TLS_MODEL (op))
-	return false;
       return (ix86_cmodel == CM_SMALL || ix86_cmodel == CM_KERNEL
 	      || (ix86_cmodel == CM_MEDIUM && !SYMBOL_REF_FAR_ADDR_P (op)));
 
@@ -194,19 +199,27 @@
 	{
 	  rtx op1 = XEXP (XEXP (op, 0), 0);
 	  rtx op2 = XEXP (XEXP (op, 0), 1);
-	  HOST_WIDE_INT offset;
 
 	  if (ix86_cmodel == CM_LARGE)
 	    return false;
 	  if (!CONST_INT_P (op2))
 	    return false;
-	  offset = trunc_int_for_mode (INTVAL (op2), DImode);
+
+	  HOST_WIDE_INT offset = INTVAL (op2);
+	  if (trunc_int_for_mode (offset, SImode) != offset)
+	    return false;
+
 	  switch (GET_CODE (op1))
 	    {
 	    case SYMBOL_REF:
 	      /* TLS symbols are not constant.  */
 	      if (SYMBOL_REF_TLS_MODEL (op1))
 		return false;
+
+	      /* Load the external function address via the GOT slot.  */
+	      if (ix86_force_load_from_GOT_p (op1))
+	        return false;
+
 	      /* For CM_SMALL assume that latest object is 16MB before
 		 end of 31bits boundary.  We may also accept pretty
 		 large negative constants knowing that all objects are
@@ -214,16 +227,14 @@
 	      if ((ix86_cmodel == CM_SMALL
 		   || (ix86_cmodel == CM_MEDIUM
 		       && !SYMBOL_REF_FAR_ADDR_P (op1)))
-		  && offset < 16*1024*1024
-		  && trunc_int_for_mode (offset, SImode) == offset)
+		  && offset < 16*1024*1024)
 		return true;
 	      /* For CM_KERNEL we know that all object resist in the
 		 negative half of 32bits address space.  We may not
 		 accept negative offsets, since they may be just off
 		 and we may accept pretty large positive ones.  */
 	      if (ix86_cmodel == CM_KERNEL
-		  && offset > 0
-		  && trunc_int_for_mode (offset, SImode) == offset)
+		  && offset > 0)
 		return true;
 	      break;
 
@@ -231,12 +242,10 @@
 	      /* These conditions are similar to SYMBOL_REF ones, just the
 		 constraints for code models differ.  */
 	      if ((ix86_cmodel == CM_SMALL || ix86_cmodel == CM_MEDIUM)
-		  && offset < 16*1024*1024
-		  && trunc_int_for_mode (offset, SImode) == offset)
+		  && offset < 16*1024*1024)
 		return true;
 	      if (ix86_cmodel == CM_KERNEL
-		  && offset > 0
-		  && trunc_int_for_mode (offset, SImode) == offset)
+		  && offset > 0)
 		return true;
 	      break;
 
@@ -245,8 +254,7 @@
 		{
 		case UNSPEC_DTPOFF:
 		case UNSPEC_NTPOFF:
-		  if (trunc_int_for_mode (offset, SImode) == offset)
-		    return true;
+		  return true;
 		}
 	      break;
 
@@ -273,10 +281,15 @@
       return !(INTVAL (op) & ~(HOST_WIDE_INT) 0xffffffff);
 
     case SYMBOL_REF:
-      /* For certain code models, the symbolic references are known to fit.  */
       /* TLS symbols are not constant.  */
       if (SYMBOL_REF_TLS_MODEL (op))
 	return false;
+
+      /* Load the external function address via the GOT slot.  */
+      if (ix86_force_load_from_GOT_p (op))
+	return false;
+
+     /* For certain code models, the symbolic references are known to fit.  */
       return (ix86_cmodel == CM_SMALL
 	      || (ix86_cmodel == CM_MEDIUM
 		  && !SYMBOL_REF_FAR_ADDR_P (op)));
@@ -295,12 +308,24 @@
 
 	  if (ix86_cmodel == CM_LARGE)
 	    return false;
+	  if (!CONST_INT_P (op2))
+	    return false;
+
+	  HOST_WIDE_INT offset = INTVAL (op2);
+	  if (trunc_int_for_mode (offset, SImode) != offset)
+	    return false;
+
 	  switch (GET_CODE (op1))
 	    {
 	    case SYMBOL_REF:
 	      /* TLS symbols are not constant.  */
 	      if (SYMBOL_REF_TLS_MODEL (op1))
 		return false;
+
+	      /* Load the external function address via the GOT slot.  */
+	      if (ix86_force_load_from_GOT_p (op1))
+	        return false;
+
 	      /* For small code model we may accept pretty large positive
 		 offsets, since one bit is available for free.  Negative
 		 offsets are limited by the size of NULL pointer area
@@ -308,9 +333,7 @@
 	      if ((ix86_cmodel == CM_SMALL
 		   || (ix86_cmodel == CM_MEDIUM
 		       && !SYMBOL_REF_FAR_ADDR_P (op1)))
-		  && CONST_INT_P (op2)
-		  && trunc_int_for_mode (INTVAL (op2), DImode) > -0x10000
-		  && trunc_int_for_mode (INTVAL (op2), SImode) == INTVAL (op2))
+		  && offset > -0x10000)
 		return true;
 	      /* ??? For the kernel, we may accept adjustment of
 		 -0x10000000, since we know that it will just convert
@@ -322,9 +345,7 @@
 	      /* These conditions are similar to SYMBOL_REF ones, just the
 		 constraints for code models differ.  */
 	      if ((ix86_cmodel == CM_SMALL || ix86_cmodel == CM_MEDIUM)
-		  && CONST_INT_P (op2)
-		  && trunc_int_for_mode (INTVAL (op2), DImode) > -0x10000
-		  && trunc_int_for_mode (INTVAL (op2), SImode) == INTVAL (op2))
+		  && offset > -0x10000)
 		return true;
 	      break;
 

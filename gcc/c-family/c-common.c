@@ -2980,13 +2980,15 @@ verify_tree (tree x, struct tlist **pbefore_sp, struct tlist **pno_sp,
     case COMPOUND_EXPR:
     case TRUTH_ANDIF_EXPR:
     case TRUTH_ORIF_EXPR:
-      tmp_before = tmp_nosp = tmp_list3 = 0;
+      tmp_before = tmp_nosp = tmp_list2 = tmp_list3 = 0;
       verify_tree (TREE_OPERAND (x, 0), &tmp_before, &tmp_nosp, NULL_TREE);
       warn_for_collisions (tmp_nosp);
       merge_tlist (pbefore_sp, tmp_before, 0);
       merge_tlist (pbefore_sp, tmp_nosp, 0);
-      verify_tree (TREE_OPERAND (x, 1), &tmp_list3, pno_sp, NULL_TREE);
+      verify_tree (TREE_OPERAND (x, 1), &tmp_list3, &tmp_list2, NULL_TREE);
+      warn_for_collisions (tmp_list2);
       merge_tlist (pbefore_sp, tmp_list3, 0);
+      merge_tlist (pno_sp, tmp_list2, 0);
       return;
 
     case COND_EXPR:
@@ -4734,8 +4736,6 @@ static GTY(()) hash_table<c_type_hasher> *type_hash_table;
 alias_set_type
 c_common_get_alias_set (tree t)
 {
-  tree u;
-
   /* For VLAs, use the alias set of the element type rather than the
      default of alias set 0 for types compared structurally.  */
   if (TYPE_P (t) && TYPE_STRUCTURAL_EQUALITY_P (t))
@@ -4744,19 +4744,6 @@ c_common_get_alias_set (tree t)
 	return get_alias_set (TREE_TYPE (t));
       return -1;
     }
-
-  /* Permit type-punning when accessing a union, provided the access
-     is directly through the union.  For example, this code does not
-     permit taking the address of a union member and then storing
-     through it.  Even the type-punning allowed here is a GCC
-     extension, albeit a common and useful one; the C standard says
-     that such accesses have implementation-defined behavior.  */
-  for (u = t;
-       TREE_CODE (u) == COMPONENT_REF || TREE_CODE (u) == ARRAY_REF;
-       u = TREE_OPERAND (u, 0))
-    if (TREE_CODE (u) == COMPONENT_REF
-	&& TREE_CODE (TREE_TYPE (TREE_OPERAND (u, 0))) == UNION_TYPE)
-      return 0;
 
   /* That's all the expressions we handle specially.  */
   if (!TYPE_P (t))
@@ -9040,10 +9027,14 @@ handle_nonnull_attribute (tree *node, tree ARG_UNUSED (name),
 
   /* If no arguments are specified, all pointer arguments should be
      non-null.  Verify a full prototype is given so that the arguments
-     will have the correct types when we actually check them later.  */
+     will have the correct types when we actually check them later.
+     Avoid diagnosing type-generic built-ins since those have no
+     prototype.  */
   if (!args)
     {
-      if (!prototype_p (type))
+      if (!prototype_p (type)
+	  && (!TYPE_ATTRIBUTES (type)
+	      || !lookup_attribute ("type generic", TYPE_ATTRIBUTES (type))))
 	{
 	  error ("nonnull attribute without arguments on a non-prototype");
 	  *no_add_attrs = true;
@@ -9542,10 +9533,10 @@ parse_optimize_options (tree args, bool attr_p)
 		  ret = false;
 		  if (attr_p)
 		    warning (OPT_Wattributes,
-			     "bad option %s to optimize attribute", p);
+			     "bad option %qs to attribute %<optimize%>", p);
 		  else
 		    warning (OPT_Wpragmas,
-			     "bad option %s to pragma attribute", p);
+			     "bad option %qs to pragma %<optimize%>", p);
 		  continue;
 		}
 
@@ -9580,6 +9571,29 @@ parse_optimize_options (tree args, bool attr_p)
   decode_cmdline_options_to_array_default_mask (opt_argc, opt_argv,
 						&decoded_options,
 						&decoded_options_count);
+  /* Drop non-Optimization options.  */
+  unsigned j = 1;
+  for (i = 1; i < decoded_options_count; ++i)
+    {
+      if (! (cl_options[decoded_options[i].opt_index].flags & CL_OPTIMIZATION))
+	{
+	  ret = false;
+	  if (attr_p)
+	    warning (OPT_Wattributes,
+		     "bad option %qs to attribute %<optimize%>",
+		     decoded_options[i].orig_option_with_args_text);
+	  else
+	    warning (OPT_Wpragmas,
+		     "bad option %qs to pragma %<optimize%>",
+		     decoded_options[i].orig_option_with_args_text);
+	  continue;
+	}
+      if (i != j)
+	decoded_options[j] = decoded_options[i];
+      j++;
+    }
+  decoded_options_count = j;
+  /* And apply them.  */
   decode_options (&global_options, &global_options_set,
 		  decoded_options, decoded_options_count,
 		  input_location, global_dc);
@@ -9805,7 +9819,7 @@ builtin_function_validate_nargs (location_t loc, tree fndecl, int nargs,
 {
   if (nargs < required)
     {
-      error_at (loc, "not enough arguments to function %qE", fndecl);
+      error_at (loc, "too few arguments to function %qE", fndecl);
       return false;
     }
   else if (nargs > required)
@@ -9956,10 +9970,51 @@ check_builtin_function_arguments (location_t loc, vec<location_t> arg_loc,
 		return false;
 	      }
 	  if (TREE_CODE (TREE_TYPE (args[2])) != POINTER_TYPE
-	      || TREE_CODE (TREE_TYPE (TREE_TYPE (args[2]))) != INTEGER_TYPE)
+	      || !INTEGRAL_TYPE_P (TREE_TYPE (TREE_TYPE (args[2]))))
 	    {
 	      error_at (ARG_LOCATION (2), "argument 3 in call to function %qE "
-			"does not have pointer to integer type", fndecl);
+			"does not have pointer to integral type", fndecl);
+	      return false;
+	    }
+	  else if (TREE_CODE (TREE_TYPE (TREE_TYPE (args[2]))) == ENUMERAL_TYPE)
+	    {
+	      error_at (ARG_LOCATION (2), "argument 3 in call to function %qE "
+			"has pointer to enumerated type", fndecl);
+	      return false;
+	    }
+	  else if (TREE_CODE (TREE_TYPE (TREE_TYPE (args[2]))) == BOOLEAN_TYPE)
+	    {
+	      error_at (ARG_LOCATION (2), "argument 3 in call to function %qE "
+			"has pointer to boolean type", fndecl);
+	      return false;
+	    }
+	  return true;
+	}
+      return false;
+
+    case BUILT_IN_ADD_OVERFLOW_P:
+    case BUILT_IN_SUB_OVERFLOW_P:
+    case BUILT_IN_MUL_OVERFLOW_P:
+      if (builtin_function_validate_nargs (loc, fndecl, nargs, 3))
+	{
+	  unsigned i;
+	  for (i = 0; i < 3; i++)
+	    if (!INTEGRAL_TYPE_P (TREE_TYPE (args[i])))
+	      {
+		error_at (ARG_LOCATION (i), "argument %u in call to function "
+			  "%qE does not have integral type", i + 1, fndecl);
+		return false;
+	      }
+	  if (TREE_CODE (TREE_TYPE (args[2])) == ENUMERAL_TYPE)
+	    {
+	      error_at (ARG_LOCATION (2), "argument 3 in call to function "
+			"%qE has enumerated type", fndecl);
+	      return false;
+	    }
+	  else if (TREE_CODE (TREE_TYPE (args[2])) == BOOLEAN_TYPE)
+	    {
+	      error_at (ARG_LOCATION (2), "argument 3 in call to function "
+			"%qE has boolean type", fndecl);
 	      return false;
 	    }
 	  return true;
@@ -12496,66 +12551,34 @@ build_userdef_literal (tree suffix_id, tree value,
   return literal;
 }
 
-/* For vector[index], convert the vector to a
-   pointer of the underlying type.  Return true if the resulting
-   ARRAY_REF should not be an lvalue.  */
+/* For vector[index], convert the vector to an array of the underlying type.
+   Return true if the resulting ARRAY_REF should not be an lvalue.  */
 
 bool
-convert_vector_to_pointer_for_subscript (location_t loc,
-					 tree *vecp, tree index)
+convert_vector_to_array_for_subscript (location_t loc,
+				       tree *vecp, tree index)
 {
   bool ret = false;
   if (VECTOR_TYPE_P (TREE_TYPE (*vecp)))
     {
       tree type = TREE_TYPE (*vecp);
-      tree type1;
 
       ret = !lvalue_p (*vecp);
+
       if (TREE_CODE (index) == INTEGER_CST)
         if (!tree_fits_uhwi_p (index)
             || tree_to_uhwi (index) >= TYPE_VECTOR_SUBPARTS (type))
           warning_at (loc, OPT_Warray_bounds, "index value is out of bound");
 
-      if (ret)
-	{
-	  tree tmp = create_tmp_var_raw (type);
-	  DECL_SOURCE_LOCATION (tmp) = loc;
-	  *vecp = c_save_expr (*vecp);
-	  if (TREE_CODE (*vecp) == C_MAYBE_CONST_EXPR)
-	    {
-	      bool non_const = C_MAYBE_CONST_EXPR_NON_CONST (*vecp);
-	      *vecp = C_MAYBE_CONST_EXPR_EXPR (*vecp);
-	      *vecp
-		= c_wrap_maybe_const (build4 (TARGET_EXPR, type, tmp,
-					      *vecp, NULL_TREE, NULL_TREE),
-				      non_const);
-	    }
-	  else
-	    *vecp = build4 (TARGET_EXPR, type, tmp, *vecp,
-			    NULL_TREE, NULL_TREE);
-	  SET_EXPR_LOCATION (*vecp, loc);
-	  c_common_mark_addressable_vec (tmp);
-	}
-      else
-	c_common_mark_addressable_vec (*vecp);
-      type = build_qualified_type (TREE_TYPE (type), TYPE_QUALS (type));
-      type1 = build_pointer_type (TREE_TYPE (*vecp));
-      bool ref_all = TYPE_REF_CAN_ALIAS_ALL (type1);
-      if (!ref_all
-	  && !DECL_P (*vecp))
-	{
-	  /* If the original vector isn't declared may_alias and it
-	     isn't a bare vector look if the subscripting would
-	     alias the vector we subscript, and if not, force ref-all.  */
-	  alias_set_type vecset = get_alias_set (*vecp);
-	  alias_set_type sset = get_alias_set (type);
-	  if (!alias_sets_must_conflict_p (sset, vecset)
-	      && !alias_set_subset_of (sset, vecset))
-	    ref_all = true;
-	}
-      type = build_pointer_type_for_mode (type, ptr_mode, ref_all);
-      *vecp = build1 (ADDR_EXPR, type1, *vecp);
-      *vecp = convert (type, *vecp);
+      /* We are building an ARRAY_REF so mark the vector as addressable
+         to not run into the gimplifiers premature setting of DECL_GIMPLE_REG_P
+	 for function parameters.  */
+      c_common_mark_addressable_vec (*vecp);
+
+      *vecp = build1 (VIEW_CONVERT_EXPR,
+		      build_array_type_nelts (TREE_TYPE (type),
+					      TYPE_VECTOR_SUBPARTS (type)),
+		      *vecp);
     }
   return ret;
 }
@@ -12794,11 +12817,12 @@ valid_array_size_p (location_t loc, tree type, tree name)
 /* Read SOURCE_DATE_EPOCH from environment to have a deterministic
    timestamp to replace embedded current dates to get reproducible
    results.  Returns -1 if SOURCE_DATE_EPOCH is not defined.  */
+
 time_t
-get_source_date_epoch ()
+cb_get_source_date_epoch (cpp_reader *pfile ATTRIBUTE_UNUSED)
 {
   char *source_date_epoch;
-  long long epoch;
+  int64_t epoch;
   char *endptr;
 
   source_date_epoch = getenv ("SOURCE_DATE_EPOCH");
@@ -12806,20 +12830,19 @@ get_source_date_epoch ()
     return (time_t) -1;
 
   errno = 0;
+#if defined(INT64_T_IS_LONG)
+  epoch = strtol (source_date_epoch, &endptr, 10);
+#else
   epoch = strtoll (source_date_epoch, &endptr, 10);
-  if ((errno == ERANGE && (epoch == LLONG_MAX || epoch == LLONG_MIN))
-      || (errno != 0 && epoch == 0))
-    fatal_error (UNKNOWN_LOCATION, "environment variable $SOURCE_DATE_EPOCH: "
-		 "strtoll: %s\n", xstrerror(errno));
-  if (endptr == source_date_epoch)
-    fatal_error (UNKNOWN_LOCATION, "environment variable $SOURCE_DATE_EPOCH: "
-		 "no digits were found: %s\n", endptr);
-  if (*endptr != '\0')
-    fatal_error (UNKNOWN_LOCATION, "environment variable $SOURCE_DATE_EPOCH: "
-		 "trailing garbage: %s\n", endptr);
-  if (epoch < 0)
-    fatal_error (UNKNOWN_LOCATION, "environment variable $SOURCE_DATE_EPOCH: "
-		 "value must be nonnegative: %lld \n", epoch);
+#endif
+  if (errno != 0 || endptr == source_date_epoch || *endptr != '\0'
+      || epoch < 0 || epoch > MAX_SOURCE_DATE_EPOCH)
+    {
+      error_at (input_location, "environment variable SOURCE_DATE_EPOCH must "
+	        "expand to a non-negative integer less than or equal to %wd",
+		MAX_SOURCE_DATE_EPOCH);
+      return (time_t) -1;
+    }
 
   return (time_t) epoch;
 }

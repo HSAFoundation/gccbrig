@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1752,6 +1752,14 @@ package body Sinfo is
       return Uint3 (N);
    end Intval;
 
+   function Is_Abort_Block
+     (N : Node_Id) return Boolean is
+   begin
+      pragma Assert (False
+        or else NT (N).Nkind = N_Block_Statement);
+      return Flag4 (N);
+   end Is_Abort_Block;
+
    function Is_Accessibility_Actual
      (N : Node_Id) return Boolean is
    begin
@@ -2408,6 +2416,14 @@ package body Sinfo is
         or else NT (N).Nkind = N_Not_In);
       return Flag17 (N);
    end No_Minimize_Eliminate;
+
+   function No_Side_Effect_Removal
+      (N : Node_Id) return Boolean is
+   begin
+      pragma Assert (False
+        or else NT (N).Nkind = N_Function_Call);
+      return Flag1 (N);
+   end No_Side_Effect_Removal;
 
    function No_Truncation
       (N : Node_Id) return Boolean is
@@ -5007,6 +5023,14 @@ package body Sinfo is
       Set_Uint3 (N, Val);
    end Set_Intval;
 
+   procedure Set_Is_Abort_Block
+      (N : Node_Id; Val : Boolean := True) is
+   begin
+      pragma Assert (False
+        or else NT (N).Nkind = N_Block_Statement);
+      Set_Flag4 (N, Val);
+   end Set_Is_Abort_Block;
+
    procedure Set_Is_Accessibility_Actual
       (N : Node_Id; Val : Boolean := True) is
    begin
@@ -5663,6 +5687,14 @@ package body Sinfo is
         or else NT (N).Nkind = N_Not_In);
       Set_Flag17 (N, Val);
    end Set_No_Minimize_Eliminate;
+
+   procedure Set_No_Side_Effect_Removal
+      (N : Node_Id; Val : Boolean := True) is
+   begin
+      pragma Assert (False
+        or else NT (N).Nkind = N_Function_Call);
+      Set_Flag1 (N, Val);
+   end Set_No_Side_Effect_Removal;
 
    procedure Set_No_Truncation
       (N : Node_Id; Val : Boolean := True) is

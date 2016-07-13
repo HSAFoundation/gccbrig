@@ -478,6 +478,24 @@ dump_ternary_rhs (pretty_printer *buffer, gassign *gs, int spc, int flags)
       pp_greater (buffer);
       break;
 
+    case BIT_INSERT_EXPR:
+      pp_string (buffer, "BIT_INSERT_EXPR <");
+      dump_generic_node (buffer, gimple_assign_rhs1 (gs), spc, flags, false);
+      pp_string (buffer, ", ");
+      dump_generic_node (buffer, gimple_assign_rhs2 (gs), spc, flags, false);
+      pp_string (buffer, ", ");
+      dump_generic_node (buffer, gimple_assign_rhs3 (gs), spc, flags, false);
+      pp_string (buffer, " (");
+      if (INTEGRAL_TYPE_P (TREE_TYPE (gimple_assign_rhs2 (gs))))
+	pp_decimal_int (buffer,
+			TYPE_PRECISION (TREE_TYPE (gimple_assign_rhs2 (gs))));
+      else
+	dump_generic_node (buffer,
+			   TYPE_SIZE (TREE_TYPE (gimple_assign_rhs2 (gs))),
+			   spc, flags, false);
+      pp_string (buffer, " bits)>");
+      break;
+
     default:
       gcc_unreachable ();
     }
@@ -742,6 +760,8 @@ dump_gimple_call (pretty_printer *buffer, gcall *gs, int spc, int flags)
     pp_string (buffer, " [return slot optimization]");
   if (gimple_call_tail_p (gs))
     pp_string (buffer, " [tail call]");
+  if (gimple_call_must_tail_p (gs))
+    pp_string (buffer, " [must tail call]");
 
   if (fn == NULL)
     return;

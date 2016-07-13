@@ -317,7 +317,7 @@ build_up_reference (tree type, tree arg, int flags, tree decl,
 
   gcc_assert (TREE_CODE (type) == REFERENCE_TYPE);
 
-  if ((flags & DIRECT_BIND) && ! real_lvalue_p (arg))
+  if ((flags & DIRECT_BIND) && ! lvalue_p (arg))
     {
       /* Create a new temporary variable.  We can't just use a TARGET_EXPR
 	 here because it needs to live as long as DECL.  */
@@ -330,7 +330,7 @@ build_up_reference (tree type, tree arg, int flags, tree decl,
       cp_finish_decl (arg, targ, /*init_const_expr_p=*/false, NULL_TREE,
 		      LOOKUP_ONLYCONVERTING|DIRECT_BIND);
     }
-  else if (!(flags & DIRECT_BIND) && ! lvalue_p (arg))
+  else if (!(flags & DIRECT_BIND) && ! obvalue_p (arg))
     return get_target_expr_sfinae (arg, complain);
 
   /* If we had a way to wrap this up, and say, if we ever needed its
@@ -439,7 +439,7 @@ convert_to_reference (tree reftype, tree expr, int convtype,
 	= build_type_conversion (reftype, expr);
 
       if (rval_as_conversion && rval_as_conversion != error_mark_node
-	  && real_lvalue_p (rval_as_conversion))
+	  && lvalue_p (rval_as_conversion))
 	{
 	  expr = rval_as_conversion;
 	  rval_as_conversion = NULL_TREE;
@@ -457,7 +457,7 @@ convert_to_reference (tree reftype, tree expr, int convtype,
 	tree ttr = lvalue_type (expr);
 
 	if ((complain & tf_error)
-	    && ! real_lvalue_p (expr))
+	    && ! lvalue_p (expr))
 	  diagnose_ref_binding (loc, reftype, intype, decl);
 
 	if (! (convtype & CONV_CONST)
@@ -473,7 +473,7 @@ convert_to_reference (tree reftype, tree expr, int convtype,
 
       return build_up_reference (reftype, expr, flags, decl, complain);
     }
-  else if ((convtype & CONV_REINTERPRET) && lvalue_p (expr))
+  else if ((convtype & CONV_REINTERPRET) && obvalue_p (expr))
     {
       /* When casting an lvalue to a reference type, just convert into
 	 a pointer to the new type and deference it.  This is allowed

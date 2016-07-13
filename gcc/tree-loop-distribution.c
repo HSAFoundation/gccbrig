@@ -278,7 +278,7 @@ create_edge_for_control_dependence (struct graph *rdg, basic_block bb,
   EXECUTE_IF_SET_IN_BITMAP (cd->get_edges_dependent_on (bb->index),
 			    0, edge_n, bi)
     {
-      basic_block cond_bb = cd->get_edge (edge_n)->src;
+      basic_block cond_bb = cd->get_edge_src (edge_n);
       gimple *stmt = last_stmt (cond_bb);
       if (stmt && is_ctrl_stmt (stmt))
 	{
@@ -1504,6 +1504,7 @@ distribute_loop (struct loop *loop, vec<gimple *> stmts,
      memory accesses.  */
   for (i = 0; partitions.iterate (i, &into); ++i)
     {
+      bool changed = false;
       if (partition_builtin_p (into))
 	continue;
       for (int j = i + 1;
@@ -1524,8 +1525,15 @@ distribute_loop (struct loop *loop, vec<gimple *> stmts,
 	      partitions.unordered_remove (j);
 	      partition_free (partition);
 	      j--;
+	      changed = true;
 	    }
 	}
+      /* If we fused 0 1 2 in step 1 to 0,2 1 as 0 and 2 have similar
+         accesses when 1 and 2 have similar accesses but not 0 and 1
+	 then in the next iteration we will fail to consider merging
+	 1 into 0,2.  So try again if we did any merging into 0.  */
+      if (changed)
+	i--;
     }
 
   /* Build the partition dependency graph.  */
@@ -1789,7 +1797,7 @@ out:
 	    {
 	      calculate_dominance_info (CDI_DOMINATORS);
 	      calculate_dominance_info (CDI_POST_DOMINATORS);
-	      cd = new control_dependences (create_edge_list ());
+	      cd = new control_dependences ();
 	      free_dominance_info (CDI_POST_DOMINATORS);
 	    }
 	  bool destroy_p;
@@ -1815,14 +1823,14 @@ out:
   if (cd)
     delete cd;
 
-  /* Destroy loop bodies that could not be reused.  Do this late as we
-     otherwise can end up refering to stale data in control dependences.  */
-  unsigned i;
-  FOR_EACH_VEC_ELT (loops_to_be_destroyed, i, loop)
-    destroy_loop (loop);
-
   if (changed)
     {
+      /* Destroy loop bodies that could not be reused.  Do this late as we
+	 otherwise can end up refering to stale data in control dependences.  */
+      unsigned i;
+      FOR_EACH_VEC_ELT (loops_to_be_destroyed, i, loop)
+	  destroy_loop (loop);
+
       /* Cached scalar evolutions now may refer to wrong or non-existing
 	 loops.  */
       scev_reset_htab ();

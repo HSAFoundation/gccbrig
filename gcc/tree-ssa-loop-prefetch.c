@@ -631,6 +631,9 @@ gather_memory_references (struct loop *loop, bool *no_other_refs, unsigned *ref_
 	      continue;
 	    }
 
+	  if (! gimple_vuse (stmt))
+	    continue;
+
 	  lhs = gimple_assign_lhs (stmt);
 	  rhs = gimple_assign_rhs1 (stmt);
 
@@ -1546,7 +1549,7 @@ determine_loop_nest_reuse (struct loop *loop, struct mem_ref_group *refs,
   vec<ddr_p> dependences = vNULL;
   struct mem_ref_group *gr;
   struct mem_ref *ref, *refb;
-  vec<loop_p> vloops = vNULL;
+  auto_vec<loop_p> vloops;
   unsigned *loop_data_size;
   unsigned i, j, n;
   unsigned volume, dist, adist;
@@ -1845,7 +1848,7 @@ loop_prefetch_arrays (struct loop *loop)
   ahead = (PREFETCH_LATENCY + time - 1) / time;
   est_niter = estimated_stmt_executions_int (loop);
   if (est_niter == -1)
-    est_niter = max_stmt_executions_int (loop);
+    est_niter = likely_max_stmt_executions_int (loop);
 
   /* Prefetching is not likely to be profitable if the trip count to ahead
      ratio is too small.  */

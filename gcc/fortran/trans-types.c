@@ -828,7 +828,6 @@ gfc_build_complex_type (tree scalar_type)
 
   new_type = make_node (COMPLEX_TYPE);
   TREE_TYPE (new_type) = scalar_type;
-  SET_TYPE_MODE (new_type, GET_MODE_COMPLEX_MODE (TYPE_MODE (scalar_type)));
   layout_type (new_type);
   return new_type;
 }
@@ -1052,7 +1051,7 @@ gfc_get_character_type (int kind, gfc_charlen * cl)
   return gfc_get_character_type_len (kind, len);
 }
 
-/* Covert a basic type.  This will be an array for character types.  */
+/* Convert a basic type.  This will be an array for character types.  */
 
 tree
 gfc_typenode_for_spec (gfc_typespec * spec)

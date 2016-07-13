@@ -90,6 +90,8 @@ static tree handle_novops_attribute (tree *, tree, tree, int, bool *);
 static tree handle_nonnull_attribute (tree *, tree, tree, int, bool *);
 static tree handle_sentinel_attribute (tree *, tree, tree, int, bool *);
 static tree handle_noreturn_attribute (tree *, tree, tree, int, bool *);
+static tree handle_noinline_attribute (tree *, tree, tree, int, bool *);
+static tree handle_noclone_attribute (tree *, tree, tree, int, bool *);
 static tree handle_leaf_attribute (tree *, tree, tree, int, bool *);
 static tree handle_always_inline_attribute (tree *, tree, tree, int, bool *);
 static tree handle_malloc_attribute (tree *, tree, tree, int, bool *);
@@ -120,6 +122,10 @@ const struct attribute_spec gnat_internal_attribute_table[] =
   { "sentinel",     0, 1,  false, true,  true,  handle_sentinel_attribute,
     false },
   { "noreturn",     0, 0,  true,  false, false, handle_noreturn_attribute,
+    false },
+  { "noinline",     0, 0,  true,  false, false, handle_noinline_attribute,
+    false },
+  { "noclone",      0, 0,  true,  false, false, handle_noclone_attribute,
     false },
   { "leaf",         0, 0,  true,  false, false, handle_leaf_attribute,
     false },
@@ -783,24 +789,11 @@ gnat_pushdecl (tree decl, Node_Id gnat_node)
 		   || TREE_CODE (t) == POINTER_TYPE
 		   || TYPE_IS_FAT_POINTER_P (t)))
 	{
-	  tree tt;
-	  /* ??? Copy and original type are not supposed to be variant but we
-	     really need a variant for the placeholder machinery to work.  */
-	  if (TYPE_IS_FAT_POINTER_P (t))
-	    tt = build_variant_type_copy (t);
-	  else
-	    {
-	      /* TYPE_NEXT_PTR_TO is a chain of main variants.  */
-	      tt = build_distinct_type_copy (TYPE_MAIN_VARIANT (t));
-	      if (TREE_CODE (t) == POINTER_TYPE)
-		TYPE_NEXT_PTR_TO (TYPE_MAIN_VARIANT (t)) = tt;
-	      tt = build_qualified_type (tt, TYPE_QUALS (t));
-	    }
+	  tree tt = build_variant_type_copy (t);
 	  TYPE_NAME (tt) = decl;
 	  defer_or_set_type_context (tt,
 				     DECL_CONTEXT (decl),
 				     deferred_decl_context);
-	  TREE_USED (tt) = TREE_USED (t);
 	  TREE_TYPE (decl) = tt;
 	  if (TYPE_NAME (t)
 	      && TREE_CODE (TYPE_NAME (t)) == TYPE_DECL
@@ -1116,7 +1109,14 @@ make_type_from_size (tree type, tree size_tree, bool for_biased)
 	break;
 
       biased_p |= for_biased;
-      if (TYPE_UNSIGNED (type) || biased_p)
+
+      /* The type should be an unsigned type if the original type is unsigned
+	 or if the lower bound is constant and non-negative or if the type is
+	 biased, see E_Signed_Integer_Subtype case of gnat_to_gnu_entity.  */
+      if (TYPE_UNSIGNED (type)
+	  || (TREE_CODE (TYPE_MIN_VALUE (type)) == INTEGER_CST
+	      && tree_int_cst_sgn (TYPE_MIN_VALUE (type)) >= 0)
+	  || biased_p)
 	new_type = make_unsigned_type (size);
       else
 	new_type = make_signed_type (size);
@@ -2430,8 +2430,9 @@ create_var_decl (tree name, tree asm_name, tree type, tree init,
      and may be used for scalars in general but not for aggregates.  */
   tree var_decl
     = build_decl (input_location,
-		  (constant_p && const_decl_allowed_p
-		   && !AGGREGATE_TYPE_P (type)) ? CONST_DECL : VAR_DECL,
+		  (constant_p
+		   && const_decl_allowed_p
+		   && !AGGREGATE_TYPE_P (type) ? CONST_DECL : VAR_DECL),
 		  name, type);
 
   /* Detect constants created by the front-end to hold 'reference to function
@@ -2456,9 +2457,20 @@ create_var_decl (tree name, tree asm_name, tree type, tree init,
      constant initialization and save any variable elaborations for the
      elaboration routine.  If we are just annotating types, throw away the
      initialization if it isn't a constant.  */
-  if ((extern_flag && !constant_p)
+  if ((extern_flag && init && !constant_p)
       || (type_annotate_only && init && !TREE_CONSTANT (init)))
-    init = NULL_TREE;
+    {
+      init = NULL_TREE;
+
+      /* In LTO mode, also clear TREE_READONLY the same way add_decl_expr
+	 would do it if the initializer was not thrown away here, as the
+	 WPA phase requires a consistent view across compilation units.  */
+      if (const_flag && flag_generate_lto)
+	{
+	  const_flag = false;
+	  DECL_READONLY_ONCE_ELAB (var_decl) = 1;
+	}
+    }
 
   /* At the global level, a non-constant initializer generates elaboration
      statements.  Check that such statements are allowed, that is to say,
@@ -3130,7 +3142,6 @@ create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
 {
   tree subprog_decl = build_decl (input_location, FUNCTION_DECL, name, type);
   DECL_ARGUMENTS (subprog_decl) = param_decl_list;
-  finish_subprog_decl (subprog_decl, type);
 
   DECL_ARTIFICIAL (subprog_decl) = artificial_p;
   DECL_EXTERNAL (subprog_decl) = extern_flag;
@@ -3168,26 +3179,11 @@ create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
 
   process_attributes (&subprog_decl, &attr_list, true, gnat_node);
 
+  /* Once everything is processed, finish the subprogram declaration.  */
+  finish_subprog_decl (subprog_decl, asm_name, type);
+
   /* Add this decl to the current binding level.  */
   gnat_pushdecl (subprog_decl, gnat_node);
-
-  if (asm_name)
-    {
-      /* Let the target mangle the name if this isn't a verbatim asm.  */
-      if (*IDENTIFIER_POINTER (asm_name) != '*')
-	asm_name = targetm.mangle_decl_assembler_name (subprog_decl, asm_name);
-
-      SET_DECL_ASSEMBLER_NAME (subprog_decl, asm_name);
-
-      /* The expand_main_function circuitry expects "main_identifier_node" to
-	 designate the DECL_NAME of the 'main' entry point, in turn expected
-	 to be declared as the "main" function literally by default.  Ada
-	 program entry points are typically declared with a different name
-	 within the binder generated file, exported as 'main' to satisfy the
-	 system expectations.  Force main_identifier_node in this case.  */
-      if (asm_name == main_identifier_node)
-	DECL_NAME (subprog_decl) = main_identifier_node;
-    }
 
   /* Output the assembler code and/or RTL for the declaration.  */
   rest_of_decl_compilation (subprog_decl, global_bindings_p (), 0);
@@ -3195,11 +3191,11 @@ create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
   return subprog_decl;
 }
 
-/* Given a subprogram declaration DECL and its TYPE, finish constructing the
-   subprogram declaration from TYPE.  */
+/* Given a subprogram declaration DECL, its assembler name and its type,
+   finish constructing the subprogram declaration from ASM_NAME and TYPE.  */
 
 void
-finish_subprog_decl (tree decl, tree type)
+finish_subprog_decl (tree decl, tree asm_name, tree type)
 {
   tree result_decl
     = build_decl (DECL_SOURCE_LOCATION (decl), RESULT_DECL, NULL_TREE,
@@ -3212,6 +3208,24 @@ finish_subprog_decl (tree decl, tree type)
 
   TREE_READONLY (decl) = TYPE_READONLY (type);
   TREE_SIDE_EFFECTS (decl) = TREE_THIS_VOLATILE (decl) = TYPE_VOLATILE (type);
+
+  if (asm_name)
+    {
+      /* Let the target mangle the name if this isn't a verbatim asm.  */
+      if (*IDENTIFIER_POINTER (asm_name) != '*')
+	asm_name = targetm.mangle_decl_assembler_name (decl, asm_name);
+
+      SET_DECL_ASSEMBLER_NAME (decl, asm_name);
+
+      /* The expand_main_function circuitry expects "main_identifier_node" to
+	 designate the DECL_NAME of the 'main' entry point, in turn expected
+	 to be declared as the "main" function literally by default.  Ada
+	 program entry points are typically declared with a different name
+	 within the binder generated file, exported as 'main' to satisfy the
+	 system expectations.  Force main_identifier_node in this case.  */
+      if (asm_name == main_identifier_node)
+	DECL_NAME (decl) = main_identifier_node;
+    }
 }
 
 /* Set up the framework for generating code for SUBPROG_DECL, a subprogram
@@ -5111,7 +5125,9 @@ unchecked_convert (tree type, tree expr, bool notrunc_p)
   /* If the result is an integral type whose precision is not equal to its
      size, sign- or zero-extend the result.  We need not do this if the input
      is an integral type of the same precision and signedness or if the output
-     is a biased type or if both the input and output are unsigned.  */
+     is a biased type or if both the input and output are unsigned, or if the
+     lower bound is constant and non-negative, see E_Signed_Integer_Subtype
+     case of gnat_to_gnu_entity.  */
   if (!notrunc_p
       && INTEGRAL_TYPE_P (type)
       && TYPE_RM_SIZE (type)
@@ -5123,7 +5139,10 @@ unchecked_convert (tree type, tree expr, bool notrunc_p)
 				    ? TYPE_RM_SIZE (etype)
 				    : TYPE_SIZE (etype)) == 0)
       && !(code == INTEGER_TYPE && TYPE_BIASED_REPRESENTATION_P (type))
-      && !(TYPE_UNSIGNED (type) && TYPE_UNSIGNED (etype)))
+      && !((TYPE_UNSIGNED (type)
+	    || (TREE_CODE (TYPE_MIN_VALUE (type)) == INTEGER_CST
+		&& tree_int_cst_sgn (TYPE_MIN_VALUE (type)) >= 0))
+	   && TYPE_UNSIGNED (etype)))
     {
       tree base_type
 	= gnat_type_for_size (TREE_INT_CST_LOW (TYPE_SIZE (type)),
@@ -5425,15 +5444,6 @@ static tree c_global_trees[CTI_MAX];
 #define intmax_type_node  void_type_node
 #define uintmax_type_node void_type_node
 
-/* Build the void_list_node (void_type_node having been created).  */
-
-static tree
-build_void_list_node (void)
-{
-  tree t = build_tree_list (NULL_TREE, void_type_node);
-  return t;
-}
-
 /* Used to help initialize the builtin-types.def table.  When a type of
    the correct size doesn't exist, use error_mark_node instead of NULL.
    The later results in segfaults even when a decl using the type doesn't
@@ -5454,7 +5464,6 @@ install_builtin_elementary_types (void)
 {
   signed_size_type_node = gnat_signed_type_for (size_type_node);
   pid_type_node = integer_type_node;
-  void_list_node = build_void_list_node ();
 
   string_type_node = build_pointer_type (char_type_node);
   const_string_type_node
@@ -5813,10 +5822,14 @@ handle_nonnull_attribute (tree *node, tree ARG_UNUSED (name),
 
   /* If no arguments are specified, all pointer arguments should be
      non-null.  Verify a full prototype is given so that the arguments
-     will have the correct types when we actually check them later.  */
+     will have the correct types when we actually check them later.
+     Avoid diagnosing type-generic built-ins since those have no
+     prototype.  */
   if (!args)
     {
-      if (!prototype_p (type))
+      if (!prototype_p (type)
+	  && (!TYPE_ATTRIBUTES (type)
+	      || !lookup_attribute ("type generic", TYPE_ATTRIBUTES (type))))
 	{
 	  error ("nonnull attribute without arguments on a non-prototype");
 	  *no_add_attrs = true;
@@ -5943,6 +5956,51 @@ handle_noreturn_attribute (tree *node, tree name, tree ARG_UNUSED (args),
     {
       warning (OPT_Wattributes, "%qs attribute ignored",
 	       IDENTIFIER_POINTER (name));
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
+/* Handle a "noinline" attribute; arguments as in
+   struct attribute_spec.handler.  */
+
+static tree
+handle_noinline_attribute (tree *node, tree name,
+			   tree ARG_UNUSED (args),
+			   int ARG_UNUSED (flags), bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) == FUNCTION_DECL)
+    {
+      if (lookup_attribute ("always_inline", DECL_ATTRIBUTES (*node)))
+	{
+	  warning (OPT_Wattributes, "%qE attribute ignored due to conflict "
+		   "with attribute %qs", name, "always_inline");
+	  *no_add_attrs = true;
+	}
+      else
+	DECL_UNINLINABLE (*node) = 1;
+    }
+  else
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
+/* Handle a "noclone" attribute; arguments as in
+   struct attribute_spec.handler.  */
+
+static tree
+handle_noclone_attribute (tree *node, tree name,
+			  tree ARG_UNUSED (args),
+			  int ARG_UNUSED (flags), bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_DECL)
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
       *no_add_attrs = true;
     }
 

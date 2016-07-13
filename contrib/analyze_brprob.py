@@ -65,9 +65,27 @@
 import sys
 import os
 import re
+import argparse
+
+from math import *
 
 def percentage(a, b):
     return 100.0 * a / b
+
+def average(values):
+    return 1.0 * sum(values) / len(values)
+
+def average_cutoff(values, cut):
+    l = len(values)
+    skip = floor(l * cut / 2)
+    if skip > 0:
+        values.sort()
+        values = values[skip:-skip]
+    return average(values)
+
+def median(values):
+    values.sort()
+    return values[int(len(values) / 2)]
 
 class Summary:
     def __init__(self, name):
@@ -76,6 +94,9 @@ class Summary:
         self.count = 0
         self.hits = 0
         self.fits = 0
+
+    def get_hitrate(self):
+        return self.hits / self.count
 
     def count_formatted(self):
         v = self.count
@@ -89,6 +110,7 @@ class Profile:
     def __init__(self, filename):
         self.filename = filename
         self.heuristics = {}
+        self.niter_vector = []
 
     def add(self, name, prediction, count, hits):
         if not name in self.heuristics:
@@ -102,35 +124,58 @@ class Profile:
         s.hits += hits
         s.fits += max(hits, count - hits)
 
+    def add_loop_niter(self, niter):
+        if niter > 0:
+            self.niter_vector.append(niter)
+
     def branches_max(self):
         return max([v.branches for k, v in self.heuristics.items()])
 
     def count_max(self):
         return max([v.count for k, v in self.heuristics.items()])
 
-    def dump(self):
-        print('%-36s %8s %6s  %-16s %14s %8s %6s' % ('HEURISTICS', 'BRANCHES', '(REL)',
+    def dump(self, sorting):
+        sorter = lambda x: x[1].branches
+        if sorting == 'hitrate':
+            sorter = lambda x: x[1].get_hitrate()
+        elif sorting == 'coverage':
+            sorter = lambda x: x[1].count
+
+        print('%-40s %8s %6s  %-16s %14s %8s %6s' % ('HEURISTICS', 'BRANCHES', '(REL)',
               'HITRATE', 'COVERAGE', 'COVERAGE', '(REL)'))
-        for (k, v) in sorted(self.heuristics.items(), key = lambda x: x[1].branches):
-            print('%-36s %8i %5.1f%% %6.2f%% / %6.2f%% %14i %8s %5.1f%%' %
+        for (k, v) in sorted(self.heuristics.items(), key = sorter):
+            print('%-40s %8i %5.1f%% %6.2f%% / %6.2f%% %14i %8s %5.1f%%' %
             (k, v.branches, percentage(v.branches, self.branches_max ()),
              percentage(v.hits, v.count), percentage(v.fits, v.count),
              v.count, v.count_formatted(), percentage(v.count, self.count_max()) ))
 
-if len(sys.argv) != 2:
-    print('Usage: ./analyze_brprob.py dump_file')
-    exit(1)
+        print ('\nLoop count: %d' % len(self.niter_vector)),
+        print('  avg. # of iter: %.2f' % average(self.niter_vector))
+        print('  median # of iter: %.2f' % median(self.niter_vector))
+        for v in [1, 5, 10, 20, 30]:
+            cut = 0.01 * v
+            print('  avg. (%d%% cutoff) # of iter: %.2f' % (v, average_cutoff(self.niter_vector, cut)))
+
+parser = argparse.ArgumentParser()
+parser.add_argument('dump_file', metavar = 'dump_file', help = 'IPA profile dump file')
+parser.add_argument('-s', '--sorting', dest = 'sorting', choices = ['branches', 'hitrate', 'coverage'], default = 'branches')
+
+args = parser.parse_args()
 
 profile = Profile(sys.argv[1])
-r = re.compile('  (.*) heuristics: (.*)%.*exec ([0-9]*) hit ([0-9]*)')
-for l in open(profile.filename).readlines():
+r = re.compile('  (.*) heuristics( of edge [0-9]*->[0-9]*)?( \\(.*\\))?: (.*)%.*exec ([0-9]*) hit ([0-9]*)')
+loop_niter_str = ';;  profile-based iteration count: '
+for l in open(args.dump_file).readlines():
     m = r.match(l)
-    if m != None:
+    if m != None and m.group(3) == None:
         name = m.group(1)
-        prediction = float(m.group(2))
-        count = int(m.group(3))
-        hits = int(m.group(4))
+        prediction = float(m.group(4))
+        count = int(m.group(5))
+        hits = int(m.group(6))
 
         profile.add(name, prediction, count, hits)
+    elif l.startswith(loop_niter_str):
+        v = int(l[len(loop_niter_str):])
+        profile.add_loop_niter(v)
 
-profile.dump()
+profile.dump(args.sorting)

@@ -114,8 +114,8 @@
    (set (match_dup 0)
 	(plus:SI (match_dup 0) (reg:SI SP_REGNUM)))]
   "TARGET_THUMB1
-   && (unsigned HOST_WIDE_INT) (INTVAL (operands[1])) < 1024
-   && (INTVAL (operands[1]) & 3) == 0"
+   && UINTVAL (operands[1]) < 1024
+   && (UINTVAL (operands[1]) & 3) == 0"
   [(set (match_dup 0) (plus:SI (reg:SI SP_REGNUM) (match_dup 1)))]
   ""
 )
@@ -142,11 +142,11 @@
    (set_attr "type" "alus_sreg")]
 )
 
-; Unfortunately with the Thumb the '&'/'0' trick can fails when operands
-; 1 and 2; are the same, because reload will make operand 0 match
-; operand 1 without realizing that this conflicts with operand 2.  We fix
-; this by adding another alternative to match this case, and then `reload'
-; it ourselves.  This alternative must come first.
+;; Unfortunately on Thumb the '&'/'0' trick can fail when operands
+;; 1 and 2 are the same, because reload will make operand 0 match
+;; operand 1 without realizing that this conflicts with operand 2.  We fix
+;; this by adding another alternative to match this case, and then `reload'
+;; it ourselves.  This alternative must come first.
 (define_insn "*thumb_mulsi3"
   [(set (match_operand:SI          0 "register_operand" "=&l,&l,&l")
 	(mult:SI (match_operand:SI 1 "register_operand" "%l,*h,0")

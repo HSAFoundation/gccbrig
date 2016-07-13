@@ -314,6 +314,11 @@ package body Sem_Warn is
             elsif Is_Suspicious_Function_Name (Entity (Name (N))) then
                return;
 
+            --  Forget it if function is marked Volatile_Function
+
+            elsif Is_Volatile_Function (Entity (Name (N))) then
+               return;
+
             --  Forget it if warnings are suppressed on function entity
 
             elsif Has_Warnings_Off (Entity (Name (N))) then
@@ -3367,7 +3372,7 @@ package body Sem_Warn is
          P := Parent (C);
          loop
             --  If tree is not attached, do not issue warning (this is very
-            --  peculiar, and probably arises from some other error condition)
+            --  peculiar, and probably arises from some other error condition).
 
             if No (P) then
                return;

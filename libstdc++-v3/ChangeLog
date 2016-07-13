@@ -1,3 +1,498 @@
+2016-07-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	* libsupc++/new: Remove nothrow sized deletes (LWG 2458).
+	* doc/xml/manual/intro.xml: Document DR 2458 status.
+	* doc/html*: Regenerate.
+
+	* testsuite/20_util/pair/astuple/astuple.cc: Only include <utility>.
+	* testsuite/23_containers/array/tuple_interface/tuple_element.cc:
+	Only include <array>.
+	* testsuite/23_containers/array/tuple_interface/tuple_size.cc:
+	Likewise.
+	* doc/xml/manual/intro.xml: Document LWG 2212 support.
+	* doc/html*: Regenerate.
+
+	* testsuite/23_containers/vector/modifiers/emplace/self_emplace.cc:
+	Add testcase from LWG 2164.
+
+2016-07-11  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/stl_vector.h (push_back(const value_type&)): Forward
+	to _M_realloc_insert.
+	(insert(const_iterator, value_type&&)): Forward to _M_insert_rval.
+	(_M_realloc_insert): Declare new function.
+	(_M_emplace_back_aux): Remove definition.
+	* include/bits/vector.tcc (emplace_back(_Args...)):
+	Use _M_realloc_insert.
+	(insert(const_iterator, const value_type&)): Likewise.
+	(_M_insert_rval, _M_emplace_aux): Likewise.
+	(_M_emplace_back_aux): Remove declaration.
+	(_M_realloc_insert): Define.
+	* testsuite/23_containers/vector/modifiers/insert_vs_emplace.cc:
+	Adjust expected results for emplacing an lvalue with reallocation.
+
+2016-07-10  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement std::optional.
+	* include/Makefile.am: Add optional to exported headers.
+	* include/Makefile.in: Likewise.
+	* include/std/optional: New.
+	* testsuite/20_util/optional/typedefs.cc: Likewise.
+	* testsuite/20_util/optional/relops/2.cc: Likewise.
+	* testsuite/20_util/optional/relops/3.cc: Likewise.
+	* testsuite/20_util/optional/relops/4.cc: Likewise.
+	* testsuite/20_util/optional/relops/5.cc: Likewise.
+	* testsuite/20_util/optional/relops/1.cc: Likewise.
+	* testsuite/20_util/optional/relops/6.cc: Likewise.
+	* testsuite/20_util/optional/nullopt.cc: Likewise.
+	* testsuite/20_util/optional/in_place.cc: Likewise.
+	* testsuite/20_util/optional/make_optional.cc: Likewise.
+	* testsuite/20_util/optional/assignment/2.cc: Likewise.
+	* testsuite/20_util/optional/assignment/3.cc: Likewise.
+	* testsuite/20_util/optional/assignment/4.cc: Likewise.
+	* testsuite/20_util/optional/assignment/5.cc: Likewise.
+	* testsuite/20_util/optional/assignment/1.cc: Likewise.
+	* testsuite/20_util/optional/assignment/6.cc: Likewise.
+	* testsuite/20_util/optional/cons/value_neg.cc: Likewise.
+	* testsuite/20_util/optional/cons/default.cc: Likewise.
+	* testsuite/20_util/optional/cons/move.cc: Likewise.
+	* testsuite/20_util/optional/cons/value.cc: Likewise.
+	* testsuite/20_util/optional/cons/copy.cc: Likewise.
+	* testsuite/20_util/optional/requirements.cc: Likewise.
+	* testsuite/20_util/optional/observers/2.cc: Likewise.
+	* testsuite/20_util/optional/observers/3.cc: Likewise.
+	* testsuite/20_util/optional/observers/4.cc: Likewise.
+	* testsuite/20_util/optional/observers/5.cc: Likewise.
+	* testsuite/20_util/optional/observers/1.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/2.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/3.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/4.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/5.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/1.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/relops/6.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/nullopt.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/in_place.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/make_optional.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/cons/default.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/cons/value.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/observers/2.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/observers/3.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/observers/4.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/observers/5.cc: Likewise.
+	* testsuite/20_util/optional/constexpr/observers/1.cc: Likewise.
+	* testsuite/20_util/optional/swap/1.cc: Likewise.
+
+2016-07-08  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/23_containers/vector/modifiers/insert/aliasing.cc: New.
+
+2016-07-07  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/status_cxx2014.xml: Update LFTS status table.
+	* doc/html/*: Regenerate.
+
+2016-07-07  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement std::any.
+	* include/Makefile.am: Add any and c++17_warning.h to exported headers.
+	* include/Makefile.in: Likewise.
+	* include/std/any: New.
+	* testsuite/20_util/any/assign/1.cc: Likewise.
+	* testsuite/20_util/any/assign/2.cc: Likewise.
+	* testsuite/20_util/any/assign/self.cc: Likewise.
+	* testsuite/20_util/any/cons/1.cc: Likewise.
+	* testsuite/20_util/any/cons/2.cc: Likewise.
+	* testsuite/20_util/any/cons/aligned.cc: Likewise.
+	* testsuite/20_util/any/cons/nontrivial.cc: Likewise.
+	* testsuite/20_util/any/misc/any_cast.cc: Likewise.
+	* testsuite/20_util/any/misc/any_cast_neg.cc: Likewise.
+	* testsuite/20_util/any/misc/any_cast_no_rtti.cc: Likewise.
+	* testsuite/20_util/any/misc/swap.cc: Likewise.
+	* testsuite/20_util/any/modifiers/1.cc: Likewise.
+	* testsuite/20_util/any/observers/type.cc: Likewise.
+	* testsuite/20_util/any/typedefs.cc: Likewise.
+
+2016-07-06  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Add a new header for diagnosing the use of C++17 facilities
+	in pre-C++17 modes.
+	* include/bits/c++17_warning.h:	New.
+
+2016-07-06  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement LWG 2451, optional<T> should 'forward' T's
+	implicit conversions.
+	* include/experimental/optional (__is_optional_impl, __is_optional):
+	New.
+	(optional()): Make constexpr and default.
+	(optional(_Up&&), optional(const optional<_Up>&),
+	optional(optional<_Up>&& __t): New.
+	(operator=(_Up&&)): Constrain.
+	(operator=(const optional<_Up>&), operator=(optional<_Up>&&)): New.
+	* testsuite/experimental/optional/cons/value.cc:
+	Add tests for the functionality added by LWG 2451.
+	* testsuite/experimental/optional/cons/value_neg.cc: New.
+
+2016-07-05  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement LWG 2509,
+	any_cast doesn't work with rvalue reference targets and cannot
+	move with a value target.
+	* include/experimental/any (any(_ValueType&&)): Constrain and
+	add an overload that doesn't forward.
+	(any_cast(any&&)): Constrain and add an overload that moves.
+	* testsuite/experimental/any/misc/any_cast.cc: Add tests for
+	the functionality added by LWG 2509.
+
+2016-07-04  François Dumont  <fdumont@gcc.gnu.org>
+
+	* testsuite/23_containers/vector/modifiers/emplace/self_emplace.cc:
+	New test.
+	* testsuite/23_containers/vector/modifiers/insert/self_insert.cc: New
+	test.
+
+2016-07-04  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/stl_vector.h (emplace(const_iterator, _Args&&...)):
+	Define inline. Forward to _M_emplace_aux.
+	(insert(const_iterator, value_type&&)): Forward to _M_insert_rval.
+	(_M_insert_rval, _M_emplace_aux): Declare new functions.
+	(_Temporary_value): New RAII type using allocator to construct/destroy.
+	(_S_insert_aux_assign): Remove.
+	(_M_insert_aux): Make non-variadic.
+	* include/bits/vector.tcc (insert(const_iterator, const value_type&)):
+	Use _Temporary_value.
+	(emplace(const_iterator, _Args&&...)): Remove definition.
+	(_M_insert_rval, _M_emplace_aux): Define.
+	(_M_insert_aux): Make non-variadic, stop using _S_insert_aux_assign.
+	(_M_fill_insert): Use _Temporary_value.
+	* testsuite/23_containers/vector/allocator/construction.cc: New test.
+	* testsuite/23_containers/vector/modifiers/insert_vs_emplace.cc:
+	Adjust expected results for emplacing an lvalue with reallocation.
+	* testsuite/23_containers/vector/check_construct_destroy.cc: Adjust
+	expected results to account for construction/destruction of temporary
+	using allocator.
+	* testsuite/backward/hash_set/check_construct_destroy.cc: Likewise.
+
+2016-07-04  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	PR libstdc++/71313
+	* src/filesystem/ops.cc (remove_all(const path&, error_code&)):
+	Call remove_all for children of a directory.
+	* testsuite/experimental/filesystem/operations/create_directories.cc:
+	Adjust.
+
+2016-07-02  François Dumont  <fdumont@gcc.gnu.org>
+
+	* testsuite/23_containers/array/tuple_interface/get_debug_neg.cc: Adjust
+	dg-error line numbers.
+	* testsuite/23_containers/array/tuple_interface/
+	tuple_element_debug_neg.cc: Likewise.
+	* testsuite/25_algorithms/lexicographical_compare/debug/
+	irreflexive_neg.cc: Remove.
+
+2016-06-30  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	* testsuite/29_atomics/atomic/65913.cc: Require atomic-builtins rather
+	than specific target.
+
+2016-06-27  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/71640
+	* include/bits/hashtable.h: Remove _Unique_keya parameter in _Insert
+	friend declaration.
+
+2016-06-23  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/debug/array (array<>::swap): Fix noexcept qualificaton for
+	zero-size array.
+
+2016-06-21  Trevor Saunders  <tbsaunde+gcc@tbsaunde.org>
+
+	* configure.host: Remove mep-* support.
+
+2016-06-21  Trevor Saunders  <tbsaunde+gcc@tbsaunde.org>
+
+	* configure: Regenerate.
+	* configure.host: Remove support for knetbsd.
+	* crossconfig.m4: Likewise.
+
+2016-06-20  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/71181
+	* include/tr1/hashtable_policy.h
+	(_Prime_rehash_policy::_M_next_bkt): Make past-the-end iterator
+	dereferenceable to avoid check on lower_bound result.
+	(_Prime_rehash_policy::_M_bkt_for_elements): Call latter.
+	(_Prime_rehash_policy::_M_need_rehash): Likewise.
+	* src/c++11/hashtable_c++0x.cc (_Prime_rehash_policy::_M_next_bkt):
+	Always return a value greater than input value. Set _M_next_resize to
+	max value when reaching highest prime number.
+	* src/shared/hashtable-aux.cc (__prime_list): Add comment about sentinel
+	being now useless.
+	* testsuite/23_containers/unordered_set/hash_policy/71181.cc: New.
+	* testsuite/23_containers/unordered_set/hash_policy/power2_rehash.cc
+	(test02): New.
+	* testsuite/23_containers/unordered_set/hash_policy/prime_rehash.cc: New.
+	* testsuite/23_containers/unordered_set/hash_policy/rehash.cc:
+	Fix indentation.
+
+2016-06-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71545
+	* include/bits/stl_algobase.h (lower_bound, lexicographical_compare):
+	Remove irreflexive checks.
+	* include/bits/stl_algo.h (lower_bound, upper_bound, equal_range,
+	binary_search): Likewise.
+	* testsuite/25_algorithms/equal_range/partitioned.cc: New test.
+	* testsuite/25_algorithms/lexicographical_compare/71545.cc: New test.
+	* testsuite/25_algorithms/lower_bound/partitioned.cc: New test.
+	* testsuite/25_algorithms/upper_bound/partitioned.cc: New test.
+	* testsuite/util/testsuite_iterators.h (__gnu_test::test_container):
+	Add constructor from array.
+
+2016-06-16  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/debug/debug.h
+	(__glibcxx_requires_non_empty_range, __glibcxx_requires_nonempty)
+	(__glibcxx_requires_subscript): Move...
+	* include/debug/assertions.h: ...here and add __builtin_expect.
+	(_GLIBCXX_DEBUG_ONLY): Remove ; value.
+	* include/bits/stl_deque.h
+	(std::deque<>::operator[]): Add __glibcxx_requires_subscript check.
+	(std::deque<>::front()): Add __glibcxx_requires_nonempty check.
+	(std::deque<>::back()): Likewise.
+	(std::deque<>::pop_front()): Likewise.
+	(std::deque<>::pop_back()): Likewise.
+	(std::deque<>::swap(deque&)): Add allocator check.
+	* include/bits/stl_vector.h
+	(std::vector<>::operator[]): Add __glibcxx_requires_subscript check.
+	(std::vector<>::front()): Add __glibcxx_requires_nonempty check.
+	(std::vector<>::back()): Likewise.
+	(std::vector<>::pop_back()): Likewise.
+	(std::vector<>::swap(vector&)): Add allocator check.
+
+2016-06-16  Daniel Kruegler  <daniel.kruegler@gmail.com>
+
+	Provide swappable traits (p0185r1)
+	* include/std/type_traits (is_swappable, is_nothrow_swappable,
+	is_swappable_with, is_nothrow_swappable_with, is_swappable_v,
+	is_nothrow_swappable_v, is_swappable_with_v,
+	is_nothrow_swappable_with_v): New.
+	* include/bits/stl_pair.h: Use it as per p0185r1.
+	* include/bits/stl_queue.h: Likewise.
+	* include/bits/stl_stack.h: Likewise.
+	* include/bits/unique_ptr.h: Likewise.
+	* include/std/tuple: Likewise.
+	* include/std/array: Likewise. Fix zero-size member swap.
+	* include/bits/hashtable.h: Use __and_.
+	* testsuite/20_util/is_nothrow_swappable/requirements/
+	explicit_instantiation.cc: Change test options to std=gnu++17.
+	* testsuite/20_util/is_nothrow_swappable/requirements/typedefs.cc:
+	Likewise.
+	* testsuite/20_util/is_nothrow_swappable/value.cc: Likewise.
+	* testsuite/20_util/is_swappable/requirements/
+	explicit_instantiation.cc: Likewise.
+	* testsuite/20_util/is_swappable/requirements/typedefs.cc: Likewise.
+	* testsuite/20_util/is_swappable/value.cc: Likewise.
+	* testsuite/20_util/is_nothrow_swappable/requirements/
+	explicit_instantiation_ext.cc: New.
+	* testsuite/20_util/is_nothrow_swappable/requirements/typedefs_ext.cc:
+	New.
+	* testsuite/20_util/is_nothrow_swappable/value.h: New.
+	* testsuite/20_util/is_nothrow_swappable/value_ext.cc: New.
+	* testsuite/20_util/is_nothrow_swappable_with/requirements/
+	explicit_instantiation.cc: New.
+	* testsuite/20_util/is_nothrow_swappable_with/requirements/typedefs.cc:
+	New.
+	* testsuite/20_util/is_nothrow_swappable_with/value.cc: New.
+	* testsuite/20_util/is_swappable/requirements/
+	explicit_instantiation_ext.cc: New.
+	* testsuite/20_util/is_swappable/requirements/typedefs_ext.cc: New.
+	* testsuite/20_util/is_swappable/value.h: New.
+	* testsuite/20_util/is_swappable/value_ext.cc: New.
+	* testsuite/20_util/is_swappable_with/requirements/
+	explicit_instantiation.cc: New.
+	* testsuite/20_util/is_swappable_with/requirements/typedefs.cc: New.
+	* testsuite/20_util/is_swappable_with/value.cc: New.
+	* testsuite/23_containers/array/tuple_interface/get_neg.cc: Adjust
+	dg-error line numbers.
+	* testsuite/23_containers/array/tuple_interface/tuple_element_neg.cc:
+	Likewise.
+
+2016-06-16  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/std/array: Remove trailing whitespace.
+	* include/std/atomic: Likewise.
+	* include/std/bitset: Likewise.
+	* include/std/chrono: Likewise.
+	* include/std/complex: Likewise.
+	* include/std/condition_variable: Likewise.
+	* include/std/fstream: Likewise.
+	* include/std/functional: Likewise.
+	* include/std/future: Likewise.
+	* include/std/iomanip: Likewise.
+	* include/std/iosfwd: Likewise.
+	* include/std/istream: Likewise.
+	* include/std/limits: Likewise.
+	* include/std/ratio: Likewise.
+	* include/std/scoped_allocator: Likewise.
+	* include/std/sstream: Likewise.
+	* include/std/stdexcept: Likewise.
+	* include/std/string: Likewise.
+	* include/std/system_error: Likewise.
+	* include/std/thread: Likewise.
+	* include/std/tuple: Likewise.
+	* include/std/type_traits: Likewise.
+	* include/std/utility: Likewise.
+	* include/std/valarray: Likewise.
+	* include/std/vector: Likewise.
+
+	* include/bits/stl_vector.h (vector::_S_insert_aux_assign): Define
+	new overloaded functions.
+	* include/bits/vector.tcc (vector::_M_insert_aux): Use new functions
+	to avoid creating a redundant temporary.
+	* testsuite/23_containers/vector/modifiers/insert_vs_emplace.cc: New
+	test.
+
+2016-06-15  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/stl_deque.h
+	(std::deque<>::operator=): Call _M_assign_aux.
+	(std::deque<>::assign(initializer_list<>)): Likewise.
+	(std::deque<>::resize(size_t, const value_type&)): Call _M_fill_insert.
+	(std::deque<>::insert(const_iterator, initializer_list<>)):
+	Call _M_range_insert_aux.
+	(std::deque<>::_M_assign_aux<It>(It, It, std::forward_iterator_tag):
+	Likewise.
+	(std::deque<>::_M_fill_assign): Call _M_fill_insert.
+	(std::deque<>::_M_move_assign2): Call _M_assign_aux.
+	* include/bits/deque.tcc
+	(std::deque<>::operator=): Call _M_range_insert_aux.
+	(std::deque<>::_M_assign_aux<It>(It, It, std::input_iterator_tag)):
+	Likewise.
+	* include/bits/stl_vector.h
+	(std::vector<>::operator=): Call _M_assign_aux.
+	(std::vector<>::assign(initializer_list<>)): Likewise.
+	(std::vector<>::resize(size_t, const value_type&)): Call _M_fill_insert.
+	(std::vector<>::insert(const_iterator, initializer_list<>)):
+	Call _M_range_insert.
+	* include/bits/vector.tcc (std::vector<>::_M_assign_aux): Likewise.
+
+2016-06-07  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/std/tuple (_Head_base<>): Default specialization condition at
+	type declaration.
+
+2016-06-06  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Support allocators in tuples of zero size.
+	* include/std/tuple (tuple<>::tuple(),
+	tuple<>::tuple(allocator_arg_t, const _Alloc&),
+	tuple<>::tuple(allocator_arg_t, const _Alloc&, const tuple&)): New.
+	* testsuite/20_util/tuple/cons/allocators.cc: Adjust.
+
+2016-06-06  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/71320
+	* src/filesystem/ops.cc (permissions(const path&, perms, error_code&)):
+	Add or remove permissions according to perms argument.
+	* testsuite/experimental/filesystem/operations/permissions.cc: New
+	test.
+
+2016-06-05  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Protect allocator-overloads of tuple-from-tuple constructors
+	from cases that would create dangling references.
+	* include/std/tuple (tuple(allocator_arg_t, const _Alloc&,
+	const tuple<_UElements...>&), tuple(allocator_arg_t, const _Alloc&,
+	tuple<_UElements...>&&)): Add a check for _NonNestedTuple.
+	* testsuite/20_util/tuple/cons/nested_tuple_construct.cc: Adjust.
+
+2016-05-29  Gerald Pfeifer  <gerald@pfeifer.com>
+
+	* doc/xml/manual/backwards_compatibility.xml: Adjust
+	lists.debian.org link to https.
+	* doc/html/manual/backwards.html: Regenerate.
+
+2016-05-27  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/abi.xml: Adjust URL to use https.
+	* doc/html/manual/*: Regenerate.
+
+2016-05-27  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	PR libstdc++/66338
+	* include/std/tuple (_TMC): Add a check for _NotSameTuple.
+	* include/std/tuple (tuple(_UElements&&...)): Remove the separate
+	check for _NotSameTuple.
+	* include/std/tuple (_TMCT): New.
+	* include/std/tuple (tuple(const tuple<_UElements...>&)): Use it.
+	* include/std/tuple (tuple(tuple<_UElements...>&&)): Likewise.
+	* include/std/tuple (tuple(allocator_arg_t, const _Alloc&,
+	      const tuple<_UElements...>&)): Likewise.
+	* include/std/tuple (tuple(allocator_arg_t, const _Alloc&,
+	      tuple<_UElements...>&&)): Likewise.
+	* testsuite/20_util/tuple/cons/66338.cc: New.
+
+2016-05-25  Jonathan Wakely  <jwakely@redhat.com>
+
+	* acinclude.m4 (GLIBCXX_CHECK_FILESYSTEM_DEPS): Fix test for sendfile.
+	* configure: Regenerate.
+	* config.h.in: Regenerate.
+
+	* include/bits/c++config (_GLIBCXX14_USE_CONSTEXPR): Remove it.
+	* include/bits/hashtable_policy.h (_Power2_rehash_policy::_M_next_bkt):
+	Remove const qualification on function. Replace
+	_GLIBCXX14_USE_CONSTEXPR on automatic variables with const.
+	(_Power2_rehash_policy::_M_need_rehash): Remove const qualification.
+	(_Power2_rehash_policy::_M_next_bkt): Remove mutable specifier.
+
+2016-05-24  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/c++config (_GLIBCXX14_USE_CONSTEXPR): New.
+	* include/bits/hashtable_policy.h
+	(_Prime_rehash_policy::__has_load_factor): New. Mark rehash policy
+	having load factor management.
+	(_Mask_range_hashing): New.
+	(__clp2): New.
+	(_Power2_rehash_policy): New.
+	(_Inserts<>): Remove last template parameter, _Unique_keys, so that
+	partial specializations only depend on whether iterators are constant
+	or not.
+	* testsuite/23_containers/unordered_set/hash_policy/26132.cc: Adapt to
+	test new hash policy.
+	* testsuite/23_containers/unordered_set/hash_policy/load_factor.cc:
+	Likewise.
+	* testsuite/23_containers/unordered_set/hash_policy/rehash.cc:
+	Likewise.
+	* testsuite/23_containers/unordered_set/insert/hash_policy.cc:
+	Likewise.
+	* testsuite/23_containers/unordered_set/max_load_factor/robustness.cc:
+	Likewise.
+	* testsuite/23_containers/unordered_set/hash_policy/power2_rehash.cc:
+	New.
+	* testsuite/performance/23_containers/insert/54075.cc: Add benchmark
+	using the new hash policy.
+	* testsuite/performance/23_containers/insert_erase/41975.cc: Likewise.
+
+2016-05-24  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/stl_queue.h (priority_queue::value_compare): Define.
+
+2016-05-23  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/debug/safe_iterator.h
+	(_Safe_iterator<>::operator->()): Implement using underlying iterator
+	operator ->.
+	* include/debug/safe_local_iterator.h
+	(_Safe_local_iterator<>::operator->()): Likewise.
+
+2016-05-20  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	* testsuite/experimental/memory_resource/1.cc: Add required argument
+	to dg-require-atomic-builtins.
+
 2016-05-13  Jonathan Wakely  <jwakely@redhat.com>
 
 	PR libstdc++/71073

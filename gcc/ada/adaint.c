@@ -1912,6 +1912,29 @@ __gnat_is_readable_file_attr (char* name, struct file_attributes* attr)
 }
 
 int
+__gnat_is_read_accessible_file (char *name)
+{
+#if defined (_WIN32)
+   TCHAR wname [GNAT_MAX_PATH_LEN + 2];
+
+   S2WSC (wname, name, GNAT_MAX_PATH_LEN + 2);
+
+   return !_waccess (wname, 4);
+
+#elif defined (__vxworks)
+   int fd;
+
+   if ((fd = open (name, O_RDONLY, 0)) < 0)
+     return 0;
+   close (fd);
+   return 1;
+
+#else
+   return !access (name, R_OK);
+#endif
+}
+
+int
 __gnat_is_readable_file (char *name)
 {
    struct file_attributes attr;
@@ -1959,6 +1982,29 @@ __gnat_is_writable_file (char *name)
 
    __gnat_reset_attributes (&attr);
    return __gnat_is_writable_file_attr (name, &attr);
+}
+
+int
+__gnat_is_write_accessible_file (char *name)
+{
+#if defined (_WIN32)
+   TCHAR wname [GNAT_MAX_PATH_LEN + 2];
+
+   S2WSC (wname, name, GNAT_MAX_PATH_LEN + 2);
+
+   return !_waccess (wname, 2);
+
+#elif defined (__vxworks)
+   int fd;
+
+   if ((fd = open (name, O_WRONLY, 0)) < 0)
+     return 0;
+   close (fd);
+   return 1;
+
+#else
+   return !access (name, W_OK);
+#endif
 }
 
 int
@@ -3263,7 +3309,6 @@ __gnat_kill (int pid, int sig, int close ATTRIBUTE_UNUSED)
 void __gnat_killprocesstree (int pid, int sig_num)
 {
 #if defined(_WIN32)
-  HANDLE hWnd;
   PROCESSENTRY32 pe;
 
   memset(&pe, 0, sizeof(PROCESSENTRY32));
@@ -3287,7 +3332,7 @@ void __gnat_killprocesstree (int pid, int sig_num)
 
       while (bContinue)
         {
-          if (pe.th32ParentProcessID == (int)pid)
+          if (pe.th32ParentProcessID == (DWORD)pid)
             __gnat_killprocesstree (pe.th32ProcessID, sig_num);
 
           bContinue = Process32Next (hSnap, &pe);

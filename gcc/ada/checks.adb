@@ -635,40 +635,14 @@ package body Checks is
    procedure Apply_Address_Clause_Check (E : Entity_Id; N : Node_Id) is
       pragma Assert (Nkind (N) = N_Freeze_Entity);
 
-      AC   : constant Node_Id    := Address_Clause (E);
-      Loc  : constant Source_Ptr := Sloc (AC);
-      Typ  : constant Entity_Id  := Etype (E);
-      Aexp : constant Node_Id    := Expression (AC);
+      AC  : constant Node_Id    := Address_Clause (E);
+      Loc : constant Source_Ptr := Sloc (AC);
+      Typ : constant Entity_Id  := Etype (E);
 
       Expr : Node_Id;
       --  Address expression (not necessarily the same as Aexp, for example
       --  when Aexp is a reference to a constant, in which case Expr gets
       --  reset to reference the value expression of the constant).
-
-      procedure Compile_Time_Bad_Alignment;
-      --  Post error warnings when alignment is known to be incompatible. Note
-      --  that we do not go as far as inserting a raise of Program_Error since
-      --  this is an erroneous case, and it may happen that we are lucky and an
-      --  underaligned address turns out to be OK after all.
-
-      --------------------------------
-      -- Compile_Time_Bad_Alignment --
-      --------------------------------
-
-      procedure Compile_Time_Bad_Alignment is
-      begin
-         if Address_Clause_Overlay_Warnings then
-            Error_Msg_FE
-              ("?o?specified address for& may be inconsistent with alignment",
-               Aexp, E);
-            Error_Msg_FE
-              ("\?o?program execution may be erroneous (RM 13.3(27))",
-               Aexp, E);
-            Set_Address_Warning_Posted (AC);
-         end if;
-      end Compile_Time_Bad_Alignment;
-
-   --  Start of processing for Apply_Address_Clause_Check
 
    begin
       --  See if alignment check needed. Note that we never need a check if the
@@ -690,43 +664,11 @@ package body Checks is
 
       --  Obtain expression from address clause
 
-      Expr := Expression (AC);
+      Expr := Address_Value (Expression (AC));
 
-      --  The following loop digs for the real expression to use in the check
-
-      loop
-         --  For constant, get constant expression
-
-         if Is_Entity_Name (Expr)
-           and then Ekind (Entity (Expr)) = E_Constant
-         then
-            Expr := Constant_Value (Entity (Expr));
-
-         --  For unchecked conversion, get result to convert
-
-         elsif Nkind (Expr) = N_Unchecked_Type_Conversion then
-            Expr := Expression (Expr);
-
-         --  For (common case) of To_Address call, get argument
-
-         elsif Nkind (Expr) = N_Function_Call
-           and then Is_Entity_Name (Name (Expr))
-           and then Is_RTE (Entity (Name (Expr)), RE_To_Address)
-         then
-            Expr := First (Parameter_Associations (Expr));
-
-            if Nkind (Expr) = N_Parameter_Association then
-               Expr := Explicit_Actual_Parameter (Expr);
-            end if;
-
-         --  We finally have the real expression
-
-         else
-            exit;
-         end if;
-      end loop;
-
-      --  See if we know that Expr has a bad alignment at compile time
+      --  See if we know that Expr has an acceptable value at compile time. If
+      --  it hasn't or we don't know, we defer issuing the warning until the
+      --  end of the compilation to take into account back end annotations.
 
       if Compile_Time_Known_Value (Expr)
         and then (Known_Alignment (E) or else Known_Alignment (Typ))
@@ -735,16 +677,14 @@ package body Checks is
             AL : Uint := Alignment (Typ);
 
          begin
-            --  The object alignment might be more restrictive than the
-            --  type alignment.
+            --  The object alignment might be more restrictive than the type
+            --  alignment.
 
             if Known_Alignment (E) then
                AL := Alignment (E);
             end if;
 
-            if Expr_Value (Expr) mod AL /= 0 then
-               Compile_Time_Bad_Alignment;
-            else
+            if Expr_Value (Expr) mod AL = 0 then
                return;
             end if;
          end;
@@ -776,9 +716,9 @@ package body Checks is
       --  Generate a check to raise PE if alignment may be inappropriate
 
       else
-         --  If the original expression is a non-static constant, use the
-         --  name of the constant itself rather than duplicating its
-         --  defining expression, which was extracted above.
+         --  If the original expression is a non-static constant, use the name
+         --  of the constant itself rather than duplicating its initialization
+         --  expression, which was extracted above.
 
          --  Note: Expr is empty if the address-clause is applied to in-mode
          --  actuals (allowed by 13.1(22)).
@@ -787,8 +727,8 @@ package body Checks is
            or else
              (Is_Entity_Name (Expression (AC))
                and then Ekind (Entity (Expression (AC))) = E_Constant
-               and then Nkind (Parent (Entity (Expression (AC))))
-                                 = N_Object_Declaration)
+               and then Nkind (Parent (Entity (Expression (AC)))) =
+                          N_Object_Declaration)
          then
             Expr := New_Copy_Tree (Expression (AC));
          else
@@ -803,9 +743,9 @@ package body Checks is
            Make_Raise_Program_Error (Loc,
              Condition =>
                Make_Op_Ne (Loc,
-                 Left_Opnd =>
+                 Left_Opnd  =>
                    Make_Op_Mod (Loc,
-                     Left_Opnd =>
+                     Left_Opnd  =>
                        Unchecked_Convert_To
                          (RTE (RE_Integer_Address), Expr),
                      Right_Opnd =>
@@ -813,12 +753,12 @@ package body Checks is
                          Prefix         => New_Occurrence_Of (E, Loc),
                          Attribute_Name => Name_Alignment)),
                  Right_Opnd => Make_Integer_Literal (Loc, Uint_0)),
-                       Reason    => PE_Misaligned_Address_Value));
+             Reason    => PE_Misaligned_Address_Value));
 
          Warning_Msg := No_Error_Msg;
          Analyze (First (Actions (N)), Suppress => All_Checks);
 
-         --  If the address clause generated a warning message (for example,
+         --  If the above raise action generated a warning message (for example
          --  from Warn_On_Non_Local_Exception mode with the active restriction
          --  No_Exception_Propagation).
 
@@ -832,19 +772,21 @@ package body Checks is
             if Compile_Time_Known_Value (Expr) then
                Alignment_Warnings.Append
                  ((E => E, A => Expr_Value (Expr), W => Warning_Msg));
+
+            --  Add explanation of the warning generated by the check
+
+            else
+               Error_Msg_N
+                 ("\address value may be incompatible with alignment of "
+                  & "object?X?", AC);
             end if;
-
-            --  Add explanation of the warning that is generated by the check
-
-            Error_Msg_N
-              ("\address value may be incompatible with alignment "
-               & "of object?X?", AC);
          end if;
 
          return;
       end if;
 
    exception
+
       --  If we have some missing run time component in configurable run time
       --  mode then just skip the check (it is not required in any case).
 
@@ -2708,7 +2650,17 @@ package body Checks is
 
             Check_Expression_Against_Static_Predicate (N, Typ);
 
-            if Is_Entity_Name (N) then
+            if not Expander_Active then
+               return;
+            end if;
+
+            --  For an entity of the type, generate a call to the predicate
+            --  function, unless its type is an actual subtype, which is not
+            --  visible outside of the enclosing subprogram.
+
+            if Is_Entity_Name (N)
+              and then not Is_Actual_Subtype (Typ)
+            then
                Insert_Action (N,
                  Make_Predicate_Check
                    (Typ, New_Occurrence_Of (Entity (N), Sloc (N))));
@@ -3077,15 +3029,11 @@ package body Checks is
       --  Floating-point case
       --  In the floating-point case, we only do range checks if the type is
       --  constrained. We definitely do NOT want range checks for unconstrained
-      --  types, since we want to have infinities
+      --  types, since we want to have infinities, except when
+      --  Check_Float_Overflow is set.
 
       elsif Is_Floating_Point_Type (S_Typ) then
-
-      --  Normally, we only do range checks if the type is constrained. We do
-      --  NOT want range checks for unconstrained types, since we want to have
-      --  infinities.
-
-         if Is_Constrained (S_Typ) then
+         if Is_Constrained (S_Typ) or else Check_Float_Overflow then
             Enable_Range_Check (Expr);
          end if;
 
@@ -3295,9 +3243,7 @@ package body Checks is
             --  on, then we want to delete the check, since it is not needed.
             --  We do this by replacing the if statement by a null statement
 
-            --  Why are we even generating checks if checks are turned off ???
-
-            elsif Do_Static or else not Checks_On then
+            elsif Do_Static then
                Remove_Warning_Messages (R_Cno);
                Rewrite (R_Cno, Make_Null_Statement (Loc));
             end if;
@@ -9702,8 +9648,8 @@ package body Checks is
 
             LB         : Node_Id := Low_Bound (Ck_Node);
             HB         : Node_Id := High_Bound (Ck_Node);
-            Known_LB   : Boolean;
-            Known_HB   : Boolean;
+            Known_LB   : Boolean := False;
+            Known_HB   : Boolean := False;
 
             Null_Range     : Boolean;
             Out_Of_Range_L : Boolean;
@@ -9725,9 +9671,6 @@ package body Checks is
                then
                   LB := T_LB;
                   Known_LB := True;
-
-               else
-                  Known_LB := False;
                end if;
 
                --  Likewise for the high bound
@@ -9740,8 +9683,6 @@ package body Checks is
                then
                   HB := T_HB;
                   Known_HB := True;
-               else
-                  Known_HB := False;
                end if;
             end if;
 

@@ -813,10 +813,15 @@ struct noce_if_info
 
   /* Estimated cost of the particular branch instruction.  */
   unsigned int branch_cost;
+
+  /* The name of the noce transform that succeeded in if-converting
+     this structure.  Used for debugging.  */
+  const char *transform_name;
 };
 
 static rtx noce_emit_store_flag (struct noce_if_info *, rtx, int, int);
 static int noce_try_move (struct noce_if_info *);
+static int noce_try_ifelse_collapse (struct noce_if_info *);
 static int noce_try_store_flag (struct noce_if_info *);
 static int noce_try_addcc (struct noce_if_info *);
 static int noce_try_store_flag_constants (struct noce_if_info *);
@@ -1115,10 +1120,44 @@ noce_try_move (struct noce_if_info *if_info)
 	  emit_insn_before_setloc (seq, if_info->jump,
 				   INSN_LOCATION (if_info->insn_a));
 	}
+      if_info->transform_name = "noce_try_move";
       return TRUE;
     }
   return FALSE;
 }
+
+/* Try forming an IF_THEN_ELSE (cond, b, a) and collapsing that
+   through simplify_rtx.  Sometimes that can eliminate the IF_THEN_ELSE.
+   If that is the case, emit the result into x.  */
+
+static int
+noce_try_ifelse_collapse (struct noce_if_info * if_info)
+{
+  if (!noce_simple_bbs (if_info))
+    return FALSE;
+
+  machine_mode mode = GET_MODE (if_info->x);
+  rtx if_then_else = simplify_gen_ternary (IF_THEN_ELSE, mode, mode,
+					    if_info->cond, if_info->b,
+					    if_info->a);
+
+  if (GET_CODE (if_then_else) == IF_THEN_ELSE)
+    return FALSE;
+
+  rtx_insn *seq;
+  start_sequence ();
+  noce_emit_move_insn (if_info->x, if_then_else);
+  seq = end_ifcvt_sequence (if_info);
+  if (!seq)
+    return FALSE;
+
+  emit_insn_before_setloc (seq, if_info->jump,
+			  INSN_LOCATION (if_info->insn_a));
+
+  if_info->transform_name = "noce_try_ifelse_collapse";
+  return TRUE;
+}
+
 
 /* Convert "if (test) x = 1; else x = 0".
 
@@ -1163,6 +1202,7 @@ noce_try_store_flag (struct noce_if_info *if_info)
 
       emit_insn_before_setloc (seq, if_info->jump,
 			       INSN_LOCATION (if_info->insn_a));
+      if_info->transform_name = "noce_try_store_flag";
       return TRUE;
     }
   else
@@ -1241,6 +1281,7 @@ noce_try_inverse_constants (struct noce_if_info *if_info)
 
       emit_insn_before_setloc (seq, if_info->jump,
 			       INSN_LOCATION (if_info->insn_a));
+      if_info->transform_name = "noce_try_inverse_constants";
       return true;
     }
 
@@ -1461,6 +1502,8 @@ noce_try_store_flag_constants (struct noce_if_info *if_info)
 
       emit_insn_before_setloc (seq, if_info->jump,
 			       INSN_LOCATION (if_info->insn_a));
+      if_info->transform_name = "noce_try_store_flag_constants";
+
       return TRUE;
     }
 
@@ -1513,6 +1556,8 @@ noce_try_addcc (struct noce_if_info *if_info)
 
 	      emit_insn_before_setloc (seq, if_info->jump,
 				       INSN_LOCATION (if_info->insn_a));
+	      if_info->transform_name = "noce_try_addcc";
+
 	      return TRUE;
 	    }
 	  end_sequence ();
@@ -1553,6 +1598,7 @@ noce_try_addcc (struct noce_if_info *if_info)
 
 	      emit_insn_before_setloc (seq, if_info->jump,
 				       INSN_LOCATION (if_info->insn_a));
+	      if_info->transform_name = "noce_try_addcc";
 	      return TRUE;
 	    }
 	  end_sequence ();
@@ -1617,6 +1663,8 @@ noce_try_store_flag_mask (struct noce_if_info *if_info)
 
 	  emit_insn_before_setloc (seq, if_info->jump,
 				   INSN_LOCATION (if_info->insn_a));
+	  if_info->transform_name = "noce_try_store_flag_mask";
+
 	  return TRUE;
 	}
 
@@ -1767,6 +1815,8 @@ noce_try_cmove (struct noce_if_info *if_info)
 
 	  emit_insn_before_setloc (seq, if_info->jump,
 				   INSN_LOCATION (if_info->insn_a));
+	  if_info->transform_name = "noce_try_cmove";
+
 	  return TRUE;
 	}
       /* If both a and b are constants try a last-ditch transformation:
@@ -1820,6 +1870,7 @@ noce_try_cmove (struct noce_if_info *if_info)
 
 	      emit_insn_before_setloc (seq, if_info->jump,
 				   INSN_LOCATION (if_info->insn_a));
+	      if_info->transform_name = "noce_try_cmove";
 	      return TRUE;
 	    }
 	  else
@@ -2273,6 +2324,7 @@ noce_try_cmove_arith (struct noce_if_info *if_info)
 
   emit_insn_before_setloc (ifcvt_seq, if_info->jump,
 			   INSN_LOCATION (if_info->insn_a));
+  if_info->transform_name = "noce_try_cmove_arith";
   return TRUE;
 
  end_seq_and_fail:
@@ -2364,28 +2416,32 @@ noce_get_alt_condition (struct noce_if_info *if_info, rtx target,
 	  switch (code)
 	    {
 	    case LT:
-	      if (actual_val == desired_val + 1)
+	      if (desired_val != HOST_WIDE_INT_MAX
+		  && actual_val == desired_val + 1)
 		{
 		  code = LE;
 		  op_b = GEN_INT (desired_val);
 		}
 	      break;
 	    case LE:
-	      if (actual_val == desired_val - 1)
+	      if (desired_val != HOST_WIDE_INT_MIN
+		  && actual_val == desired_val - 1)
 		{
 		  code = LT;
 		  op_b = GEN_INT (desired_val);
 		}
 	      break;
 	    case GT:
-	      if (actual_val == desired_val - 1)
+	      if (desired_val != HOST_WIDE_INT_MIN
+		  && actual_val == desired_val - 1)
 		{
 		  code = GE;
 		  op_b = GEN_INT (desired_val);
 		}
 	      break;
 	    case GE:
-	      if (actual_val == desired_val + 1)
+	      if (desired_val != HOST_WIDE_INT_MAX
+		  && actual_val == desired_val + 1)
 		{
 		  code = GT;
 		  op_b = GEN_INT (desired_val);
@@ -2525,6 +2581,7 @@ noce_try_minmax (struct noce_if_info *if_info)
   emit_insn_before_setloc (seq, if_info->jump, INSN_LOCATION (if_info->insn_a));
   if_info->cond = cond;
   if_info->cond_earliest = earliest;
+  if_info->transform_name = "noce_try_minmax";
 
   return TRUE;
 }
@@ -2691,6 +2748,7 @@ noce_try_abs (struct noce_if_info *if_info)
   emit_insn_before_setloc (seq, if_info->jump, INSN_LOCATION (if_info->insn_a));
   if_info->cond = cond;
   if_info->cond_earliest = earliest;
+  if_info->transform_name = "noce_try_abs";
 
   return TRUE;
 }
@@ -2772,6 +2830,8 @@ noce_try_sign_mask (struct noce_if_info *if_info)
     return FALSE;
 
   emit_insn_before_setloc (seq, if_info->jump, INSN_LOCATION (if_info->insn_a));
+  if_info->transform_name = "noce_try_sign_mask";
+
   return TRUE;
 }
 
@@ -2877,6 +2937,7 @@ noce_try_bitop (struct noce_if_info *if_info)
       emit_insn_before_setloc (seq, if_info->jump,
 			       INSN_LOCATION (if_info->insn_a));
     }
+  if_info->transform_name = "noce_try_bitop";
   return TRUE;
 }
 
@@ -3167,6 +3228,41 @@ noce_convert_multiple_sets (struct noce_if_info *if_info)
       if (if_info->then_else_reversed)
 	std::swap (old_val, new_val);
 
+
+      /* We allow simple lowpart register subreg SET sources in
+	 bb_ok_for_noce_convert_multiple_sets.  Be careful when processing
+	 sequences like:
+	 (set (reg:SI r1) (reg:SI r2))
+	 (set (reg:HI r3) (subreg:HI (r1)))
+	 For the second insn new_val or old_val (r1 in this example) will be
+	 taken from the temporaries and have the wider mode which will not
+	 match with the mode of the other source of the conditional move, so
+	 we'll end up trying to emit r4:HI = cond ? (r1:SI) : (r3:HI).
+	 Wrap the two cmove operands into subregs if appropriate to prevent
+	 that.  */
+      if (GET_MODE (new_val) != GET_MODE (temp))
+	{
+	  machine_mode src_mode = GET_MODE (new_val);
+	  machine_mode dst_mode = GET_MODE (temp);
+	  if (GET_MODE_SIZE (src_mode) <= GET_MODE_SIZE (dst_mode))
+	    {
+	      end_sequence ();
+	      return FALSE;
+	    }
+	  new_val = lowpart_subreg (dst_mode, new_val, src_mode);
+	}
+      if (GET_MODE (old_val) != GET_MODE (temp))
+	{
+	  machine_mode src_mode = GET_MODE (old_val);
+	  machine_mode dst_mode = GET_MODE (temp);
+	  if (GET_MODE_SIZE (src_mode) <= GET_MODE_SIZE (dst_mode))
+	    {
+	      end_sequence ();
+	      return FALSE;
+	    }
+	  old_val = lowpart_subreg (dst_mode, old_val, src_mode);
+	}
+
       /* Actually emit the conditional move.  */
       rtx temp_dest = noce_emit_cmove (if_info, temp, cond_code,
 				       x, y, new_val, old_val);
@@ -3240,6 +3336,7 @@ noce_convert_multiple_sets (struct noce_if_info *if_info)
     }
 
   num_updated_if_blocks++;
+  if_info->transform_name = "noce_convert_multiple_sets";
   return TRUE;
 }
 
@@ -3277,9 +3374,15 @@ bb_ok_for_noce_convert_multiple_sets (basic_block test_bb,
       rtx src = SET_SRC (set);
 
       /* We can possibly relax this, but for now only handle REG to REG
-	 moves.  This avoids any issues that might come from introducing
-	 loads/stores that might violate data-race-freedom guarantees.  */
-      if (!(REG_P (src) && REG_P (dest)))
+	 (including subreg) moves.  This avoids any issues that might come
+	 from introducing loads/stores that might violate data-race-freedom
+	 guarantees.  */
+      if (!REG_P (dest))
+	return false;
+
+      if (!(REG_P (src)
+	   || (GET_CODE (src) == SUBREG && REG_P (SUBREG_REG (src))
+	       && subreg_lowpart_p (src))))
 	return false;
 
       /* Destination must be appropriate for a conditional write.  */
@@ -3336,7 +3439,12 @@ noce_process_if_block (struct noce_if_info *if_info)
       && bb_ok_for_noce_convert_multiple_sets (then_bb, if_info))
     {
       if (noce_convert_multiple_sets (if_info))
-	return TRUE;
+	{
+	  if (dump_file && if_info->transform_name)
+	    fprintf (dump_file, "if-conversion succeeded through %s\n",
+		     if_info->transform_name);
+	  return TRUE;
+	}
     }
 
   if (! bb_valid_for_noce_process_p (then_bb, cond, &if_info->then_cost,
@@ -3493,6 +3601,8 @@ noce_process_if_block (struct noce_if_info *if_info)
 
   if (noce_try_move (if_info))
     goto success;
+  if (noce_try_ifelse_collapse (if_info))
+    goto success;
   if (noce_try_store_flag (if_info))
     goto success;
   if (noce_try_bitop (if_info))
@@ -3533,6 +3643,9 @@ noce_process_if_block (struct noce_if_info *if_info)
   return FALSE;
 
  success:
+  if (dump_file && if_info->transform_name)
+    fprintf (dump_file, "if-conversion succeeded through %s\n",
+	     if_info->transform_name);
 
   /* If we used a temporary, fix it up now.  */
   if (orig_x != x)

@@ -1,3 +1,132 @@
+2016-07-08  Jason Merrill  <jason@redhat.com>
+
+	P0145: Refining Expression Order for C++.
+	* c.opts (-fargs-in-order): Rename to -fstrong-eval-order.
+	* c-opts.c: Adjust.
+
+2016-07-05  Markus Trippelsdorf  <markus@trippelsdorf.de>
+
+	PR c++/71214
+	* c-cppbuiltin.c (c_cpp_builtins): Define __cpp_rvalue_references.
+
+2016-06-29  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* c-pragma.h (enum pragma_kind): Rename
+	PRAGMA_OMP_DECLARE_REDUCTION to PRAGMA_OMP_DECLARE.  Adjust all
+	users.
+
+2016-06-29  Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/71002
+	* c-common.c (c_common_get_alias_set): Remove union type punning case.
+
+2016-06-24  Jason Merrill  <jason@redhat.com>
+
+	P0145R2: Refining Expression Order for C++.
+	* c-common.c (verify_tree) [COMPOUND_EXPR]: Fix handling on LHS of
+	MODIFY_EXPR.
+
+2016-06-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-common.c (check_builtin_function_arguments): Require last
+	argument of BUILT_IN_*_OVERFLOW_P to have INTEGER_TYPE type.
+	Adjust wording of diagnostics for BUILT_IN_*_OVERLFLOW
+	if the last argument is pointer to enumerated or boolean type.
+
+2016-06-22  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c/70339
+	* c-common.h (enum lookup_name_fuzzy_kind): New enum.
+	(lookup_name_fuzzy): New prototype.
+
+2016-06-21  John David Anglin  <danglin@gcc.gnu.org>
+
+	* c-common.c (get_source_date_epoch): Use int64_t instead of long long.
+
+2016-06-14  Jason Merrill  <jason@redhat.com>
+
+	P0145R2: Refining Expression Order for C++.
+	* c.opt (fargs-in-order): New.
+	* c-opts.c (c_common_post_options): Adjust flag_args_in_order.
+
+2016-06-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR sanitizer/71498
+	* c-gimplify.c (ubsan_walk_array_refs_r): Set *walk_subtrees = 0 on
+	all BIND_EXPRs, and on all BIND_EXPRs recurse also on BIND_EXPR_BODY.
+
+	PR preprocessor/71183
+	* c-ppoutput.c (init_pp_output): Set cb->get_source_date_epoch
+	to cb_get_source_date_epoch.
+
+2016-06-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/68657
+	* c.opt (Wpsabi): Add Warning flag.
+
+2016-06-10  Martin Sebor  <msebor@redhat.com>
+
+	PR c/71392
+	* gcc/c-family/c-common.c (handle_nonnull_attribute): Accept
+	the nonnull attribute in type-generic builtins.
+
+2016-06-09  Martin Sebor  <msebor@redhat.com>
+
+	PR c/70883
+	* c-common.c (builtin_function_validate_nargs): Make text of error
+	message consistent with others like it.
+
+2016-06-08  Martin Sebor  <msebor@redhat.com>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/70507
+	PR c/68120
+	* c-common.c (check_builtin_function_arguments): Handle
+	BUILT_IN_{ADD,SUB,MUL}_OVERFLOW_P.
+
+2016-06-08  Richard Biener  <rguenther@suse.de>
+
+	* c-common.c (parse_optimize_options): Improve diagnostic messages.
+
+2016-06-07  Richard Biener  <rguenther@suse.de>
+
+	PR c/61564
+	* c-common.c (parse_optimize_options): Only apply CL_OPTIMIZATION
+	options and warn about others.
+
+2016-06-01  Eduard Sanou  <dhole@openmailbox.org>
+
+	* c-common.c (get_source_date_epoch): Rename to
+	cb_get_source_date_epoch.
+	* c-common.c (cb_get_source_date_epoch): Use a single generic erorr
+	message when the parsing fails.  Use error_at instead of fatal_error.
+	* c-common.h (get_source_date_epoch): Rename to
+	cb_get_source_date_epoch.
+	* c-common.h (cb_get_source_date_epoch): Prototype.
+	* c-common.h (MAX_SOURCE_DATE_EPOCH): Define.
+	* c-common.h (c_omp_region_type): Remove trailing comma.
+	* c-lex.c (init_c_lex): Set cb->get_source_date_epoch callback.
+	* c-lex.c (c_lex_with_flags): Remove initialization of
+	pfile->source_date_epoch.
+
+2016-05-30  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/71349
+	* c-omp.c (c_omp_split_clauses): Put OMP_CLAUSE_DEPEND to
+	C_OMP_CLAUSE_SPLIT_TARGET.  Put OMP_CLAUSE_NOWAIT to
+	C_OMP_CLAUSE_SPLIT_TARGET if combined with target construct,
+	instead of C_OMP_CLAUSE_SPLIT_FOR.
+
+2016-05-24  Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/70434
+	PR c/69504
+	* c-common.h (convert_vector_to_pointer_for_subscript): Rename to ...
+	(convert_vector_to_array_for_subscript): ... this.
+	* c-common.c (convert_vector_to_pointer_for_subscript): Use a
+	VIEW_CONVERT_EXPR to an array type.  Rename to ...
+	(convert_vector_to_array_for_subscript): ... this.
+
 2016-05-12  Marek Polacek  <polacek@redhat.com>
 
 	PR c/70756

@@ -1526,12 +1526,6 @@ package body Exp_Ch9 is
       Set_Stored_Constraint             (Rec_Ent, No_Elist);
       Cdecls := New_List;
 
-      --  Propagate type invariants to the corresponding record type
-
-      Set_Has_Invariants                (Rec_Ent, Has_Invariants (Ctyp));
-      Set_Has_Inheritable_Invariants    (Rec_Ent,
-        Has_Inheritable_Invariants (Ctyp));
-
       --  Use discriminals to create list of discriminants for record, and
       --  create new discriminals for use in default expressions, etc. It is
       --  worth noting that a task discriminant gives rise to 5 entities;
@@ -6225,16 +6219,17 @@ package body Exp_Ch9 is
 
    procedure Expand_Access_Protected_Subprogram_Type (N : Node_Id) is
       Loc    : constant Source_Ptr := Sloc (N);
-      Comps  : List_Id;
       T      : constant Entity_Id  := Defining_Identifier (N);
       D_T    : constant Entity_Id  := Designated_Type (T);
       D_T2   : constant Entity_Id  := Make_Temporary (Loc, 'D');
       E_T    : constant Entity_Id  := Make_Temporary (Loc, 'E');
-      P_List : constant List_Id    := Build_Protected_Spec
-                                        (N, RTE (RE_Address), D_T, False);
-      Decl1  : Node_Id;
-      Decl2  : Node_Id;
-      Def1   : Node_Id;
+      P_List : constant List_Id    :=
+                 Build_Protected_Spec (N, RTE (RE_Address), D_T, False);
+
+      Comps : List_Id;
+      Decl1 : Node_Id;
+      Decl2 : Node_Id;
+      Def1  : Node_Id;
 
    begin
       --  Create access to subprogram with full signature
@@ -6257,7 +6252,10 @@ package body Exp_Ch9 is
           Defining_Identifier => D_T2,
           Type_Definition     => Def1);
 
-      Insert_After_And_Analyze (N, Decl1);
+      --  Declare the new types before the original one since the latter will
+      --  refer to them through the Equivalent_Type slot.
+
+      Insert_Before_And_Analyze (N, Decl1);
 
       --  Associate the access to subprogram with its original access to
       --  protected subprogram type. Needed by the backend to know that this
@@ -6292,7 +6290,7 @@ package body Exp_Ch9 is
               Component_List =>
                 Make_Component_List (Loc, Component_Items => Comps)));
 
-      Insert_After_And_Analyze (Decl1, Decl2);
+      Insert_Before_And_Analyze (N, Decl2);
       Set_Equivalent_Type (T, E_T);
    end Expand_Access_Protected_Subprogram_Type;
 
@@ -9316,6 +9314,9 @@ package body Exp_Ch9 is
 
       pragma Assert (Present (Pdef));
 
+      Insert_After (Current_Node, Rec_Decl);
+      Current_Node := Rec_Decl;
+
       --  Add private field components
 
       if Present (Private_Declarations (Pdef)) then
@@ -9575,9 +9576,6 @@ package body Exp_Ch9 is
 
          Append_To (Cdecls, Object_Comp);
       end if;
-
-      Insert_After (Current_Node, Rec_Decl);
-      Current_Node := Rec_Decl;
 
       --  Analyze the record declaration immediately after construction,
       --  because the initialization procedure is needed for single object
@@ -13220,16 +13218,29 @@ package body Exp_Ch9 is
       --  package or return statement.
 
       Context := Parent (N);
-      while not Nkind_In (Context, N_Block_Statement,
-                                   N_Entry_Body,
-                                   N_Extended_Return_Statement,
-                                   N_Package_Body,
-                                   N_Package_Declaration,
-                                   N_Subprogram_Body,
-                                   N_Task_Body)
-      loop
+      while Present (Context) loop
+         if Nkind_In (Context, N_Entry_Body,
+                               N_Extended_Return_Statement,
+                               N_Package_Body,
+                               N_Package_Declaration,
+                               N_Subprogram_Body,
+                               N_Task_Body)
+         then
+            exit;
+
+         --  Do not consider block created to protect a list of statements with
+         --  an Abort_Defer / Abort_Undefer_Direct pair.
+
+         elsif Nkind (Context) = N_Block_Statement
+           and then not Is_Abort_Block (Context)
+         then
+            exit;
+         end if;
+
          Context := Parent (Context);
       end loop;
+
+      pragma Assert (Present (Context));
 
       --  Extract the constituents of the context
 
@@ -13261,8 +13272,6 @@ package body Exp_Ch9 is
          end if;
 
       else
-         Context_Decls := Declarations (Context);
-
          if Nkind (Context) = N_Block_Statement then
             Context_Id := Entity (Identifier (Context));
 
@@ -13286,9 +13295,10 @@ package body Exp_Ch9 is
          else
             raise Program_Error;
          end if;
+
+         Context_Decls := Declarations (Context);
       end if;
 
-      pragma Assert (Present (Context));
       pragma Assert (Present (Context_Id));
       pragma Assert (Present (Context_Decls));
    end Find_Enclosing_Context;
@@ -14139,7 +14149,7 @@ package body Exp_Ch9 is
          --  or, in the case of Ravenscar:
 
          --  Install_Restricted_Handlers
-         --    (Prio, (Expr1, Proc1'access), ...., (ExprN, ProcN'access));
+         --    (Prio, ((Expr1, Proc1'access), ...., (ExprN, ProcN'access)));
 
          declare
             Args  : constant List_Id := New_List;

@@ -257,7 +257,7 @@ set_bb_predicate_gimplified_stmts (basic_block bb, gimple_seq stmts)
 static inline void
 add_bb_predicate_gimplified_stmts (basic_block bb, gimple_seq stmts)
 {
-  gimple_seq_add_seq
+  gimple_seq_add_seq_without_update
     (&(((struct bb_predicate *) bb->aux)->predicate_gimplified_stmts), stmts);
 }
 
@@ -280,10 +280,11 @@ release_bb_predicate (basic_block bb)
   gimple_seq stmts = bb_predicate_gimplified_stmts (bb);
   if (stmts)
     {
-      gimple_stmt_iterator i;
+      if (flag_checking)
+	for (gimple_stmt_iterator i = gsi_start (stmts);
+	     !gsi_end_p (i); gsi_next (&i))
+	  gcc_assert (! gimple_use_ops (gsi_stmt (i)));
 
-      for (i = gsi_start (stmts); !gsi_end_p (i); gsi_next (&i))
-	free_stmt_operands (cfun, gsi_stmt (i));
       set_bb_predicate_gimplified_stmts (bb, NULL);
     }
 }
@@ -1322,7 +1323,6 @@ if_convertible_loop_p_1 (struct loop *loop, vec<data_reference_p> *refs)
     return false;
 
   calculate_dominance_info (CDI_DOMINATORS);
-  calculate_dominance_info (CDI_POST_DOMINATORS);
 
   /* Allow statements that can be handled during if-conversion.  */
   ifc_bbs = get_loop_body_in_if_conv_order (loop);
@@ -1370,6 +1370,7 @@ if_convertible_loop_p_1 (struct loop *loop, vec<data_reference_p> *refs)
 	  = new hash_map<innermost_loop_behavior_hash, data_reference_p>;
   baseref_DR_map = new hash_map<tree_operand_hash, data_reference_p>;
 
+  calculate_dominance_info (CDI_POST_DOMINATORS);
   predicate_bbs (loop);
 
   for (i = 0; refs->iterate (i, &dr); i++)
@@ -1420,9 +1421,6 @@ if_convertible_loop_p_1 (struct loop *loop, vec<data_reference_p> *refs)
 	  if (!if_convertible_stmt_p (gsi_stmt (itr), *refs))
 	    return false;
     }
-
-  for (i = 0; i < loop->num_nodes; i++)
-    free_bb_predicate (ifc_bbs[i]);
 
   /* Checking PHIs needs to be done after stmts, as the fact whether there
      are any masked loads or stores affects the tests.  */
@@ -2298,7 +2296,6 @@ combine_blocks (struct loop *loop)
   edge e;
   edge_iterator ei;
 
-  predicate_bbs (loop);
   remove_conditions_and_labels (loop);
   insert_gimplified_predicates (loop);
   predicate_all_scalar_phis (loop);
@@ -2428,13 +2425,23 @@ version_loop_for_if_conversion (struct loop *loop)
 				  integer_zero_node);
   gimple_call_set_lhs (g, cond);
 
+  /* Save BB->aux around loop_version as that uses the same field.  */
+  void **saved_preds = XALLOCAVEC (void *, loop->num_nodes);
+  for (unsigned i = 0; i < loop->num_nodes; i++)
+    saved_preds[i] = ifc_bbs[i]->aux;
+
   initialize_original_copy_tables ();
   new_loop = loop_version (loop, cond, &cond_bb,
 			   REG_BR_PROB_BASE, REG_BR_PROB_BASE,
 			   REG_BR_PROB_BASE, true);
   free_original_copy_tables ();
+
+  for (unsigned i = 0; i < loop->num_nodes; i++)
+    ifc_bbs[i]->aux = saved_preds[i];
+
   if (new_loop == NULL)
     return false;
+
   new_loop->dont_vectorize = true;
   new_loop->force_vectorize = false;
   gsi = gsi_last_bb (cond_bb);
@@ -2507,194 +2514,6 @@ ifcvt_split_critical_edges (struct loop *loop, bool aggressive_if_conv)
     }
 
   return true;
-}
-
-/* Assumes that lhs of DEF_STMT have multiple uses.
-   Delete one use by (1) creation of copy DEF_STMT with
-   unique lhs; (2) change original use of lhs in one
-   use statement with newly created lhs.  */
-
-static void
-ifcvt_split_def_stmt (gimple *def_stmt, gimple *use_stmt)
-{
-  tree var;
-  tree lhs;
-  gimple *copy_stmt;
-  gimple_stmt_iterator gsi;
-  use_operand_p use_p;
-  imm_use_iterator imm_iter;
-
-  var = gimple_assign_lhs (def_stmt);
-  copy_stmt = gimple_copy (def_stmt);
-  lhs = make_temp_ssa_name (TREE_TYPE (var), NULL, "_ifc_");
-  gimple_assign_set_lhs (copy_stmt, lhs);
-  SSA_NAME_DEF_STMT (lhs) = copy_stmt;
-  /* Insert copy of DEF_STMT.  */
-  gsi = gsi_for_stmt (def_stmt);
-  gsi_insert_after (&gsi, copy_stmt, GSI_SAME_STMT);
-  /* Change use of var to lhs in use_stmt.  */
-  if (dump_file && (dump_flags & TDF_DETAILS))
-    {
-      fprintf (dump_file, "Change use of var  ");
-      print_generic_expr (dump_file, var, TDF_SLIM);
-      fprintf (dump_file, " to ");
-      print_generic_expr (dump_file, lhs, TDF_SLIM);
-      fprintf (dump_file, "\n");
-    }
-  FOR_EACH_IMM_USE_FAST (use_p, imm_iter, var)
-    {
-      if (USE_STMT (use_p) != use_stmt)
-	continue;
-      SET_USE (use_p, lhs);
-      break;
-    }
-}
-
-/* Traverse bool pattern recursively starting from VAR.
-   Save its def and use statements to defuse_list if VAR does
-   not have single use.  */
-
-static void
-ifcvt_walk_pattern_tree (tree var, vec<gimple *> *defuse_list,
-			 gimple *use_stmt)
-{
-  tree rhs1, rhs2;
-  enum tree_code code;
-  gimple *def_stmt;
-
-  if (TREE_CODE (var) != SSA_NAME)
-    return;
-
-  def_stmt = SSA_NAME_DEF_STMT (var);
-  if (gimple_code (def_stmt) != GIMPLE_ASSIGN)
-    return;
-  if (!has_single_use (var))
-    {
-      /* Put def and use stmts into defuse_list.  */
-      defuse_list->safe_push (def_stmt);
-      defuse_list->safe_push (use_stmt);
-      if (dump_file && (dump_flags & TDF_DETAILS))
-	{
-	  fprintf (dump_file, "Multiple lhs uses in stmt\n");
-	  print_gimple_stmt (dump_file, def_stmt, 0, TDF_SLIM);
-	}
-    }
-  rhs1 = gimple_assign_rhs1 (def_stmt);
-  code = gimple_assign_rhs_code (def_stmt);
-  switch (code)
-    {
-    case SSA_NAME:
-      ifcvt_walk_pattern_tree (rhs1, defuse_list, def_stmt);
-      break;
-    CASE_CONVERT:
-      if ((TYPE_PRECISION (TREE_TYPE (rhs1)) != 1
-	   || !TYPE_UNSIGNED (TREE_TYPE (rhs1)))
-	  && TREE_CODE (TREE_TYPE (rhs1)) != BOOLEAN_TYPE)
-	break;
-      ifcvt_walk_pattern_tree (rhs1, defuse_list, def_stmt);
-      break;
-    case BIT_NOT_EXPR:
-      ifcvt_walk_pattern_tree (rhs1, defuse_list, def_stmt);
-      break;
-    case BIT_AND_EXPR:
-    case BIT_IOR_EXPR:
-    case BIT_XOR_EXPR:
-      ifcvt_walk_pattern_tree (rhs1, defuse_list, def_stmt);
-      rhs2 = gimple_assign_rhs2 (def_stmt);
-      ifcvt_walk_pattern_tree (rhs2, defuse_list, def_stmt);
-      break;
-    default:
-      break;
-    }
-  return;
-}
-
-/* Returns true if STMT can be a root of bool pattern applied
-   by vectorizer.  */
-
-static bool
-stmt_is_root_of_bool_pattern (gimple *stmt)
-{
-  enum tree_code code;
-  tree lhs, rhs;
-
-  code = gimple_assign_rhs_code (stmt);
-  if (CONVERT_EXPR_CODE_P (code))
-    {
-      lhs = gimple_assign_lhs (stmt);
-      rhs = gimple_assign_rhs1 (stmt);
-      if (TREE_CODE (TREE_TYPE (rhs)) != BOOLEAN_TYPE)
-	return false;
-      if (TREE_CODE (TREE_TYPE (lhs)) == BOOLEAN_TYPE)
-	return false;
-      return true;
-    }
-  else if (code == COND_EXPR)
-    {
-      rhs = gimple_assign_rhs1 (stmt);
-      if (TREE_CODE (rhs) != SSA_NAME)
-	return false;
-      return true;
-    }
-  return false;
-}
-
-/*  Traverse all statements in BB which correspond to loop header to
-    find out all statements which can start bool pattern applied by
-    vectorizer and convert multiple uses in it to conform pattern
-    restrictions.  Such case can occur if the same predicate is used both
-    for phi node conversion and load/store mask.  */
-
-static void
-ifcvt_repair_bool_pattern (basic_block bb)
-{
-  tree rhs;
-  gimple *stmt;
-  gimple_stmt_iterator gsi;
-  vec<gimple *> defuse_list = vNULL;
-  vec<gimple *> pattern_roots = vNULL;
-  bool repeat = true;
-  int niter = 0;
-  unsigned int ix;
-
-  /* Collect all root pattern statements.  */
-  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
-    {
-      stmt = gsi_stmt (gsi);
-      if (gimple_code (stmt) != GIMPLE_ASSIGN)
-	continue;
-      if (!stmt_is_root_of_bool_pattern (stmt))
-	continue;
-      pattern_roots.safe_push (stmt);
-    }
-
-  if (pattern_roots.is_empty ())
-    return;
-
-  /* Split all statements with multiple uses iteratively since splitting
-     may create new multiple uses.  */
-  while (repeat)
-    {
-      repeat = false;
-      niter++;
-      FOR_EACH_VEC_ELT (pattern_roots, ix, stmt)
-	{
-	  rhs = gimple_assign_rhs1 (stmt);
-	  ifcvt_walk_pattern_tree (rhs, &defuse_list, stmt);
-	  while (defuse_list.length () > 0)
-	    {
-	      repeat = true;
-	      gimple *def_stmt, *use_stmt;
-	      use_stmt = defuse_list.pop ();
-	      def_stmt = defuse_list.pop ();
-	      ifcvt_split_def_stmt (def_stmt, use_stmt);
-	    }
-
-	}
-    }
-  if (dump_file && (dump_flags & TDF_DETAILS))
-    fprintf (dump_file, "Repair bool pattern takes %d iterations. \n",
-	     niter);
 }
 
 /* Delete redundant statements produced by predication which prevents
@@ -2843,10 +2662,8 @@ tree_if_conversion (struct loop *loop)
      on-the-fly.  */
   combine_blocks (loop);
 
-  /* Delete dead predicate computations and repair tree correspondent
-     to bool pattern to delete multiple uses of predicates.  */
+  /* Delete dead predicate computations.  */
   ifcvt_local_dce (loop->header);
-  ifcvt_repair_bool_pattern (loop->header);
 
   todo |= TODO_cleanup_cfg;
   mark_virtual_operands_for_renaming (cfun);
@@ -2877,7 +2694,7 @@ const pass_data pass_data_if_conversion =
   GIMPLE_PASS, /* type */
   "ifcvt", /* name */
   OPTGROUP_NONE, /* optinfo_flags */
-  TV_NONE, /* tv_id */
+  TV_TREE_LOOP_IFCVT, /* tv_id */
   ( PROP_cfg | PROP_ssa ), /* properties_required */
   0, /* properties_provided */
   0, /* properties_destroyed */

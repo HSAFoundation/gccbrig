@@ -291,6 +291,35 @@ commutative_ternary_tree_code (enum tree_code code)
   return false;
 }
 
+/* Return true if CODE is a comparison.  */
+
+bool
+comparison_code_p (enum tree_code code)
+{
+  switch (code)
+    {
+    case EQ_EXPR:
+    case NE_EXPR:
+    case ORDERED_EXPR:
+    case UNORDERED_EXPR:
+    case LTGT_EXPR:
+    case UNEQ_EXPR:
+    case GT_EXPR:
+    case GE_EXPR:
+    case LT_EXPR:
+    case LE_EXPR:
+    case UNGT_EXPR:
+    case UNGE_EXPR:
+    case UNLT_EXPR:
+    case UNLE_EXPR:
+      return true;
+
+    default:
+      break;
+    }
+  return false;
+}
+
 
 /* Base class for all identifiers the parser knows.  */
 
@@ -526,6 +555,42 @@ get_operator (const char *id, bool allow_null = false)
 
   new (&tem) id_base (id_base::CODE, id2);
   return operators->find_with_hash (&tem, tem.hashval);
+}
+
+/* Return the comparison operators that results if the operands are
+   swapped.  This is safe for floating-point.  */
+
+id_base *
+swap_tree_comparison (operator_id *p)
+{
+  switch (p->code)
+    {
+    case EQ_EXPR:
+    case NE_EXPR:
+    case ORDERED_EXPR:
+    case UNORDERED_EXPR:
+    case LTGT_EXPR:
+    case UNEQ_EXPR:
+      return p;
+    case GT_EXPR:
+      return get_operator ("LT_EXPR");
+    case GE_EXPR:
+      return get_operator ("LE_EXPR");
+    case LT_EXPR:
+      return get_operator ("GT_EXPR");
+    case LE_EXPR:
+      return get_operator ("GE_EXPR");
+    case UNGT_EXPR:
+      return get_operator ("UNLT_EXPR");
+    case UNGE_EXPR:
+      return get_operator ("UNLE_EXPR");
+    case UNLT_EXPR:
+      return get_operator ("UNGT_EXPR");
+    case UNLE_EXPR:
+      return get_operator ("UNGE_EXPR");
+    default:
+      gcc_unreachable ();
+    }
 }
 
 typedef hash_map<nofree_string_hash, unsigned> cid_map_t;
@@ -816,7 +881,7 @@ cartesian_product (const vec< vec<operand *> >& ops_vector,
 /* Lower OP to two operands in case it is marked as commutative.  */
 
 static vec<operand *>
-commutate (operand *op)
+commutate (operand *op, vec<vec<user_id *> > &for_vec)
 {
   vec<operand *> ret = vNULL;
 
@@ -827,7 +892,7 @@ commutate (operand *op)
 	  ret.safe_push (op);
 	  return ret;
 	}
-      vec<operand *> v = commutate (c->what);
+      vec<operand *> v = commutate (c->what, for_vec);
       for (unsigned i = 0; i < v.length (); ++i)
 	{
 	  capture *nc = new capture (c->location, c->where, v[i]);
@@ -845,7 +910,7 @@ commutate (operand *op)
 
   vec< vec<operand *> > ops_vector = vNULL;
   for (unsigned i = 0; i < e->ops.length (); ++i)
-    ops_vector.safe_push (commutate (e->ops[i]));
+    ops_vector.safe_push (commutate (e->ops[i], for_vec));
 
   auto_vec< vec<operand *> > result;
   auto_vec<operand *> v (e->ops.length ());
@@ -868,6 +933,50 @@ commutate (operand *op)
   for (unsigned i = 0; i < result.length (); ++i)
     {
       expr *ne = new expr (e);
+      if (operator_id *p = dyn_cast <operator_id *> (ne->operation))
+	{
+	  if (comparison_code_p (p->code))
+	    ne->operation = swap_tree_comparison (p);
+	}
+      else if (user_id *p = dyn_cast <user_id *> (ne->operation))
+	{
+	  bool found_compare = false;
+	  for (unsigned j = 0; j < p->substitutes.length (); ++j)
+	    if (operator_id *q = dyn_cast <operator_id *> (p->substitutes[j]))
+	      {
+		if (comparison_code_p (q->code)
+		    && swap_tree_comparison (q) != q)
+		  {
+		    found_compare = true;
+		    break;
+		  }
+	      }
+	  if (found_compare)
+	    {
+	      user_id *newop = new user_id ("<internal>");
+	      for (unsigned j = 0; j < p->substitutes.length (); ++j)
+		{
+		  id_base *subst = p->substitutes[j];
+		  if (operator_id *q = dyn_cast <operator_id *> (subst))
+		    {
+		      if (comparison_code_p (q->code))
+			subst = swap_tree_comparison (q);
+		    }
+		  newop->substitutes.safe_push (subst);
+		}
+	      ne->operation = newop;
+	      /* Search for 'p' inside the for vector and push 'newop'
+	         to the same level.  */
+	      for (unsigned j = 0; newop && j < for_vec.length (); ++j)
+		for (unsigned k = 0; k < for_vec[j].length (); ++k)
+		  if (for_vec[j][k] == p)
+		    {
+		      for_vec[j].safe_push (newop);
+		      newop = NULL;
+		      break;
+		    }
+	    }
+	}
       ne->is_commutative = false;
       // result[i].length () is 2 since e->operation is binary
       for (unsigned j = result[i].length (); j; --j)
@@ -884,7 +993,7 @@ commutate (operand *op)
 static void
 lower_commutative (simplify *s, vec<simplify *>& simplifiers)
 {
-  vec<operand *> matchers = commutate (s->match);
+  vec<operand *> matchers = commutate (s->match, s->for_vec);
   for (unsigned i = 0; i < matchers.length (); ++i)
     {
       simplify *ns = new simplify (s->kind, matchers[i], s->result,
@@ -1307,8 +1416,7 @@ lower_for (simplify *sin, vec<simplify *>& simplifiers)
 	    {
 	      operand *match_op = s->match;
 	      operand *result_op = s->result;
-	      vec<std::pair<user_id *, id_base *> > subst;
-	      subst.create (n_ids);
+	      auto_vec<std::pair<user_id *, id_base *> > subst (n_ids);
 	      bool skip = false;
 	      for (unsigned i = 0; i < n_ids; ++i)
 		{
@@ -1328,18 +1436,15 @@ lower_for (simplify *sin, vec<simplify *>& simplifiers)
 		    result_op = replace_id (result_op, id, oper);
 		}
 	      if (skip)
-		{
-		  subst.release ();
-		  continue;
-		}
+		continue;
+
 	      simplify *ns = new simplify (s->kind, match_op, result_op,
 					   vNULL, s->capture_ids);
 	      ns->for_subst_vec.safe_splice (s->for_subst_vec);
 	      if (result_op
 		  && can_delay_subst)
 		ns->for_subst_vec.safe_splice (subst);
-	      else
-		subst.release ();
+
 	      worklist.safe_push (ns);
 	    }
 	}
@@ -2179,8 +2284,14 @@ expr::gen_transform (FILE *f, int indent, const char *dest, bool gimple,
     {
       /* comparisons use boolean_type_node (or what gets in), but
          their operands need to figure out the types themselves.  */
-      sprintf (optype, "boolean_type_node");
-      type = optype;
+      if (in_type)
+	type = in_type;
+      else
+	{
+	  sprintf (optype, "boolean_type_node");
+	  type = optype;
+	}
+      in_type = NULL;
     }
   else if (*opr == COND_EXPR
 	   || *opr == VEC_COND_EXPR)
@@ -3248,7 +3359,8 @@ dt_simplify::gen (FILE *f, int indent, bool gimple)
 	  fprintf_indent (f, indent, "if (%s (res_code, res_ops, seq, "
 			  "valueize, type, captures", info->fname);
 	  for (unsigned i = 0; i < s->for_subst_vec.length (); ++i)
-	    fprintf (f, ", %s", s->for_subst_vec[i].second->id);
+	    if (s->for_subst_vec[i].first->used)
+	      fprintf (f, ", %s", s->for_subst_vec[i].second->id);
 	  fprintf (f, "))\n");
 	  fprintf_indent (f, indent, "  return true;\n");
 	}
@@ -3260,7 +3372,10 @@ dt_simplify::gen (FILE *f, int indent, bool gimple)
 	    fprintf (f, ", op%d", i);
 	  fprintf (f, ", captures");
 	  for (unsigned i = 0; i < s->for_subst_vec.length (); ++i)
-	    fprintf (f, ", %s", s->for_subst_vec[i].second->id);
+	    {
+	      if (s->for_subst_vec[i].first->used)
+		fprintf (f, ", %s", s->for_subst_vec[i].second->id);
+	    }
 	  fprintf (f, ");\n");
 	  fprintf_indent (f, indent, "if (res) return res;\n");
 	}
@@ -3269,6 +3384,8 @@ dt_simplify::gen (FILE *f, int indent, bool gimple)
     {
       for (unsigned i = 0; i < s->for_subst_vec.length (); ++i)
 	{
+	  if (! s->for_subst_vec[i].first->used)
+	    continue;
 	  if (is_a <operator_id *> (s->for_subst_vec[i].second))
 	    fprintf_indent (f, indent, "enum tree_code %s = %s;\n",
 			    s->for_subst_vec[i].first->id,
@@ -3425,6 +3542,8 @@ decision_tree::gen (FILE *f, bool gimple)
 	}
       for (unsigned i = 0; i < s->s->s->for_subst_vec.length (); ++i)
 	{
+	  if (! s->s->s->for_subst_vec[i].first->used)
+	    continue;
 	  if (is_a <operator_id *> (s->s->s->for_subst_vec[i].second))
 	    fprintf (f, ", enum tree_code ARG_UNUSED (%s)",
 		     s->s->s->for_subst_vec[i].first->id);
@@ -3885,6 +4004,30 @@ parser::parse_expr ()
 	      while (*sp)
 		{
 		  if (*sp == 'c')
+		    {
+		      if (operator_id *p
+			    = dyn_cast<operator_id *> (e->operation))
+			{
+			  if (!commutative_tree_code (p->code)
+			      && !comparison_code_p (p->code))
+			    fatal_at (token, "operation is not commutative");
+			}
+		      else if (user_id *p = dyn_cast<user_id *> (e->operation))
+			for (unsigned i = 0;
+			     i < p->substitutes.length (); ++i)
+			  {
+			    if (operator_id *q
+				  = dyn_cast<operator_id *> (p->substitutes[i]))
+			      {
+				if (!commutative_tree_code (q->code)
+				    && !comparison_code_p (q->code))
+				  fatal_at (token, "operation %s is not "
+					    "commutative", q->id);
+			      }
+			  }
+		      is_commutative = true;
+		    }
+		  else if (*sp == 'C')
 		    is_commutative = true;
 		  else if (*sp == 's')
 		    {

@@ -2045,7 +2045,7 @@ gen_hsa_addr (tree ref, hsa_bb *hbb, HOST_WIDE_INT *output_bitsize = NULL,
       int unsignedp, volatilep, preversep;
 
       ref = get_inner_reference (ref, &bitsize, &bitpos, &varoffset, &mode,
-				 &unsignedp, &preversep, &volatilep, false);
+				 &unsignedp, &preversep, &volatilep);
 
       offset = bitpos;
       offset = wi::rshift (offset, LOG2_BITS_PER_UNIT, SIGNED);
@@ -3481,6 +3481,12 @@ gen_hsa_insns_for_switch_stmt (gswitch *s, hsa_bb *hbb)
   tree default_label = gimple_switch_default_label (s);
   basic_block default_label_bb = label_to_block_fn (func,
 						    CASE_LABEL (default_label));
+
+  if (!gimple_seq_empty_p (phi_nodes (default_label_bb)))
+    {
+      default_label_bb = split_edge (find_edge (e->dest, default_label_bb));
+      hsa_init_new_bb (default_label_bb);
+    }
 
   make_edge (e->src, default_label_bb, EDGE_FALSE_VALUE);
 

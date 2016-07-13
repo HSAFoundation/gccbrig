@@ -1535,6 +1535,10 @@ package Sinfo is
    --    to the node for the spec of the instance, inserted as part of the
    --    semantic processing for instantiations in Sem_Ch12.
 
+   --  Is_Abort_Block (Flag4-Sem)
+   --    Present in N_Block_Statement nodes. True if the block protects a list
+   --    of statements with an Abort_Defer / Abort_Undefer_Direct pair.
+
    --  Is_Accessibility_Actual (Flag13-Sem)
    --    Present in N_Parameter_Association nodes. True if the parameter is
    --    an extra actual that carries the accessibility level of the actual
@@ -1945,6 +1949,12 @@ package Sinfo is
    --    This flag is present in membership operator nodes (N_In/N_Not_In).
    --    It is used to indicate that processing for extended overflow checking
    --    modes is not required (this is used to prevent infinite recursion).
+
+   --  No_Side_Effect_Removal (Flag1-Sem)
+   --    Present in N_Function_Call nodes. Set when a function call does not
+   --    require side effect removal. This attribute suppresses the generation
+   --    of a temporary to capture the result of the function which eventually
+   --    replaces the function call.
 
    --  No_Truncation (Flag17-Sem)
    --    Present in N_Unchecked_Type_Conversion node. This flag has an effect
@@ -4119,7 +4129,7 @@ package Sinfo is
       --  treated as though it were Empty) if No_Initialization is set True.
 
       --------------------------------------
-      -- 4.5  Short Circuit Control Forms --
+      -- 4.5  Short-Circuit Control Forms --
       --------------------------------------
 
       --  EXPRESSION ::=
@@ -4931,6 +4941,7 @@ package Sinfo is
       --  Declarations (List2) (set to No_List if no DECLARE part)
       --  Handled_Statement_Sequence (Node4)
       --  Cleanup_Actions (List5-Sem)
+      --  Is_Abort_Block (Flag4-Sem)
       --  Is_Task_Master (Flag5-Sem)
       --  Activation_Chain_Entity (Node3-Sem)
       --  Has_Created_Identifier (Flag15)
@@ -5296,6 +5307,7 @@ package Sinfo is
       --   actual parameter part)
       --  First_Named_Actual (Node4-Sem)
       --  Controlling_Argument (Node1-Sem) (set to Empty if not dispatching)
+      --  No_Side_Effect_Removal (Flag1-Sem)
       --  Is_Expanded_Build_In_Place_Call (Flag11-Sem)
       --  Do_Tag_Check (Flag13-Sem)
       --  No_Elaboration_Check (Flag14-Sem)
@@ -7618,6 +7630,10 @@ package Sinfo is
       --  source, or because a Pre (resp. Post) aspect specification has been
       --  broken into AND THEN sections. See Split_PPC for details.
 
+      --  In GNATprove mode, the inherited classwide pre- and postconditions
+      --  (suitably specialized for the specific type of the overriding
+      --  operation) are also in this list.
+
       --  Contract_Test_Cases contains a collection of pragmas that correspond
       --  to aspects/pragmas Contract_Cases and Test_Case. The ordering in the
       --  list is in LIFO fashion.
@@ -7677,7 +7693,7 @@ package Sinfo is
       -----------------------------
 
       --  This node is created by the analyzer/expander to handle some
-      --  expansion cases, notably short circuit forms where there are
+      --  expansion cases, notably short-circuit forms where there are
       --  actions associated with the right-hand side operand.
 
       --  The N_Expression_With_Actions node represents an expression with
@@ -7884,17 +7900,15 @@ package Sinfo is
       --  same as the type of the subexpression which it replaces.
 
       --  If Condition is empty, then the raise is unconditional. If the
-      --  Condition field is non-empty, it is a boolean expression which
-      --  is first evaluated, and the exception is raised only if the
-      --  value of the expression is True. In the unconditional case, the
-      --  creation of this node is usually accompanied by a warning message
-      --  error. The creation of this node will usually be accompanied by a
-      --  message (unless it appears within the right operand of a short
-      --  circuit form whose left argument is static and decisively
-      --  eliminates elaboration of the raise operation. The condition field
-      --  can ONLY be present when the node is used as a statement form, it
-      --  may NOT be present in the case where the node appears within an
-      --  expression.
+      --  Condition field is non-empty, it is a boolean expression which is
+      --  first evaluated, and the exception is raised only if the value of the
+      --  expression is True. In the unconditional case, the creation of this
+      --  node is usually accompanied by a warning message (unless it appears
+      --  within the right operand of a short-circuit form whose left argument
+      --  is static and decisively eliminates elaboration of the raise
+      --  operation). The condition field can ONLY be present when the node is
+      --  used as a statement form; it must NOT be present in the case where
+      --  the node appears within an expression.
 
       --  The exception is generated with a message that contains the
       --  file name and line number, and then appended text. The Reason
@@ -9322,6 +9336,9 @@ package Sinfo is
    function Intval
      (N : Node_Id) return Uint;       -- Uint3
 
+   function Is_Abort_Block
+     (N : Node_Id) return Boolean;    -- Flag4
+
    function Is_Accessibility_Actual
      (N : Node_Id) return Boolean;    -- Flag13
 
@@ -9537,6 +9554,9 @@ package Sinfo is
 
    function No_Minimize_Eliminate
      (N : Node_Id) return Boolean;    -- Flag17
+
+   function No_Side_Effect_Removal
+     (N : Node_Id) return Boolean;    -- Flag1
 
    function No_Truncation
      (N : Node_Id) return Boolean;    -- Flag17
@@ -10363,6 +10383,9 @@ package Sinfo is
    procedure Set_Intval
      (N : Node_Id; Val : Uint);               -- Uint3
 
+   procedure Set_Is_Abort_Block
+     (N : Node_Id; Val : Boolean := True);    -- Flag4
+
    procedure Set_Is_Accessibility_Actual
      (N : Node_Id; Val : Boolean := True);    -- Flag13
 
@@ -10578,6 +10601,9 @@ package Sinfo is
 
    procedure Set_No_Minimize_Eliminate
      (N : Node_Id; Val : Boolean := True);    -- Flag17
+
+   procedure Set_No_Side_Effect_Removal
+     (N : Node_Id; Val : Boolean := True);    -- Flag1
 
    procedure Set_No_Truncation
      (N : Node_Id; Val : Boolean := True);    -- Flag17
@@ -12804,6 +12830,7 @@ package Sinfo is
    pragma Inline (Instance_Spec);
    pragma Inline (Intval);
    pragma Inline (Iterator_Specification);
+   pragma Inline (Is_Abort_Block);
    pragma Inline (Is_Accessibility_Actual);
    pragma Inline (Is_Analyzed_Pragma);
    pragma Inline (Is_Asynchronous_Call_Block);
@@ -12875,6 +12902,7 @@ package Sinfo is
    pragma Inline (No_Entities_Ref_In_Spec);
    pragma Inline (No_Initialization);
    pragma Inline (No_Minimize_Eliminate);
+   pragma Inline (No_Side_Effect_Removal);
    pragma Inline (No_Truncation);
    pragma Inline (Non_Aliased_Prefix);
    pragma Inline (Null_Present);
@@ -13146,6 +13174,7 @@ package Sinfo is
    pragma Inline (Set_Interface_List);
    pragma Inline (Set_Interface_Present);
    pragma Inline (Set_Intval);
+   pragma Inline (Set_Is_Abort_Block);
    pragma Inline (Set_Is_Accessibility_Actual);
    pragma Inline (Set_Is_Analyzed_Pragma);
    pragma Inline (Set_Is_Asynchronous_Call_Block);
@@ -13218,6 +13247,7 @@ package Sinfo is
    pragma Inline (Set_No_Entities_Ref_In_Spec);
    pragma Inline (Set_No_Initialization);
    pragma Inline (Set_No_Minimize_Eliminate);
+   pragma Inline (Set_No_Side_Effect_Removal);
    pragma Inline (Set_No_Truncation);
    pragma Inline (Set_Non_Aliased_Prefix);
    pragma Inline (Set_Null_Excluding_Subtype);

@@ -7014,7 +7014,7 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
       op = XEXP (operands[0], 0);
 
       /* Generate indirect long calls to non-local functions. */
-      if (!TARGET_64BIT && TARGET_LONG_CALLS && GET_CODE (op) == SYMBOL_REF)
+      if (TARGET_LONG_CALLS && GET_CODE (op) == SYMBOL_REF)
 	{
 	  tree call_decl = SYMBOL_REF_DECL (op);
 	  if (!(call_decl && targetm.binds_local_p (call_decl)))
@@ -7314,7 +7314,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   "TARGET_64BIT"
   "*
 {
-  pa_output_arg_descriptor (insn);
   return pa_output_call (insn, operands[0], 0);
 }"
   [(set_attr "type" "call")
@@ -7517,7 +7516,7 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
 	    call_powf = true;
 
 	  /* Generate indirect long calls to non-local functions. */
-	  else if (!TARGET_64BIT && TARGET_LONG_CALLS)
+	  else if (TARGET_LONG_CALLS)
 	    {
 	      tree call_decl = SYMBOL_REF_DECL (op);
 	      if (!(call_decl && targetm.binds_local_p (call_decl)))
@@ -7924,7 +7923,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   "TARGET_64BIT"
   "*
 {
-  pa_output_arg_descriptor (insn);
   return pa_output_call (insn, operands[1], 0);
 }"
   [(set_attr "type" "call")
@@ -8019,7 +8017,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   "TARGET_64BIT && TARGET_HPUX"
   "*
 {
-  pa_output_arg_descriptor (insn);
   return pa_output_call (insn, operands[1], 0);
 }"
   [(set_attr "type" "call")
@@ -8133,7 +8130,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   [(set (match_operand 0 "" "")
 	(call (mem:SI (match_operand:DI 1 "register_operand" "r"))
 	      (match_operand 2 "" "i")))
-   (clobber (reg:DI 1))
    (clobber (reg:DI 2))
    (clobber (match_operand 3))
    (use (reg:DI 27))
@@ -8155,7 +8151,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   [(parallel [(set (match_operand 0 "" "")
 		   (call (mem:SI (match_operand:DI 1 "register_operand" ""))
 			 (match_operand 2 "" "")))
-	      (clobber (reg:DI 1))
 	      (clobber (reg:DI 2))
 	      (clobber (match_operand 3))
 	      (use (reg:DI 27))
@@ -8167,7 +8162,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
    (parallel [(set (match_dup 0)
 		   (call (mem:SI (match_dup 1))
 			 (match_dup 2)))
-	      (clobber (reg:DI 1))
 	      (clobber (reg:DI 2))
 	      (use (reg:DI 27))
 	      (use (reg:DI 29))
@@ -8178,7 +8172,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   [(parallel [(set (match_operand 0 "" "")
 		   (call (mem:SI (match_operand:DI 1 "register_operand" ""))
 			 (match_operand 2 "" "")))
-	      (clobber (reg:DI 1))
 	      (clobber (reg:DI 2))
 	      (clobber (match_operand 3))
 	      (use (reg:DI 27))
@@ -8189,7 +8182,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
    (parallel [(set (match_dup 0)
 		   (call (mem:SI (match_dup 1))
 			 (match_dup 2)))
-	      (clobber (reg:DI 1))
 	      (clobber (reg:DI 2))
 	      (use (reg:DI 27))
 	      (use (reg:DI 29))
@@ -8201,7 +8193,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   [(set (match_operand 0 "" "")
 	(call (mem:SI (match_operand:DI 1 "register_operand" "r"))
 	      (match_operand 2 "" "i")))
-   (clobber (reg:DI 1))
    (clobber (reg:DI 2))
    (use (reg:DI 27))
    (use (reg:DI 29))
@@ -8321,7 +8312,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   "TARGET_64BIT"
   "*
 {
-  pa_output_arg_descriptor (insn);
   return pa_output_call (insn, operands[0], 1);
 }"
   [(set_attr "type" "sibcall")
@@ -8410,7 +8400,6 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
   "TARGET_64BIT"
   "*
 {
-  pa_output_arg_descriptor (insn);
   return pa_output_call (insn, operands[1], 1);
 }"
   [(set_attr "type" "sibcall")

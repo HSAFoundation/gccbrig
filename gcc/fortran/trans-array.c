@@ -5553,7 +5553,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
 			  build_int_cst (TREE_TYPE (status), 0));
       gfc_add_expr_to_block (&se->pre,
 		 fold_build3_loc (input_location, COND_EXPR, void_type_node,
-				  gfc_likely (cond, PRED_FORTRAN_FAIL_ALLOC),
+				  cond,
 				  set_descriptor,
 				  build_empty_stmt (input_location)));
     }
@@ -6386,7 +6386,12 @@ gfc_trans_dummy_array_bias (gfc_symbol * sym, tree tmpdesc,
       stmtCleanup = gfc_finish_block (&cleanup);
 
       /* Only do the cleanup if the array was repacked.  */
-      tmp = build_fold_indirect_ref_loc (input_location, dumdesc);
+      if (is_classarray)
+	/* For a class array the dummy array descriptor is in the _class
+	   component.  */
+	tmp = gfc_class_data_get (dumdesc);
+      else
+	tmp = build_fold_indirect_ref_loc (input_location, dumdesc);
       tmp = gfc_conv_descriptor_data_get (tmp);
       tmp = fold_build2_loc (input_location, NE_EXPR, boolean_type_node,
 			     tmp, tmpdesc);

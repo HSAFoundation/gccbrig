@@ -910,6 +910,12 @@ c_common_post_options (const char **pfilename)
   else if (warn_narrowing == -1)
     warn_narrowing = 0;
 
+  /* C++17 has stricter evaluation order requirements; let's use some of them
+     for earlier C++ as well, so chaining works as expected.  */
+  if (c_dialect_cxx ()
+      && flag_strong_eval_order == -1)
+    flag_strong_eval_order = (cxx_dialect >= cxx1z ? 2 : 1);
+
   /* Global sized deallocation is new in C++14.  */
   if (flag_sized_deallocation == -1)
     flag_sized_deallocation = (cxx_dialect >= cxx14);

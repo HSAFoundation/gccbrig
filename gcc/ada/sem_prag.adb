@@ -39,10 +39,12 @@ with Debug;     use Debug;
 with Einfo;     use Einfo;
 with Elists;    use Elists;
 with Errout;    use Errout;
+with Exp_Ch7;   use Exp_Ch7;
 with Exp_Dist;  use Exp_Dist;
 with Exp_Util;  use Exp_Util;
 with Freeze;    use Freeze;
 with Ghost;     use Ghost;
+with Gnatvsn;   use Gnatvsn;
 with Lib;       use Lib;
 with Lib.Writ;  use Lib.Writ;
 with Lib.Xref;  use Lib.Xref;
@@ -86,6 +88,8 @@ with Uname;     use Uname;
 with Urealp;    use Urealp;
 with Validsw;   use Validsw;
 with Warnsw;    use Warnsw;
+
+with GNAT.HTable; use GNAT.HTable;
 
 package body Sem_Prag is
 
@@ -161,6 +165,40 @@ package body Sem_Prag is
      Table_Initial        => 100,
      Table_Increment      => 100,
      Table_Name           => "Name_Externals");
+
+   ---------------------------------------------------------
+   -- Handling of inherited class-wide pre/postconditions --
+   ---------------------------------------------------------
+
+   --  Following AI12-0113, the expression for a class-wide condition is
+   --  transformed for a subprogram that inherits it, by replacing calls
+   --  to primitive operations of the original controlling type into the
+   --  corresponding overriding operations of the derived type. The following
+   --  hash table manages this mapping, and is expanded on demand whenever
+   --  such inherited expression needs to be constructed.
+
+   --  The mapping is also used to check whether an inherited operation has
+   --  a condition that depends on overridden operations. For such an
+   --  operation we must create a wrapper that is then treated as a normal
+   --  overriding. In SPARK mode such operations are illegal.
+
+   --  For a given root type there may be several type extensions with their
+   --  own overriding operations, so at various times a given operation of
+   --  the root will be mapped into different overridings. The root type is
+   --  also mapped into the current type extension to indicate that its
+   --  operations are mapped into the overriding operations of that current
+   --  type extension.
+
+   subtype Num_Primitives is Integer range 0 .. 510;
+   function Entity_Hash (E : Entity_Id) return Num_Primitives;
+
+   package Primitives_Mapping is new Gnat.HTable.Simple_Htable
+     (Header_Num => Num_Primitives,
+      Key        => Entity_Id,
+      Element    => Entity_Id,
+      No_element => Empty,
+      Hash       => Entity_Hash,
+      Equal      => "=");
 
    -------------------------------------
    -- Local Subprograms and Variables --
@@ -3464,6 +3502,16 @@ package body Sem_Prag is
       --  related subprogram. Body_Id is the entity of the subprogram body.
       --  Flag Legal is set when the pragma is legal.
 
+      procedure Analyze_Unmodified_Or_Unused (Is_Unused : Boolean := False);
+      --  Perform full analysis of pragma Unmodified and the write aspect of
+      --  pragma Unused. Flag Is_Unused should be set when verifying the
+      --  semantics of pragma Unused.
+
+      procedure Analyze_Unreferenced_Or_Unused (Is_Unused : Boolean := False);
+      --  Perform full analysis of pragma Unreferenced and the read aspect of
+      --  pragma Unused. Flag Is_Unused should be set when verifying the
+      --  semantics of pragma Unused.
+
       procedure Check_Ada_83_Warning;
       --  Issues a warning message for the current pragma if operating in Ada
       --  83 mode (used for language pragmas that are not a standard part of
@@ -3884,7 +3932,7 @@ package body Sem_Prag is
       --    Enabled:    inlining is requested/required for the subprogram
 
       procedure Process_Inline (Status : Inline_Status);
-      --  Common processing for Inline, Inline_Always and No_Inline. Parameter
+      --  Common processing for No_Inline, Inline and Inline_Always. Parameter
       --  indicates the inline status specified by the pragma.
 
       procedure Process_Interface_Name
@@ -4426,6 +4474,277 @@ package body Sem_Prag is
             Ensure_Aggregate_Form (Get_Argument (N, Spec_Id));
          end if;
       end Analyze_Refined_Depends_Global_Post;
+
+      ----------------------------------
+      -- Analyze_Unmodified_Or_Unused --
+      ----------------------------------
+
+      procedure Analyze_Unmodified_Or_Unused (Is_Unused : Boolean := False) is
+         Arg      : Node_Id;
+         Arg_Expr : Node_Id;
+         Arg_Id   : Entity_Id;
+
+         Ghost_Error_Posted : Boolean := False;
+         --  Flag set when an error concerning the illegal mix of Ghost and
+         --  non-Ghost variables is emitted.
+
+         Ghost_Id : Entity_Id := Empty;
+         --  The entity of the first Ghost variable encountered while
+         --  processing the arguments of the pragma.
+
+      begin
+         GNAT_Pragma;
+         Check_At_Least_N_Arguments (1);
+
+         --  Loop through arguments
+
+         Arg := Arg1;
+         while Present (Arg) loop
+            Check_No_Identifier (Arg);
+
+            --  Note: the analyze call done by Check_Arg_Is_Local_Name will
+            --  in fact generate reference, so that the entity will have a
+            --  reference, which will inhibit any warnings about it not
+            --  being referenced, and also properly show up in the ali file
+            --  as a reference. But this reference is recorded before the
+            --  Has_Pragma_Unreferenced flag is set, so that no warning is
+            --  generated for this reference.
+
+            Check_Arg_Is_Local_Name (Arg);
+            Arg_Expr := Get_Pragma_Arg (Arg);
+
+            if Is_Entity_Name (Arg_Expr) then
+               Arg_Id := Entity (Arg_Expr);
+
+               --  Skip processing the argument if already flagged
+
+               if Is_Assignable (Arg_Id)
+                 and then not Has_Pragma_Unmodified (Arg_Id)
+                 and then not Has_Pragma_Unused (Arg_Id)
+               then
+                  Set_Has_Pragma_Unmodified (Arg_Id);
+
+                  if Is_Unused then
+                     Set_Has_Pragma_Unused (Arg_Id);
+                  end if;
+
+                  --  A pragma that applies to a Ghost entity becomes Ghost for
+                  --  the purposes of legality checks and removal of ignored
+                  --  Ghost code.
+
+                  Mark_Pragma_As_Ghost (N, Arg_Id);
+
+                  --  Capture the entity of the first Ghost variable being
+                  --  processed for error detection purposes.
+
+                  if Is_Ghost_Entity (Arg_Id) then
+                     if No (Ghost_Id) then
+                        Ghost_Id := Arg_Id;
+                     end if;
+
+                  --  Otherwise the variable is non-Ghost. It is illegal to mix
+                  --  references to Ghost and non-Ghost entities
+                  --  (SPARK RM 6.9).
+
+                  elsif Present (Ghost_Id)
+                    and then not Ghost_Error_Posted
+                  then
+                     Ghost_Error_Posted := True;
+
+                     Error_Msg_Name_1 := Pname;
+                     Error_Msg_N
+                       ("pragma % cannot mention ghost and non-ghost "
+                        & "variables", N);
+
+                     Error_Msg_Sloc := Sloc (Ghost_Id);
+                     Error_Msg_NE ("\& # declared as ghost", N, Ghost_Id);
+
+                     Error_Msg_Sloc := Sloc (Arg_Id);
+                     Error_Msg_NE ("\& # declared as non-ghost", N, Arg_Id);
+                  end if;
+
+               --  Warn if already flagged as Unused or Unmodified
+
+               elsif Has_Pragma_Unmodified (Arg_Id) then
+                  if Has_Pragma_Unused (Arg_Id) then
+                     Error_Msg_NE
+                       ("??pragma Unused already given for &!", Arg_Expr,
+                         Arg_Id);
+                  else
+                     Error_Msg_NE
+                       ("??pragma Unmodified already given for &!", Arg_Expr,
+                         Arg_Id);
+                  end if;
+
+               --  Otherwise the pragma referenced an illegal entity
+
+               else
+                  Error_Pragma_Arg
+                    ("pragma% can only be applied to a variable", Arg_Expr);
+               end if;
+            end if;
+
+            Next (Arg);
+         end loop;
+      end Analyze_Unmodified_Or_Unused;
+
+      -----------------------------------
+      -- Analyze_Unreference_Or_Unused --
+      -----------------------------------
+
+      procedure Analyze_Unreferenced_Or_Unused
+        (Is_Unused : Boolean := False)
+      is
+         Arg      : Node_Id;
+         Arg_Expr : Node_Id;
+         Arg_Id   : Entity_Id;
+         Citem    : Node_Id;
+
+         Ghost_Error_Posted : Boolean := False;
+         --  Flag set when an error concerning the illegal mix of Ghost and
+         --  non-Ghost names is emitted.
+
+         Ghost_Id : Entity_Id := Empty;
+         --  The entity of the first Ghost name encountered while processing
+         --  the arguments of the pragma.
+
+      begin
+         GNAT_Pragma;
+         Check_At_Least_N_Arguments (1);
+
+         --  Check case of appearing within context clause
+
+         if not Is_Unused and then Is_In_Context_Clause then
+
+            --  The arguments must all be units mentioned in a with clause in
+            --  the same context clause. Note that Par.Prag already checked
+            --  that the arguments are either identifiers or selected
+            --  components.
+
+            Arg := Arg1;
+            while Present (Arg) loop
+               Citem := First (List_Containing (N));
+               while Citem /= N loop
+                  Arg_Expr := Get_Pragma_Arg (Arg);
+
+                  if Nkind (Citem) = N_With_Clause
+                    and then Same_Name (Name (Citem), Arg_Expr)
+                  then
+                     Set_Has_Pragma_Unreferenced
+                       (Cunit_Entity
+                         (Get_Source_Unit
+                           (Library_Unit (Citem))));
+                     Set_Elab_Unit_Name (Arg_Expr, Name (Citem));
+                     exit;
+                  end if;
+
+                  Next (Citem);
+               end loop;
+
+               if Citem = N then
+                  Error_Pragma_Arg
+                    ("argument of pragma% is not withed unit", Arg);
+               end if;
+
+               Next (Arg);
+            end loop;
+
+         --  Case of not in list of context items
+
+         else
+            Arg := Arg1;
+            while Present (Arg) loop
+               Check_No_Identifier (Arg);
+
+               --  Note: the analyze call done by Check_Arg_Is_Local_Name will
+               --  in fact generate reference, so that the entity will have a
+               --  reference, which will inhibit any warnings about it not
+               --  being referenced, and also properly show up in the ali file
+               --  as a reference. But this reference is recorded before the
+               --  Has_Pragma_Unreferenced flag is set, so that no warning is
+               --  generated for this reference.
+
+               Check_Arg_Is_Local_Name (Arg);
+               Arg_Expr := Get_Pragma_Arg (Arg);
+
+               if Is_Entity_Name (Arg_Expr) then
+                  Arg_Id := Entity (Arg_Expr);
+
+                  --  Warn if already flagged as Unused or Unreferenced and
+                  --  skip processing the argument.
+
+                  if Has_Pragma_Unreferenced (Arg_Id) then
+                     if Has_Pragma_Unused (Arg_Id) then
+                        Error_Msg_NE
+                          ("??pragma Unused already given for &!", Arg_Expr,
+                            Arg_Id);
+                     else
+                        Error_Msg_NE
+                          ("??pragma Unreferenced already given for &!",
+                            Arg_Expr, Arg_Id);
+                     end if;
+
+                  --  Apply Unreferenced to the entity
+
+                  else
+                     --  If the entity is overloaded, the pragma applies to the
+                     --  most recent overloading, as documented. In this case,
+                     --  name resolution does not generate a reference, so it
+                     --  must be done here explicitly.
+
+                     if Is_Overloaded (Arg_Expr) then
+                        Generate_Reference (Arg_Id, N);
+                     end if;
+
+                     Set_Has_Pragma_Unreferenced (Arg_Id);
+
+                     if Is_Unused then
+                        Set_Has_Pragma_Unused (Arg_Id);
+                     end if;
+
+                     --  A pragma that applies to a Ghost entity becomes Ghost
+                     --  for the purposes of legality checks and removal of
+                     --  ignored Ghost code.
+
+                     Mark_Pragma_As_Ghost (N, Arg_Id);
+
+                     --  Capture the entity of the first Ghost name being
+                     --  processed for error detection purposes.
+
+                     if Is_Ghost_Entity (Arg_Id) then
+                        if No (Ghost_Id) then
+                           Ghost_Id := Arg_Id;
+                        end if;
+
+                     --  Otherwise the name is non-Ghost. It is illegal to mix
+                     --  references to Ghost and non-Ghost entities
+                     --  (SPARK RM 6.9).
+
+                     elsif Present (Ghost_Id)
+                       and then not Ghost_Error_Posted
+                     then
+                        Ghost_Error_Posted := True;
+
+                        Error_Msg_Name_1 := Pname;
+                        Error_Msg_N
+                          ("pragma % cannot mention ghost and non-ghost "
+                           & "names", N);
+
+                        Error_Msg_Sloc := Sloc (Ghost_Id);
+                        Error_Msg_NE
+                          ("\& # declared as ghost", N, Ghost_Id);
+
+                        Error_Msg_Sloc := Sloc (Arg_Id);
+                        Error_Msg_NE
+                          ("\& # declared as non-ghost", N, Arg_Id);
+                     end if;
+                  end if;
+               end if;
+
+               Next (Arg);
+            end loop;
+         end if;
+      end Analyze_Unreferenced_Or_Unused;
 
       --------------------------
       -- Check_Ada_83_Warning --
@@ -5059,11 +5378,14 @@ package body Sem_Prag is
             Analyze_And_Resolve (Expr);
          end if;
 
-         if Is_OK_Static_Expression (Expr) then
-            return;
+         --  An expression cannot be considered static if its resolution failed
+         --  or if it's erroneous. Stop the analysis of the related pragma.
 
-         elsif Etype (Expr) = Any_Type then
+         if Etype (Expr) = Any_Type or else Error_Posted (Expr) then
             raise Pragma_Exit;
+
+         elsif Is_OK_Static_Expression (Expr) then
+            return;
 
          --  An interesting special case, if we have a string literal and we
          --  are in Ada 83 mode, then we allow it even though it will not be
@@ -5075,12 +5397,6 @@ package body Sem_Prag is
            and then Nkind (Expr) = N_String_Literal
          then
             return;
-
-         --  Static expression that raises Constraint_Error. This has already
-         --  been flagged, so just exit from pragma processing.
-
-         elsif Is_OK_Static_Expression (Expr) then
-            raise Pragma_Exit;
 
          --  Finally, we have a real error
 
@@ -8475,21 +8791,20 @@ package body Sem_Prag is
          --  processing the arguments of the pragma.
 
          procedure Make_Inline (Subp : Entity_Id);
-         --  Subp is the defining unit name of the subprogram declaration. Set
-         --  the flag, as well as the flag in the corresponding body, if there
-         --  is one present.
+         --  Subp is the defining unit name of the subprogram declaration. If
+         --  the pragma is valid, call Set_Inline_Flags on Subp, as well as on
+         --  the corresponding body, if there is one present.
 
          procedure Set_Inline_Flags (Subp : Entity_Id);
-         --  Sets Is_Inlined and Has_Pragma_Inline flags for Subp and also
-         --  Has_Pragma_Inline_Always for the Inline_Always case.
+         --  Set Has_Pragma_{No_Inline,Inline,Inline_Always} flag on Subp.
+         --  Also set or clear Is_Inlined flag on Subp depending on Status.
 
          function Inlining_Not_Possible (Subp : Entity_Id) return Boolean;
          --  Returns True if it can be determined at this stage that inlining
          --  is not possible, for example if the body is available and contains
          --  exception handlers, we prevent inlining, since otherwise we can
          --  get undefined symbols at link time. This function also emits a
-         --  warning if front-end inlining is enabled and the pragma appears
-         --  too late.
+         --  warning if the pragma appears too late.
          --
          --  ??? is business with link symbols still valid, or does it relate
          --  to front end ZCX which is being phased out ???
@@ -8511,9 +8826,7 @@ package body Sem_Prag is
             elsif Nkind (Decl) = N_Subprogram_Declaration
               and then Present (Corresponding_Body (Decl))
             then
-               if Front_End_Inlining
-                 and then Analyzed (Corresponding_Body (Decl))
-               then
+               if Analyzed (Corresponding_Body (Decl)) then
                   Error_Msg_N ("pragma appears too late, ignored??", N);
                   return True;
 
@@ -8563,6 +8876,7 @@ package body Sem_Prag is
             --  If inlining is not possible, for now do not treat as an error
 
             elsif Status /= Suppressed
+              and then Front_End_Inlining
               and then Inlining_Not_Possible (Subp)
             then
                Applies := True;
@@ -8732,9 +9046,7 @@ package body Sem_Prag is
                   end if;
                end if;
 
-               if not Has_Pragma_Inline (Subp) then
-                  Set_Has_Pragma_Inline (Subp);
-               end if;
+               Set_Has_Pragma_Inline (Subp);
             end if;
 
             --  Then adjust the Is_Inlined flag. It can never be set if the
@@ -12789,9 +13101,21 @@ package body Sem_Prag is
                  ("invalid Form parameter for pragma%", Form);
             end if;
 
+            --  The pragma appears in a configuration file
+
+            if No (Parent (N)) then
+               Check_Valid_Configuration_Pragma;
+
+               --  Capture the component alignment in a global variable when
+               --  the pragma appears in a configuration file. Note that the
+               --  scope stack is empty at this point and cannot be used to
+               --  store the alignment value.
+
+               Configuration_Component_Alignment := Atype;
+
             --  Case with no name, supplied, affects scope table entry
 
-            if No (Name) then
+            elsif No (Name) then
                Scope_Stack.Table
                  (Scope_Stack.Last).Component_Alignment_Default := Atype;
 
@@ -14161,8 +14485,7 @@ package body Sem_Prag is
             --  checks in SPARK mode).
 
             Dynamic_Elaboration_Checks :=
-              (Chars (Get_Pragma_Arg (Arg1)) = Name_Dynamic)
-                and then SPARK_Mode /= On;
+              Chars (Get_Pragma_Arg (Arg1)) = Name_Dynamic;
 
          ---------------
          -- Eliminate --
@@ -16071,7 +16394,23 @@ package body Sem_Prag is
 
             if not GNATprove_Mode then
 
-               --  Inline status is Enabled if inlining option is active
+               --  Inline status is Enabled if option -gnatn is specified.
+               --  However this status determines only the value of the
+               --  Is_Inlined flag on the subprogram and does not prevent
+               --  the pragma itself from being recorded for later use,
+               --  in particular for a later modification of Is_Inlined
+               --  independently of the -gnatn option.
+
+               --  In other words, if -gnatn is specified for a unit, then
+               --  all Inline pragmas processed for the compilation of this
+               --  unit, including those in the spec of other units, are
+               --  activated, so subprograms will be inlined across units.
+
+               --  If -gnatn is not specified, no Inline pragma is activated
+               --  here, which means that subprograms will not be inlined
+               --  across units. The Is_Inlined flag will nevertheless be
+               --  set later when bodies are analyzed, so subprograms will
+               --  be inlined within the unit.
 
                if Inline_Active then
                   Process_Inline (Enabled);
@@ -16503,7 +16842,19 @@ package body Sem_Prag is
          when Pragma_Invariant => Invariant : declare
             Discard : Boolean;
             Typ     : Entity_Id;
-            Type_Id : Node_Id;
+            Typ_Arg : Node_Id;
+
+            CRec_Typ : Entity_Id;
+            --  The corresponding record type of Full_Typ
+
+            Full_Base : Entity_Id;
+            --  The base type of Full_Typ
+
+            Full_Typ : Entity_Id;
+            --  The full view of Typ
+
+            Priv_Typ : Entity_Id;
+            --  The partial view of Typ
 
          begin
             GNAT_Pragma;
@@ -16519,14 +16870,16 @@ package body Sem_Prag is
 
             Check_Arg_Is_Local_Name (Arg1);
 
-            Type_Id := Get_Pragma_Arg (Arg1);
-            Find_Type (Type_Id);
-            Typ := Entity (Type_Id);
+            Typ_Arg := Get_Pragma_Arg (Arg1);
+            Find_Type (Typ_Arg);
+            Typ := Entity (Typ_Arg);
+
+            --  Nothing to do of the related type is erroneous in some way
 
             if Typ = Any_Type then
                return;
 
-            --  Invariants allowed in interface types (RM 7.3.2(3/3))
+            --  AI12-0041: Invariants are allowed in interface types
 
             elsif Is_Interface (Typ) then
                null;
@@ -16536,26 +16889,46 @@ package body Sem_Prag is
             --  a class-wide invariant can only appear on a private declaration
             --  or private extension, not a completion.
 
-            elsif Ekind_In (Typ, E_Private_Type,
-                                 E_Record_Type_With_Private,
-                                 E_Limited_Private_Type)
+            --  A [class-wide] invariant may be associated a [limited] private
+            --  type or a private extension.
+
+            elsif Ekind_In (Typ, E_Limited_Private_Type,
+                                 E_Private_Type,
+                                 E_Record_Type_With_Private)
             then
                null;
 
-            elsif In_Private_Part (Current_Scope)
-              and then Has_Private_Declaration (Typ)
+            --  A non-class-wide invariant may be associated with the full view
+            --  of a [limited] private type or a private extension.
+
+            elsif Has_Private_Declaration (Typ)
               and then not Class_Present (N)
             then
                null;
 
-            elsif In_Private_Part (Current_Scope) then
+            --  A class-wide invariant may appear on the partial view only
+
+            elsif Class_Present (N) then
                Error_Pragma_Arg
-                 ("pragma% only allowed for private type declared in "
-                  & "visible part", Arg1);
+                 ("pragma % only allowed for private type", Arg1);
+               return;
+
+            --  A regular invariant may appear on both views
 
             else
                Error_Pragma_Arg
-                 ("pragma% only allowed for private type", Arg1);
+                 ("pragma % only allowed for private type or corresponding "
+                  & "full view", Arg1);
+               return;
+            end if;
+
+            --  An invariant associated with an abstract type (this includes
+            --  interfaces) must be class-wide.
+
+            if Is_Abstract_Type (Typ) and then not Class_Present (N) then
+               Error_Pragma_Arg
+                 ("pragma % not allowed for abstract type", Arg1);
+               return;
             end if;
 
             --  A pragma that applies to a Ghost entity becomes Ghost for the
@@ -16563,37 +16936,39 @@ package body Sem_Prag is
 
             Mark_Pragma_As_Ghost (N, Typ);
 
-            --  Not allowed for abstract type in the non-class case (it is
-            --  allowed to use Invariant'Class for abstract types).
+            --  The pragma defines a type-specific invariant, the type is said
+            --  to have invariants of its "own".
 
-            if Is_Abstract_Type (Typ) and then not Class_Present (N) then
-               Error_Pragma_Arg
-                 ("pragma% not allowed for abstract type", Arg1);
-            end if;
+            Set_Has_Own_Invariants (Typ);
 
-            --  Link the pragma on to the rep item chain, for processing when
-            --  the type is frozen.
-
-            Discard := Rep_Item_Too_Late (Typ, N, FOnly => True);
-
-            --  Note that the type has at least one invariant, and also that
-            --  it has inheritable invariants if we have Invariant'Class
-            --  or Type_Invariant'Class. Build the corresponding invariant
-            --  procedure declaration, so that calls to it can be generated
-            --  before the body is built (e.g. within an expression function).
-
-            --  Interface types have no invariant procedure; their invariants
-            --  are propagated to the build invariant procedure of all the
-            --  types covering the interface type.
-
-            if not Is_Interface (Typ) then
-               Insert_After_And_Analyze
-                 (N, Build_Invariant_Procedure_Declaration (Typ));
-            end if;
+            --  If the invariant is class-wide, then it can be inherited by
+            --  derived or interface implementing types. The type is said to
+            --  have "inheritable" invariants.
 
             if Class_Present (N) then
                Set_Has_Inheritable_Invariants (Typ);
             end if;
+
+            Get_Views (Typ, Priv_Typ, Full_Typ, Full_Base, CRec_Typ);
+
+            --  Propagate invariant-related attributes to all views of the type
+            --  and any additional types that may have been created.
+
+            Propagate_Invariant_Attributes (Priv_Typ,  From_Typ => Typ);
+            Propagate_Invariant_Attributes (Full_Typ,  From_Typ => Typ);
+            Propagate_Invariant_Attributes (Full_Base, From_Typ => Typ);
+            Propagate_Invariant_Attributes (CRec_Typ,  From_Typ => Typ);
+
+            --  Chain the pragma on to the rep item chain, for processing when
+            --  the type is frozen.
+
+            Discard := Rep_Item_Too_Late (Typ, N, FOnly => True);
+
+            --  Create the declaration of the invariant procedure which will
+            --  verify the invariant at run-time. Note that interfaces do not
+            --  carry such a declaration.
+
+            Build_Invariant_Procedure_Declaration (Typ);
          end Invariant;
 
          ----------------
@@ -17534,28 +17909,38 @@ package body Sem_Prag is
             Check_Valid_Configuration_Pragma;
             Check_Arg_Count (0);
 
-            No_Run_Time_Mode           := True;
-            Configurable_Run_Time_Mode := True;
+            --  Remove backward compatibility if Build_Type is FSF or GPL and
+            --  generate a warning.
 
-            --  Set Duration to 32 bits if word size is 32
+            declare
+               Ignore : constant Boolean := Build_Type in FSF .. GPL;
+            begin
+               if Ignore then
+                  Error_Pragma ("pragma% is ignored, has no effect??");
+               else
+                  No_Run_Time_Mode           := True;
+                  Configurable_Run_Time_Mode := True;
 
-            if Ttypes.System_Word_Size = 32 then
-               Duration_32_Bits_On_Target := True;
-            end if;
+                  --  Set Duration to 32 bits if word size is 32
 
-            --  Set appropriate restrictions
+                  if Ttypes.System_Word_Size = 32 then
+                     Duration_32_Bits_On_Target := True;
+                  end if;
 
-            Set_Restriction (No_Finalization, N);
-            Set_Restriction (No_Exception_Handlers, N);
-            Set_Restriction (Max_Tasks, N, 0);
-            Set_Restriction (No_Tasking, N);
+                  --  Set appropriate restrictions
 
-            -----------------------
-            -- No_Tagged_Streams --
-            -----------------------
+                  Set_Restriction (No_Finalization, N);
+                  Set_Restriction (No_Exception_Handlers, N);
+                  Set_Restriction (Max_Tasks, N, 0);
+                  Set_Restriction (No_Tasking, N);
+               end if;
+            end;
 
-            --  pragma No_Tagged_Streams;
-            --  pragma No_Tagged_Streams ([Entity => ]tagged_type_local_NAME);
+         -----------------------
+         -- No_Tagged_Streams --
+         -----------------------
+
+         --  pragma No_Tagged_Streams [([Entity => ]tagged_type_local_NAME)];
 
          when Pragma_No_Tagged_Streams => No_Tagged_Strms : declare
             E    : Entity_Id;
@@ -18903,22 +19288,15 @@ package body Sem_Prag is
                --  where we ignore the value if out of range.
 
                else
-                  declare
-                     Val : constant Uint := Expr_Value (Arg);
-                  begin
-                     if not Relaxed_RM_Semantics
-                       and then
-                         (Val < 0
-                           or else Val > Expr_Value (Expression
-                                           (Parent (RTE (RE_Max_Priority)))))
-                     then
-                        Error_Pragma_Arg
-                          ("main subprogram priority is out of range", Arg1);
-                     else
-                        Set_Main_Priority
-                          (Current_Sem_Unit, UI_To_Int (Expr_Value (Arg)));
-                     end if;
-                  end;
+                  if not Relaxed_RM_Semantics
+                    and then not Is_In_Range (Arg, RTE (RE_Priority))
+                  then
+                     Error_Pragma_Arg
+                       ("main subprogram priority is out of range", Arg1);
+                  else
+                     Set_Main_Priority
+                       (Current_Sem_Unit, UI_To_Int (Expr_Value (Arg)));
+                  end if;
                end if;
 
                --  Load an arbitrary entity from System.Tasking.Stages or
@@ -19961,7 +20339,7 @@ package body Sem_Prag is
 
             else
                Error_Pragma_Arg
-                 ("pragma% applies only to formal access to classwide types",
+                 ("pragma% applies only to formal access-to-class-wide types",
                   Arg1);
             end if;
          end Remote_Access_Type;
@@ -20833,10 +21211,6 @@ package body Sem_Prag is
             begin
                SPARK_Mode := Mode_Id;
                SPARK_Mode_Pragma := N;
-
-               if SPARK_Mode = On then
-                  Dynamic_Elaboration_Checks := False;
-               end if;
             end Set_SPARK_Context;
 
             --  Local variables
@@ -20874,7 +21248,7 @@ package body Sem_Prag is
             Mode_Id := Get_SPARK_Mode_Type (Mode);
             Context := Parent (N);
 
-            --  The pragma appears in a configuration pragmas file
+            --  The pragma appears in a configuration file
 
             if No (Context) then
                Check_Valid_Configuration_Pragma;
@@ -22184,6 +22558,30 @@ package body Sem_Prag is
             Set_Is_Unchecked_Union  (Base_Type (Typ));
          end Unchecked_Union;
 
+         ----------------------------
+         -- Unevaluated_Use_Of_Old --
+         ----------------------------
+
+         --  pragma Unevaluated_Use_Of_Old (Error | Warn | Allow);
+
+         when Pragma_Unevaluated_Use_Of_Old =>
+            GNAT_Pragma;
+            Check_Arg_Count (1);
+            Check_No_Identifiers;
+            Check_Arg_Is_One_Of (Arg1, Name_Error, Name_Warn, Name_Allow);
+
+            --  Suppress/Unsuppress can appear as a configuration pragma, or in
+            --  a declarative part or a package spec.
+
+            if not Is_Configuration_Pragma then
+               Check_Is_In_Decl_Part_Or_Package_Spec;
+            end if;
+
+            --  Store proper setting of Uneval_Old
+
+            Get_Name_String (Chars (Get_Pragma_Arg (Arg1)));
+            Uneval_Old := Fold_Upper (Name_Buffer (1));
+
          ------------------------
          -- Unimplemented_Unit --
          ------------------------
@@ -22195,10 +22593,9 @@ package body Sem_Prag is
          --  body, not in the spec).
 
          when Pragma_Unimplemented_Unit => Unimplemented_Unit : declare
-            Cunitent : constant Entity_Id :=
+            Cunitent : constant Entity_Id   :=
                          Cunit_Entity (Get_Source_Unit (Loc));
-            Ent_Kind : constant Entity_Kind :=
-                         Ekind (Cunitent);
+            Ent_Kind : constant Entity_Kind := Ekind (Cunitent);
 
          begin
             GNAT_Pragma;
@@ -22256,22 +22653,7 @@ package body Sem_Prag is
 
          when Pragma_Universal_Data =>
             GNAT_Pragma;
-
-            --  If this is a configuration pragma, then set the universal
-            --  addressing option, otherwise confirm that the pragma satisfies
-            --  the requirements of library unit pragma placement and leave it
-            --  to the GNAAMP back end to detect the pragma (avoids transitive
-            --  setting of the option due to withed units).
-
-            if Is_Configuration_Pragma then
-               Universal_Addressing_On_AAMP := True;
-            else
-               Check_Valid_Library_Unit_Pragma;
-            end if;
-
-            if not AAMP_On_Target then
-               Error_Pragma ("??pragma% ignored (applies only to AAMP)");
-            end if;
+            Error_Pragma ("??pragma% ignored (applies only to AAMP)");
 
          ----------------
          -- Unmodified --
@@ -22279,92 +22661,8 @@ package body Sem_Prag is
 
          --  pragma Unmodified (LOCAL_NAME {, LOCAL_NAME});
 
-         when Pragma_Unmodified => Unmodified : declare
-            Arg      : Node_Id;
-            Arg_Expr : Node_Id;
-            Arg_Id   : Entity_Id;
-
-            Ghost_Error_Posted : Boolean := False;
-            --  Flag set when an error concerning the illegal mix of Ghost and
-            --  non-Ghost variables is emitted.
-
-            Ghost_Id : Entity_Id := Empty;
-            --  The entity of the first Ghost variable encountered while
-            --  processing the arguments of the pragma.
-
-         begin
-            GNAT_Pragma;
-            Check_At_Least_N_Arguments (1);
-
-            --  Loop through arguments
-
-            Arg := Arg1;
-            while Present (Arg) loop
-               Check_No_Identifier (Arg);
-
-               --  Note: the analyze call done by Check_Arg_Is_Local_Name will
-               --  in fact generate reference, so that the entity will have a
-               --  reference, which will inhibit any warnings about it not
-               --  being referenced, and also properly show up in the ali file
-               --  as a reference. But this reference is recorded before the
-               --  Has_Pragma_Unreferenced flag is set, so that no warning is
-               --  generated for this reference.
-
-               Check_Arg_Is_Local_Name (Arg);
-               Arg_Expr := Get_Pragma_Arg (Arg);
-
-               if Is_Entity_Name (Arg_Expr) then
-                  Arg_Id := Entity (Arg_Expr);
-
-                  if Is_Assignable (Arg_Id) then
-                     Set_Has_Pragma_Unmodified (Arg_Id);
-
-                     --  A pragma that applies to a Ghost entity becomes Ghost
-                     --  for the purposes of legality checks and removal of
-                     --  ignored Ghost code.
-
-                     Mark_Pragma_As_Ghost (N, Arg_Id);
-
-                     --  Capture the entity of the first Ghost variable being
-                     --  processed for error detection purposes.
-
-                     if Is_Ghost_Entity (Arg_Id) then
-                        if No (Ghost_Id) then
-                           Ghost_Id := Arg_Id;
-                        end if;
-
-                     --  Otherwise the variable is non-Ghost. It is illegal
-                     --  to mix references to Ghost and non-Ghost entities
-                     --  (SPARK RM 6.9).
-
-                     elsif Present (Ghost_Id)
-                       and then not Ghost_Error_Posted
-                     then
-                        Ghost_Error_Posted := True;
-
-                        Error_Msg_Name_1 := Pname;
-                        Error_Msg_N
-                          ("pragma % cannot mention ghost and non-ghost "
-                           & "variables", N);
-
-                        Error_Msg_Sloc := Sloc (Ghost_Id);
-                        Error_Msg_NE ("\& # declared as ghost", N, Ghost_Id);
-
-                        Error_Msg_Sloc := Sloc (Arg_Id);
-                        Error_Msg_NE ("\& # declared as non-ghost", N, Arg_Id);
-                     end if;
-
-                  --  Otherwise the pragma referenced an illegal entity
-
-                  else
-                     Error_Pragma_Arg
-                       ("pragma% can only be applied to a variable", Arg_Expr);
-                  end if;
-               end if;
-
-               Next (Arg);
-            end loop;
-         end Unmodified;
+         when Pragma_Unmodified =>
+            Analyze_Unmodified_Or_Unused;
 
          ------------------
          -- Unreferenced --
@@ -22376,133 +22674,8 @@ package body Sem_Prag is
 
          --  pragma Unreferenced (library_unit_NAME {, library_unit_NAME}
 
-         when Pragma_Unreferenced => Unreferenced : declare
-            Arg      : Node_Id;
-            Arg_Expr : Node_Id;
-            Arg_Id   : Entity_Id;
-            Citem    : Node_Id;
-
-            Ghost_Error_Posted : Boolean := False;
-            --  Flag set when an error concerning the illegal mix of Ghost and
-            --  non-Ghost names is emitted.
-
-            Ghost_Id : Entity_Id := Empty;
-            --  The entity of the first Ghost name encountered while processing
-            --  the arguments of the pragma.
-
-         begin
-            GNAT_Pragma;
-            Check_At_Least_N_Arguments (1);
-
-            --  Check case of appearing within context clause
-
-            if Is_In_Context_Clause then
-
-               --  The arguments must all be units mentioned in a with clause
-               --  in the same context clause. Note we already checked (in
-               --  Par.Prag) that the arguments are either identifiers or
-               --  selected components.
-
-               Arg := Arg1;
-               while Present (Arg) loop
-                  Citem := First (List_Containing (N));
-                  while Citem /= N loop
-                     Arg_Expr := Get_Pragma_Arg (Arg);
-
-                     if Nkind (Citem) = N_With_Clause
-                       and then Same_Name (Name (Citem), Arg_Expr)
-                     then
-                        Set_Has_Pragma_Unreferenced
-                          (Cunit_Entity
-                             (Get_Source_Unit
-                                (Library_Unit (Citem))));
-                        Set_Elab_Unit_Name (Arg_Expr, Name (Citem));
-                        exit;
-                     end if;
-
-                     Next (Citem);
-                  end loop;
-
-                  if Citem = N then
-                     Error_Pragma_Arg
-                       ("argument of pragma% is not withed unit", Arg);
-                  end if;
-
-                  Next (Arg);
-               end loop;
-
-            --  Case of not in list of context items
-
-            else
-               Arg := Arg1;
-               while Present (Arg) loop
-                  Check_No_Identifier (Arg);
-
-                  --  Note: the analyze call done by Check_Arg_Is_Local_Name
-                  --  will in fact generate reference, so that the entity will
-                  --  have a reference, which will inhibit any warnings about
-                  --  it not being referenced, and also properly show up in the
-                  --  ali file as a reference. But this reference is recorded
-                  --  before the Has_Pragma_Unreferenced flag is set, so that
-                  --  no warning is generated for this reference.
-
-                  Check_Arg_Is_Local_Name (Arg);
-                  Arg_Expr := Get_Pragma_Arg (Arg);
-
-                  if Is_Entity_Name (Arg_Expr) then
-                     Arg_Id := Entity (Arg_Expr);
-
-                     --  If the entity is overloaded, the pragma applies to the
-                     --  most recent overloading, as documented. In this case,
-                     --  name resolution does not generate a reference, so it
-                     --  must be done here explicitly.
-
-                     if Is_Overloaded (Arg_Expr) then
-                        Generate_Reference (Arg_Id, N);
-                     end if;
-
-                     Set_Has_Pragma_Unreferenced (Arg_Id);
-
-                     --  A pragma that applies to a Ghost entity becomes Ghost
-                     --  for the purposes of legality checks and removal of
-                     --  ignored Ghost code.
-
-                     Mark_Pragma_As_Ghost (N, Arg_Id);
-
-                     --  Capture the entity of the first Ghost name being
-                     --  processed for error detection purposes.
-
-                     if Is_Ghost_Entity (Arg_Id) then
-                        if No (Ghost_Id) then
-                           Ghost_Id := Arg_Id;
-                        end if;
-
-                     --  Otherwise the name is non-Ghost. It is illegal to mix
-                     --  references to Ghost and non-Ghost entities
-                     --  (SPARK RM 6.9).
-
-                     elsif Present (Ghost_Id)
-                       and then not Ghost_Error_Posted
-                     then
-                        Ghost_Error_Posted := True;
-
-                        Error_Msg_Name_1 := Pname;
-                        Error_Msg_N
-                          ("pragma % cannot mention ghost and non-ghost names",
-                           N);
-
-                        Error_Msg_Sloc := Sloc (Ghost_Id);
-                        Error_Msg_NE ("\& # declared as ghost", N, Ghost_Id);
-
-                        Error_Msg_Sloc := Sloc (Arg_Id);
-                        Error_Msg_NE ("\& # declared as non-ghost", N, Arg_Id);
-                     end if;
-                  end if;
-
-                  Next (Arg);
-               end loop;
-            end if;
-         end Unreferenced;
+         when Pragma_Unreferenced =>
+            Analyze_Unreferenced_Or_Unused;
 
          --------------------------
          -- Unreferenced_Objects --
@@ -22610,29 +22783,15 @@ package body Sem_Prag is
             Ada_2005_Pragma;
             Process_Suppress_Unsuppress (Suppress_Case => False);
 
-         ----------------------------
-         -- Unevaluated_Use_Of_Old --
-         ----------------------------
+         ------------
+         -- Unused --
+         ------------
 
-         --  pragma Unevaluated_Use_Of_Old (Error | Warn | Allow);
+         --  pragma Unused (LOCAL_NAME {, LOCAL_NAME});
 
-         when Pragma_Unevaluated_Use_Of_Old =>
-            GNAT_Pragma;
-            Check_Arg_Count (1);
-            Check_No_Identifiers;
-            Check_Arg_Is_One_Of (Arg1, Name_Error, Name_Warn, Name_Allow);
-
-            --  Suppress/Unsuppress can appear as a configuration pragma, or in
-            --  a declarative part or a package spec.
-
-            if not Is_Configuration_Pragma then
-               Check_Is_In_Decl_Part_Or_Package_Spec;
-            end if;
-
-            --  Store proper setting of Uneval_Old
-
-            Get_Name_String (Chars (Get_Pragma_Arg (Arg1)));
-            Uneval_Old := Fold_Upper (Name_Buffer (1));
+         when Pragma_Unused =>
+            Analyze_Unmodified_Or_Unused   (Is_Unused => True);
+            Analyze_Unreferenced_Or_Unused (Is_Unused => True);
 
          -------------------
          -- Use_VADS_Size --
@@ -22821,12 +22980,12 @@ package body Sem_Prag is
 
                Error_Msg_Sloc := Sloc (Over_Id);
                Error_Msg_N
-                 ("\& declared # with Volatile_Function value `False`",
+                 ("\& declared # with Volatile_Function value False",
                   Spec_Id);
 
                Error_Msg_Sloc := Sloc (Spec_Id);
                Error_Msg_N
-                 ("\overridden # with Volatile_Function value `True`",
+                 ("\overridden # with Volatile_Function value True",
                   Spec_Id);
             end if;
 
@@ -23274,6 +23433,82 @@ package body Sem_Prag is
      (N         : Node_Id;
       Freeze_Id : Entity_Id := Empty)
    is
+      Disp_Typ : Entity_Id;
+      --  The dispatching type of the subprogram subject to the pre- or
+      --  postcondition.
+
+      function Check_References (Nod : Node_Id) return Traverse_Result;
+      --  Check that expression Nod does not mention non-primitives of the
+      --  type, global objects of the type, or other illegalities described
+      --  and implied by AI12-0113.
+
+      ----------------------
+      -- Check_References --
+      ----------------------
+
+      function Check_References (Nod : Node_Id) return Traverse_Result is
+      begin
+         if Nkind (Nod) = N_Function_Call
+           and then Is_Entity_Name (Name (Nod))
+         then
+            declare
+               Func : constant Entity_Id := Entity (Name (Nod));
+               Form : Entity_Id;
+
+            begin
+               --  An operation of the type must be a primitive
+
+               if No (Find_Dispatching_Type (Func)) then
+                  Form := First_Formal (Func);
+                  while Present (Form) loop
+                     if Etype (Form) = Disp_Typ then
+                        Error_Msg_NE
+                          ("operation in class-wide condition must be "
+                           & "primitive of &", Nod, Disp_Typ);
+                     end if;
+
+                     Next_Formal (Form);
+                  end loop;
+
+                  --  A return object of the type is illegal as well
+
+                  if Etype (Func) = Disp_Typ
+                    or else Etype (Func) = Class_Wide_Type (Disp_Typ)
+                  then
+                     Error_Msg_NE
+                       ("operation in class-wide condition must be primitive "
+                        & "of &", Nod, Disp_Typ);
+                  end if;
+               end if;
+            end;
+
+         elsif Is_Entity_Name (Nod)
+           and then
+             (Etype (Nod) = Disp_Typ
+               or else Etype (Nod) = Class_Wide_Type (Disp_Typ))
+           and then Ekind_In (Entity (Nod), E_Constant, E_Variable)
+         then
+            Error_Msg_NE
+              ("object in class-wide condition must be formal of type &",
+                Nod, Disp_Typ);
+
+         elsif Nkind (Nod) = N_Explicit_Dereference
+           and then (Etype (Nod) = Disp_Typ
+                      or else Etype (Nod) = Class_Wide_Type (Disp_Typ))
+           and then (not Is_Entity_Name (Prefix (Nod))
+                      or else not Is_Formal (Entity (Prefix (Nod))))
+         then
+            Error_Msg_NE
+              ("operation in class-wide condition must be primitive of &",
+               Nod, Disp_Typ);
+         end if;
+
+         return OK;
+      end Check_References;
+
+      procedure Check_Class_Wide_Condition is
+        new Traverse_Proc (Check_References);
+
       --  Local variables
 
       Subp_Decl : constant Node_Id   := Find_Related_Declaration_Or_Body (N);
@@ -23283,7 +23518,6 @@ package body Sem_Prag is
       Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
 
       Errors        : Nat;
-      Disp_Typ      : Entity_Id;
       Restore_Scope : Boolean := False;
 
    --  Start of processing for Analyze_Pre_Post_Condition_In_Decl_Part
@@ -23352,7 +23586,13 @@ package body Sem_Prag is
                  ("pragma % can only be specified for a primitive operation "
                   & "of a tagged type", N);
             end if;
+
+         --  Remaining semantic checks require a full tree traversal
+
+         else
+            Check_Class_Wide_Condition (Expr);
          end if;
+
       end if;
 
       if Restore_Scope then
@@ -26161,45 +26401,37 @@ package body Sem_Prag is
       return False;
    end Appears_In;
 
-   -----------------------------------
-   -- Build_Pragma_Check_Equivalent --
-   -----------------------------------
+   ---------------------------------
+   -- Build_Class_Wide_Expression --
+   ---------------------------------
 
-   function Build_Pragma_Check_Equivalent
-     (Prag     : Node_Id;
-      Subp_Id  : Entity_Id := Empty;
-      Inher_Id : Entity_Id := Empty) return Node_Id
+   procedure Build_Class_Wide_Expression
+     (Prag        : Node_Id;
+      Subp        : Entity_Id;
+      Par_Subp    : Entity_Id;
+      Adjust_Sloc : Boolean)
    is
-      Map : Elist_Id;
-      --  List containing the following mappings
-      --    * Formal parameters of inherited subprogram Inher_Id and subprogram
-      --    Subp_Id.
-      --
-      --    * The dispatching type of Inher_Id and the dispatching type of
-      --    Subp_Id.
-      --
-      --    * Primitives of the dispatching type of Inher_Id and primitives of
-      --    the dispatching type of Subp_Id.
+      Par_Formal  : Entity_Id;
+      Subp_Formal : Entity_Id;
 
       function Replace_Entity (N : Node_Id) return Traverse_Result;
       --  Replace reference to formal of inherited operation or to primitive
-      --  operation of root type, with corresponding entity for derived type.
-
-      function Suppress_Reference (N : Node_Id) return Traverse_Result;
-      --  Detect whether node N references a formal parameter subject to
-      --  pragma Unreferenced. If this is the case, set Comes_From_Source
-      --  to False to suppress the generation of a reference when analyzing
-      --  N later on.
+      --  operation of root type, with corresponding entity for derived type,
+      --  when constructing the class-wide condition of an overriding
+      --  subprogram.
 
       --------------------
       -- Replace_Entity --
       --------------------
 
       function Replace_Entity (N : Node_Id) return Traverse_Result is
-         Elmt  : Elmt_Id;
          New_E : Entity_Id;
 
       begin
+         if Adjust_Sloc then
+            Adjust_Inherited_Pragma_Sloc (N);
+         end if;
+
          if Nkind (N) = N_Identifier
            and then Present (Entity (N))
            and then
@@ -26219,35 +26451,57 @@ package body Sem_Prag is
                return OK;
             end if;
 
-            --  Loop to find out if entity has a renaming
+            --  Determine whether entity has a renaming
 
-            New_E := Empty;
-            Elmt  := First_Elmt (Map);
-            while Present (Elmt) loop
-               if Node (Elmt) = Entity (N) then
-                  New_E := Node (Next_Elmt (Elmt));
-                  exit;
-               end if;
-
-               Next_Elmt (Elmt);
-            end loop;
+            New_E := Primitives_Mapping.Get (Entity (N));
 
             if Present (New_E) then
                Rewrite (N, New_Occurrence_Of (New_E, Sloc (N)));
             end if;
 
-            --  Check that there are no calls left to abstract operations
-            --  if the current subprogram is not abstract.
+            --  Check that there are no calls left to abstract operations if
+            --  the current subprogram is not abstract.
 
             if Nkind (Parent (N)) = N_Function_Call
               and then N = Name (Parent (N))
-              and then not Is_Abstract_Subprogram (Subp_Id)
-              and then Is_Abstract_Subprogram (Entity (N))
             then
-               Error_Msg_Sloc := Sloc (Current_Scope);
-               Error_Msg_NE
-                 ("cannot call abstract subprogram in inherited condition "
-                   & "for&#", N, Current_Scope);
+               if not Is_Abstract_Subprogram (Subp)
+                 and then Is_Abstract_Subprogram (Entity (N))
+               then
+                  Error_Msg_Sloc := Sloc (Current_Scope);
+                  Error_Msg_NE
+                    ("cannot call abstract subprogram in inherited condition "
+                      & "for&#", N, Current_Scope);
+
+               --  In SPARK mode, reject an inherited condition for an
+               --  inherited operation if it contains a call to an overriding
+               --  operation, because this implies that the pre/postcondition
+               --  of the inherited operation have changed silently.
+
+               elsif SPARK_Mode = On
+                 and then Warn_On_Suspicious_Contract
+                 and then Present (Alias (Subp))
+                 and then Present (New_E)
+                 and then Comes_From_Source (New_E)
+               then
+                  Error_Msg_N
+                    ("cannot modify inherited condition (SPARK RM 6.1.1(1))",
+                     Parent (Subp));
+                  Error_Msg_Sloc   := Sloc (New_E);
+                  Error_Msg_Node_2 := Subp;
+                  Error_Msg_NE
+                    ("\overriding of&# forces overriding of&",
+                     Parent (Subp), New_E);
+               end if;
+            end if;
+
+            --  Update type of function call node, which should be the same as
+            --  the function's return type.
+
+            if Is_Subprogram (Entity (N))
+              and then Nkind (Parent (N)) = N_Function_Call
+            then
+               Set_Etype (Parent (N), Etype (Entity (N)));
             end if;
 
          --  The whole expression will be reanalyzed
@@ -26258,6 +26512,42 @@ package body Sem_Prag is
 
          return OK;
       end Replace_Entity;
+
+      procedure Replace_Condition_Entities is
+        new Traverse_Proc (Replace_Entity);
+
+   --  Start of processing for Build_Class_Wide_Expression
+
+   begin
+      --  Add mapping from old formals to new formals
+
+      Par_Formal := First_Formal (Par_Subp);
+      Subp_Formal  := First_Formal (Subp);
+
+      while Present (Par_Formal) and then Present (Subp_Formal) loop
+         Primitives_Mapping.Set (Par_Formal, Subp_Formal);
+         Next_Formal (Par_Formal);
+         Next_Formal (Subp_Formal);
+      end loop;
+
+      Replace_Condition_Entities (Prag);
+   end Build_Class_Wide_Expression;
+
+   -----------------------------------
+   -- Build_Pragma_Check_Equivalent --
+   -----------------------------------
+
+   function Build_Pragma_Check_Equivalent
+     (Prag           : Node_Id;
+      Subp_Id        : Entity_Id := Empty;
+      Inher_Id       : Entity_Id := Empty;
+      Keep_Pragma_Id : Boolean := False) return Node_Id
+   is
+      function Suppress_Reference (N : Node_Id) return Traverse_Result;
+      --  Detect whether node N references a formal parameter subject to
+      --  pragma Unreferenced. If this is the case, set Comes_From_Source
+      --  to False to suppress the generation of a reference when analyzing
+      --  N later on.
 
       ------------------------
       -- Suppress_Reference --
@@ -26270,9 +26560,9 @@ package body Sem_Prag is
          if Is_Entity_Name (N) and then Present (Entity (N)) then
             Formal := Entity (N);
 
-            --  The formal parameter is subject to pragma Unreferenced.
-            --  Prevent the generation of a reference by resetting the
-            --  Comes_From_Source flag.
+            --  The formal parameter is subject to pragma Unreferenced. Prevent
+            --  the generation of references by resetting the Comes_From_Source
+            --  flag.
 
             if Is_Formal (Formal)
               and then Has_Pragma_Unreferenced (Formal)
@@ -26284,9 +26574,6 @@ package body Sem_Prag is
          return OK;
       end Suppress_Reference;
 
-      procedure Replace_Condition_Entities is
-        new Traverse_Proc (Replace_Entity);
-
       procedure Suppress_References is
         new Traverse_Proc (Suppress_Reference);
 
@@ -26295,16 +26582,12 @@ package body Sem_Prag is
       Loc          : constant Source_Ptr := Sloc (Prag);
       Prag_Nam     : constant Name_Id    := Pragma_Name (Prag);
       Check_Prag   : Node_Id;
-      Inher_Formal : Entity_Id;
       Msg_Arg      : Node_Id;
       Nam          : Name_Id;
-      Subp_Formal  : Entity_Id;
 
    --  Start of processing for Build_Pragma_Check_Equivalent
 
    begin
-      Map := No_Elist;
-
       --  When the pre- or postcondition is inherited, map the formals of the
       --  inherited subprogram to those of the current subprogram. In addition,
       --  map primitive operations of the parent type into the corresponding
@@ -26313,163 +26596,27 @@ package body Sem_Prag is
       if Present (Inher_Id) then
          pragma Assert (Present (Subp_Id));
 
-         Map := New_Elmt_List;
+         Update_Primitives_Mapping (Inher_Id, Subp_Id);
 
-         --  Create a mapping  <inherited formal> => <subprogram formal>
+         --  Use generic machinery to copy inherited pragma, as if it were an
+         --  instantiation, resetting source locations appropriately, so that
+         --  expressions inside the inherited pragma use chained locations.
+         --  This is used in particular in GNATprove to locate precisely
+         --  messages on a given inherited pragma.
 
-         Inher_Formal := First_Formal (Inher_Id);
-         Subp_Formal  := First_Formal (Subp_Id);
-         while Present (Inher_Formal) and then Present (Subp_Formal) loop
-            Append_Elmt (Inher_Formal, Map);
-            Append_Elmt (Subp_Formal,  Map);
+         Set_Copied_Sloc_For_Inherited_Pragma
+           (Unit_Declaration_Node (Subp_Id), Inher_Id);
+         Check_Prag := New_Copy_Tree (Source => Prag);
 
-            Next_Formal (Inher_Formal);
-            Next_Formal (Subp_Formal);
-         end loop;
+         --  Build the inherited class-wide condition
 
-         --  Map primitive operations of the parent type to the corresponding
-         --  operations of the descendant. Note that the descendant type may
-         --  not be frozen yet, so we cannot use the dispatch table directly.
+         Build_Class_Wide_Expression
+           (Check_Prag, Subp_Id, Inher_Id, Adjust_Sloc => True);
 
-         --  Note : the construction of the map involves a full traversal of
-         --  the list of primitive operations, as well as a scan of the
-         --  declarations in the scope of the operation. Given that class-wide
-         --  conditions are typically short expressions, it might be much more
-         --  efficient to collect the identifiers in the expression first, and
-         --  then determine the ones that have to be mapped. Optimization ???
+      --  If not an inherited condition simply copy the original pragma
 
-         Primitive_Mapping : declare
-            function Overridden_Ancestor (S : Entity_Id) return Entity_Id;
-            --  Given the controlling type of the overridden operation and a
-            --  primitive of the current type, find the corresponding operation
-            --  of the parent type.
-
-            -------------------------
-            -- Overridden_Ancestor --
-            -------------------------
-
-            function Overridden_Ancestor (S : Entity_Id) return Entity_Id is
-               Anc : Entity_Id;
-
-            begin
-               Anc := S;
-               while Present (Overridden_Operation (Anc)) loop
-                  exit when Scope (Anc) = Scope (Inher_Id);
-                  Anc := Overridden_Operation (Anc);
-               end loop;
-
-               return Anc;
-            end Overridden_Ancestor;
-
-            --  Local variables
-
-            Old_Typ  : constant Entity_Id := Find_Dispatching_Type (Inher_Id);
-            Typ      : constant Entity_Id := Find_Dispatching_Type (Subp_Id);
-            Decl     : Node_Id;
-            Old_Elmt : Elmt_Id;
-            Old_Prim : Entity_Id;
-            Prim     : Entity_Id;
-
-         --  Start of processing for Primitive_Mapping
-
-         begin
-            Decl := First (List_Containing (Unit_Declaration_Node (Subp_Id)));
-
-            --  Look for primitive operations of the current type that have
-            --  overridden an operation of the type related to the original
-            --  class-wide precondition. There may be several intermediate
-            --  overridings between them.
-
-            while Present (Decl) loop
-               if Nkind (Decl) = N_Subprogram_Declaration then
-                  Prim := Defining_Entity (Decl);
-
-                  if Is_Subprogram (Prim)
-                    and then Present (Overridden_Operation (Prim))
-                    and then Find_Dispatching_Type (Prim) = Typ
-                  then
-                     Old_Prim := Overridden_Ancestor (Prim);
-
-                     Append_Elmt (Old_Prim, Map);
-                     Append_Elmt (Prim,     Map);
-                  end if;
-               end if;
-
-               Next (Decl);
-            end loop;
-
-            --  Now examine inherited operations. These do not override, but
-            --  have an alias, which is the entity used in a call. In turn
-            --  that alias may be inherited or comes from source, in which
-            --  case it may override an earlier operation. We only need to
-            --  examine inherited functions, that may appear within the
-            --  inherited expression.
-
-            Prim := First_Entity (Scope (Subp_Id));
-            while Present (Prim) loop
-               if not Comes_From_Source (Prim)
-                 and then Ekind (Prim) = E_Function
-                 and then Present (Alias (Prim))
-               then
-                  Old_Prim := Alias (Prim);
-
-                  if Comes_From_Source (Old_Prim) then
-                     Old_Prim := Overridden_Ancestor (Old_Prim);
-
-                  else
-                     while Present (Alias (Old_Prim))
-                       and then Scope (Old_Prim) /= Scope (Inher_Id)
-                     loop
-                        Old_Prim := Alias (Old_Prim);
-
-                        if Comes_From_Source (Old_Prim) then
-                           Old_Prim := Overridden_Ancestor (Old_Prim);
-                           exit;
-                        end if;
-                     end loop;
-                  end if;
-
-                  Append_Elmt (Old_Prim, Map);
-                  Append_Elmt (Prim,     Map);
-               end if;
-
-               Next_Entity (Prim);
-            end loop;
-
-            --  If the parent operation is an interface operation, the
-            --  overriding indicator is not present. Instead, we get from
-            --  the interface operation the primitive of the current type
-            --  that implements it.
-
-            if Is_Interface (Old_Typ) then
-               Old_Elmt := First_Elmt (Collect_Primitive_Operations (Old_Typ));
-               while Present (Old_Elmt) loop
-                  Old_Prim := Node (Old_Elmt);
-                  Prim := Find_Primitive_Covering_Interface (Typ, Old_Prim);
-
-                  if Present (Prim) then
-                     Append_Elmt (Old_Prim, Map);
-                     Append_Elmt (Prim,     Map);
-                  end if;
-
-                  Next_Elmt (Old_Elmt);
-               end loop;
-            end if;
-
-            if Map /= No_Elist then
-               Append_Elmt (Old_Typ, Map);
-               Append_Elmt (Typ,     Map);
-            end if;
-         end Primitive_Mapping;
-      end if;
-
-      --  Copy the original pragma while performing substitutions (if
-      --  applicable).
-
-      Check_Prag := New_Copy_Tree (Source => Prag);
-
-      if Map /= No_Elist then
-         Replace_Condition_Entities (Check_Prag);
+      else
+         Check_Prag := New_Copy_Tree (Source => Prag);
       end if;
 
       --  Mark the pragma as being internally generated and reset the Analyzed
@@ -26477,7 +26624,6 @@ package body Sem_Prag is
 
       Set_Analyzed          (Check_Prag, False);
       Set_Comes_From_Source (Check_Prag, False);
-      Set_Class_Present     (Check_Prag, False);
 
       --  The tree of the original pragma may contain references to the
       --  formal parameters of the related subprogram. At the same time
@@ -26503,15 +26649,20 @@ package body Sem_Prag is
          Nam := Prag_Nam;
       end if;
 
-      --  Convert the copy into pragma Check by correcting the name and adding
-      --  a check_kind argument.
+      --  Unless Keep_Pragma_Id is True in order to keep the identifier of
+      --  the copied pragma in the newly created pragma, convert the copy into
+      --  pragma Check by correcting the name and adding a check_kind argument.
 
-      Set_Pragma_Identifier
-        (Check_Prag, Make_Identifier (Loc, Name_Check));
+      if not Keep_Pragma_Id then
+         Set_Class_Present (Check_Prag, False);
 
-      Prepend_To (Pragma_Argument_Associations (Check_Prag),
-        Make_Pragma_Argument_Association (Loc,
-          Expression => Make_Identifier (Loc, Nam)));
+         Set_Pragma_Identifier
+           (Check_Prag, Make_Identifier (Loc, Name_Check));
+
+         Prepend_To (Pragma_Argument_Associations (Check_Prag),
+           Make_Pragma_Argument_Association (Loc,
+             Expression => Make_Identifier (Loc, Nam)));
+      end if;
 
       --  Update the error message when the pragma is inherited
 
@@ -27036,7 +27187,9 @@ package body Sem_Prag is
                end if;
 
                New_Prag :=
-                 Build_Pragma_Check_Equivalent (Prag, Subp, Parent_Subp);
+                 Build_Pragma_Check_Equivalent
+                   (Prag, Subp, Parent_Subp, Keep_Pragma_Id => True);
+
                Insert_After (Unit_Declaration_Node (Subp), New_Prag);
                Preanalyze (New_Prag);
 
@@ -27445,6 +27598,15 @@ package body Sem_Prag is
          Error_Msg_N ("pragma % duplicates pragma declared #", Prag);
       end if;
    end Duplication_Error;
+
+   -----------------
+   -- Entity_Hash --
+   -----------------
+
+   function Entity_Hash (E : Entity_Id) return Num_Primitives is
+   begin
+      return Num_Primitives (E mod 511);
+   end Entity_Hash;
 
    --------------------------
    -- Find_Related_Context --
@@ -28326,6 +28488,7 @@ package body Sem_Prag is
       Pragma_Type_Invariant                 => -1,
       Pragma_Type_Invariant_Class           => -1,
       Pragma_Unchecked_Union                =>  0,
+      Pragma_Unevaluated_Use_Of_Old         =>  0,
       Pragma_Unimplemented_Unit             =>  0,
       Pragma_Universal_Aliasing             =>  0,
       Pragma_Universal_Data                 =>  0,
@@ -28334,7 +28497,7 @@ package body Sem_Prag is
       Pragma_Unreferenced_Objects           =>  0,
       Pragma_Unreserve_All_Interrupts       =>  0,
       Pragma_Unsuppress                     =>  0,
-      Pragma_Unevaluated_Use_Of_Old         =>  0,
+      Pragma_Unused                         =>  0,
       Pragma_Use_VADS_Size                  =>  0,
       Pragma_Validity_Checks                =>  0,
       Pragma_Volatile                       =>  0,
@@ -29147,5 +29310,146 @@ package body Sem_Prag is
 
       return Empty;
    end Test_Case_Arg;
+
+   -------------------------------
+   -- Update_Primitives_Mapping --
+   -------------------------------
+
+   procedure Update_Primitives_Mapping
+     (Inher_Id : Entity_Id;
+      Subp_Id  : Entity_Id)
+   is
+      function Overridden_Ancestor (S : Entity_Id) return Entity_Id;
+      --  Locate the primitive operation with the name of S whose controlling
+      --  type is the dispatching type of Inher_Id.
+
+      -------------------------
+      -- Overridden_Ancestor --
+      -------------------------
+
+      function Overridden_Ancestor (S : Entity_Id) return Entity_Id is
+         Par : constant Entity_Id := Find_Dispatching_Type (Inher_Id);
+         Anc : Entity_Id;
+
+      begin
+         Anc := S;
+
+         --  Locate the ancestor subprogram with the proper controlling type
+
+         while Present (Overridden_Operation (Anc)) loop
+            Anc := Overridden_Operation (Anc);
+            exit when Find_Dispatching_Type (Anc) = Par;
+         end loop;
+
+         return Anc;
+      end Overridden_Ancestor;
+
+      --  Local variables
+
+      Old_Typ  : constant Entity_Id := Find_Dispatching_Type (Inher_Id);
+      Typ      : constant Entity_Id := Find_Dispatching_Type (Subp_Id);
+      Decl     : Node_Id;
+      Old_Elmt : Elmt_Id;
+      Old_Prim : Entity_Id;
+      Prim     : Entity_Id;
+
+   --  Start of processing for Update_Primitives_Mapping
+
+   begin
+      --  If the types are already in the map, it has been previously built for
+      --  some other overriding primitive.
+
+      if Primitives_Mapping.Get (Old_Typ) = Typ then
+         return;
+
+      else
+         --  Initialize new mapping with the primitive operations
+
+         Decl := First (List_Containing (Unit_Declaration_Node (Subp_Id)));
+
+         --  Look for primitive operations of the current type that have
+         --  overridden an operation of the type related to the original
+         --  class-wide precondition. There may be several intermediate
+         --  overridings between them.
+
+         while Present (Decl) loop
+            if Nkind_In (Decl, N_Abstract_Subprogram_Declaration,
+                               N_Subprogram_Declaration)
+            then
+               Prim := Defining_Entity (Decl);
+
+               if Is_Subprogram (Prim)
+                 and then Present (Overridden_Operation (Prim))
+                 and then Find_Dispatching_Type (Prim) = Typ
+               then
+                  Old_Prim := Overridden_Ancestor (Prim);
+
+                  Primitives_Mapping.Set (Old_Prim, Prim);
+               end if;
+            end if;
+
+            Next (Decl);
+         end loop;
+
+         --  Now examine inherited operations. these do not override, but have
+         --  an alias, which is the entity used in a call. That alias may be
+         --  inherited or come from source, in which case it may override an
+         --  earlier operation. We only need to examine inherited functions,
+         --  that can appear within the inherited expression.
+
+         Prim := First_Entity (Scope (Subp_Id));
+         while Present (Prim) loop
+            if not Comes_From_Source (Prim)
+              and then Ekind (Prim) = E_Function
+              and then Present (Alias (Prim))
+            then
+               Old_Prim := Alias (Prim);
+
+               if Comes_From_Source (Old_Prim) then
+                  Old_Prim := Overridden_Ancestor (Old_Prim);
+
+               else
+                  while Present (Alias (Old_Prim))
+                    and then Scope (Old_Prim) /= Scope (Inher_Id)
+                  loop
+                     Old_Prim := Alias (Old_Prim);
+
+                     if Comes_From_Source (Old_Prim) then
+                        Old_Prim := Overridden_Ancestor (Old_Prim);
+                        exit;
+                     end if;
+                  end loop;
+               end if;
+
+               Primitives_Mapping.Set (Old_Prim, Prim);
+            end if;
+
+            Next_Entity (Prim);
+         end loop;
+
+         --  If the parent operation is an interface operation, the overriding
+         --  indicator is not present. Instead, we get from the interface
+         --  operation the primitive of the current type that implements it.
+
+         if Is_Interface (Old_Typ) then
+            Old_Elmt := First_Elmt (Collect_Primitive_Operations (Old_Typ));
+            while Present (Old_Elmt) loop
+               Old_Prim := Node (Old_Elmt);
+               Prim := Find_Primitive_Covering_Interface (Typ, Old_Prim);
+
+               if Present (Prim) then
+                  Primitives_Mapping.Set (Old_Prim, Prim);
+               end if;
+
+               Next_Elmt (Old_Elmt);
+            end loop;
+         end if;
+      end if;
+
+      --  Map the types themselves, so that the process is not repeated for
+      --  other overriding primitives.
+
+      Primitives_Mapping.Set (Old_Typ, Typ);
+   end Update_Primitives_Mapping;
 
 end Sem_Prag;

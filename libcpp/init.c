@@ -257,6 +257,9 @@ cpp_create_reader (enum c_lang lang, cpp_hash_table *table,
   /* Do not force token locations by default.  */
   pfile->forced_token_location_p = NULL;
 
+  /* Initialize source_date_epoch to -2 (not yet set).  */
+  pfile->source_date_epoch = (time_t) -2;
+
   /* The expression parser stack.  */
   _cpp_expand_op_stack (pfile);
 
@@ -533,13 +536,6 @@ cpp_init_builtins (cpp_reader *pfile, int hosted)
     _cpp_define_builtin (pfile, "__OBJC__ 1");
 }
 
-/* Initialize the source_date_epoch value.  */
-void
-cpp_init_source_date_epoch (cpp_reader *pfile, time_t source_date_epoch)
-{
-  pfile->source_date_epoch = source_date_epoch; 
-}
-
 /* Sanity-checks are dependent on command-line options, so it is
    called as a subroutine of cpp_read_main_file.  */
 #if CHECKING_P
@@ -620,6 +616,8 @@ cpp_post_options (cpp_reader *pfile)
 const char *
 cpp_read_main_file (cpp_reader *pfile, const char *fname)
 {
+  const source_location loc = 0;
+
   if (CPP_OPTION (pfile, deps.style) != DEPS_NONE)
     {
       if (!pfile->deps)
@@ -630,11 +628,12 @@ cpp_read_main_file (cpp_reader *pfile, const char *fname)
     }
 
   pfile->main_file
-    = _cpp_find_file (pfile, fname, &pfile->no_search_path, false, 0, false);
+    = _cpp_find_file (pfile, fname, &pfile->no_search_path, false, 0, false,
+		      loc);
   if (_cpp_find_failed (pfile->main_file))
     return NULL;
 
-  _cpp_stack_file (pfile, pfile->main_file, false);
+  _cpp_stack_file (pfile, pfile->main_file, false, loc);
 
   /* For foo.i, read the original filename foo.c now, for the benefit
      of the front ends.  */

@@ -425,6 +425,12 @@
 #endif
 
 
+/* Define 0/1 if your assembler and linker support @GOT. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_GOT32X
+#endif
+
+
 /* Define if your assembler supports HLE prefixes. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_IX86_HLE
@@ -476,6 +482,13 @@
 /* Define to 1 if your assembler and linker support @tlsldmplt. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_IX86_TLSLDMPLT
+#endif
+
+
+/* Define 0/1 if your assembler and linker support calling ___tls_get_addr via
+   GOT. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_IX86_TLS_GET_ADDR_GOT
 #endif
 
 
@@ -626,6 +639,12 @@
 /* Define if your assembler supports SPARC4 instructions. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_SPARC4
+#endif
+
+
+/* Define if your assembler supports SPARC5 and VIS 4.0 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_SPARC5_VIS4
 #endif
 
 

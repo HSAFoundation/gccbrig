@@ -63,6 +63,8 @@
 #include <initializer_list>
 #endif
 
+#include <debug/assertions.h>
+
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
@@ -1081,7 +1083,8 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       deque&
       operator=(initializer_list<value_type> __l)
       {
-	this->assign(__l.begin(), __l.end());
+	_M_assign_aux(__l.begin(), __l.end(),
+		      random_access_iterator_tag());
 	return *this;
       }
 #endif
@@ -1142,7 +1145,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       void
       assign(initializer_list<value_type> __l)
-      { this->assign(__l.begin(), __l.end()); }
+      { _M_assign_aux(__l.begin(), __l.end(), random_access_iterator_tag()); }
 #endif
 
       /// Get a copy of the memory allocation object.
@@ -1306,7 +1309,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       {
 	const size_type __len = size();
 	if (__new_size > __len)
-	  insert(this->_M_impl._M_finish, __new_size - __len, __x);
+	  _M_fill_insert(this->_M_impl._M_finish, __new_size - __len, __x);
 	else if (__new_size < __len)
 	  _M_erase_at_end(this->_M_impl._M_start
 			  + difference_type(__new_size));
@@ -1328,7 +1331,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       {
 	const size_type __len = size();
 	if (__new_size > __len)
-	  insert(this->_M_impl._M_finish, __new_size - __len, __x);
+	  _M_fill_insert(this->_M_impl._M_finish, __new_size - __len, __x);
 	else if (__new_size < __len)
 	  _M_erase_at_end(this->_M_impl._M_start
 			  + difference_type(__new_size));
@@ -1364,7 +1367,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       reference
       operator[](size_type __n) _GLIBCXX_NOEXCEPT
-      { return this->_M_impl._M_start[difference_type(__n)]; }
+      {
+	__glibcxx_requires_subscript(__n);
+	return this->_M_impl._M_start[difference_type(__n)];
+      }
 
       /**
        *  @brief Subscript access to the data contained in the %deque.
@@ -1379,7 +1385,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       const_reference
       operator[](size_type __n) const _GLIBCXX_NOEXCEPT
-      { return this->_M_impl._M_start[difference_type(__n)]; }
+      {
+	__glibcxx_requires_subscript(__n);
+	return this->_M_impl._M_start[difference_type(__n)];
+      }
 
     protected:
       /// Safety check used only from at().
@@ -1436,7 +1445,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       reference
       front() _GLIBCXX_NOEXCEPT
-      { return *begin(); }
+      {
+	__glibcxx_requires_nonempty();
+	return *begin();
+      }
 
       /**
        *  Returns a read-only (constant) reference to the data at the first
@@ -1444,7 +1456,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       const_reference
       front() const _GLIBCXX_NOEXCEPT
-      { return *begin(); }
+      {
+	__glibcxx_requires_nonempty();
+	return *begin();
+      }
 
       /**
        *  Returns a read/write reference to the data at the last element of the
@@ -1453,6 +1468,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       reference
       back() _GLIBCXX_NOEXCEPT
       {
+	__glibcxx_requires_nonempty();
 	iterator __tmp = end();
 	--__tmp;
 	return *__tmp;
@@ -1465,6 +1481,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       const_reference
       back() const _GLIBCXX_NOEXCEPT
       {
+	__glibcxx_requires_nonempty();
 	const_iterator __tmp = end();
 	--__tmp;
 	return *__tmp;
@@ -1548,6 +1565,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       void
       pop_front() _GLIBCXX_NOEXCEPT
       {
+	__glibcxx_requires_nonempty();
 	if (this->_M_impl._M_start._M_cur
 	    != this->_M_impl._M_start._M_last - 1)
 	  {
@@ -1570,6 +1588,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       void
       pop_back() _GLIBCXX_NOEXCEPT
       {
+	__glibcxx_requires_nonempty();
 	if (this->_M_impl._M_finish._M_cur
 	    != this->_M_impl._M_finish._M_first)
 	  {
@@ -1645,7 +1664,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       iterator
       insert(const_iterator __p, initializer_list<value_type> __l)
-      { return this->insert(__p, __l.begin(), __l.end()); }
+      {
+	auto __offset = __p - cbegin();
+	_M_range_insert_aux(__p._M_const_cast(), __l.begin(), __l.end(),
+			    std::random_access_iterator_tag());
+	return begin() + __offset;
+      }
 #endif
 
 #if __cplusplus >= 201103L
@@ -1783,6 +1807,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       void
       swap(deque& __x) _GLIBCXX_NOEXCEPT
       {
+#if __cplusplus >= 201103L
+	__glibcxx_assert(_Alloc_traits::propagate_on_container_swap::value
+			 || _M_get_Tp_allocator() == __x._M_get_Tp_allocator());
+#endif
 	_M_impl._M_swap_data(__x._M_impl);
 	_Alloc_traits::_S_on_swap(_M_get_Tp_allocator(),
 				  __x._M_get_Tp_allocator());
@@ -1819,9 +1847,8 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
         _M_initialize_dispatch(_InputIterator __first, _InputIterator __last,
 			       __false_type)
         {
-	  typedef typename std::iterator_traits<_InputIterator>::
-	    iterator_category _IterCategory;
-	  _M_range_initialize(__first, __last, _IterCategory());
+	  _M_range_initialize(__first, __last,
+			      std::__iterator_category(__first));
 	}
 
       // called by the second initialize_dispatch above
@@ -1884,11 +1911,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
         void
         _M_assign_dispatch(_InputIterator __first, _InputIterator __last,
 			   __false_type)
-        {
-	  typedef typename std::iterator_traits<_InputIterator>::
-	    iterator_category _IterCategory;
-	  _M_assign_aux(__first, __last, _IterCategory());
-	}
+	{ _M_assign_aux(__first, __last, std::__iterator_category(__first)); }
 
       // called by the second assign_dispatch above
       template<typename _InputIterator>
@@ -1908,7 +1931,8 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	      _ForwardIterator __mid = __first;
 	      std::advance(__mid, size());
 	      std::copy(__first, __mid, begin());
-	      insert(end(), __mid, __last);
+	      _M_range_insert_aux(end(), __mid, __last,
+				  std::__iterator_category(__first));
 	    }
 	  else
 	    _M_erase_at_end(std::copy(__first, __last, begin()));
@@ -1922,7 +1946,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	if (__n > size())
 	  {
 	    std::fill(begin(), end(), __val);
-	    insert(end(), __n - size(), __val);
+	    _M_fill_insert(end(), __n - size(), __val);
 	  }
 	else
 	  {
@@ -1970,9 +1994,8 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 			   _InputIterator __first, _InputIterator __last,
 			   __false_type)
         {
-	  typedef typename std::iterator_traits<_InputIterator>::
-	    iterator_category _IterCategory;
-          _M_range_insert_aux(__pos, __first, __last, _IterCategory());
+          _M_range_insert_aux(__pos, __first, __last,
+			      std::__iterator_category(__first));
 	}
 
       // called by the second insert_dispatch above
@@ -2196,8 +2219,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	  {
 	    // The rvalue's allocator cannot be moved and is not equal,
 	    // so we need to individually move each element.
-	    this->assign(std::__make_move_if_noexcept_iterator(__x.begin()),
-			 std::__make_move_if_noexcept_iterator(__x.end()));
+	    _M_assign_aux(std::__make_move_if_noexcept_iterator(__x.begin()),
+			  std::__make_move_if_noexcept_iterator(__x.end()),
+			  std::random_access_iterator_tag());
 	    __x.clear();
 	  }
       }

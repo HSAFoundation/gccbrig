@@ -841,6 +841,8 @@ package body Lib.Xref is
 
          --  Check for pragma Unreferenced given and reference is within
          --  this source unit (occasion for possible warning to be issued).
+         --  Note that the entity may be marked as unreferenced by pragma
+         --  Unused.
 
          if Has_Unreferenced (E)
            and then In_Same_Extended_Unit (E, N)
@@ -875,8 +877,13 @@ package body Lib.Xref is
                   BE := First_Entity (Current_Scope);
                   while Present (BE) loop
                      if Chars (BE) = Chars (E) then
-                        Error_Msg_NE -- CODEFIX
-                          ("??pragma Unreferenced given for&!", N, BE);
+                        if Has_Pragma_Unused (E) then
+                           Error_Msg_NE -- CODEFIX
+                             ("??pragma Unused given for&!", N, BE);
+                        else
+                           Error_Msg_NE -- CODEFIX
+                             ("??pragma Unreferenced given for&!", N, BE);
+                        end if;
                         exit;
                      end if;
 
@@ -886,6 +893,9 @@ package body Lib.Xref is
 
             --  Here we issue the warning, since this is a real reference
 
+            elsif Has_Pragma_Unused (E) then
+               Error_Msg_NE -- CODEFIX
+                 ("??pragma Unused given for&!", N, E);
             else
                Error_Msg_NE -- CODEFIX
                  ("??pragma Unreferenced given for&!", N, E);
@@ -1075,11 +1085,11 @@ package body Lib.Xref is
               ((Ent       => Ent,
                 Loc       => Ref,
                 Typ       => Actual_Typ,
-                Eun       => Get_Code_Unit (Def),
-                Lun       => Get_Code_Unit (Ref),
+                Eun       => Get_Top_Level_Code_Unit (Def),
+                Lun       => Get_Top_Level_Code_Unit (Ref),
                 Ref_Scope => Ref_Scope,
                 Ent_Scope => Ent_Scope),
-               Ent_Scope_File => Get_Code_Unit (Ent));
+               Ent_Scope_File => Get_Top_Level_Code_Unit (Ent));
 
          else
             Ref := Original_Location (Sloc (Nod));
@@ -1217,6 +1227,21 @@ package body Lib.Xref is
    begin
       return E;
    end Get_Key;
+
+   ----------------------------
+   -- Has_Deferred_Reference --
+   ----------------------------
+
+   function Has_Deferred_Reference (Ent : Entity_Id) return Boolean is
+   begin
+      for J in Deferred_References.First .. Deferred_References.Last loop
+         if Deferred_References.Table (J).E = Ent then
+            return True;
+         end if;
+      end loop;
+
+      return False;
+   end Has_Deferred_Reference;
 
    ----------
    -- Hash --

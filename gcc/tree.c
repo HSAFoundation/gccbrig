@@ -61,6 +61,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "builtins.h"
 #include "print-tree.h"
 #include "ipa-utils.h"
+#include "selftest.h"
 
 /* Tree code classes.  */
 
@@ -281,7 +282,6 @@ unsigned const char omp_clause_num_ops[] =
   1, /* OMP_CLAUSE_USE_DEVICE_PTR  */
   1, /* OMP_CLAUSE_IS_DEVICE_PTR  */
   2, /* OMP_CLAUSE__CACHE_  */
-  1, /* OMP_CLAUSE_DEVICE_RESIDENT  */
   2, /* OMP_CLAUSE_GANG  */
   1, /* OMP_CLAUSE_ASYNC  */
   1, /* OMP_CLAUSE_WAIT  */
@@ -353,7 +353,6 @@ const char * const omp_clause_code_name[] =
   "use_device_ptr",
   "is_device_ptr",
   "_cache_",
-  "device_resident",
   "gang",
   "async",
   "wait",
@@ -5010,7 +5009,7 @@ attribute_value_equal (const_tree attr1, const_tree attr2)
       && TREE_CODE (TREE_VALUE (attr2)) == TREE_LIST)
     {
       /* Handle attribute format.  */
-      if (is_attribute_p ("format", TREE_PURPOSE (attr1)))
+      if (is_attribute_p ("format", get_attribute_name (attr1)))
 	{
 	  attr1 = TREE_VALUE (attr1);
 	  attr2 = TREE_VALUE (attr2);
@@ -5501,17 +5500,19 @@ free_lang_data_in_decl (tree decl)
 
 struct free_lang_data_d
 {
+  free_lang_data_d () : decls (100), types (100) {}
+
   /* Worklist to avoid excessive recursion.  */
-  vec<tree> worklist;
+  auto_vec<tree> worklist;
 
   /* Set of traversed objects.  Used to avoid duplicate visits.  */
-  hash_set<tree> *pset;
+  hash_set<tree> pset;
 
   /* Array of symbols to process with free_lang_data_in_decl.  */
-  vec<tree> decls;
+  auto_vec<tree> decls;
 
   /* Array of types to process with free_lang_data_in_type.  */
-  vec<tree> types;
+  auto_vec<tree> types;
 };
 
 
@@ -5570,7 +5571,7 @@ add_tree_to_fld_list (tree t, struct free_lang_data_d *fld)
 static inline void
 fld_worklist_push (tree t, struct free_lang_data_d *fld)
 {
-  if (t && !is_lang_specific (t) && !fld->pset->contains (t))
+  if (t && !is_lang_specific (t) && !fld->pset.contains (t))
     fld->worklist.safe_push ((t));
 }
 
@@ -5739,8 +5740,8 @@ find_decls_types (tree t, struct free_lang_data_d *fld)
 {
   while (1)
     {
-      if (!fld->pset->contains (t))
-	walk_tree (&t, find_decls_types_r, fld, fld->pset);
+      if (!fld->pset.contains (t))
+	walk_tree (&t, find_decls_types_r, fld, &fld->pset);
       if (fld->worklist.is_empty ())
 	break;
       t = fld->worklist.pop ();
@@ -5794,7 +5795,7 @@ find_decls_types_in_eh_region (eh_region r, struct free_lang_data_d *fld)
 	for (c = r->u.eh_try.first_catch; c ; c = c->next_catch)
 	  {
 	    c->type_list = get_eh_types_for_runtime (c->type_list);
-	    walk_tree (&c->type_list, find_decls_types_r, fld, fld->pset);
+	    walk_tree (&c->type_list, find_decls_types_r, fld, &fld->pset);
 	  }
       }
       break;
@@ -5802,12 +5803,12 @@ find_decls_types_in_eh_region (eh_region r, struct free_lang_data_d *fld)
     case ERT_ALLOWED_EXCEPTIONS:
       r->u.allowed.type_list
 	= get_eh_types_for_runtime (r->u.allowed.type_list);
-      walk_tree (&r->u.allowed.type_list, find_decls_types_r, fld, fld->pset);
+      walk_tree (&r->u.allowed.type_list, find_decls_types_r, fld, &fld->pset);
       break;
 
     case ERT_MUST_NOT_THROW:
       walk_tree (&r->u.must_not_throw.failure_decl,
-		 find_decls_types_r, fld, fld->pset);
+		 find_decls_types_r, fld, &fld->pset);
       break;
     }
 }
@@ -5949,12 +5950,6 @@ free_lang_data_in_cgraph (void)
   unsigned i;
   alias_pair *p;
 
-  /* Initialize sets and arrays to store referenced decls and types.  */
-  fld.pset = new hash_set<tree>;
-  fld.worklist.create (0);
-  fld.decls.create (100);
-  fld.types.create (100);
-
   /* Find decls and types in the body of every function in the callgraph.  */
   FOR_EACH_FUNCTION (n)
     find_decls_types_in_node (n, &fld);
@@ -5984,11 +5979,6 @@ free_lang_data_in_cgraph (void)
       FOR_EACH_VEC_ELT (fld.types, i, t)
 	verify_type (t);
     }
-
-  delete fld.pset;
-  fld.worklist.release ();
-  fld.decls.release ();
-  fld.types.release ();
 }
 
 
@@ -8784,7 +8774,6 @@ build_complex_type (tree component_type)
   t = make_node (COMPLEX_TYPE);
 
   TREE_TYPE (t) = TYPE_MAIN_VARIANT (component_type);
-  SET_TYPE_MODE (t, GET_MODE_COMPLEX_MODE (TYPE_MODE (component_type)));
 
   /* If we already have such a type, use the old one.  */
   hstate.add_object (TYPE_HASH (component_type));
@@ -10603,6 +10592,13 @@ build_common_builtin_nodes (void)
 			BUILT_IN_STACK_RESTORE,
 			"__builtin_stack_restore", ECF_NOTHROW | ECF_LEAF);
 
+  ftype = build_function_type_list (integer_type_node, const_ptr_type_node,
+				    const_ptr_type_node, size_type_node,
+				    NULL_TREE);
+  local_define_builtin ("__builtin_memcmp_eq", ftype, BUILT_IN_MEMCMP_EQ,
+			"__builtin_memcmp_eq",
+			ECF_PURE | ECF_NOTHROW | ECF_LEAF);
+
   /* If there's a possibility that we might use the ARM EABI, build the
     alternate __cxa_end_cleanup node used to resume from C++ and Java.  */
   if (targetm.arm_eabi_unwinder)
@@ -11764,7 +11760,6 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
 	  WALK_SUBTREE (OMP_CLAUSE_OPERAND (*tp, 1));
 	  /* FALLTHRU */
 
-	case OMP_CLAUSE_DEVICE_RESIDENT:
 	case OMP_CLAUSE_ASYNC:
 	case OMP_CLAUSE_WAIT:
 	case OMP_CLAUSE_WORKER:
@@ -13076,9 +13071,29 @@ array_at_struct_end_p (tree ref)
       ref = TREE_OPERAND (ref, 0);
     }
 
+  tree size = NULL;
+
+  if (TREE_CODE (ref) == MEM_REF
+      && TREE_CODE (TREE_OPERAND (ref, 0)) == ADDR_EXPR)
+    {
+      size = TYPE_SIZE (TREE_TYPE (ref));
+      ref = TREE_OPERAND (TREE_OPERAND (ref, 0), 0);
+    }
+
   /* If the reference is based on a declared entity, the size of the array
      is constrained by its given domain.  (Do not trust commons PR/69368).  */
   if (DECL_P (ref)
+      /* Be sure the size of MEM_REF target match.  For example:
+
+	   char buf[10];
+	   struct foo *str = (struct foo *)&buf;
+
+	   str->trailin_array[2] = 1;
+
+	 is valid because BUF allocate enough space.  */
+
+      && (!size || (DECL_SIZE (ref) != NULL
+		    && operand_equal_p (DECL_SIZE (ref), size, 0)))
       && !(flag_unconstrained_commons
 	   && TREE_CODE (ref) == VAR_DECL && DECL_COMMON (ref)))
     return false;
@@ -13180,7 +13195,6 @@ verify_type_variant (const_tree t, tree tv)
     verify_variant_match (TYPE_REF_CAN_ALIAS_ALL);
   /* FIXME: TYPE_SIZES_GIMPLIFIED may differs for Ada build.  */
   verify_variant_match (TYPE_UNSIGNED);
-  verify_variant_match (TYPE_ALIGN_OK);
   verify_variant_match (TYPE_PACKED);
   if (TREE_CODE (t) == REFERENCE_TYPE)
     verify_variant_match (TYPE_REF_IS_RVALUE);
@@ -13196,9 +13210,13 @@ verify_type_variant (const_tree t, tree tv)
 
   if (COMPLETE_TYPE_P (t))
     {
-      verify_variant_match (TYPE_SIZE);
       verify_variant_match (TYPE_MODE);
-      if (TYPE_SIZE_UNIT (t) != TYPE_SIZE_UNIT (tv)
+      if (TREE_CODE (TYPE_SIZE (t)) != PLACEHOLDER_EXPR
+	  && TREE_CODE (TYPE_SIZE (tv)) != PLACEHOLDER_EXPR)
+	verify_variant_match (TYPE_SIZE);
+      if (TREE_CODE (TYPE_SIZE_UNIT (t)) != PLACEHOLDER_EXPR
+	  && TREE_CODE (TYPE_SIZE_UNIT (tv)) != PLACEHOLDER_EXPR
+	  && TYPE_SIZE_UNIT (t) != TYPE_SIZE_UNIT (tv)
 	  /* FIXME: ideally we should compare pointer equality, but java FE
 	     produce variants where size is INTEGER_CST of different type (int
 	     wrt size_type) during libjava biuld.  */
@@ -14178,5 +14196,66 @@ combined_fn_name (combined_fn fn)
   else
     return internal_fn_name (as_internal_fn (fn));
 }
+
+#if CHECKING_P
+
+namespace selftest {
+
+/* Selftests for tree.  */
+
+/* Verify that integer constants are sane.  */
+
+static void
+test_integer_constants ()
+{
+  ASSERT_TRUE (integer_type_node != NULL);
+  ASSERT_TRUE (build_int_cst (integer_type_node, 0) != NULL);
+
+  tree type = integer_type_node;
+
+  tree zero = build_zero_cst (type);
+  ASSERT_EQ (INTEGER_CST, TREE_CODE (zero));
+  ASSERT_EQ (type, TREE_TYPE (zero));
+
+  tree one = build_int_cst (type, 1);
+  ASSERT_EQ (INTEGER_CST, TREE_CODE (one));
+  ASSERT_EQ (type, TREE_TYPE (zero));
+}
+
+/* Verify identifiers.  */
+
+static void
+test_identifiers ()
+{
+  tree identifier = get_identifier ("foo");
+  ASSERT_EQ (3, IDENTIFIER_LENGTH (identifier));
+  ASSERT_STREQ ("foo", IDENTIFIER_POINTER (identifier));
+}
+
+/* Verify LABEL_DECL.  */
+
+static void
+test_labels ()
+{
+  tree identifier = get_identifier ("err");
+  tree label_decl = build_decl (UNKNOWN_LOCATION, LABEL_DECL,
+				identifier, void_type_node);
+  ASSERT_EQ (-1, LABEL_DECL_UID (label_decl));
+  ASSERT_FALSE (FORCED_LABEL (label_decl));
+}
+
+/* Run all of the selftests within this file.  */
+
+void
+tree_c_tests ()
+{
+  test_integer_constants ();
+  test_identifiers ();
+  test_labels ();
+}
+
+} // namespace selftest
+
+#endif /* CHECKING_P */
 
 #include "gt-tree.h"

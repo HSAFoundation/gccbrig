@@ -853,7 +853,8 @@ evaluate_conditions_for_known_args (struct cgraph_node *node,
 	  if (known_aggs.exists ())
 	    {
 	      agg = known_aggs[c->operand_num];
-	      val = ipa_find_agg_cst_for_param (agg, c->offset, c->by_ref);
+	      val = ipa_find_agg_cst_for_param (agg, known_vals[c->operand_num],
+						c->offset, c->by_ref);
 	    }
 	  else
 	    val = NULL_TREE;
@@ -3016,6 +3017,16 @@ compute_inline_parameters (struct cgraph_node *node, bool early)
 	       node->local.can_change_signature = !e;
 	     }
 	 }
+       /* Functions called by instrumentation thunk can't change signature
+	  because instrumentation thunk modification is not supported.  */
+       if (node->local.can_change_signature)
+	 for (e = node->callers; e; e = e->next_caller)
+	   if (e->caller->thunk.thunk_p
+	       && e->caller->thunk.add_pointer_bounds_args)
+	     {
+	       node->local.can_change_signature = false;
+	       break;
+	     }
        estimate_function_body_sizes (node, early);
        pop_cfun ();
      }

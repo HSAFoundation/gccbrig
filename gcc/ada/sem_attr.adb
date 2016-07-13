@@ -1354,14 +1354,17 @@ package body Sem_Attr is
          --  The aspect or pragma where the attribute resides should be
          --  associated with a subprogram declaration or a body. If this is not
          --  the case, then the aspect or pragma is illegal. Return as analysis
-         --  cannot be carried out.
+         --  cannot be carried out. Note that it is legal to have the aspect
+         --  appear on a subprogram renaming, when the renamed entity is an
+         --  attribute reference.
 
          if not Nkind_In (Subp_Decl, N_Abstract_Subprogram_Declaration,
                                      N_Entry_Declaration,
                                      N_Generic_Subprogram_Declaration,
                                      N_Subprogram_Body,
                                      N_Subprogram_Body_Stub,
-                                     N_Subprogram_Declaration)
+                                     N_Subprogram_Declaration,
+                                     N_Subprogram_Renaming_Declaration)
          then
             return;
          end if;
@@ -1379,10 +1382,14 @@ package body Sem_Attr is
          --  Hence, in this context, the spec_id of _postconditions is the
          --  enclosing scope.
 
-         if Generate_C_Code
+         if Modify_Tree_For_C
            and then Chars (Spec_Id) = Name_uParent
            and then Chars (Scope (Spec_Id)) = Name_uPostconditions
          then
+            --  This situation occurs only when preanalyzing the inlined body
+
+            pragma Assert (not Full_Analysis);
+
             Spec_Id := Scope (Spec_Id);
             pragma Assert (Is_Inlined (Spec_Id));
          end if;
@@ -3370,9 +3377,9 @@ package body Sem_Attr is
                P_Type := Underlying_Type (P_Type);
             end if;
 
-            --  Must have discriminants or be an access type designating
-            --  a type with discriminants. If it is a classwide type it
-            --  has unknown discriminants.
+            --  Must have discriminants or be an access type designating a type
+            --  with discriminants. If it is a class-wide type it has unknown
+            --  discriminants.
 
             if Has_Discriminants (P_Type)
               or else Has_Unknown_Discriminants (P_Type)
@@ -3736,15 +3743,8 @@ package body Sem_Attr is
             Check_Discrete_Type;
             Resolve (E1, P_Base_Type);
 
-         else
-            if not Is_Entity_Name (P)
-              or else (not Is_Object (Entity (P))
-                        and then Ekind (Entity (P)) /= E_Enumeration_Literal)
-            then
-               Error_Attr_P
-                 ("prefix of % attribute must be " &
-                  "discrete type/object or enum literal");
-            end if;
+         elsif not Is_Discrete_Type (Etype (P)) then
+            Error_Attr_P ("prefix of % attribute must be of discrete type");
          end if;
 
          Set_Etype (N, Universal_Integer);
@@ -4886,7 +4886,16 @@ package body Sem_Attr is
          --  the case, then the aspect or pragma is illegal. Return as analysis
          --  cannot be carried out.
 
-         if not Legal then
+         --  The exception to this rule is when generating C since in this case
+         --  postconditions are inlined.
+
+         if No (Spec_Id)
+           and then Modify_Tree_For_C
+           and then In_Inlined_Body
+         then
+            Spec_Id := Entity (P);
+
+         elsif not Legal then
             return;
          end if;
 
@@ -5297,7 +5306,16 @@ package body Sem_Attr is
          --  the case, then the aspect or pragma is illegal. Return as analysis
          --  cannot be carried out.
 
-         if not Legal then
+         --  The exception to this rule is when generating C since in this case
+         --  postconditions are inlined.
+
+         if No (Spec_Id)
+           and then Modify_Tree_For_C
+           and then In_Inlined_Body
+         then
+            Spec_Id := Entity (P);
+
+         elsif not Legal then
             return;
          end if;
 
@@ -5326,7 +5344,9 @@ package body Sem_Attr is
             if Is_Entity_Name (P) then
                Pref_Id := Entity (P);
 
-               if Ekind_In (Pref_Id, E_Function, E_Generic_Function) then
+               if Ekind_In (Pref_Id, E_Function, E_Generic_Function)
+                 and then Ekind (Spec_Id) = Ekind (Pref_Id)
+               then
                   if Denote_Same_Function (Pref_Id, Spec_Id) then
 
                      --  Correct the prefix of the attribute when the context
@@ -5889,7 +5909,7 @@ package body Sem_Attr is
 
          else
             Error_Attr_P
-              ("prefix of% attribute must be remote access to classwide");
+              ("prefix of% attribute must be remote access-to-class-wide");
          end if;
 
       ----------
@@ -7400,35 +7420,51 @@ package body Sem_Attr is
          elsif Id = Attribute_Enum_Rep then
             if Is_Entity_Name (P) then
 
-               --  The prefix denotes a constant or an enumeration literal, the
-               --  attribute can be folded. A generated loop variable for an
-               --  iterator is a constant, but cannot be constant-folded.
+               declare
+                  Enum_Expr : Node_Id;
+                  --  The enumeration-type expression of interest
 
-               if Ekind (Entity (P)) = E_Enumeration_Literal
-                 or else
-                   (Ekind (Entity (P)) = E_Constant
-                     and then Ekind (Scope (Entity (P))) /= E_Loop)
-               then
-                  P_Entity := Etype (P);
+               begin
+                  --  P'Enum_Rep case
 
-               --  The prefix denotes an enumeration type. Folding can occur
-               --  when the argument is a constant or an enumeration literal.
+                  if Ekind_In (Entity (P), E_Constant,
+                                           E_Enumeration_Literal)
+                  then
+                     Enum_Expr := P;
 
-               elsif Is_Enumeration_Type (Entity (P))
-                 and then Present (E1)
-                 and then Is_Entity_Name (E1)
-                 and then Ekind_In (Entity (E1), E_Constant,
-                                                 E_Enumeration_Literal)
-               then
-                  P_Entity := Etype (P);
+                  --  Enum_Type'Enum_Rep (E1) case
 
-               --  Otherwise the attribute must be expanded into a conversion
-               --  and evaluated at run time.
+                  elsif Is_Enumeration_Type (Entity (P)) then
+                     Enum_Expr := E1;
 
-               else
-                  Check_Expressions;
-                  return;
-               end if;
+                  --  Otherwise the attribute must be expanded into a
+                  --  conversion and evaluated at run time.
+
+                  else
+                     Check_Expressions;
+                     return;
+                  end if;
+
+                  --  We can fold if the expression is an enumeration
+                  --  literal, or if it denotes a constant whose value
+                  --  is known at compile time.
+
+                  if Nkind (Enum_Expr) in N_Has_Entity
+                    and then (Ekind (Entity (Enum_Expr)) =
+                                E_Enumeration_Literal
+                      or else
+                       (Ekind (Entity (Enum_Expr)) = E_Constant
+                          and then Nkind (Parent (Entity (Enum_Expr))) =
+                                     N_Object_Declaration
+                          and then Compile_Time_Known_Value
+                                     (Expression (Parent (Entity (P))))))
+                  then
+                     P_Entity := Etype (P);
+                  else
+                     Check_Expressions;
+                     return;
+                  end if;
+               end;
 
             --  Otherwise the attribute is illegal, do not attempt to perform
             --  any kind of folding.

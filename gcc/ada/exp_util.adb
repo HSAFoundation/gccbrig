@@ -34,6 +34,7 @@ with Errout;   use Errout;
 with Exp_Aggr; use Exp_Aggr;
 with Exp_Ch6;  use Exp_Ch6;
 with Exp_Ch7;  use Exp_Ch7;
+with Exp_Ch11; use Exp_Ch11;
 with Ghost;    use Ghost;
 with Inline;   use Inline;
 with Itypes;   use Itypes;
@@ -355,12 +356,15 @@ package body Exp_Util is
                return;
 
             --  Otherwise we perform a conversion from the current type, which
-            --  must be Standard.Boolean, to the desired type.
+            --  must be Standard.Boolean, to the desired type. Use the base
+            --  type to prevent spurious constraint checks that are extraneous
+            --  to the transformation. The type and its base have the same
+            --  representation, standard or otherwise.
 
             else
                Set_Analyzed (N);
-               Rewrite (N, Convert_To (T, N));
-               Analyze_And_Resolve (N, T);
+               Rewrite (N, Convert_To (Base_Type (T), N));
+               Analyze_And_Resolve (N, Base_Type (T));
             end if;
          end;
       end if;
@@ -721,7 +725,7 @@ package body Exp_Util is
          --  For deallocation of class-wide types we obtain the value of
          --  alignment from the Type Specific Record of the deallocated object.
          --  This is needed because the frontend expansion of class-wide types
-         --  into equivalent types confuses the backend.
+         --  into equivalent types confuses the back end.
 
          else
             --  Generate:
@@ -926,6 +930,59 @@ package body Exp_Util is
          end if;
       end;
    end Build_Allocate_Deallocate_Proc;
+
+   -------------------------------
+   -- Build_Abort_Undefer_Block --
+   -------------------------------
+
+   function Build_Abort_Undefer_Block
+     (Loc     : Source_Ptr;
+      Stmts   : List_Id;
+      Context : Node_Id) return Node_Id
+   is
+      Exceptions_OK : constant Boolean :=
+                        not Restriction_Active (No_Exception_Propagation);
+
+      AUD    : Entity_Id;
+      Blk    : Node_Id;
+      Blk_Id : Entity_Id;
+      HSS    : Node_Id;
+
+   begin
+      --  The block should be generated only when undeferring abort in the
+      --  context of a potential exception.
+
+      pragma Assert (Abort_Allowed and Exceptions_OK);
+
+      --  Generate:
+      --    begin
+      --       <Stmts>
+      --    at end
+      --       Abort_Undefer_Direct;
+      --    end;
+
+      AUD := RTE (RE_Abort_Undefer_Direct);
+
+      HSS :=
+        Make_Handled_Sequence_Of_Statements (Loc,
+          Statements  => Stmts,
+          At_End_Proc => New_Occurrence_Of (AUD, Loc));
+
+      Blk :=
+        Make_Block_Statement (Loc,
+          Handled_Statement_Sequence => HSS);
+      Set_Is_Abort_Block (Blk);
+
+      Add_Block_Identifier  (Blk, Blk_Id);
+      Expand_At_End_Handler (HSS, Blk_Id);
+
+      --  Present the Abort_Undefer_Direct function to the back end to inline
+      --  the call to the routine.
+
+      Add_Inlined_Body (AUD, Context);
+
+      return Blk;
+   end Build_Abort_Undefer_Block;
 
    --------------------------
    -- Build_Procedure_Form --
@@ -1650,6 +1707,133 @@ package body Exp_Util is
       return Build_Task_Image_Function (Loc, Decls, Stats, Res);
    end Build_Task_Record_Image;
 
+   ---------------------------------------
+   -- Build_Transient_Object_Statements --
+   ---------------------------------------
+
+   procedure Build_Transient_Object_Statements
+     (Obj_Decl     : Node_Id;
+      Fin_Call     : out Node_Id;
+      Hook_Assign  : out Node_Id;
+      Hook_Clear   : out Node_Id;
+      Hook_Decl    : out Node_Id;
+      Ptr_Decl     : out Node_Id;
+      Finalize_Obj : Boolean := True)
+   is
+      Loc     : constant Source_Ptr := Sloc (Obj_Decl);
+      Obj_Id  : constant Entity_Id  := Defining_Entity (Obj_Decl);
+      Obj_Typ : constant Entity_Id  := Base_Type (Etype (Obj_Id));
+
+      Desig_Typ : Entity_Id;
+      Hook_Expr : Node_Id;
+      Hook_Id   : Entity_Id;
+      Obj_Ref   : Node_Id;
+      Ptr_Typ   : Entity_Id;
+
+   begin
+      --  Recover the type of the object
+
+      Desig_Typ := Obj_Typ;
+
+      if Is_Access_Type (Desig_Typ) then
+         Desig_Typ := Available_View (Designated_Type (Desig_Typ));
+      end if;
+
+      --  Create an access type which provides a reference to the transient
+      --  object. Generate:
+
+      --    type Ptr_Typ is access all Desig_Typ;
+
+      Ptr_Typ := Make_Temporary (Loc, 'A');
+      Set_Ekind (Ptr_Typ, E_General_Access_Type);
+      Set_Directly_Designated_Type (Ptr_Typ, Desig_Typ);
+
+      Ptr_Decl :=
+        Make_Full_Type_Declaration (Loc,
+          Defining_Identifier => Ptr_Typ,
+          Type_Definition     =>
+            Make_Access_To_Object_Definition (Loc,
+              All_Present        => True,
+              Subtype_Indication => New_Occurrence_Of (Desig_Typ, Loc)));
+
+      --  Create a temporary check which acts as a hook to the transient
+      --  object. Generate:
+
+      --    Hook : Ptr_Typ := null;
+
+      Hook_Id := Make_Temporary (Loc, 'T');
+      Set_Ekind (Hook_Id, E_Variable);
+      Set_Etype (Hook_Id, Ptr_Typ);
+
+      Hook_Decl :=
+        Make_Object_Declaration (Loc,
+          Defining_Identifier => Hook_Id,
+          Object_Definition   => New_Occurrence_Of (Ptr_Typ, Loc),
+          Expression          => Make_Null (Loc));
+
+      --  Mark the temporary as a hook. This signals the machinery in
+      --  Build_Finalizer to recognize this special case.
+
+      Set_Status_Flag_Or_Transient_Decl (Hook_Id, Obj_Decl);
+
+      --  Hook the transient object to the temporary. Generate:
+
+      --    Hook := Ptr_Typ (Obj_Id);
+      --      <or>
+      --    Hool := Obj_Id'Unrestricted_Access;
+
+      if Is_Access_Type (Obj_Typ) then
+         Hook_Expr :=
+           Unchecked_Convert_To (Ptr_Typ, New_Occurrence_Of (Obj_Id, Loc));
+      else
+         Hook_Expr :=
+           Make_Attribute_Reference (Loc,
+             Prefix         => New_Occurrence_Of (Obj_Id, Loc),
+             Attribute_Name => Name_Unrestricted_Access);
+      end if;
+
+      Hook_Assign :=
+        Make_Assignment_Statement (Loc,
+          Name       => New_Occurrence_Of (Hook_Id, Loc),
+          Expression => Hook_Expr);
+
+      --  Crear the hook prior to finalizing the object. Generate:
+
+      --    Hook := null;
+
+      Hook_Clear :=
+        Make_Assignment_Statement (Loc,
+          Name       => New_Occurrence_Of (Hook_Id, Loc),
+          Expression => Make_Null (Loc));
+
+      --  Finalize the object. Generate:
+
+      --    [Deep_]Finalize (Obj_Ref[.all]);
+
+      if Finalize_Obj then
+         Obj_Ref := New_Occurrence_Of (Obj_Id, Loc);
+
+         if Is_Access_Type (Obj_Typ) then
+            Obj_Ref := Make_Explicit_Dereference (Loc, Obj_Ref);
+            Set_Etype (Obj_Ref, Desig_Typ);
+         end if;
+
+         Fin_Call := Make_Final_Call (Obj_Ref, Desig_Typ);
+
+      --  Otherwise finalize the hook. Generate:
+
+      --    [Deep_]Finalize (Hook.all);
+
+      else
+         Fin_Call :=
+           Make_Final_Call (
+             Obj_Ref =>
+               Make_Explicit_Dereference (Loc,
+                 Prefix => New_Occurrence_Of (Hook_Id, Loc)),
+             Typ     => Desig_Typ);
+      end if;
+   end Build_Transient_Object_Statements;
+
    -----------------------------
    -- Check_Float_Op_Overflow --
    -----------------------------
@@ -2311,7 +2495,7 @@ package body Exp_Util is
       --  If the type of the expression is an internally generated type it
       --  may not be necessary to create a new subtype. However there are two
       --  exceptions: references to the current instances, and aliased array
-      --  object declarations for which the backend needs to create a template.
+      --  object declarations for which the back end has to create a template.
 
       elsif Is_Constrained (Exp_Typ)
         and then not Is_Class_Wide_Type (Unc_Type)
@@ -2948,10 +3132,9 @@ package body Exp_Util is
                                           N_Discriminant_Association,
                                           N_Parameter_Association,
                                           N_Pragma_Argument_Association)
-              and then not Nkind_In
-                             (Parent (Par), N_Function_Call,
-                                            N_Procedure_Call_Statement,
-                                            N_Entry_Call_Statement)
+              and then not Nkind_In (Parent (Par), N_Function_Call,
+                                                   N_Procedure_Call_Statement,
+                                                   N_Entry_Call_Statement)
 
             then
                return Par;
@@ -4720,25 +4903,41 @@ package body Exp_Util is
          Expr : Node_Id := Original_Node (N);
 
       begin
-         if Nkind (Expr) = N_Function_Call then
-            Expr := Name (Expr);
-
          --  When a function call appears in Object.Operation format, the
-         --  original representation has two possible forms depending on the
-         --  availability of actual parameters:
+         --  original representation has several possible forms depending on
+         --  the availability and form of actual parameters:
 
-         --    Obj.Func_Call           N_Selected_Component
-         --    Obj.Func_Call (Param)   N_Indexed_Component
+         --    Obj.Func                    N_Selected_Component
+         --    Obj.Func (Actual)           N_Indexed_Component
+         --    Obj.Func (Formal => Actual) N_Function_Call, whose Name is an
+         --                                N_Selected_Component
 
-         else
-            if Nkind (Expr) = N_Indexed_Component then
+         case Nkind (Expr) is
+            when N_Function_Call =>
+               Expr := Name (Expr);
+
+               --  Check for "Obj.Func (Formal => Actual)" case
+
+               if Nkind (Expr) = N_Selected_Component then
+                  Expr := Selector_Name (Expr);
+               end if;
+
+            --  "Obj.Func (Actual)" case
+
+            when N_Indexed_Component =>
                Expr := Prefix (Expr);
-            end if;
 
-            if Nkind (Expr) = N_Selected_Component then
+               if Nkind (Expr) = N_Selected_Component then
+                  Expr := Selector_Name (Expr);
+               end if;
+
+            --  "Obj.Func" case
+
+            when N_Selected_Component =>
                Expr := Selector_Name (Expr);
-            end if;
-         end if;
+
+            when others => null;
+         end case;
 
          return
            Nkind_In (Expr, N_Expanded_Name, N_Identifier)
@@ -5049,7 +5248,7 @@ package body Exp_Util is
          --  explicit aliases of it:
 
          --    do
-         --       Trans_Id : Ctrl_Typ ...;  --  controlled transient object
+         --       Trans_Id : Ctrl_Typ ...;  --  transient object
          --       Alias : ... := Trans_Id;  --  object is aliased
          --       Val : constant Boolean :=
          --               ... Alias ...;    --  aliasing ends
@@ -5217,6 +5416,10 @@ package body Exp_Util is
           and then Needs_Finalization (Desig)
           and then Requires_Transient_Scope (Desig)
           and then Nkind (Rel_Node) /= N_Simple_Return_Statement
+
+          --  Do not consider a transient object that was already processed
+
+          and then not Is_Finalized_Transient (Obj_Id)
 
           --  Do not consider renamed or 'reference-d transient objects because
           --  the act of renaming extends the object's lifetime.
@@ -6390,30 +6593,19 @@ package body Exp_Util is
    -------------------------
 
    function Make_Invariant_Call (Expr : Node_Id) return Node_Id is
-      Loc : constant Source_Ptr := Sloc (Expr);
-      Typ : Entity_Id;
+      Loc     : constant Source_Ptr := Sloc (Expr);
+      Typ     : constant Entity_Id  := Base_Type (Etype (Expr));
+      Proc_Id : Entity_Id;
 
    begin
-      Typ := Etype (Expr);
+      pragma Assert (Has_Invariants (Typ));
 
-      --  Subtypes may be subject to invariants coming from their respective
-      --  base types. The subtype may be fully or partially private.
-
-      if Ekind_In (Typ, E_Array_Subtype,
-                        E_Private_Subtype,
-                        E_Record_Subtype,
-                        E_Record_Subtype_With_Private)
-      then
-         Typ := Base_Type (Typ);
-      end if;
-
-      pragma Assert
-        (Has_Invariants (Typ) and then Present (Invariant_Procedure (Typ)));
+      Proc_Id := Invariant_Procedure (Typ);
+      pragma Assert (Present (Proc_Id));
 
       return
         Make_Procedure_Call_Statement (Loc,
-          Name                   =>
-            New_Occurrence_Of (Invariant_Procedure (Typ), Loc),
+          Name                   => New_Occurrence_Of (Proc_Id, Loc),
           Parameter_Associations => New_List (Relocate_Node (Expr)));
    end Make_Invariant_Call;
 
@@ -7686,14 +7878,23 @@ package body Exp_Util is
         and (Inside_A_Generic or not Full_Analysis or not GNATprove_Mode)
       then
          return;
-      end if;
 
       --  Cannot generate temporaries if the invocation to remove side effects
       --  was issued too early and the type of the expression is not resolved
       --  (this happens because routines Duplicate_Subexpr_XX implicitly invoke
       --  Remove_Side_Effects).
 
-      if No (Exp_Type) or else Ekind (Exp_Type) = E_Access_Attribute_Type then
+      elsif No (Exp_Type)
+        or else Ekind (Exp_Type) = E_Access_Attribute_Type
+      then
+         return;
+
+      --  Nothing to do if prior expansion determined that a function call does
+      --  not require side effect removal.
+
+      elsif Nkind (Exp) = N_Function_Call
+        and then No_Side_Effect_Removal (Exp)
+      then
          return;
 
       --  No action needed for side-effect free expressions
@@ -8239,11 +8440,19 @@ package body Exp_Util is
             if Lib_Level and then Finalize_Storage_Only (Obj_Typ) then
                null;
 
-            --  Transient variables are treated separately in order to minimize
-            --  the size of the generated code. See Exp_Ch7.Process_Transient_
-            --  Objects.
+            --  Finalization of transient objects are treated separately in
+            --  order to handle sensitive cases. These include:
 
-            elsif Is_Processed_Transient (Obj_Id) then
+            --    * Aggregate expansion
+            --    * If, case, and expression with actions expansion
+            --    * Transient scopes
+
+            --  If one of those contexts has marked the transient object as
+            --  ignored, do not generate finalization actions for it.
+
+            elsif Is_Finalized_Transient (Obj_Id)
+              or else Is_Ignored_Transient (Obj_Id)
+            then
                null;
 
             --  Ignored Ghost objects do not need any cleanup actions because
@@ -8263,16 +8472,21 @@ package body Exp_Util is
                return False;
 
             --  The object is of the form:
-            --    Obj : Typ [:= Expr];
+            --    Obj : [constant] Typ [:= Expr];
             --
-            --  Do not process the incomplete view of a deferred constant. Do
-            --  not consider tag-to-class-wide conversions.
+            --  Do not process tag-to-class-wide conversions because they do
+            --  not yield an object. Do not process the incomplete view of a
+            --  deferred constant. Note that an object initialized by means
+            --  of a build-in-place function call may appear as a deferred
+            --  constant after expansion activities. These kinds of objects
+            --  must be finalized.
 
             elsif not Is_Imported (Obj_Id)
               and then Needs_Finalization (Obj_Typ)
-              and then not (Ekind (Obj_Id) = E_Constant
-                             and then not Has_Completion (Obj_Id))
               and then not Is_Tag_To_Class_Wide_Conversion (Obj_Id)
+              and then not (Ekind (Obj_Id) = E_Constant
+                             and then not Has_Completion (Obj_Id)
+                             and then No (BIP_Initialization_Call (Obj_Id)))
             then
                return True;
 
@@ -8294,8 +8508,8 @@ package body Exp_Util is
             then
                return True;
 
-            --  Processing for "hook" objects generated for controlled
-            --  transients declared inside an Expression_With_Actions.
+            --  Processing for "hook" objects generated for transient objects
+            --  declared inside an Expression_With_Actions.
 
             elsif Is_Access_Type (Obj_Typ)
               and then Present (Status_Flag_Or_Transient_Decl (Obj_Id))
@@ -8443,7 +8657,7 @@ package body Exp_Util is
          elsif Nkind (Decl) = N_Block_Statement
            and then
 
-           --  Handle a rare case caused by a controlled transient variable
+           --  Handle a rare case caused by a controlled transient object
            --  created as part of a record init proc. The variable is wrapped
            --  in a block, but the block is not associated with a transient
            --  scope.
@@ -8625,7 +8839,7 @@ package body Exp_Util is
       --  alignment is known to be at least the maximum alignment for the
       --  target or if both alignments are known and the output type's
       --  alignment is no stricter than the input's. We can use the component
-      --  type alignement for an array if a type is an unpacked array type.
+      --  type alignment for an array if a type is an unpacked array type.
 
       if Present (Alignment_Clause (Otyp)) then
          Oalign := Expr_Value (Expression (Alignment_Clause (Otyp)));
@@ -9067,7 +9281,7 @@ package body Exp_Util is
       --  Note on checks that could raise Constraint_Error. Strictly, if we
       --  take advantage of 11.6, these checks do not count as side effects.
       --  However, we would prefer to consider that they are side effects,
-      --  since the backend CSE does not work very well on expressions which
+      --  since the back end CSE does not work very well on expressions which
       --  can raise Constraint_Error. On the other hand if we don't consider
       --  them to be side effect free, then we get some awkward expansions
       --  in -gnato mode, resulting in code insertions at a point where we

@@ -812,6 +812,14 @@ package body Sem_Ch4 is
          Check_Restriction (No_Local_Protected_Objects, N);
       end if;
 
+      --  Likewise for No_Local_Timing_Events
+
+      if Has_Timing_Event (Designated_Type (Acc_Type))
+        and then not Is_Library_Level_Entity (Acc_Type)
+      then
+         Check_Restriction (No_Local_Timing_Events, N);
+      end if;
+
       --  If the No_Streams restriction is set, check that the type of the
       --  object is not, and does not contain, any subtype derived from
       --  Ada.Streams.Root_Stream_Type. Note that we guard the call to
@@ -1482,7 +1490,7 @@ package body Sem_Ch4 is
       Others_Present : Boolean;
       --  Indicates if Others was present
 
-      Wrong_Alt : Node_Id;
+      Wrong_Alt : Node_Id := Empty;
       --  For error reporting
 
    --  Start of processing for Analyze_Case_Expression
@@ -3079,6 +3087,21 @@ package body Sem_Ch4 is
       Subp_Type   : constant Entity_Id := Etype (Nam);
       Norm_OK     : Boolean;
 
+      function Compatible_Types_In_Predicate
+        (T1 : Entity_Id;
+         T2 : Entity_Id) return Boolean;
+      --  For an Ada 2012 predicate or invariant, a call may mention an
+      --  incomplete type, while resolution of the corresponding predicate
+      --  function may see the full view, as a consequence of the delayed
+      --  resolution of the corresponding expressions. This may occur in
+      --  the body of a predicate function, or in a call to such. Anomalies
+      --  involving private and full views can also happen. In each case,
+      --  rewrite node or add conversions to remove spurious type errors.
+
+      procedure Indicate_Name_And_Type;
+      --  If candidate interpretation matches, indicate name and type of result
+      --  on call node.
+
       function Operator_Hidden_By (Fun : Entity_Id) return Boolean;
       --  There may be a user-defined operator that hides the current
       --  interpretation. We must check for this independently of the
@@ -3092,9 +3115,59 @@ package body Sem_Ch4 is
       --  Finally, The abstract operations on address do not hide the
       --  predefined operator (this is the purpose of making them abstract).
 
-      procedure Indicate_Name_And_Type;
-      --  If candidate interpretation matches, indicate name and type of
-      --  result on call node.
+      -----------------------------------
+      -- Compatible_Types_In_Predicate --
+      -----------------------------------
+
+      function Compatible_Types_In_Predicate
+        (T1 : Entity_Id;
+         T2 : Entity_Id) return Boolean
+      is
+         function Common_Type (T : Entity_Id) return Entity_Id;
+         --  Find non-private full view if any, without going to ancestor type
+         --  (as opposed to Underlying_Type).
+
+         -----------------
+         -- Common_Type --
+         -----------------
+
+         function Common_Type (T : Entity_Id) return Entity_Id is
+         begin
+            if Is_Private_Type (T) and then Present (Full_View (T)) then
+               return Base_Type (Full_View (T));
+            else
+               return Base_Type (T);
+            end if;
+         end Common_Type;
+
+      --  Start of processing for Compatible_Types_In_Predicate
+
+      begin
+         if (Ekind (Current_Scope) = E_Function
+              and then Is_Predicate_Function (Current_Scope))
+           or else
+            (Ekind (Nam) = E_Function
+              and then Is_Predicate_Function (Nam))
+         then
+            if Is_Incomplete_Type (T1)
+              and then Present (Full_View (T1))
+              and then Full_View (T1) = T2
+            then
+               Set_Etype (Formal, Etype (Actual));
+               return True;
+
+            elsif Common_Type (T1) = Common_Type (T2) then
+               Rewrite (Actual, Unchecked_Convert_To (Etype (Formal), Actual));
+               return True;
+
+            else
+               return False;
+            end if;
+
+         else
+            return False;
+         end if;
+      end Compatible_Types_In_Predicate;
 
       ----------------------------
       -- Indicate_Name_And_Type --
@@ -3389,17 +3462,78 @@ package body Sem_Ch4 is
                   Next_Actual (Actual);
                   Next_Formal (Formal);
 
-               --  For an Ada 2012 predicate or invariant, a call may mention
-               --  an incomplete type, while resolution of the corresponding
-               --  predicate function may see the full view, as a consequence
-               --  of the delayed resolution of the corresponding expressions.
+               --  Under relaxed RM semantics silently replace occurrences of
+               --  null by System.Address_Null. We only do this if we know that
+               --  an error will otherwise be issued.
 
-               elsif Ekind (Etype (Formal)) = E_Incomplete_Type
-                 and then Full_View (Etype (Formal)) = Etype (Actual)
+               elsif Null_To_Null_Address_Convert_OK (Actual, Etype (Formal))
+                 and then (Report and not Is_Indexed and not Is_Indirect)
                then
-                  Set_Etype (Formal, Etype (Actual));
+                  Replace_Null_By_Null_Address (Actual);
+                  Analyze_And_Resolve (Actual, Etype (Formal));
                   Next_Actual (Actual);
                   Next_Formal (Formal);
+
+               elsif Compatible_Types_In_Predicate
+                       (Etype (Formal), Etype (Actual))
+               then
+                  Next_Actual (Actual);
+                  Next_Formal (Formal);
+
+               --  In a complex case where an enclosing generic and a nested
+               --  generic package, both declared with partially parameterized
+               --  formal subprograms with the same names, are instantiated
+               --  with the same type, the types of the actual parameter and
+               --  that of the formal may appear incompatible at first sight.
+
+               --   generic
+               --      type Outer_T is private;
+               --      with function Func (Formal : Outer_T)
+               --                         return ... is <>;
+
+               --   package Outer_Gen is
+               --      generic
+               --         type Inner_T is private;
+               --         with function Func (Formal : Inner_T)   --  (1)
+               --           return ... is <>;
+
+               --      package Inner_Gen is
+               --         function Inner_Func (Formal : Inner_T)  --  (2)
+               --           return ... is (Func (Formal));
+               --      end Inner_Gen;
+               --   end Outer_Generic;
+
+               --   package Outer_Inst is new Outer_Gen (Actual_T);
+               --   package Inner_Inst is new Outer_Inst.Inner_Gen (Actual_T);
+
+               --  In the example above, the type of parameter
+               --  Inner_Func.Formal at (2) is incompatible with the type of
+               --  Func.Formal at (1) in the context of instantiations
+               --  Outer_Inst and Inner_Inst. In reality both types are generic
+               --  actual subtypes renaming base type Actual_T as part of the
+               --  generic prologues for the instantiations.
+
+               --  Recognize this case and add a type conversion to allow this
+               --  kind of generic actual subtype conformance. Note that this
+               --  is done only when the call is non-overloaded because the
+               --  resolution mechanism already has the means to disambiguate
+               --  similar cases.
+
+               elsif not Is_Overloaded (Name (N))
+                 and then Is_Type (Etype (Actual))
+                 and then Is_Type (Etype (Formal))
+                 and then Is_Generic_Actual_Type (Etype (Actual))
+                 and then Is_Generic_Actual_Type (Etype (Formal))
+                 and then Base_Type (Etype (Actual)) =
+                          Base_Type (Etype (Formal))
+               then
+                  Rewrite (Actual,
+                    Convert_To (Etype (Formal), Relocate_Node (Actual)));
+                  Analyze_And_Resolve (Actual, Etype (Formal));
+                  Next_Actual (Actual);
+                  Next_Formal (Formal);
+
+               --  Handle failed type check
 
                else
                   if Debug_Flag_E then
@@ -3909,7 +4043,16 @@ package body Sem_Ch4 is
       if Warn_On_Suspicious_Contract
         and then not Referenced (Loop_Id, Cond)
       then
-         Error_Msg_N ("?T?unused variable &", Loop_Id);
+         --  Generating C, this check causes spurious warnings on inlined
+         --  postconditions; we can safely disable it because this check
+         --  was previously performed when analyzing the internally built
+         --  postconditions procedure.
+
+         if Modify_Tree_For_C and then In_Inlined_Body then
+            null;
+         else
+            Error_Msg_N ("?T?unused variable &", Loop_Id);
+         end if;
       end if;
 
       --  Diagnose a possible misuse of the SOME existential quantifier. When
@@ -4661,8 +4804,14 @@ package body Sem_Ch4 is
          In_Scope := In_Open_Scopes (Prefix_Type);
 
          while Present (Comp) loop
+            --  Do not examine private operations of the type if not within
+            --  its scope.
+
             if Chars (Comp) = Chars (Sel) then
-               if Is_Overloadable (Comp) then
+               if Is_Overloadable (Comp)
+                 and then (In_Scope
+                            or else Comp /= First_Private_Entity (Type_To_Use))
+               then
                   Add_One_Interp (Sel, Comp, Etype (Comp));
 
                   --  If the prefix is tagged, the correct interpretation may
@@ -5246,8 +5395,8 @@ package body Sem_Ch4 is
         and then Is_EVF_Expression (Expr)
       then
          Error_Msg_N
-           ("formal parameter with Extensions_Visible False cannot be "
-            & "converted to class-wide type", Expr);
+           ("formal parameter cannot be converted to class-wide type when "
+            & "Extensions_Visible is False", Expr);
       end if;
    end Analyze_Type_Conversion;
 
@@ -5658,7 +5807,7 @@ package body Sem_Ch4 is
                case Nr_Of_Suggestions is
                   when 1      => Suggestion_1 := Comp;
                   when 2      => Suggestion_2 := Comp;
-                  when others => exit;
+                  when others => null;
                end case;
             end if;
          end if;
@@ -6789,6 +6938,20 @@ package body Sem_Ch4 is
 
                      return;
                   end;
+
+               --  Under relaxed RM semantics silently replace occurrences of
+               --  null by System.Address_Null.
+
+               elsif Null_To_Null_Address_Convert_OK (N) then
+                  Replace_Null_By_Null_Address (N);
+
+                  if Nkind_In (N, N_Op_Ge, N_Op_Gt, N_Op_Le, N_Op_Lt) then
+                     Analyze_Comparison_Op (N);
+                  else
+                     Analyze_Arithmetic_Op (N);
+                  end if;
+
+                  return;
                end if;
 
             --  Comparisons on A'Access are common enough to deserve a
@@ -6856,6 +7019,14 @@ package body Sem_Ch4 is
                if Address_Integer_Convert_OK (Etype (R), Etype (L)) then
                   Rewrite (R,
                     Unchecked_Convert_To (Etype (L), Relocate_Node (R)));
+                  Analyze_Equality_Op (N);
+                  return;
+
+               --  Under relaxed RM semantics silently replace occurrences of
+               --  null by System.Address_Null.
+
+               elsif Null_To_Null_Address_Convert_OK (N) then
+                  Replace_Null_By_Null_Address (N);
                   Analyze_Equality_Op (N);
                   return;
                end if;

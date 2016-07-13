@@ -62,7 +62,6 @@ with Sinput;   use Sinput;
 with Snames;   use Snames;
 with Stand;    use Stand;
 with Sinfo;    use Sinfo;
-with Stringt;  use Stringt;
 with Targparm; use Targparm;
 with Ttypes;   use Ttypes;
 with Tbuild;   use Tbuild;
@@ -274,9 +273,10 @@ package body Sem_Ch13 is
 
    --    for X'Address use Expr
 
-   --  where Expr is of the form Y'Address or recursively is a reference to a
-   --  constant of either of these forms, and X and Y are entities of objects,
-   --  then if Y has a smaller alignment than X, that merits a warning about
+   --  where Expr has a value known at compile time or is of the form Y'Address
+   --  or recursively is a reference to a constant initialized with either of
+   --  these forms, and the value of Expr is not a multiple of X's alignment,
+   --  or if Y has a smaller alignment than X, then that merits a warning about
    --  possible bad alignment. The following table collects address clauses of
    --  this kind. We put these in a table so that they can be checked after the
    --  back end has completed annotation of the alignments of objects, since we
@@ -287,13 +287,16 @@ package body Sem_Ch13 is
       --  The address clause
 
       X : Entity_Id;
-      --  The entity of the object overlaying Y
+      --  The entity of the object subject to the address clause
+
+      A : Uint;
+      --  The value of the address in the first case
 
       Y : Entity_Id;
-      --  The entity of the object being overlaid
+      --  The entity of the object being overlaid in the second case
 
       Off : Boolean;
-      --  Whether the address is offset within Y
+      --  Whether the address is offset within Y in the second case
    end record;
 
    package Address_Clause_Checks is new Table.Table (
@@ -1934,9 +1937,11 @@ package body Sem_Ch13 is
             if not Implementation_Defined_Aspect (A_Id) then
                Error_Msg_Name_1 := Nam;
 
-               --  Not allowed for renaming declarations
+               --  Not allowed for renaming declarations. Examine the original
+               --  node because a subprogram renaming may have been rewritten
+               --  as a body.
 
-               if Nkind (N) in N_Renaming_Declaration then
+               if Nkind (Original_Node (N)) in N_Renaming_Declaration then
                   Error_Msg_N
                     ("aspect % not allowed for renaming declaration",
                      Aspect);
@@ -3818,8 +3823,8 @@ package body Sem_Ch13 is
       U_Ent : Entity_Id;
       --  The underlying entity to which the attribute applies. Generally this
       --  is the Underlying_Type of Ent, except in the case where the clause
-      --  applies to full view of incomplete type or private type in which case
-      --  U_Ent is just a copy of Ent.
+      --  applies to the full view of an incomplete or private type, in which
+      --  case U_Ent is just a copy of Ent.
 
       FOnly : Boolean := False;
       --  Reset to True for subtype specific attribute (Alignment, Size)
@@ -4850,6 +4855,40 @@ package body Sem_Ch13 is
                         Set_Overlays_Constant (U_Ent);
                      end if;
 
+                     --  If the address clause is of the form:
+
+                     --    for X'Address use Y'Address;
+
+                     --  or
+
+                     --    C : constant Address := Y'Address;
+                     --    ...
+                     --    for X'Address use C;
+
+                     --  then we make an entry in the table to check the size
+                     --  and alignment of the overlaying variable. But we defer
+                     --  this check till after code generation to take full
+                     --  advantage of the annotation done by the back end.
+
+                     --  If the entity has a generic type, the check will be
+                     --  performed in the instance if the actual type justifies
+                     --  it, and we do not insert the clause in the table to
+                     --  prevent spurious warnings.
+
+                     --  Note: we used to test Comes_From_Source and only give
+                     --  this warning for source entities, but we have removed
+                     --  this test. It really seems bogus to generate overlays
+                     --  that would trigger this warning in generated code.
+                     --  Furthermore, by removing the test, we handle the
+                     --  aspect case properly.
+
+                     if Is_Object (O_Ent)
+                       and then not Is_Generic_Type (Etype (U_Ent))
+                       and then Address_Clause_Overlay_Warnings
+                     then
+                        Address_Clause_Checks.Append
+                          ((N, U_Ent, No_Uint, O_Ent, Off));
+                     end if;
                   else
                      --  If this is not an overlay, mark a variable as being
                      --  volatile to prevent unwanted optimizations. It's a
@@ -4862,6 +4901,21 @@ package body Sem_Ch13 is
                      if Ekind (U_Ent) = E_Variable then
                         Set_Treat_As_Volatile (U_Ent);
                      end if;
+
+                     --  Make an entry in the table for an absolute address as
+                     --  above to check that the value is compatible with the
+                     --  alignment of the object.
+
+                     declare
+                        Addr : constant Node_Id := Address_Value (Expr);
+                     begin
+                        if Compile_Time_Known_Value (Addr)
+                          and then Address_Clause_Overlay_Warnings
+                        then
+                           Address_Clause_Checks.Append
+                             ((N, U_Ent, Expr_Value (Addr), Empty, False));
+                        end if;
+                     end;
                   end if;
 
                   --  Overlaying controlled objects is erroneous. Emit warning
@@ -4951,41 +5005,6 @@ package body Sem_Ch13 is
                   --  the variable, it is somewhere else.
 
                   Kill_Size_Check_Code (U_Ent);
-
-                  --  If the address clause is of the form:
-
-                  --    for Y'Address use X'Address
-
-                  --  or
-
-                  --    Const : constant Address := X'Address;
-                  --    ...
-                  --    for Y'Address use Const;
-
-                  --  then we make an entry in the table for checking the size
-                  --  and alignment of the overlaying variable. We defer this
-                  --  check till after code generation to take full advantage
-                  --  of the annotation done by the back end.
-
-                  --  If the entity has a generic type, the check will be
-                  --  performed in the instance if the actual type justifies
-                  --  it, and we do not insert the clause in the table to
-                  --  prevent spurious warnings.
-
-                  --  Note: we used to test Comes_From_Source and only give
-                  --  this warning for source entities, but we have removed
-                  --  this test. It really seems bogus to generate overlays
-                  --  that would trigger this warning in generated code.
-                  --  Furthermore, by removing the test, we handle the
-                  --  aspect case properly.
-
-                  if Present (O_Ent)
-                    and then Is_Object (O_Ent)
-                    and then not Is_Generic_Type (Etype (U_Ent))
-                    and then Address_Clause_Overlay_Warnings
-                  then
-                     Address_Clause_Checks.Append ((N, U_Ent, O_Ent, Off));
-                  end if;
                end;
 
             --  Not a valid entity for an address clause
@@ -6599,7 +6618,13 @@ package body Sem_Ch13 is
    -----------------------------------
 
    procedure Analyze_Freeze_Generic_Entity (N : Node_Id) is
+      E : constant Entity_Id := Entity (N);
+
    begin
+      if not Is_Frozen (E) and then Has_Delayed_Aspects (E) then
+         Analyze_Aspects_At_Freeze_Point (E);
+      end if;
+
       Freeze_Entity_Checks (N);
    end Analyze_Freeze_Generic_Entity;
 
@@ -8080,576 +8105,6 @@ package body Sem_Ch13 is
       return Prag;
    end Build_Export_Import_Pragma;
 
-   -------------------------------------------
-   -- Build_Invariant_Procedure_Declaration --
-   -------------------------------------------
-
-   function Build_Invariant_Procedure_Declaration
-     (Typ : Entity_Id) return Node_Id
-   is
-      Loc    : constant Source_Ptr := Sloc (Typ);
-      Decl   : Node_Id;
-      Obj_Id : Entity_Id;
-      SId    : Entity_Id;
-
-      Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
-
-   begin
-      --  Check for duplicate definitions
-
-      if Has_Invariants (Typ) and then Present (Invariant_Procedure (Typ)) then
-         return Empty;
-      end if;
-
-      --  The related type may be subject to pragma Ghost. Set the mode now to
-      --  ensure that the invariant procedure is properly marked as Ghost.
-
-      Set_Ghost_Mode_From_Entity (Typ);
-
-      SId :=
-        Make_Defining_Identifier (Loc,
-          Chars => New_External_Name (Chars (Typ), "Invariant"));
-      Set_Has_Invariants (Typ);
-      Set_Ekind (SId, E_Procedure);
-      Set_Etype (SId, Standard_Void_Type);
-      Set_Is_Invariant_Procedure (SId);
-      Set_Invariant_Procedure (Typ, SId);
-
-      --  Source Coverage Obligations might be attached to the invariant
-      --  expression this procedure evaluates, and we need debug info to be
-      --  able to assess the coverage achieved by evaluations.
-
-      if Opt.Generate_SCO then
-         Set_Needs_Debug_Info (SId);
-      end if;
-
-      --  Mark the invariant procedure explicitly as Ghost because it does not
-      --  come from source.
-
-      if Ghost_Mode > None then
-         Set_Is_Ghost_Entity (SId);
-      end if;
-
-      Obj_Id := Make_Defining_Identifier (Loc, New_Internal_Name ('I'));
-      Set_Etype (Obj_Id, Typ);
-
-      Decl :=
-        Make_Subprogram_Declaration (Loc,
-          Make_Procedure_Specification (Loc,
-            Defining_Unit_Name       => SId,
-            Parameter_Specifications => New_List (
-              Make_Parameter_Specification (Loc,
-                Defining_Identifier => Obj_Id,
-                Parameter_Type      => New_Occurrence_Of (Typ, Loc)))));
-
-      Ghost_Mode := Save_Ghost_Mode;
-
-      return Decl;
-   end Build_Invariant_Procedure_Declaration;
-
-   -------------------------------
-   -- Build_Invariant_Procedure --
-   -------------------------------
-
-   --  The procedure that is constructed here has the form
-
-   --  procedure typInvariant (Ixxx : typ) is
-   --  begin
-   --     pragma Check (Invariant, exp, "failed invariant from xxx");
-   --     pragma Check (Invariant, exp, "failed invariant from xxx");
-   --     ...
-   --     pragma Check (Invariant, exp, "failed inherited invariant from xxx");
-   --     ...
-   --  end typInvariant;
-
-   procedure Build_Invariant_Procedure (Typ : Entity_Id; N : Node_Id) is
-      procedure Add_Invariants
-        (T       : Entity_Id;
-         Obj_Id  : Entity_Id;
-         Stmts   : in out List_Id;
-         Inherit : Boolean);
-      --  Appends statements to Stmts for any invariants in the rep item chain
-      --  of the given type. If Inherit is False, then we only process entries
-      --  on the chain for the type Typ. If Inherit is True, then we ignore any
-      --  Invariant aspects, but we process all Invariant'Class aspects, adding
-      --  "inherited" to the exception message and generating an informational
-      --  message about the inheritance of an invariant.
-
-      --------------------
-      -- Add_Invariants --
-      --------------------
-
-      procedure Add_Invariants
-        (T       : Entity_Id;
-         Obj_Id  : Entity_Id;
-         Stmts   : in out List_Id;
-         Inherit : Boolean)
-      is
-         procedure Add_Invariant (Prag : Node_Id);
-         --  Create a runtime check to verify the exression of invariant pragma
-         --  Prag. All generated code is added to list Stmts.
-
-         -------------------
-         -- Add_Invariant --
-         -------------------
-
-         procedure Add_Invariant (Prag : Node_Id) is
-            procedure Replace_Type_Reference (N : Node_Id);
-            --  Replace a single occurrence N of the subtype name with a
-            --  reference to the formal of the predicate function. N can be an
-            --  identifier referencing the subtype, or a selected component,
-            --  representing an appropriately qualified occurrence of the
-            --  subtype name.
-
-            procedure Replace_Type_References is
-              new Replace_Type_References_Generic (Replace_Type_Reference);
-            --  Traverse an expression replacing all occurrences of the subtype
-            --  name with appropriate references to the formal of the predicate
-            --  function. Note that we must ensure that the type and entity
-            --  information is properly set in the replacement node, since we
-            --  will do a Preanalyze call of this expression without proper
-            --  visibility of the procedure argument.
-
-            ----------------------------
-            -- Replace_Type_Reference --
-            ----------------------------
-
-            --  Note: See comments in Add_Predicates.Replace_Type_Reference
-            --  regarding handling of Sloc and Comes_From_Source.
-
-            procedure Replace_Type_Reference (N : Node_Id) is
-               Nloc : constant Source_Ptr := Sloc (N);
-
-            begin
-               --  Add semantic information to node to be rewritten, for ASIS
-               --  navigation needs.
-
-               if Nkind (N) = N_Identifier then
-                  Set_Entity (N, T);
-                  Set_Etype  (N, T);
-
-               elsif Nkind (N) = N_Selected_Component then
-                  Analyze (Prefix (N));
-                  Set_Entity (Selector_Name (N), T);
-                  Set_Etype  (Selector_Name (N), T);
-               end if;
-
-               --  Invariant'Class, replace with T'Class (obj)
-
-               if Class_Present (Prag) then
-
-                  --  In ASIS mode, an inherited item is already analyzed,
-                  --  and the replacement has been done, so do not repeat
-                  --  the transformation to prevent a malformed tree.
-
-                  if ASIS_Mode
-                    and then Nkind (Parent (N)) = N_Attribute_Reference
-                    and then Attribute_Name (Parent (N)) = Name_Class
-                  then
-                     null;
-
-                  else
-                     Rewrite (N,
-                       Make_Type_Conversion (Nloc,
-                         Subtype_Mark =>
-                           Make_Attribute_Reference (Nloc,
-                             Prefix         => New_Occurrence_Of (T, Nloc),
-                             Attribute_Name => Name_Class),
-                         Expression   =>
-                           Make_Identifier (Nloc, Chars (Obj_Id))));
-
-                     Set_Entity (Expression (N), Obj_Id);
-                     Set_Etype  (Expression (N), Typ);
-                  end if;
-
-               --  Invariant, replace with obj
-
-               else
-                  Rewrite (N, Make_Identifier (Nloc, Chars (Obj_Id)));
-                  Set_Entity (N, Obj_Id);
-                  Set_Etype  (N, Typ);
-               end if;
-
-               Set_Comes_From_Source (N, True);
-            end Replace_Type_Reference;
-
-            --  Local variables
-
-            Asp   : constant Node_Id    := Corresponding_Aspect (Prag);
-            Nam   : constant Name_Id    := Original_Aspect_Pragma_Name (Prag);
-            Ploc  : constant Source_Ptr := Sloc (Prag);
-            Arg1  : Node_Id;
-            Arg2  : Node_Id;
-            Arg3  : Node_Id;
-            Assoc : List_Id;
-            Expr  : Node_Id;
-            Str   : String_Id;
-
-         --  Start of processing for Add_Invariant
-
-         begin
-            --  Extract the arguments of the invariant pragma
-
-            Arg1 := First (Pragma_Argument_Associations (Prag));
-            Arg2 := Next (Arg1);
-            Arg3 := Next (Arg2);
-
-            Arg1 := Get_Pragma_Arg (Arg1);
-            Arg2 := Get_Pragma_Arg (Arg2);
-
-            --  The caller requests processing of all Invariant'Class pragmas,
-            --  but the current pragma does not fall in this category. Return
-            --  as there is nothing left to do.
-
-            if Inherit then
-               if not Class_Present (Prag) then
-                  return;
-               end if;
-
-            --  Otherwise the pragma must apply to the current type
-
-            elsif Entity (Arg1) /= T then
-               return;
-            end if;
-
-            Expr := New_Copy_Tree (Arg2);
-
-            --  Replace all occurrences of the type's name with references to
-            --  the formal parameter of the invariant procedure.
-
-            Replace_Type_References (Expr, T);
-
-            --  If the invariant pragma comes from an aspect, replace the saved
-            --  expression because we need the subtype references replaced for
-            --  the calls to Preanalyze_Spec_Expression in Check_Aspect_At_xxx
-            --  routines. This is not done for interited class-wide invariants
-            --  because the original pragma of the parent type must remain
-            --  unchanged.
-
-            if not Inherit and then Present (Asp) then
-               Set_Entity (Identifier (Asp), New_Copy_Tree (Expr));
-            end if;
-
-            --  Preanalyze the invariant expression to capture the visibility
-            --  of the proper package part. In general the expression is not
-            --  fully analyzed until the body of the invariant procedure is
-            --  analyzed at the end of the private part, but that yields the
-            --  wrong visibility.
-
-            --  Historical note: we used to set N as the parent, but a package
-            --  specification as the parent of an expression is bizarre.
-
-            Set_Parent (Expr, Parent (Arg2));
-            Preanalyze_Assert_Expression (Expr, Any_Boolean);
-
-            --  Both modifications performed below are not done for inherited
-            --  class-wide invariants because the origial aspect/pragma of the
-            --  parent type must remain unchanged.
-
-            if not Inherit then
-
-               --  A class-wide invariant may be inherited in a separate unit,
-               --  where the corresponding expression cannot be resolved by
-               --  visibility, because it refers to a local function. Propagate
-               --  semantic information to the original representation item, to
-               --  be used when an invariant procedure for a derived type is
-               --  constructed.
-
-               --  ??? Unclear how to handle class-wide invariants that are not
-               --  function calls.
-
-               if Class_Present (Prag)
-                 and then Nkind (Expr) = N_Function_Call
-                 and then Nkind (Arg2) = N_Indexed_Component
-               then
-                  Rewrite (Arg2,
-                    Make_Function_Call (Ploc,
-                      Name                   =>
-                        New_Occurrence_Of (Entity (Name (Expr)), Ploc),
-                      Parameter_Associations => Expressions (Arg2)));
-               end if;
-
-               --  In ASIS mode, even if assertions are not enabled, we must
-               --  analyze the original expression in the aspect specification
-               --  because it is part of the original tree.
-
-               if ASIS_Mode and then Present (Asp) then
-                  declare
-                     Asp_Expr : constant Node_Id := Expression (Asp);
-
-                  begin
-                     Replace_Type_References (Asp_Expr, T);
-                     Preanalyze_Assert_Expression (Asp_Expr, Any_Boolean);
-                  end;
-               end if;
-            end if;
-
-            --  An ignored invariant must not generate a runtime check. Add a
-            --  null statement to ensure that the invariant procedure does get
-            --  a completing body.
-
-            if No (Stmts) then
-               Stmts := Empty_List;
-            end if;
-
-            if Is_Ignored (Prag) then
-               Append_To (Stmts, Make_Null_Statement (Ploc));
-
-            --  Otherwise the invariant is checked. Build a Check pragma to
-            --  verify the expression at runtime.
-
-            else
-               Assoc := New_List (
-                 Make_Pragma_Argument_Association (Ploc,
-                   Expression => Make_Identifier (Ploc, Nam)),
-                 Make_Pragma_Argument_Association (Ploc,
-                   Expression => Expr));
-
-               --  Handle the String argument (if any)
-
-               if Present (Arg3) then
-                  Str := Strval (Get_Pragma_Arg (Arg3));
-
-                  --  When inheriting an invariant, modify the message from
-                  --  "failed invariant" to "failed inherited invariant".
-
-                  if Inherit then
-                     String_To_Name_Buffer (Str);
-
-                     if Name_Buffer (1 .. 16) = "failed invariant" then
-                        Insert_Str_In_Name_Buffer ("inherited ", 8);
-                        Str := String_From_Name_Buffer;
-                     end if;
-                  end if;
-
-                  Append_To (Assoc,
-                    Make_Pragma_Argument_Association (Ploc,
-                      Expression => Make_String_Literal (Ploc, Str)));
-               end if;
-
-               --  Generate:
-               --    pragma Check (Nam, Expr, Str);
-
-               Append_To (Stmts,
-                 Make_Pragma (Ploc,
-                   Pragma_Identifier            =>
-                     Make_Identifier (Ploc, Name_Check),
-                   Pragma_Argument_Associations => Assoc));
-            end if;
-
-            --  Output an info message when inheriting an invariant and the
-            --  listing option is enabled.
-
-            if Inherit and Opt.List_Inherited_Aspects then
-               Error_Msg_Sloc := Sloc (Prag);
-               Error_Msg_N
-                 ("info: & inherits `Invariant''Class` aspect from #?L?", Typ);
-            end if;
-         end Add_Invariant;
-
-         --  Local variables
-
-         Ritem : Node_Id;
-
-      --  Start of processing for Add_Invariants
-
-      begin
-         Ritem := First_Rep_Item (T);
-         while Present (Ritem) loop
-            if Nkind (Ritem) = N_Pragma
-              and then Pragma_Name (Ritem) = Name_Invariant
-            then
-               Add_Invariant (Ritem);
-            end if;
-
-            Next_Rep_Item (Ritem);
-         end loop;
-      end Add_Invariants;
-
-      --  Local variables
-
-      Loc        : constant Source_Ptr := Sloc (Typ);
-      Priv_Decls : constant List_Id    := Private_Declarations (N);
-      Vis_Decls  : constant List_Id    := Visible_Declarations (N);
-
-      Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
-
-      PBody : Node_Id;
-      PDecl : Node_Id;
-      SId   : Entity_Id;
-      Spec  : Node_Id;
-      Stmts : List_Id;
-
-      Obj_Id : Node_Id;
-      --  The entity of the formal for the procedure
-
-   --  Start of processing for Build_Invariant_Procedure
-
-   begin
-      --  The related type may be subject to pragma Ghost. Set the mode now to
-      --  ensure that the invariant procedure is properly marked as Ghost.
-
-      Set_Ghost_Mode_From_Entity (Typ);
-
-      Stmts := No_List;
-      PDecl := Empty;
-      PBody := Empty;
-      SId   := Empty;
-
-      --  If the aspect specification exists for some view of the type, the
-      --  declaration for the procedure has been created.
-
-      if Has_Invariants (Typ) then
-         SId := Invariant_Procedure (Typ);
-      end if;
-
-      --  If the body is already present, nothing to do. This will occur when
-      --  the type is already frozen, which is the case when the invariant
-      --  appears in a private part, and the freezing takes place before the
-      --  final pass over full declarations.
-
-      --  See Exp_Ch3.Insert_Component_Invariant_Checks for details.
-
-      if Present (SId) then
-         PDecl := Unit_Declaration_Node (SId);
-
-         if Present (PDecl)
-           and then Nkind (PDecl) = N_Subprogram_Declaration
-           and then Present (Corresponding_Body (PDecl))
-         then
-            Ghost_Mode := Save_Ghost_Mode;
-            return;
-         end if;
-
-      else
-         PDecl := Build_Invariant_Procedure_Declaration (Typ);
-      end if;
-
-      --  Recover formal of procedure, for use in the calls to invariant
-      --  functions (including inherited ones).
-
-      Obj_Id :=
-        Defining_Identifier
-          (First (Parameter_Specifications (Specification (PDecl))));
-
-      --  Add invariants for the current type
-
-      Add_Invariants
-        (T       => Typ,
-         Obj_Id  => Obj_Id,
-         Stmts   => Stmts,
-         Inherit => False);
-
-      --  Add invariants for parent types
-
-      declare
-         Current_Typ : Entity_Id;
-         Parent_Typ  : Entity_Id;
-
-      begin
-         Current_Typ := Typ;
-         loop
-            Parent_Typ := Etype (Current_Typ);
-
-            if Is_Private_Type (Parent_Typ)
-              and then Present (Full_View (Base_Type (Parent_Typ)))
-            then
-               Parent_Typ := Full_View (Base_Type (Parent_Typ));
-            end if;
-
-            exit when Parent_Typ = Current_Typ;
-
-            Current_Typ := Parent_Typ;
-            Add_Invariants
-              (T       => Current_Typ,
-               Obj_Id  => Obj_Id,
-               Stmts   => Stmts,
-               Inherit => True);
-         end loop;
-      end;
-
-      --  Add invariants of progenitors
-
-      if Is_Tagged_Type (Typ) and then not Is_Interface (Typ) then
-         declare
-            Ifaces_List : Elist_Id;
-            AI          : Elmt_Id;
-            Iface       : Entity_Id;
-
-         begin
-            Collect_Interfaces (Typ, Ifaces_List);
-
-            AI := First_Elmt (Ifaces_List);
-            while Present (AI) loop
-               Iface := Node (AI);
-
-               if not Is_Ancestor (Iface, Typ, Use_Full_View => True) then
-                  Add_Invariants
-                    (T       => Iface,
-                     Obj_Id  => Obj_Id,
-                     Stmts   => Stmts,
-                     Inherit => True);
-               end if;
-
-               Next_Elmt (AI);
-            end loop;
-         end;
-      end if;
-
-      --  Build the procedure if we generated at least one Check pragma
-
-      if Stmts /= No_List then
-         Spec := Copy_Separate_Tree (Specification (PDecl));
-
-         PBody :=
-           Make_Subprogram_Body (Loc,
-             Specification              => Spec,
-             Declarations               => Empty_List,
-             Handled_Statement_Sequence =>
-               Make_Handled_Sequence_Of_Statements (Loc,
-                 Statements => Stmts));
-
-         --  The processing of an invariant pragma immediately generates the
-         --  invariant procedure spec, inserts it into the tree, and analyzes
-         --  it. If the spec has not been analyzed, then the invariant pragma
-         --  is being inherited and requires manual insertion and analysis.
-
-         if not Analyzed (PDecl) then
-            Append_To (Vis_Decls, PDecl);
-            Analyze (PDecl);
-         end if;
-
-         --  The invariant procedure body is inserted at the end of the private
-         --  declarations.
-
-         if Present (Priv_Decls) then
-            Append_To (Priv_Decls, PBody);
-
-            --  If the invariant appears on the full view of a private type,
-            --  then the analysis of the private part is already completed.
-            --  Manually analyze the new body in this case, otherwise wait
-            --  for the analysis of the private declarations to process the
-            --  body.
-
-            if In_Private_Part (Current_Scope) then
-               Analyze (PBody);
-            end if;
-
-         --  Otherwise there are no private declarations. This is either an
-         --  error or the related type is a private extension, in which case
-         --  it does not need a completion in a private part. Insert the body
-         --  at the end of the visible declarations and analyze immediately
-         --  because the related type is about to be frozen.
-
-         else
-            Append_To (Vis_Decls, PBody);
-            Analyze (PBody);
-         end if;
-      end if;
-
-      Ghost_Mode := Save_Ghost_Mode;
-   end Build_Invariant_Procedure;
-
    -------------------------------
    -- Build_Predicate_Functions --
    -------------------------------
@@ -9123,8 +8578,7 @@ package body Sem_Ch13 is
                         Expression => Expr))));
 
             --  If declaration has not been analyzed yet, Insert declaration
-            --  before freeze node.
-            --  Insert body after freeze node.
+            --  before freeze node.  Insert body itself after freeze node.
 
             if not Analyzed (FDecl) then
                Insert_Before_And_Analyze (N, FDecl);
@@ -9386,11 +8840,7 @@ package body Sem_Ch13 is
       Set_Is_Predicate_Function (SId);
       Set_Predicate_Function (Typ, SId);
 
-      if Comes_From_Source (Typ) then
-         Insert_After (Parent (Typ), FDecl);
-      else
-         Insert_After (Parent (Base_Type (Typ)), FDecl);
-      end if;
+      Insert_After (Parent (Typ), FDecl);
 
       Analyze (FDecl);
 
@@ -11163,9 +10613,7 @@ package body Sem_Ch13 is
          end if;
       end Hide_Non_Overridden_Subprograms;
 
-      ---------------------
-      -- Local variables --
-      ---------------------
+      --  Local variables
 
       E : constant Entity_Id := Entity (N);
 
@@ -11328,14 +10776,14 @@ package body Sem_Ch13 is
 
       Inside_Freezing_Actions := Inside_Freezing_Actions - 1;
 
-      --  If we have a type with predicates, build predicate function. This
-      --  is not needed in the generic case, and is not needed within TSS
-      --  subprograms and other predefined primitives.
+      --  If we have a type with predicates, build predicate function. This is
+      --  not needed in the generic case, nor within TSS subprograms and other
+      --  predefined primitives.
 
-      if Non_Generic_Case
-        and then Is_Type (E)
-        and then Has_Predicates (E)
+      if Is_Type (E)
+        and then Non_Generic_Case
         and then not Within_Internal_Subprogram
+        and then Has_Predicates (E)
       then
          Build_Predicate_Functions (E, N);
       end if;
@@ -11834,30 +11282,6 @@ package body Sem_Ch13 is
          Set_Discard_Names (Typ);
       end if;
 
-      --  Invariants
-
-      if not Has_Rep_Item (Typ, Name_Invariant, False)
-        and then Has_Rep_Item (Typ, Name_Invariant)
-        and then Is_Pragma_Or_Corr_Pragma_Present_In_Rep_Item
-                   (Get_Rep_Item (Typ, Name_Invariant))
-      then
-         Set_Has_Invariants (Typ);
-
-         if Class_Present (Get_Rep_Item (Typ, Name_Invariant)) then
-            Set_Has_Inheritable_Invariants (Typ);
-         end if;
-
-      --  If we have a subtype with invariants, whose base type does not have
-      --  invariants, copy these invariants to the base type. This happens for
-      --  the case of implicit base types created for scalar and array types.
-
-      elsif Has_Invariants (Typ)
-        and then not Has_Invariants (Base_Type (Typ))
-      then
-         Set_Has_Invariants (Base_Type (Typ));
-         Set_Invariant_Procedure (Base_Type (Typ), Invariant_Procedure (Typ));
-      end if;
-
       --  Volatile
 
       if not Has_Rep_Item (Typ, Name_Volatile, False)
@@ -12245,9 +11669,11 @@ package body Sem_Ch13 is
       --  to specify a static predicate for a subtype which is inheriting a
       --  dynamic predicate, so the static predicate validation here ignores
       --  the inherited predicate even if it is dynamic.
+      --  In all cases, a static predicate can only apply to a scalar type.
 
       elsif Nkind (Expr) = N_Function_Call
         and then Is_Predicate_Function (Entity (Name (Expr)))
+        and then Is_Scalar_Type (Etype (First_Entity (Entity (Name (Expr)))))
       then
          return True;
 
@@ -12523,7 +11949,9 @@ package body Sem_Ch13 is
       --  at the freeze point, and we must generate only a completion of this
       --  declaration. We do the same for private types, because the full view
       --  might be tagged. Otherwise we generate a declaration at the point of
-      --  the attribute definition clause.
+      --  the attribute definition clause. If the attribute definition comes
+      --  from an aspect specification the declaration is part of the freeze
+      --  actions of the type.
 
       function Build_Spec return Node_Id;
       --  Used for declaration and renaming declaration, so that this is
@@ -12615,18 +12043,32 @@ package body Sem_Ch13 is
              Object_Definition   => New_Occurrence_Of (Standard_Boolean, Loc));
       end if;
 
-      Insert_Action (N, Subp_Decl);
-      Set_Entity (N, Subp_Id);
+      if not Defer_Declaration
+        and then From_Aspect_Specification (N)
+        and then Has_Delayed_Freeze (Ent)
+      then
+         Append_Freeze_Action (Ent, Subp_Decl);
+
+      else
+         Insert_Action (N, Subp_Decl);
+         Set_Entity (N, Subp_Id);
+      end if;
 
       Subp_Decl :=
         Make_Subprogram_Renaming_Declaration (Loc,
           Specification => Build_Spec,
-          Name => New_Occurrence_Of (Subp, Loc));
+          Name          => New_Occurrence_Of (Subp, Loc));
 
       if Defer_Declaration then
          Set_TSS (Base_Type (Ent), Subp_Id);
+
       else
-         Insert_Action (N, Subp_Decl);
+         if From_Aspect_Specification (N) then
+            Append_Freeze_Action (Ent, Subp_Decl);
+         else
+            Insert_Action (N, Subp_Decl);
+         end if;
+
          Copy_TSS (Subp_Id, Base_Type (Ent));
       end if;
    end New_Stream_Subprogram;
@@ -12640,7 +12082,7 @@ package body Sem_Ch13 is
       if Has_Discriminants (E) then
          Push_Scope (E);
 
-         --  Make discriminants visible for type declarations and protected
+         --  Make the discriminants visible for type declarations and protected
          --  type declarations, not for subtype declarations (RM 13.1.1 (12/3))
 
          if Nkind (Parent (E)) /= N_Subtype_Declaration then
@@ -12895,36 +12337,90 @@ package body Sem_Ch13 is
    procedure Replace_Type_References_Generic (N : Node_Id; T : Entity_Id) is
       TName : constant Name_Id := Chars (T);
 
-      function Replace_Node (N : Node_Id) return Traverse_Result;
+      function Replace_Type_Ref (N : Node_Id) return Traverse_Result;
       --  Processes a single node in the traversal procedure below, checking
       --  if node N should be replaced, and if so, doing the replacement.
 
-      procedure Replace_Type_Refs is new Traverse_Proc (Replace_Node);
-      --  This instantiation provides the body of Replace_Type_References
+      function Visible_Component (Comp : Name_Id) return Entity_Id;
+      --  Given an identifier in the expression, check whether there is a
+      --  discriminant or component of the type that is directy visible, and
+      --  rewrite it as the corresponding selected component of the formal of
+      --  the subprogram. The entity is located by a sequential search, which
+      --  seems acceptable given the typical size of component lists and check
+      --  expressions. Possible optimization ???
 
-      ------------------
-      -- Replace_Node --
-      ------------------
+      ----------------------
+      -- Replace_Type_Ref --
+      ----------------------
 
-      function Replace_Node (N : Node_Id) return Traverse_Result is
-         S : Entity_Id;
-         P : Node_Id;
+      function Replace_Type_Ref (N : Node_Id) return Traverse_Result is
+         Loc : constant Source_Ptr := Sloc (N);
+
+         procedure Add_Prefix (Ref : Node_Id; Comp : Entity_Id);
+         --  Add the proper prefix to a reference to a component of the type
+         --  when it is not already a selected component.
+
+         ----------------
+         -- Add_Prefix --
+         ----------------
+
+         procedure Add_Prefix (Ref : Node_Id; Comp : Entity_Id) is
+         begin
+            Rewrite (Ref,
+              Make_Selected_Component (Loc,
+                Prefix        => New_Occurrence_Of (T, Loc),
+                Selector_Name => New_Occurrence_Of (Comp, Loc)));
+            Replace_Type_Reference (Prefix (Ref));
+         end Add_Prefix;
+
+         --  Local variables
+
+         Comp : Entity_Id;
+         Pref : Node_Id;
+         Scop : Entity_Id;
+
+      --  Start of processing for Replace_Type_Ref
 
       begin
-         --  Case of identifier
-
          if Nkind (N) = N_Identifier then
 
-            --  If not the type name, check whether it is a reference to
-            --  some other type, which must be frozen before the predicate
-            --  function is analyzed, i.e. before the freeze node of the
-            --  type to which the predicate applies.
+            --  If not the type name, check whether it is a reference to some
+            --  other type, which must be frozen before the predicate function
+            --  is analyzed, i.e. before the freeze node of the type to which
+            --  the predicate applies.
 
             if Chars (N) /= TName then
                if Present (Current_Entity (N))
-                  and then Is_Type (Current_Entity (N))
+                 and then Is_Type (Current_Entity (N))
                then
                   Freeze_Before (Freeze_Node (T), Current_Entity (N));
+               end if;
+
+               --  The components of the type are directly visible and can
+               --  be referenced without a prefix.
+
+               if Nkind (Parent (N)) = N_Selected_Component then
+                  null;
+
+               --  In expression C (I), C may be a directly visible function
+               --  or a visible component that has an array type. Disambiguate
+               --  by examining the component type.
+
+               elsif Nkind (Parent (N)) = N_Indexed_Component
+                 and then N = Prefix (Parent (N))
+               then
+                  Comp := Visible_Component (Chars (N));
+
+                  if Present (Comp) and then Is_Array_Type (Etype (Comp)) then
+                     Add_Prefix (N, Comp);
+                  end if;
+
+               else
+                  Comp := Visible_Component (Chars (N));
+
+                  if Present (Comp) then
+                     Add_Prefix (N, Comp);
+                  end if;
                end if;
 
                return Skip;
@@ -12936,13 +12432,13 @@ package body Sem_Ch13 is
                return Skip;
             end if;
 
-         --  Case of selected component (which is what a qualification
-         --  looks like in the unanalyzed tree, which is what we have.
+         --  Case of selected component (which is what a qualification looks
+         --  like in the unanalyzed tree, which is what we have.
 
          elsif Nkind (N) = N_Selected_Component then
 
-            --  If selector name is not our type, keeping going (we might
-            --  still have an occurrence of the type in the prefix).
+            --  If selector name is not our type, keeping going (we might still
+            --  have an occurrence of the type in the prefix).
 
             if Nkind (Selector_Name (N)) /= N_Identifier
               or else Chars (Selector_Name (N)) /= TName
@@ -12954,35 +12450,35 @@ package body Sem_Ch13 is
             else
                --  Loop through scopes and prefixes, doing comparison
 
-               S := Current_Scope;
-               P := Prefix (N);
+               Scop := Current_Scope;
+               Pref := Prefix (N);
                loop
                   --  Continue if no more scopes or scope with no name
 
-                  if No (S) or else Nkind (S) not in N_Has_Chars then
+                  if No (Scop) or else Nkind (Scop) not in N_Has_Chars then
                      return OK;
                   end if;
 
-                  --  Do replace if prefix is an identifier matching the
-                  --  scope that we are currently looking at.
+                  --  Do replace if prefix is an identifier matching the scope
+                  --  that we are currently looking at.
 
-                  if Nkind (P) = N_Identifier
-                    and then Chars (P) = Chars (S)
+                  if Nkind (Pref) = N_Identifier
+                    and then Chars (Pref) = Chars (Scop)
                   then
                      Replace_Type_Reference (N);
                      return Skip;
                   end if;
 
-                  --  Go check scope above us if prefix is itself of the
-                  --  form of a selected component, whose selector matches
-                  --  the scope we are currently looking at.
+                  --  Go check scope above us if prefix is itself of the form
+                  --  of a selected component, whose selector matches the scope
+                  --  we are currently looking at.
 
-                  if Nkind (P) = N_Selected_Component
-                    and then Nkind (Selector_Name (P)) = N_Identifier
-                    and then Chars (Selector_Name (P)) = Chars (S)
+                  if Nkind (Pref) = N_Selected_Component
+                    and then Nkind (Selector_Name (Pref)) = N_Identifier
+                    and then Chars (Selector_Name (Pref)) = Chars (Scop)
                   then
-                     S := Scope (S);
-                     P := Prefix (P);
+                     Scop := Scope (Scop);
+                     Pref := Prefix (Pref);
 
                   --  For anything else, we don't have a match, so keep on
                   --  going, there are still some weird cases where we may
@@ -12999,7 +12495,36 @@ package body Sem_Ch13 is
          else
             return OK;
          end if;
-      end Replace_Node;
+      end Replace_Type_Ref;
+
+      procedure Replace_Type_Refs is new Traverse_Proc (Replace_Type_Ref);
+
+      -----------------------
+      -- Visible_Component --
+      -----------------------
+
+      function Visible_Component (Comp : Name_Id) return Entity_Id is
+         E : Entity_Id;
+
+      begin
+         if Ekind (T) /= E_Record_Type then
+            return Empty;
+
+         else
+            E := First_Entity (T);
+            while Present (E) loop
+               if Comes_From_Source (E) and then Chars (E) = Comp then
+                  return E;
+               end if;
+
+               Next_Entity (E);
+            end loop;
+
+            return Empty;
+         end if;
+      end Visible_Component;
+
+   --  Start of processing for Replace_Type_References_Generic
 
    begin
       Replace_Type_Refs (N);
@@ -13061,17 +12586,18 @@ package body Sem_Ch13 is
             Expr := Expression (ASN);
 
             case A_Id is
+
                --  For now we only deal with aspects that do not generate
                --  subprograms, or that may mention current instances of
                --  types. These will require special handling (???TBD).
 
                when Aspect_Predicate         |
                     Aspect_Predicate_Failure |
-                    Aspect_Invariant =>
+                    Aspect_Invariant         =>
                   null;
 
-               when Aspect_Static_Predicate |
-                    Aspect_Dynamic_Predicate =>
+               when Aspect_Dynamic_Predicate |
+                    Aspect_Static_Predicate  =>
 
                   --  Build predicate function specification and preanalyze
                   --  expression after type replacement.
@@ -13630,6 +13156,53 @@ package body Sem_Ch13 is
    ------------------------------
 
    procedure Validate_Address_Clauses is
+      function Offset_Value (Expr : Node_Id) return Uint;
+      --  Given an Address attribute reference, return the value in bits of its
+      --  offset from the first bit of the underlying entity, or 0 if it is not
+      --  known at compile time.
+
+      ------------------
+      -- Offset_Value --
+      ------------------
+
+      function Offset_Value (Expr : Node_Id) return Uint is
+         N   : Node_Id := Prefix (Expr);
+         Off : Uint;
+         Val : Uint := Uint_0;
+
+      begin
+         --  Climb the prefix chain and compute the cumulative offset
+
+         loop
+            if Is_Entity_Name (N) then
+               return Val;
+
+            elsif Nkind (N) = N_Selected_Component then
+               Off := Component_Bit_Offset (Entity (Selector_Name (N)));
+               if Off /= No_Uint and then Off >= Uint_0 then
+                  Val := Val + Off;
+                  N   := Prefix (N);
+               else
+                  return Uint_0;
+               end if;
+
+            elsif Nkind (N) = N_Indexed_Component then
+               Off := Indexed_Component_Bit_Offset (N);
+               if Off /= No_Uint then
+                  Val := Val + Off;
+                  N   := Prefix (N);
+               else
+                  return Uint_0;
+               end if;
+
+            else
+               return Uint_0;
+            end if;
+         end loop;
+      end Offset_Value;
+
+   --  Start of processing for Validate_Address_Clauses
+
    begin
       for J in Address_Clause_Checks.First .. Address_Clause_Checks.Last loop
          declare
@@ -13644,27 +13217,56 @@ package body Sem_Ch13 is
             X_Size : Uint;
             Y_Size : Uint;
 
+            X_Offs : Uint;
+
          begin
             --  Skip processing of this entry if warning already posted
 
             if not Address_Warning_Posted (ACCR.N) then
                Expr := Original_Node (Expression (ACCR.N));
 
-               --  Get alignments
+               --  Get alignments, sizes and offset, if any
 
                X_Alignment := Alignment (ACCR.X);
-               Y_Alignment := Alignment (ACCR.Y);
+               X_Size      := Esize (ACCR.X);
 
-               --  Similarly obtain sizes
+               if Present (ACCR.Y) then
+                  Y_Alignment := Alignment (ACCR.Y);
+                  Y_Size      := Esize (ACCR.Y);
+               end if;
 
-               X_Size := Esize (ACCR.X);
-               Y_Size := Esize (ACCR.Y);
+               if ACCR.Off
+                 and then Nkind (Expr) = N_Attribute_Reference
+                 and then Attribute_Name (Expr) = Name_Address
+               then
+                  X_Offs := Offset_Value (Expr);
+               else
+                  X_Offs := Uint_0;
+               end if;
+
+               --  Check for known value not multiple of alignment
+
+               if No (ACCR.Y) then
+                  if not Alignment_Checks_Suppressed (ACCR.X)
+                    and then X_Alignment /= 0
+                    and then ACCR.A mod X_Alignment /= 0
+                  then
+                     Error_Msg_NE
+                       ("??specified address for& is inconsistent with "
+                        & "alignment", ACCR.N, ACCR.X);
+                     Error_Msg_N
+                       ("\??program execution may be erroneous (RM 13.3(27))",
+                        ACCR.N);
+
+                     Error_Msg_Uint_1 := X_Alignment;
+                     Error_Msg_NE ("\??alignment of & is ^", ACCR.N, ACCR.X);
+                  end if;
 
                --  Check for large object overlaying smaller one
 
-               if Y_Size > Uint_0
+               elsif Y_Size > Uint_0
                  and then X_Size > Uint_0
-                 and then X_Size > Y_Size
+                 and then X_Offs + X_Size > Y_Size
                then
                   Error_Msg_NE ("??& overlays smaller object", ACCR.N, ACCR.X);
                   Error_Msg_N
@@ -13676,6 +13278,11 @@ package body Sem_Ch13 is
                   Error_Msg_Uint_1 := Y_Size;
                   Error_Msg_NE ("\??size of & is ^", ACCR.N, ACCR.Y);
 
+                  if Y_Size >= X_Size then
+                     Error_Msg_Uint_1 := X_Offs;
+                     Error_Msg_NE ("\??but offset of & is ^", ACCR.N, ACCR.X);
+                  end if;
+
                --  Check for inadequate alignment, both of the base object
                --  and of the offset, if any. We only do this check if the
                --  run-time Alignment_Check is active. No point in warning
@@ -13685,7 +13292,7 @@ package body Sem_Ch13 is
                --  Note: we do not check the alignment if we gave a size
                --  warning, since it would likely be redundant.
 
-               elsif not Alignment_Checks_Suppressed (ACCR.Y)
+               elsif not Alignment_Checks_Suppressed (ACCR.X)
                  and then Y_Alignment /= Uint_0
                  and then
                    (Y_Alignment < X_Alignment
@@ -14259,10 +13866,10 @@ package body Sem_Ch13 is
          declare
             T : UC_Entry renames Unchecked_Conversions.Table (N);
 
+            Act_Unit : constant Entity_Id  := T.Act_Unit;
             Eloc     : constant Source_Ptr := T.Eloc;
             Source   : constant Entity_Id  := T.Source;
             Target   : constant Entity_Id  := T.Target;
-            Act_Unit : constant Entity_Id  := T.Act_Unit;
 
             Source_Siz : Uint;
             Target_Siz : Uint;

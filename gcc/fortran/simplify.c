@@ -3280,7 +3280,6 @@ gfc_simplify_ishftc (gfc_expr *e, gfc_expr *s, gfc_expr *sz)
 	return NULL;
 
       gfc_extract_int (sz, &ssize);
-
     }
   else
     ssize = isize;
@@ -3294,7 +3293,10 @@ gfc_simplify_ishftc (gfc_expr *e, gfc_expr *s, gfc_expr *sz)
     {
       if (sz == NULL)
 	gfc_error ("Magnitude of second argument of ISHFTC exceeds "
-		   "BIT_SIZE of first argument at %L", &s->where);
+		   "BIT_SIZE of first argument at %C");
+      else
+	gfc_error ("Absolute value of SHIFT shall be less than or equal "
+		   "to SIZE at %C");
       return &gfc_bad_expr;
     }
 
@@ -6181,8 +6183,7 @@ gfc_simplify_spread (gfc_expr *source, gfc_expr *dim_expr, gfc_expr *ncopies_exp
     }
   else
     {
-      gfc_error ("Simplification of SPREAD at %L not yet implemented",
-		 &source->where);
+      gfc_error ("Simplification of SPREAD at %C not yet implemented");
       return &gfc_bad_expr;
     }
 

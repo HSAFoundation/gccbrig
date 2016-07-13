@@ -1022,22 +1022,30 @@ package body Sem_Ch8 is
 
          Resolve (Nam, T);
 
+         --  Do not perform the legality checks below when the resolution of
+         --  the renaming name failed because the associated type is Any_Type.
+
+         if Etype (Nam) = Any_Type then
+            null;
+
          --  Ada 2005 (AI-231): In the case where the type is defined by an
          --  access_definition, the renamed entity shall be of an access-to-
          --  constant type if and only if the access_definition defines an
          --  access-to-constant type. ARM 8.5.1(4)
 
-         if Constant_Present (Access_Definition (N))
+         elsif Constant_Present (Access_Definition (N))
            and then not Is_Access_Constant (Etype (Nam))
          then
-            Error_Msg_N ("(Ada 2005): the renamed object is not "
-                         & "access-to-constant (RM 8.5.1(6))", N);
+            Error_Msg_N
+              ("(Ada 2005): the renamed object is not access-to-constant "
+               & "(RM 8.5.1(6))", N);
 
          elsif not Constant_Present (Access_Definition (N))
            and then Is_Access_Constant (Etype (Nam))
          then
-            Error_Msg_N ("(Ada 2005): the renamed object is not "
-                         & "access-to-variable (RM 8.5.1(6))", N);
+            Error_Msg_N
+              ("(Ada 2005): the renamed object is not access-to-variable "
+               & "(RM 8.5.1(6))", N);
          end if;
 
          if Is_Access_Subprogram_Type (Etype (Nam)) then
@@ -4804,9 +4812,9 @@ package body Sem_Ch8 is
                 or else
               Name_Buffer (3 .. 5) = "aux";
 
-         --  If not an internal file, then entity is definitely known,
-         --  even if it is in a private part (the message generated will
-         --  note that it is in a private part)
+         --  If not an internal file, then entity is definitely known, even if
+         --  it is in a private part (the message generated will note that it
+         --  is in a private part).
 
          else
             return True;
@@ -6096,8 +6104,8 @@ package body Sem_Ch8 is
             null;
          else
             Error_Msg_N
-              ("limited withed package can only be used to access "
-               & "incomplete types", N);
+              ("limited withed package can only be used to access incomplete "
+               & "types", N);
          end if;
       end if;
 
@@ -6224,6 +6232,8 @@ package body Sem_Ch8 is
       if Is_Overloadable (Id) and then not Is_Overloaded (N) then
          Generate_Reference (Id, N);
       end if;
+
+      Check_Restriction_No_Use_Of_Entity (N);
    end Find_Expanded_Name;
 
    -------------------------
@@ -6973,7 +6983,8 @@ package body Sem_Ch8 is
             elsif Nkind (P) /= N_Attribute_Reference then
 
                --  This may have been meant as a prefixed call to a primitive
-               --  of an untagged type.
+               --  of an untagged type. If it is a function call check type of
+               --  its first formal and add explanation.
 
                declare
                   F : constant Entity_Id :=
@@ -6982,12 +6993,11 @@ package body Sem_Ch8 is
                   if Present (F)
                     and then Is_Overloadable (F)
                     and then Present (First_Entity (F))
-                    and then Etype (First_Entity (F)) = Etype (P)
-                    and then not Is_Tagged_Type (Etype (P))
+                    and then not Is_Tagged_Type (Etype (First_Entity (F)))
                   then
                      Error_Msg_N
-                       ("prefixed call is only allowed for objects "
-                        & "of a tagged type", N);
+                       ("prefixed call is only allowed for objects of a "
+                        & "tagged type", N);
                   end if;
                end;
 
@@ -8182,10 +8192,22 @@ package body Sem_Ch8 is
          SST.Save_Default_SSO              := Default_SSO;
          SST.Save_Uneval_Old               := Uneval_Old;
 
+         --  Each new scope pushed onto the scope stack inherits the component
+         --  alignment of the previous scope. This emulates the "visibility"
+         --  semantics of pragma Component_Alignment.
+
          if Scope_Stack.Last > Scope_Stack.First then
             SST.Component_Alignment_Default := Scope_Stack.Table
                                                  (Scope_Stack.Last - 1).
                                                    Component_Alignment_Default;
+
+         --  Otherwise, this is the first scope being pushed on the scope
+         --  stack. Inherit the component alignment from the configuration
+         --  form of pragma Component_Alignment (if any).
+
+         else
+            SST.Component_Alignment_Default :=
+              Configuration_Component_Alignment;
          end if;
 
          SST.Last_Subprogram_Name           := null;

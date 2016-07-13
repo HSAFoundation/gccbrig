@@ -1247,7 +1247,7 @@ This option is only supported on some targets, including ARC, ARM, i386, M68k,
 PowerPC, and SPARC@.  It is mandatory for ARC@.  The @option{--with-cpu-32} and
 @option{--with-cpu-64} options specify separate default CPUs for
 32-bit and 64-bit modes; these options are only supported for i386,
-x86-64 and PowerPC.
+x86-64, PowerPC, and SPARC@.
 
 @item --with-schedule=@var{cpu}
 @itemx --with-arch=@var{cpu}
@@ -2776,6 +2776,17 @@ Unlike standard bootstrap, several additional restrictions apply.  The
 compiler used to build @code{stage1} needs to support a 64-bit integral type.
 It is recommended to only use GCC for this.
 
+On Linux/x86_64 hosts with some restrictions (no virtualization) it is
+also possible to do autofdo build with @samp{make
+autoprofiledback}. This uses Linux perf to sample branches in the
+binary and then rebuild it with feedback derived from the profile.
+Linux perf and the @code{autofdo} toolkit needs to be installed for
+this.
+
+Only the profile from the current build is used, so when an error
+occurs it is recommended to clean before restarting. Otherwise
+the code quality may be much worse.
+
 @html
 <hr />
 <p>
@@ -3161,7 +3172,7 @@ printing with programs such as @command{dvips}.  Alternately, by using
 @samp{make pdf} in place of @samp{make dvi}, you can create documentation
 in the form of @file{.pdf} files; this requires @command{texi2pdf}, which
 is included with Texinfo version 4.8 and later.  You can also
-@uref{http://shop.fsf.org/,,buy printed manuals from the
+@uref{https://shop.fsf.org/,,buy printed manuals from the
 Free Software Foundation}, though such manuals may not be for the most
 recent version of GCC@.
 
@@ -3338,8 +3349,6 @@ information have to.
 @item
 @uref{#m68k-uclinux,,m68k-uclinux}
 @item
-@uref{#mep-x-elf,,mep-*-elf}
-@item
 @uref{#microblaze-x-elf,,microblaze-*-elf}
 @item
 @uref{#mips-x-x,,mips-*-*}
@@ -3417,8 +3426,6 @@ information have to.
 @uref{#windows,,Microsoft Windows}
 @item
 @uref{#x-x-cygwin,,*-*-cygwin}
-@item
-@uref{#x-x-interix,,*-*-interix}
 @item
 @uref{#x-x-mingw32,,*-*-mingw32}
 @item
@@ -4245,14 +4252,6 @@ both of which were ABI changes.
 @html
 <hr />
 @end html
-@anchor{mep-x-elf}
-@heading mep-*-elf
-Toshiba Media embedded Processor.
-This configuration is intended for embedded systems.
-
-@html
-<hr />
-@end html
 @anchor{microblaze-x-elf}
 @heading microblaze-*-elf
 Xilinx MicroBlaze processor.
@@ -4841,8 +4840,6 @@ and which C libraries are used.
 @itemize
 @item Cygwin @uref{#x-x-cygwin,,*-*-cygwin}: Cygwin provides a user-space
 Linux API emulation layer in the Win32 subsystem.
-@item Interix @uref{#x-x-interix,,*-*-interix}: The Interix subsystem
-provides native support for POSIX.
 @item MinGW @uref{#x-x-mingw32,,*-*-mingw32}: MinGW is a native GCC port for
 the Win32 subsystem that provides a subset of POSIX.
 @item MKS i386-pc-mks: NuTCracker from MKS.  See
@@ -4889,16 +4886,6 @@ cpu architecture desired; the default is i686-pc-cygwin.  It should be
 used with as up-to-date a version of binutils as possible; use either
 the latest official GNU binutils release in the Cygwin distribution,
 or version 2.20 or above if building your own.
-
-@html
-<hr />
-@end html
-@anchor{x-x-interix}
-@heading *-*-interix
-The Interix target is used by OpenNT, Interix, Services For UNIX (SFU),
-and Subsystem for UNIX-based Applications (SUA).  Applications compiled
-with this target run in the Interix subsystem, which is separate from
-the Win32 subsystem.  This target was last known to work in GCC 3.3.
 
 @html
 <hr />

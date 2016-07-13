@@ -205,7 +205,7 @@ package body Sem is
          when N_Entry_Declaration =>
             Analyze_Entry_Declaration (N);
 
-         when N_Entry_Index_Specification     =>
+         when N_Entry_Index_Specification =>
             Analyze_Entry_Index_Specification (N);
 
          when N_Enumeration_Representation_Clause =>
@@ -1355,7 +1355,8 @@ package body Sem is
          Outer_Generic_Scope := Empty;
          Scope_Suppress      := Suppress_Options;
          Scope_Stack.Table
-           (Scope_Stack.Last).Component_Alignment_Default := Calign_Default;
+           (Scope_Stack.Last).Component_Alignment_Default :=
+             Configuration_Component_Alignment;
          Scope_Stack.Table
            (Scope_Stack.Last).Is_Active_Stack_Base := True;
 

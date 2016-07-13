@@ -143,6 +143,7 @@ VMS			Tristan Gingold		<tgingold@free.fr>
 VxWorks ports		Nathan Sidwell		<nathan@codesourcery.com>
 windows, cygwin, mingw	Kai Tietz		<ktietz70@googlemail.com>
 windows, cygwin, mingw	Dave Korn		<dave.korn.cygwin@gmail.com>
+cygwin, mingw-w64	Jonathan Yong		<10walls@gmail.com>
 
 			Language Front Ends Maintainers
 
@@ -289,7 +290,7 @@ Fortran			Daniel Franke		<franke.daniel@gmail.com>
 Fortran			Thomas König		<tkoenig@gcc.gnu.org>
 Fortran			Daniel Kraft		<d@domob.eu>
 Fortran			Toon Moene		<toon@moene.org>
-Fortran			Mikael Morin		<mikael.morin@sfr.fr>
+Fortran			Mikael Morin		<mikael@gcc.gnu.org>
 Fortran			Tobias Schlüter		<tobias.schlueter@physik.uni-muenchen.de>
 Fortran			Paul Thomas		<pault@gcc.gnu.org>
 Fortran			Janus Weil		<janus@gcc.gnu.org>
@@ -367,6 +368,7 @@ Fabien Chêne					<fabien@gcc.gnu.org>
 Bin Cheng					<bin.cheng@arm.com>
 Harshit Chopra					<harshit@google.com>
 William Cohen					<wcohen@redhat.com>
+Michael Collison				<michael.collison@arm.com>
 Josh Conner					<jconner@apple.com>
 R. Kelley Cook					<kcook@gcc.gnu.org>
 Christian Cornelssen				<ccorn@cs.tu-berlin.de>
@@ -493,6 +495,7 @@ Luis Machado					<luisgpm@br.ibm.com>
 Ziga Mahkovec					<ziga.mahkovec@klika.si>
 David Malcolm					<dmalcolm@redhat.com>
 Mikhail Maltsev					<maltsevm@gmail.com>
+Jose E. Marchesi				<jose.marchesi@oracle.com>
 Patrick Marlier					<patrick.marlier@gmail.com>
 Simon Martin					<simartin@users.sourceforge.net>
 Ranjit Mathew					<rmathew@hotmail.com>
@@ -566,6 +569,7 @@ Tilo Schwarz					<tilo@tilo-schwarz.de>
 Martin Sebor					<msebor@gcc.gnu.org>
 Dodji Seketeli					<dodji@gcc.gnu.org>
 Svein Seldal					<svein@dev.seldal.com>
+Senthil Kumar Selvaraj				<senthil_kumar.selvaraj@atmel.com>
 Thiemo Seufer					<ths@networkno.de>
 Bill Seurer					<seurer@linux.vnet.ibm.com>
 Marcus Shawcroft				<marcus.shawcroft@arm.com>

@@ -58,6 +58,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "c-family/c-indentation.h"
 #include "gimple-expr.h"
 #include "context.h"
+#include "gcc-rich-location.h"
 
 /* We need to walk over decls with incomplete struct/union/enum types
    after parsing the whole translation unit.
@@ -518,6 +519,48 @@ c_parser_peek_nth_token (c_parser *parser, unsigned int n)
   return &parser->tokens[n - 1];
 }
 
+bool
+c_keyword_starts_typename (enum rid keyword)
+{
+  switch (keyword)
+    {
+    case RID_UNSIGNED:
+    case RID_LONG:
+    case RID_SHORT:
+    case RID_SIGNED:
+    case RID_COMPLEX:
+    case RID_INT:
+    case RID_CHAR:
+    case RID_FLOAT:
+    case RID_DOUBLE:
+    case RID_VOID:
+    case RID_DFLOAT32:
+    case RID_DFLOAT64:
+    case RID_DFLOAT128:
+    case RID_BOOL:
+    case RID_ENUM:
+    case RID_STRUCT:
+    case RID_UNION:
+    case RID_TYPEOF:
+    case RID_CONST:
+    case RID_ATOMIC:
+    case RID_VOLATILE:
+    case RID_RESTRICT:
+    case RID_ATTRIBUTE:
+    case RID_FRACT:
+    case RID_ACCUM:
+    case RID_SAT:
+    case RID_AUTO_TYPE:
+      return true;
+    default:
+      if (keyword >= RID_FIRST_INT_N
+	  && keyword < RID_FIRST_INT_N + NUM_INT_N_ENTS
+	  && int_n_enabled_p[keyword - RID_FIRST_INT_N])
+	return true;
+      return false;
+    }
+}
+
 /* Return true if TOKEN can start a type name,
    false otherwise.  */
 static bool
@@ -541,43 +584,7 @@ c_token_starts_typename (c_token *token)
 	  gcc_unreachable ();
 	}
     case CPP_KEYWORD:
-      switch (token->keyword)
-	{
-	case RID_UNSIGNED:
-	case RID_LONG:
-	case RID_SHORT:
-	case RID_SIGNED:
-	case RID_COMPLEX:
-	case RID_INT:
-	case RID_CHAR:
-	case RID_FLOAT:
-	case RID_DOUBLE:
-	case RID_VOID:
-	case RID_DFLOAT32:
-	case RID_DFLOAT64:
-	case RID_DFLOAT128:
-	case RID_BOOL:
-	case RID_ENUM:
-	case RID_STRUCT:
-	case RID_UNION:
-	case RID_TYPEOF:
-	case RID_CONST:
-	case RID_ATOMIC:
-	case RID_VOLATILE:
-	case RID_RESTRICT:
-	case RID_ATTRIBUTE:
-	case RID_FRACT:
-	case RID_ACCUM:
-	case RID_SAT:
-	case RID_AUTO_TYPE:
-	  return true;
-	default:
-	  if (token->keyword >= RID_FIRST_INT_N
-	      && token->keyword < RID_FIRST_INT_N + NUM_INT_N_ENTS
-	      && int_n_enabled_p[token->keyword - RID_FIRST_INT_N])
-	    return true;
-	  return false;
-	}
+      return c_keyword_starts_typename (token->keyword);
     case CPP_LESS:
       if (c_dialect_objc ())
 	return true;
@@ -1351,11 +1358,11 @@ static tree c_parser_omp_for_loop (location_t, c_parser *, enum tree_code,
 static void c_parser_omp_taskwait (c_parser *);
 static void c_parser_omp_taskyield (c_parser *);
 static void c_parser_omp_cancel (c_parser *);
-static void c_parser_omp_cancellation_point (c_parser *);
 
 enum pragma_context { pragma_external, pragma_struct, pragma_param,
 		      pragma_stmt, pragma_compound };
 static bool c_parser_pragma (c_parser *, enum pragma_context, bool *);
+static void c_parser_omp_cancellation_point (c_parser *, enum pragma_context);
 static bool c_parser_omp_target (c_parser *, enum pragma_context, bool *);
 static void c_parser_omp_end_declare_target (c_parser *);
 static void c_parser_omp_declare (c_parser *, enum pragma_context);
@@ -1655,15 +1662,50 @@ c_parser_declaration_or_fndef (c_parser *parser, bool fndef_ok,
       && (!nested || !lookup_name (c_parser_peek_token (parser)->value)))
     {
       tree name = c_parser_peek_token (parser)->value;
-      error_at (here, "unknown type name %qE", name);
-      /* Give a hint to the user.  This is not C++ with its implicit
-	 typedef.  */
+
+      /* Issue a warning about NAME being an unknown type name, perhaps
+	 with some kind of hint.
+	 If the user forgot a "struct" etc, suggest inserting
+	 it.  Otherwise, attempt to look for misspellings.  */
+      gcc_rich_location richloc (here);
       if (tag_exists_p (RECORD_TYPE, name))
-	inform (here, "use %<struct%> keyword to refer to the type");
+	{
+	  /* This is not C++ with its implicit typedef.  */
+	  richloc.add_fixit_insert (here, "struct");
+	  error_at_rich_loc (&richloc,
+			     "unknown type name %qE;"
+			     " use %<struct%> keyword to refer to the type",
+			     name);
+	}
       else if (tag_exists_p (UNION_TYPE, name))
-	inform (here, "use %<union%> keyword to refer to the type");
+	{
+	  richloc.add_fixit_insert (here, "union");
+	  error_at_rich_loc (&richloc,
+			     "unknown type name %qE;"
+			     " use %<union%> keyword to refer to the type",
+			     name);
+	}
       else if (tag_exists_p (ENUMERAL_TYPE, name))
-	inform (here, "use %<enum%> keyword to refer to the type");
+	{
+	  richloc.add_fixit_insert (here, "enum");
+	  error_at_rich_loc (&richloc,
+			     "unknown type name %qE;"
+			     " use %<enum%> keyword to refer to the type",
+			     name);
+	}
+      else
+	{
+	  tree hint = lookup_name_fuzzy (name, FUZZY_LOOKUP_TYPENAME);
+	  if (hint)
+	    {
+	      richloc.add_fixit_misspelled_id (here, hint);
+	      error_at_rich_loc (&richloc,
+				 "unknown type name %qE; did you mean %qE?",
+				 name, hint);
+	    }
+	  else
+	    error_at (here, "unknown type name %qE", name);
+	}
 
       /* Parse declspecs normally to get a correct pointer type, but avoid
          a further "fails to be a type name" error.  Refuse nested functions
@@ -3430,6 +3472,7 @@ c_parser_direct_declarator (c_parser *parser, bool type_seen_p, c_dtr_syn kind,
       && c_parser_next_token_is (parser, CPP_OPEN_SQUARE))
     {
       struct c_declarator *inner = build_id_declarator (NULL_TREE);
+      inner->id_loc = c_parser_peek_token (parser)->location;
       return c_parser_direct_declarator_inner (parser, *seen_id, inner);
     }
 
@@ -3631,7 +3674,8 @@ c_parser_parms_declarator (c_parser *parser, bool id_list_ok, tree attrs)
       && c_parser_peek_2nd_token (parser)->type != CPP_NAME
       && c_parser_peek_2nd_token (parser)->type != CPP_MULT
       && c_parser_peek_2nd_token (parser)->type != CPP_OPEN_PAREN
-      && c_parser_peek_2nd_token (parser)->type != CPP_OPEN_SQUARE)
+      && c_parser_peek_2nd_token (parser)->type != CPP_OPEN_SQUARE
+      && c_parser_peek_2nd_token (parser)->type != CPP_KEYWORD)
     {
       tree list = NULL_TREE, *nextp = &list;
       while (c_parser_next_token_is (parser, CPP_NAME)
@@ -3806,7 +3850,18 @@ c_parser_parameter_declaration (c_parser *parser, tree attrs)
       c_parser_set_source_position_from_token (token);
       if (c_parser_next_tokens_start_typename (parser, cla_prefer_type))
 	{
-	  error_at (token->location, "unknown type name %qE", token->value);
+	  tree hint = lookup_name_fuzzy (token->value, FUZZY_LOOKUP_TYPENAME);
+	  if (hint)
+	    {
+	      gcc_assert (TREE_CODE (hint) == IDENTIFIER_NODE);
+	      gcc_rich_location richloc (token->location);
+	      richloc.add_fixit_misspelled_id (token->location, hint);
+	      error_at_rich_loc (&richloc,
+				 "unknown type name %qE; did you mean %qE?",
+				 token->value, hint);
+	    }
+	  else
+	    error_at (token->location, "unknown type name %qE", token->value);
 	  parser->error = true;
 	}
       /* ??? In some Objective-C cases '...' isn't applicable so there
@@ -4396,6 +4451,7 @@ c_parser_initelt (c_parser *parser, struct obstack * braced_init_obstack)
       /* Old-style structure member designator.  */
       set_init_label (c_parser_peek_token (parser)->location,
 		      c_parser_peek_token (parser)->value,
+		      c_parser_peek_token (parser)->location,
 		      braced_init_obstack);
       /* Use the colon as the error location.  */
       pedwarn (c_parser_peek_2nd_token (parser)->location, OPT_Wpedantic,
@@ -4425,6 +4481,7 @@ c_parser_initelt (c_parser *parser, struct obstack * braced_init_obstack)
 	      if (c_parser_next_token_is (parser, CPP_NAME))
 		{
 		  set_init_label (des_loc, c_parser_peek_token (parser)->value,
+				  c_parser_peek_token (parser)->location,
 				  braced_init_obstack);
 		  c_parser_consume_token (parser);
 		}
@@ -7088,9 +7145,10 @@ c_parser_alignof_expression (c_parser *parser)
       mark_exp_read (expr.value);
       c_inhibit_evaluation_warnings--;
       in_alignof--;
-      pedwarn (start_loc,
-	       OPT_Wpedantic, "ISO C does not allow %<%E (expression)%>",
-	       alignof_spelling);
+      if (is_c11_alignof)
+	pedwarn (start_loc,
+		 OPT_Wpedantic, "ISO C does not allow %<%E (expression)%>",
+		 alignof_spelling);
       ret.value = c_alignof_expr (start_loc, expr.value);
       ret.original_code = ERROR_MARK;
       ret.original_type = NULL;
@@ -7185,7 +7243,6 @@ struct c_generic_association
 static struct c_expr
 c_parser_generic_selection (c_parser *parser)
 {
-  vec<c_generic_association> associations = vNULL;
   struct c_expr selector, error_expr;
   tree selector_type;
   struct c_generic_association matched_assoc;
@@ -7194,7 +7251,7 @@ c_parser_generic_selection (c_parser *parser)
 
   error_expr.original_code = ERROR_MARK;
   error_expr.original_type = NULL;
-  error_expr.value = error_mark_node;
+  error_expr.set_error ();
   matched_assoc.type_location = UNKNOWN_LOCATION;
   matched_assoc.type = NULL_TREE;
   matched_assoc.expression = error_expr;
@@ -7242,6 +7299,7 @@ c_parser_generic_selection (c_parser *parser)
       return error_expr;
     }
 
+  auto_vec<c_generic_association> associations;
   while (1)
     {
       struct c_generic_association assoc, *iter;
@@ -7262,13 +7320,13 @@ c_parser_generic_selection (c_parser *parser)
 	  if (type_name == NULL)
 	    {
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      goto error_exit;
+	      return error_expr;
 	    }
 	  assoc.type = groktypename (type_name, NULL, NULL);
 	  if (assoc.type == error_mark_node)
 	    {
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      goto error_exit;
+	      return error_expr;
 	    }
 
 	  if (TREE_CODE (assoc.type) == FUNCTION_TYPE)
@@ -7287,14 +7345,14 @@ c_parser_generic_selection (c_parser *parser)
       if (!c_parser_require (parser, CPP_COLON, "expected %<:%>"))
 	{
 	  c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	  goto error_exit;
+	  return error_expr;
 	}
 
       assoc.expression = c_parser_expr_no_commas (parser, NULL);
       if (assoc.expression.value == error_mark_node)
 	{
 	  c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	  goto error_exit;
+	  return error_expr;
 	}
 
       for (ix = 0; associations.iterate (ix, &iter); ++ix)
@@ -7350,8 +7408,6 @@ c_parser_generic_selection (c_parser *parser)
       c_parser_consume_token (parser);
     }
 
-  associations.release ();
-
   if (!c_parser_require (parser, CPP_CLOSE_PAREN, "expected %<)%>"))
     {
       c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
@@ -7367,10 +7423,6 @@ c_parser_generic_selection (c_parser *parser)
     }
 
   return matched_assoc.expression;
-
- error_exit:
-  associations.release ();
-  return error_expr;
 }
 
 /* Parse a postfix expression (C90 6.3.1-6.3.2, C99 6.5.1-6.5.2).
@@ -7505,13 +7557,13 @@ c_parser_postfix_expression (c_parser *parser)
 	    gcc_assert (c_dialect_objc ());
 	    if (!c_parser_require (parser, CPP_DOT, "expected %<.%>"))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    if (c_parser_next_token_is_not (parser, CPP_NAME))
 	      {
 		c_parser_error (parser, "expected identifier");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    c_token *component_tok = c_parser_peek_token (parser);
@@ -7525,7 +7577,7 @@ c_parser_postfix_expression (c_parser *parser)
 	  }
 	default:
 	  c_parser_error (parser, "expected expression");
-	  expr.value = error_mark_node;
+	  expr.set_error ();
 	  break;
 	}
       break;
@@ -7547,7 +7599,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      parser->error = true;
 	      c_parser_skip_until_found (parser, CPP_CLOSE_BRACE, NULL);
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  stmt = c_begin_stmt_expr ();
@@ -7576,7 +7628,7 @@ c_parser_postfix_expression (c_parser *parser)
 				     "expected %<)%>");
 	  if (type_name == NULL)
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	    }
 	  else
 	    expr = c_parser_postfix_expression_after_paren_type (parser,
@@ -7636,7 +7688,7 @@ c_parser_postfix_expression (c_parser *parser)
 	    c_parser_consume_token (parser);
 	    if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    e1 = c_parser_expr_no_commas (parser, NULL);
@@ -7645,7 +7697,7 @@ c_parser_postfix_expression (c_parser *parser)
 	    if (!c_parser_require (parser, CPP_COMMA, "expected %<,%>"))
 	      {
 		c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    loc = c_parser_peek_token (parser)->location;
@@ -7655,7 +7707,7 @@ c_parser_postfix_expression (c_parser *parser)
 				       "expected %<)%>");
 	    if (t1 == NULL)
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 	      }
 	    else
 	      {
@@ -7677,7 +7729,7 @@ c_parser_postfix_expression (c_parser *parser)
 	  c_parser_consume_token (parser);
 	  if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  t1 = c_parser_type_name (parser);
@@ -7688,7 +7740,7 @@ c_parser_postfix_expression (c_parser *parser)
 	  if (parser->error)
 	    {
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 
@@ -7707,8 +7759,9 @@ c_parser_postfix_expression (c_parser *parser)
 	       accept sub structure and sub array references.  */
 	    if (c_parser_next_token_is (parser, CPP_NAME))
 	      {
+		c_token *comp_tok = c_parser_peek_token (parser);
 		offsetof_ref = build_component_ref
-		  (loc, offsetof_ref, c_parser_peek_token (parser)->value);
+		  (loc, offsetof_ref, comp_tok->value, comp_tok->location);
 		c_parser_consume_token (parser);
 		while (c_parser_next_token_is (parser, CPP_DOT)
 		       || c_parser_next_token_is (parser,
@@ -7734,9 +7787,10 @@ c_parser_postfix_expression (c_parser *parser)
 			    c_parser_error (parser, "expected identifier");
 			    break;
 			  }
+			c_token *comp_tok = c_parser_peek_token (parser);
 			offsetof_ref = build_component_ref
-			  (loc, offsetof_ref,
-			   c_parser_peek_token (parser)->value);
+			  (loc, offsetof_ref, comp_tok->value,
+			   comp_tok->location);
 			c_parser_consume_token (parser);
 		      }
 		    else
@@ -7777,7 +7831,7 @@ c_parser_postfix_expression (c_parser *parser)
 					    &cexpr_list, true,
 					    &close_paren_loc))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7785,7 +7839,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      {
 		error_at (loc, "wrong number of arguments to "
 			       "%<__builtin_choose_expr%>");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7810,25 +7864,25 @@ c_parser_postfix_expression (c_parser *parser)
 	  c_parser_consume_token (parser);
 	  if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  t1 = c_parser_type_name (parser);
 	  if (t1 == NULL)
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  if (!c_parser_require (parser, CPP_COMMA, "expected %<,%>"))
 	    {
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  t2 = c_parser_type_name (parser);
 	  if (t2 == NULL)
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  {
@@ -7840,7 +7894,7 @@ c_parser_postfix_expression (c_parser *parser)
 	    e2 = groktypename (t2, NULL, NULL);
 	    if (e1 == error_mark_node || e2 == error_mark_node)
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7865,14 +7919,14 @@ c_parser_postfix_expression (c_parser *parser)
 					    &cexpr_list, false,
 					    &close_paren_loc))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    if (vec_safe_length (cexpr_list) != 2)
 	      {
 		error_at (loc, "wrong number of arguments to "
 			       "%<__builtin_call_with_static_chain%>");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7907,7 +7961,7 @@ c_parser_postfix_expression (c_parser *parser)
 					    &cexpr_list, false,
 					    &close_paren_loc))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7915,7 +7969,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      {
 		error_at (loc, "wrong number of arguments to "
 			       "%<__builtin_complex%>");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7937,7 +7991,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      {
 		error_at (loc, "%<__builtin_complex%> operand "
 			  "not of real binary floating-point type");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    if (TYPE_MAIN_VARIANT (TREE_TYPE (e1_p->value))
@@ -7945,7 +7999,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      {
 		error_at (loc,
 			  "%<__builtin_complex%> operands of different types");
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 	    pedwarn_c90 (loc, OPT_Wpedantic,
@@ -7971,7 +8025,7 @@ c_parser_postfix_expression (c_parser *parser)
 					    &cexpr_list, false,
 					    &close_paren_loc))
 	      {
-		expr.value = error_mark_node;
+		expr.set_error ();
 		break;
 	      }
 
@@ -7994,7 +8048,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      {
 		error_at (loc, "wrong number of arguments to "
 			       "%<__builtin_shuffle%>");
-		expr.value = error_mark_node;
+		expr.set_error ();
 	      }
 	    set_c_expr_source_range (&expr, loc, close_paren_loc);
 	    break;
@@ -8004,7 +8058,7 @@ c_parser_postfix_expression (c_parser *parser)
 	  c_parser_consume_token (parser);
 	  if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  {
@@ -8021,14 +8075,14 @@ c_parser_postfix_expression (c_parser *parser)
 	  c_parser_consume_token (parser);
 	  if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  if (c_parser_next_token_is_not (parser, CPP_NAME))
 	    {
 	      c_parser_error (parser, "expected identifier");
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  {
@@ -8047,13 +8101,13 @@ c_parser_postfix_expression (c_parser *parser)
 	  c_parser_consume_token (parser);
 	  if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      break;
 	    }
 	  t1 = c_parser_type_name (parser);
 	  if (t1 == NULL)
 	    {
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, NULL);
 	      break;
 	    }
@@ -8076,7 +8130,7 @@ c_parser_postfix_expression (c_parser *parser)
 	      error_at (loc, "-fcilkplus must be enabled to use "
 			"%<_Cilk_spawn%>");
 	      expr = c_parser_cast_expression (parser, NULL);
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	    }
 	  else if (c_parser_peek_token (parser)->keyword == RID_CILK_SPAWN)
 	    {
@@ -8095,7 +8149,7 @@ c_parser_postfix_expression (c_parser *parser)
 	  break;
 	default:
 	  c_parser_error (parser, "expected expression");
-	  expr.value = error_mark_node;
+	  expr.set_error ();
 	  break;
 	}
       break;
@@ -8116,7 +8170,7 @@ c_parser_postfix_expression (c_parser *parser)
       /* Else fall through to report error.  */
     default:
       c_parser_error (parser, "expected expression");
-      expr.value = error_mark_node;
+      expr.set_error ();
       break;
     }
   return c_parser_postfix_expression_after_primary
@@ -8213,7 +8267,7 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 {
   struct c_expr orig_expr;
   tree ident, idx;
-  location_t sizeof_arg_loc[3];
+  location_t sizeof_arg_loc[3], comp_loc;
   tree sizeof_arg[3];
   unsigned int literal_zero_mask;
   unsigned int i;
@@ -8327,11 +8381,15 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  c_parser_consume_token (parser);
 	  expr = default_function_array_conversion (expr_loc, expr);
 	  if (c_parser_next_token_is (parser, CPP_NAME))
-	    ident = c_parser_peek_token (parser)->value;
+	    {
+	      c_token *comp_tok = c_parser_peek_token (parser);
+	      ident = comp_tok->value;
+	      comp_loc = comp_tok->location;
+	    }
 	  else
 	    {
 	      c_parser_error (parser, "expected identifier");
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      expr.original_code = ERROR_MARK;
               expr.original_type = NULL;
 	      return expr;
@@ -8339,7 +8397,8 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  start = expr.get_start ();
 	  finish = c_parser_peek_token (parser)->get_finish ();
 	  c_parser_consume_token (parser);
-	  expr.value = build_component_ref (op_loc, expr.value, ident);
+	  expr.value = build_component_ref (op_loc, expr.value, ident,
+					    comp_loc);
 	  set_c_expr_source_range (&expr, start, finish);
 	  expr.original_code = ERROR_MARK;
 	  if (TREE_CODE (expr.value) != COMPONENT_REF)
@@ -8359,11 +8418,15 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  c_parser_consume_token (parser);
 	  expr = convert_lvalue_to_rvalue (expr_loc, expr, true, false);
 	  if (c_parser_next_token_is (parser, CPP_NAME))
-	    ident = c_parser_peek_token (parser)->value;
+	    {
+	      c_token *comp_tok = c_parser_peek_token (parser);
+	      ident = comp_tok->value;
+	      comp_loc = comp_tok->location;
+	    }
 	  else
 	    {
 	      c_parser_error (parser, "expected identifier");
-	      expr.value = error_mark_node;
+	      expr.set_error ();
 	      expr.original_code = ERROR_MARK;
 	      expr.original_type = NULL;
 	      return expr;
@@ -8375,7 +8438,7 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 					    build_indirect_ref (op_loc,
 								expr.value,
 								RO_ARROW),
-					    ident);
+					    ident, comp_loc);
 	  set_c_expr_source_range (&expr, start, finish);
 	  expr.original_code = ERROR_MARK;
 	  if (TREE_CODE (expr.value) != COMPONENT_REF)
@@ -10118,14 +10181,7 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
       return false;
 
     case PRAGMA_OMP_CANCELLATION_POINT:
-      if (context != pragma_compound)
-	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp cancellation point%> may "
-				    "only be used in compound statements");
-	  goto bad_stmt;
-	}
-      c_parser_omp_cancellation_point (parser);
+      c_parser_omp_cancellation_point (parser, context);
       return false;
 
     case PRAGMA_OMP_THREADPRIVATE:
@@ -10146,7 +10202,7 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
       c_parser_skip_until_found (parser, CPP_PRAGMA_EOL, NULL);
       return false;
 
-    case PRAGMA_OMP_DECLARE_REDUCTION:
+    case PRAGMA_OMP_DECLARE:
       c_parser_omp_declare (parser, context);
       return false;
 
@@ -10601,6 +10657,8 @@ c_parser_omp_variable_list (c_parser *parser,
 	  switch (kind)
 	    {
 	    case OMP_CLAUSE__CACHE_:
+	      /* The OpenACC cache directive explicitly only allows "array
+		 elements or subarrays".  */
 	      if (c_parser_peek_token (parser)->type != CPP_OPEN_SQUARE)
 		{
 		  c_parser_error (parser, "expected %<[%>");
@@ -10621,9 +10679,12 @@ c_parser_omp_variable_list (c_parser *parser,
 		      t = error_mark_node;
 		      break;
 		    }
-		  tree ident = c_parser_peek_token (parser)->value;
+
+		  c_token *comp_tok = c_parser_peek_token (parser);
+		  tree ident = comp_tok->value;
+		  location_t comp_loc = comp_tok->location;
 		  c_parser_consume_token (parser);
-		  t = build_component_ref (op_loc, t, ident);
+		  t = build_component_ref (op_loc, t, ident, comp_loc);
 		}
 	      /* FALLTHROUGH  */
 	    case OMP_CLAUSE_DEPEND:
@@ -10661,25 +10722,6 @@ c_parser_omp_variable_list (c_parser *parser,
 		    {
 		      t = error_mark_node;
 		      break;
-		    }
-
-		  if (kind == OMP_CLAUSE__CACHE_)
-		    {
-		      if (TREE_CODE (low_bound) != INTEGER_CST
-			  && !TREE_READONLY (low_bound))
-			{
-			  error_at (clause_loc,
-				    "%qD is not a constant", low_bound);
-			  t = error_mark_node;
-			}
-
-		      if (TREE_CODE (length) != INTEGER_CST
-			  && !TREE_READONLY (length))
-			{
-			  error_at (clause_loc,
-				    "%qD is not a constant", length);
-			  t = error_mark_node;
-			}
 		    }
 
 		  t = tree_cons (low_bound, length, t);
@@ -12128,7 +12170,20 @@ c_parser_omp_clause_schedule (c_parser *parser, tree list)
 		  "schedule %<auto%> does not take "
 		  "a %<chunk_size%> parameter");
       else if (TREE_CODE (TREE_TYPE (t)) == INTEGER_TYPE)
-	OMP_CLAUSE_SCHEDULE_CHUNK_EXPR (c) = t;
+	{
+	  /* Attempt to statically determine when the number isn't
+	     positive.  */
+	  tree s = fold_build2_loc (loc, LE_EXPR, boolean_type_node, t,
+				    build_int_cst (TREE_TYPE (t), 0));
+	  protected_set_expr_location (s, loc);
+	  if (s == boolean_true_node)
+	    {
+	      warning_at (loc, 0,
+			  "chunk size value must be positive");
+	      t = integer_one_node;
+	    }
+	  OMP_CLAUSE_SCHEDULE_CHUNK_EXPR (c) = t;
+	}
       else
 	c_parser_error (parser, "expected integer expression");
 
@@ -13602,6 +13657,7 @@ c_parser_oacc_declare (c_parser *parser)
 
       switch (OMP_CLAUSE_MAP_KIND (t))
 	{
+	case GOMP_MAP_FIRSTPRIVATE_POINTER:
 	case GOMP_MAP_FORCE_ALLOC:
 	case GOMP_MAP_FORCE_TO:
 	case GOMP_MAP_FORCE_DEVICEPTR:
@@ -13983,25 +14039,24 @@ c_parser_oacc_routine (c_parser *parser, enum pragma_context context)
       c_parser_consume_token (parser);
 
       c_token *token = c_parser_peek_token (parser);
-
       if (token->type == CPP_NAME && (token->id_kind == C_ID_ID
 				      || token->id_kind == C_ID_TYPENAME))
 	{
 	  decl = lookup_name (token->value);
 	  if (!decl)
-	    {
-	      error_at (token->location, "%qE has not been declared",
-			token->value);
-	      decl = error_mark_node;
-	    }
+	    error_at (token->location, "%qE has not been declared",
+		      token->value);
+	  c_parser_consume_token (parser);
 	}
       else
 	c_parser_error (parser, "expected function name");
 
-      if (token->type != CPP_CLOSE_PAREN)
-	c_parser_consume_token (parser);
-
-      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, 0);
+      if (!decl
+	  || !c_parser_require (parser, CPP_CLOSE_PAREN, "expected %<)%>"))
+	{
+	  c_parser_skip_to_pragma_eol (parser, false);
+	  return;
+	}
     }
 
   /* Build a chain of clauses.  */
@@ -15100,7 +15155,9 @@ c_parser_omp_for (location_t loc, c_parser *parser,
 
   strcat (p_name, " for");
   mask |= OMP_FOR_CLAUSE_MASK;
-  if (cclauses)
+  /* parallel for{, simd} disallows nowait clause, but for
+     target {teams distribute ,}parallel for{, simd} it should be accepted.  */
+  if (cclauses && (mask & (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_MAP)) == 0)
     mask &= ~(OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_NOWAIT);
   /* Composite distribute parallel for{, simd} disallows ordered clause.  */
   if ((mask & (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DIST_SCHEDULE)) != 0)
@@ -15598,7 +15655,7 @@ c_parser_omp_cancel (c_parser *parser)
 	| (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_TASKGROUP))
 
 static void
-c_parser_omp_cancellation_point (c_parser *parser)
+c_parser_omp_cancellation_point (c_parser *parser, enum pragma_context context)
 {
   location_t loc = c_parser_peek_token (parser)->location;
   tree clauses;
@@ -15618,6 +15675,17 @@ c_parser_omp_cancellation_point (c_parser *parser)
     {
       c_parser_error (parser, "expected %<point%>");
       c_parser_skip_to_pragma_eol (parser);
+      return;
+    }
+
+  if (context != pragma_compound)
+    {
+      if (context == pragma_stmt)
+	error_at (loc, "%<#pragma omp cancellation point%> may only be used in"
+		  " compound statements");
+      else
+	c_parser_error (parser, "expected declaration specifiers");
+      c_parser_skip_to_pragma_eol (parser, false);
       return;
     }
 
@@ -16292,14 +16360,13 @@ check_clauses:
 static void
 c_parser_omp_declare_simd (c_parser *parser, enum pragma_context context)
 {
-  vec<c_token> clauses = vNULL;
+  auto_vec<c_token> clauses;
   while (c_parser_next_token_is_not (parser, CPP_PRAGMA_EOL))
     {
       c_token *token = c_parser_peek_token (parser);
       if (token->type == CPP_EOF)
 	{
 	  c_parser_skip_to_pragma_eol (parser);
-	  clauses.release ();
 	  return;
 	}
       clauses.safe_push (*token);
@@ -16311,7 +16378,7 @@ c_parser_omp_declare_simd (c_parser *parser, enum pragma_context context)
   while (c_parser_next_token_is (parser, CPP_PRAGMA))
     {
       if (c_parser_peek_token (parser)->pragma_kind
-	  != PRAGMA_OMP_DECLARE_REDUCTION
+	  != PRAGMA_OMP_DECLARE
 	  || c_parser_peek_2nd_token (parser)->type != CPP_NAME
 	  || strcmp (IDENTIFIER_POINTER
 				(c_parser_peek_2nd_token (parser)->value),
@@ -16321,7 +16388,6 @@ c_parser_omp_declare_simd (c_parser *parser, enum pragma_context context)
 			  "%<#pragma omp declare simd%> must be followed by "
 			  "function declaration or definition or another "
 			  "%<#pragma omp declare simd%>");
-	  clauses.release ();
 	  return;
 	}
       c_parser_consume_pragma (parser);
@@ -16331,7 +16397,6 @@ c_parser_omp_declare_simd (c_parser *parser, enum pragma_context context)
 	  if (token->type == CPP_EOF)
 	    {
 	      c_parser_skip_to_pragma_eol (parser);
-	      clauses.release ();
 	      return;
 	    }
 	  clauses.safe_push (*token);
@@ -16403,7 +16468,6 @@ c_parser_omp_declare_simd (c_parser *parser, enum pragma_context context)
     default:
       gcc_unreachable ();
     }
-  clauses.release ();
 }
 
 /* Finalize #pragma omp declare simd clauses after FNDECL has been parsed,

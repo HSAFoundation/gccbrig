@@ -1,3 +1,279 @@
+2016-07-09  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/71783
+	* frontend-passes.c (create_var):  Always allocate a charlen
+	for character variables.
+
+2016-07-08  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/68426
+	* simplify (gfc_simplify_spread): Adjust locus.
+
+2016-07-08  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* parse.c (matcha): Define.
+	(decode_oacc_directive): Add spec_only local var and set it.  Use
+	matcha to parse acc directives except for routine and declare.  Return
+	ST_GET_FCN_CHARACTERISTICS if a non-declarative directive could be
+	matched.
+
+2016-07-08  Martin Liska  <mliska@suse.cz>
+
+	* invoke.texi (Wundefined-do-loop): Enhance documentation.
+
+2016-07-07  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/71764
+	* trans-expr.c (gfc_trans_structure_assign): Remove assert.
+
+2016-07-07  Martin Liska  <mliska@suse.cz>
+
+	* lang.opt (Wundefined-do-loop): New option.
+        * resolve.c (gfc_resolve_iterator): Warn for Wundefined-do-loop.
+	(gfc_trans_simple_do): Generate a c-style loop.
+	(gfc_trans_do): Fix GNU coding style.
+	* invoke.texi: Mention the new warning.
+
+2016-07-07  Martin Liska  <mliska@suse.cz>
+
+	* trans-stmt.c (gfc_trans_do): Add expect builtin for DO
+	loops with step bigger than +-1.
+
+2016-07-05  Alessandro Fanfarillo  <fanfarillo.gcc@gmail.com>
+
+	* array.c (gfc_match_array_ref): Add parsing support for
+	STAT= attribute in CAF reference.
+	* expr.c (gfc_find_stat_co): New function that returns
+	the STAT= assignment.
+	* gfortran.h (gfc_array_ref): New member.
+	* trans-decl.c (gfc_build_builtin_function_decls):
+	new attribute for caf_get and caf_send functions.
+	* trans-intrinsic.c (gfc_conv_intrinsic_caf_get): Passing
+	the stat attribute to external function.
+	(gfc_conv_intrinsic_caf_send): Ditto.
+
+2016-07-05  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	PR fortran/71623
+	* trans-stmt.c (gfc_trans_allocate): Add code of pre block of typespec
+	in allocate to parent block.
+
+2016-07-04  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/66575
+	* decl.c (match_procedure_interface): Exit loop if procedure
+	interface refers to itself.
+
+2016-07-04  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+	    Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/35849
+	* simplify.c (gfc_simplify_ishftc): Check that absolute value of
+	SHIFT is less than or equal to SIZE.
+
+2016-07-01  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/71687
+	* f95-lang.c (struct binding_level): Add reversed field.
+	(clear_binding_level): Adjust initializer.
+	(getdecls): If reversed is clear, set it and nreverse the names
+	chain before returning it.
+	(poplevel): Use getdecls.
+	* trans-decl.c (gfc_generate_function_code, gfc_process_block_locals):
+	Use nreverse to pushdecl decls in the declaration order.
+
+	PR fortran/71717
+	* trans-openmp.c (gfc_omp_privatize_by_reference): Return false
+	for GFC_DECL_ASSOCIATE_VAR_P with POINTER_TYPE.
+
+2016-06-30  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/71704
+	* parse.c (matchs, matcho): Move right before decode_omp_directive.
+	If spec_only, only gfc_match the keyword and if successful, goto
+	do_spec_only.
+	(matchds, matchdo): Define.
+	(decode_omp_directive): Add spec_only local var and set it.
+	Use matchds or matchdo macros instead of matchs or matcho
+	for declare target, declare simd, declare reduction and threadprivate
+	directives.  Return ST_GET_FCN_CHARACTERISTICS if a non-declarative
+	directive could be matched.
+	(next_statement): For ST_GET_FCN_CHARACTERISTICS restore
+	gfc_current_locus from old_locus even if there is no label.
+
+	PR fortran/71705
+	* trans-openmp.c (gfc_trans_omp_clauses): Set TREE_ADDRESSABLE on
+	decls in to/from clauses.
+
+2016-06-29  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/71686
+	* scanner.c (gfc_next_char_literal): Only decrement nextc if it
+	is not NULL.
+
+2016-06-29  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* openmp.c (match_oacc_clause_gang): Rename to ...
+	(match_oacc_clause_gwv): this.  Add support for OpenACC worker and
+	vector clauses.
+	(gfc_match_omp_clauses): Use match_oacc_clause_gwv for
+	OMP_CLAUSE_{GANG,WORKER,VECTOR}.  Propagate any MATCH_ERRORs for
+	invalid OMP_CLAUSE_{ASYNC,WAIT,GANG,WORKER,VECTOR} clauses.
+	(gfc_match_oacc_wait): Propagate MATCH_ERROR for invalid
+	oacc_expr_lists.  Adjust the first and needs_space arguments to
+	gfc_match_omp_clauses.
+
+2016-06-29  Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/71002
+	* f95-lang.c (LANG_HOOKS_GET_ALIAS_SET): Remove (un-)define.
+	(gfc_get_alias_set): Remove.
+
+2016-06-25  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/71649
+	* module.c (create_intrinsic_function): Check for NULL values and
+	return after giving error.
+
+2016-06-21  Michael Meissner  <meissner@linux.vnet.ibm.com>
+
+	* trans-types.c (gfc_build_complex_type): Move setting complex
+	MODE to layout_type, instead of setting it ahead of time by the
+	caller.
+
+2016-06-21  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/71068
+	* resolve.c (resolve_function): Don't resolve caf_get/caf_send.
+	(check_data_variable): Strip-off caf_get before checking.
+
+2016-06-20  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/71194
+	* trans-expr.c (gfc_trans_pointer_assignment): Correctly handle
+	RHS pointer functions.
+
+2016-06-19  Bernhard Reutner-Fischer  <aldot@gcc.gnu.org>
+
+	* class.c (gfc_add_class_array_ref): Call gfc_add_data_component()
+	instead of gfc_add_component_ref().
+	(gfc_get_len_component): Call gfc_add_len_component() instead of
+	gfc_add_component_ref().
+	* trans-intrinsic.c (gfc_conv_intrinsic_loc): Call
+	gfc_add_data_component() instead of gfc_add_component_ref().
+	* trans.c (gfc_add_finalizer_call): Call
+	gfc_add_final_component() and gfc_add_size_component() instead
+	of gfc_add_component_ref.
+
+2016-06-18  Bernhard Reutner-Fischer  <aldot@gcc.gnu.org>
+
+	* trans-types.c (gfc_typenode_for_spec): Commentary typo fix.
+
+2016-06-17  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* openmp.c (match_acc): New generic function to parse OpenACC
+	directives.
+	(gfc_match_oacc_parallel_loop): Use it.
+	(gfc_match_oacc_parallel): Likewise.
+	(gfc_match_oacc_kernels_loop): Likewise.
+	(gfc_match_oacc_kernels): Likewise.
+	(gfc_match_oacc_data): Likewise.
+	(gfc_match_oacc_host_data): Likewise.
+	(gfc_match_oacc_loop): Likewise.
+	(gfc_match_oacc_enter_data): Likewise.
+	(gfc_match_oacc_exit_data): Likewise.
+
+2016-06-16  Martin Liska  <mliska@suse.cz>
+
+	* trans-stmt.c (gfc_trans_simple_do): Predict the edge.
+
+2016-06-16  Martin Liska  <mliska@suse.cz>
+
+	* trans-array.c (gfc_array_allocate): Do not generate expect
+	stmt.
+	* trans.c (gfc_allocate_using_malloc): Properly set FAIL_ALLOC
+	predictor for malloc return value.
+	(gfc_allocate_allocatable): Use REALLOC predictor instead of
+	FAIL_ALLOC.
+	(gfc_deallocate_with_status): Likewise.
+
+2016-06-13  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/70673
+	* frontend-passes.c (realloc_string_callback): Add a call to
+	gfc_dep_compare_expr.
+
+2016-06-11  Dominique d'Humieres  <dominiq@lps.ens.fr>
+
+	PR fortran/60751
+	* io.c (gfc_resolve_dt): Replace GFC_STD_GNU with GFC_STD_LEGACY.
+
+2016-06-10  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR c/71381
+	* openmp.c (gfc_match_oacc_cache): Add comment.
+
+2016-06-05  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/71404
+	* io.c (match_io): For READ, commit in pending symbols in the
+	current statement before trying to match an expression so that
+	if the match fails and we undo symbols we dont toss good symbols.
+
+2016-06-05  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	PR fortran/69659
+	* trans-array.c (gfc_trans_dummy_array_bias): For class arrays use
+	the address of the _data component to reference the arrays data
+	component.
+
+2016-06-03  Chung-Lin Tang  <cltang@codesourcery.com>
+
+	* trans-openmp.c (gfc_trans_omp_reduction_list): Add mark_addressable
+	bool parameter, set reduction clause DECLs as addressable when true.
+	(gfc_trans_omp_clauses): Pass clauses->async to
+	gfc_trans_omp_reduction_list, add comment describing OpenACC situation.
+
+2016-06-01  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/52393
+	* io.c (match_io): For READ, try to match a default character
+	expression. If found, set the dt format expression to this,
+	otherwise go back and try control list.
+
+2016-06-01  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/71156
+	* decl.c (copy_prefix): Add checks that the module procedure
+	declaration prefixes are compliant with the interface. Invert
+	order of existing elemental and pure checks.
+	* resolve.c (resolve_fl_procedure): Invert order of elemental
+	and pure errors.
+
+2016-06-01  Jakub Jelinek  <jakub@redhat.com>
+
+	* parse.c (case_decl): Move ST_OMP_* to ...
+	(case_omp_decl): ... here, new macro.
+	(verify_st_order): For case_omp_decl, complain about
+	p->state >= ORDER_EXEC, but don't change p->state otherwise.
+
+2016-05-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* openmp.c (resolve_omp_clauses): Warn if chunk_size is known not to
+	be positive.
+
+2016-05-23  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/66461
+	* scanner.c (gfc_next_char_literal): Clear end_flag when adjusting
+	current locus back to old_locus.
+
+2016-05-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/71204
+	* frontend-passes.c (realloc_string_callback): Clear inserted_block
+	and changed_statement before calling create_var.
+
 2016-05-15  Harald Anlauf  <anlauf@gmx.de>
 
 	PR fortran/69603

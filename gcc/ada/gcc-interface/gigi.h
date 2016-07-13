@@ -394,12 +394,14 @@ enum standard_datatypes
   /* Value BITS_PER_UNIT in signed bitsizetype.  */
   ADT_sbitsize_unit_node,
 
-  /* Function declaration nodes for run-time functions for allocating memory.
-     Ada allocators cause calls to this function to be generated.  */
+  /* Function declaration node for run-time allocation function.  */
   ADT_malloc_decl,
 
-  /* Likewise for freeing memory.  */
+  /* Function declaration node for run-time freeing function.  */
   ADT_free_decl,
+
+  /* Function declaration node for run-time reallocation function.  */
+  ADT_realloc_decl,
 
   /* Function decl node for 64-bit multiplication with overflow checking.  */
   ADT_mulv64_decl,
@@ -471,6 +473,7 @@ extern GTY(()) tree gnat_raise_decls_ext[(int) LAST_REASON_CODE + 1];
 #define sbitsize_unit_node gnat_std_decls[(int) ADT_sbitsize_unit_node]
 #define malloc_decl gnat_std_decls[(int) ADT_malloc_decl]
 #define free_decl gnat_std_decls[(int) ADT_free_decl]
+#define realloc_decl gnat_std_decls[(int) ADT_realloc_decl]
 #define mulv64_decl gnat_std_decls[(int) ADT_mulv64_decl]
 #define parent_name_id gnat_std_decls[(int) ADT_parent_name_id]
 #define exception_data_name_id gnat_std_decls[(int) ADT_exception_data_name_id]
@@ -737,9 +740,9 @@ extern tree create_subprog_decl (tree name, tree asm_name, tree type,
 				 bool artificial_p, bool debug_info_p,
 				 struct attrib *attr_list, Node_Id gnat_node);
 
-/* Given a subprogram declaration DECL and its TYPE, finish constructing the
-   subprogram declaration from TYPE.  */
-extern void finish_subprog_decl (tree decl, tree type);
+/* Given a subprogram declaration DECL, its assembler name and its type,
+   finish constructing the subprogram declaration from ASM_NAME and TYPE.  */
+extern void finish_subprog_decl (tree decl, tree asm_name, tree type);
 
 /* Process the attributes in ATTR_LIST for NODE, which is either a DECL or
    a TYPE.  If IN_PLACE is true, the tree pointed to by NODE should not be

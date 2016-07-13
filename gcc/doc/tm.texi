@@ -3938,16 +3938,20 @@ documentation.
 @end deftypefn
 
 @deftypefn {Target Hook} rtx TARGET_FUNCTION_INCOMING_ARG (cumulative_args_t @var{ca}, machine_mode @var{mode}, const_tree @var{type}, bool @var{named})
-Define this hook if the target machine has ``register windows'', so
-that the register in which a function sees an arguments is not
-necessarily the same as the one in which the caller passed the
-argument.
+Define this hook if the caller and callee on the target have different
+views of where arguments are passed.  Also define this hook if there are
+functions that are never directly called, but are invoked by the hardware
+and which have nonstandard calling conventions.
 
-For such machines, @code{TARGET_FUNCTION_ARG} computes the register in
+In this case @code{TARGET_FUNCTION_ARG} computes the register in
 which the caller passes the value, and
 @code{TARGET_FUNCTION_INCOMING_ARG} should be defined in a similar
 fashion to tell the function being called where the arguments will
 arrive.
+
+@code{TARGET_FUNCTION_INCOMING_ARG} can also return arbitrary address
+computation using hard register, which can be forced into a register,
+so that it can be used to pass special arguments.
 
 If @code{TARGET_FUNCTION_INCOMING_ARG} is not defined,
 @code{TARGET_FUNCTION_ARG} serves both purposes.
@@ -6311,8 +6315,9 @@ Both @var{size} and @var{alignment} are measured in terms of storage
 units.
 
 The parameter @var{op} is one of: @code{CLEAR_BY_PIECES},
-@code{MOVE_BY_PIECES}, @code{SET_BY_PIECES}, @code{STORE_BY_PIECES}.
-These describe the type of memory operation under consideration.
+@code{MOVE_BY_PIECES}, @code{SET_BY_PIECES}, @code{STORE_BY_PIECES} or
+@code{COMPARE_BY_PIECES}.  These describe the type of memory operation
+under consideration.
 
 The parameter @var{speed_p} is true if the code is currently being
 optimized for speed rather than size.
@@ -6329,9 +6334,31 @@ in code size, for example where the number of insns emitted to perform a
 move would be greater than that of a library call.
 @end deftypefn
 
+@deftypefn {Target Hook} int TARGET_COMPARE_BY_PIECES_BRANCH_RATIO (machine_mode @var{mode})
+When expanding a block comparison in MODE, gcc can try to reduce the
+number of branches at the expense of more memory operations.  This hook
+allows the target to override the default choice.  It should return the
+factor by which branches should be reduced over the plain expansion with
+one comparison per @var{mode}-sized piece.  A port can also prevent a
+particular mode from being used for block comparisons by returning a
+negative number from this hook.
+@end deftypefn
+
 @defmac MOVE_MAX_PIECES
 A C expression used by @code{move_by_pieces} to determine the largest unit
 a load or store used to copy memory is.  Defaults to @code{MOVE_MAX}.
+@end defmac
+
+@defmac STORE_MAX_PIECES
+A C expression used by @code{store_by_pieces} to determine the largest unit
+a store used to memory is.  Defaults to @code{MOVE_MAX_PIECES}, or two times
+the size of @code{HOST_WIDE_INT}, whichever is smaller.
+@end defmac
+
+@defmac COMPARE_MAX_PIECES
+A C expression used by @code{compare_by_pieces} to determine the largest unit
+a load or store used to compare memory is.  Defaults to
+@code{MOVE_MAX_PIECES}.
 @end defmac
 
 @defmac CLEAR_RATIO (@var{speed})

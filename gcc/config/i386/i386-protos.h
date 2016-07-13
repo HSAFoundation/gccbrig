@@ -70,6 +70,7 @@ extern bool ix86_expand_set_or_movmem (rtx, rtx, rtx, rtx, rtx, rtx,
 extern bool constant_address_p (rtx);
 extern bool legitimate_pic_operand_p (rtx);
 extern bool legitimate_pic_address_disp_p (rtx);
+extern bool ix86_force_load_from_GOT_p (rtx);
 extern void print_reg (rtx, int, FILE*);
 extern void ix86_print_operand (FILE *, rtx, int);
 
@@ -285,6 +286,8 @@ extern rtx maybe_get_pool_constant (rtx);
 
 extern char internal_label_prefix[16];
 extern int internal_label_prefix_len;
+
+extern bool ix86_epilogue_uses (int);
 
 struct ix86_address
 {

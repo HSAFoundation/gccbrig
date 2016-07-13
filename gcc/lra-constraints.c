@@ -2261,6 +2261,41 @@ process_alt_operands (int only_alternative)
 		  goto fail;
 		}
 
+	      if (this_alternative != NO_REGS)
+		{
+		  HARD_REG_SET available_regs;
+		  
+		  COPY_HARD_REG_SET (available_regs,
+				     reg_class_contents[this_alternative]);
+		  AND_COMPL_HARD_REG_SET
+		    (available_regs,
+		     ira_prohibited_class_mode_regs[this_alternative][mode]);
+		  AND_COMPL_HARD_REG_SET (available_regs, lra_no_alloc_regs);
+		  if (hard_reg_set_empty_p (available_regs))
+		    {
+		      /* There are no hard regs holding a value of given
+			 mode.  */
+		      if (offmemok)
+			{
+			  this_alternative = NO_REGS;
+			  if (lra_dump_file != NULL)
+			    fprintf (lra_dump_file,
+				     "            %d Using memory because of"
+				     " a bad mode: reject+=2\n",
+				     nop);
+			  reject += 2;
+			}
+		      else
+			{
+			  if (lra_dump_file != NULL)
+			    fprintf (lra_dump_file,
+				     "            alt=%d: Wrong mode -- refuse\n",
+				     nalt);
+			  goto fail;
+			}
+		    }
+		}
+
 	      /* If not assigned pseudo has a class which a subset of
 		 required reg class, it is a less costly alternative
 		 as the pseudo still can get a hard reg of necessary
@@ -2474,14 +2509,29 @@ process_alt_operands (int only_alternative)
 	      /* We are trying to spill pseudo into memory.  It is
 		 usually more costly than moving to a hard register
 		 although it might takes the same number of
-		 reloads.  */
-	      if (no_regs_p && REG_P (op) && hard_regno[nop] >= 0)
+		 reloads.
+
+		 Non-pseudo spill may happen also.  Suppose a target allows both
+		 register and memory in the operand constraint alternatives,
+		 then it's typical that an eliminable register has a substition
+		 of "base + offset" which can either be reloaded by a simple
+		 "new_reg <= base + offset" which will match the register
+		 constraint, or a similar reg addition followed by further spill
+		 to and reload from memory which will match the memory
+		 constraint, but this memory spill will be much more costly
+		 usually.
+
+		 Code below increases the reject for both pseudo and non-pseudo
+		 spill.  */
+	      if (no_regs_p
+		  && !(MEM_P (op) && offmemok)
+		  && !(REG_P (op) && hard_regno[nop] < 0))
 		{
 		  if (lra_dump_file != NULL)
 		    fprintf
 		      (lra_dump_file,
-		       "            %d Spill pseudo into memory: reject+=3\n",
-		       nop);
+		       "            %d Spill %spseudo into memory: reject+=3\n",
+		       nop, REG_P (op) ? "" : "Non-");
 		  reject += 3;
 		  if (VECTOR_MODE_P (mode))
 		    {

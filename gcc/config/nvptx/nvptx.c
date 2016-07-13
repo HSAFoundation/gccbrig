@@ -155,8 +155,19 @@ static void
 nvptx_option_override (void)
 {
   init_machine_status = nvptx_init_machine_status;
-  /* Gives us a predictable order, which we need especially for variables.  */
-  flag_toplevel_reorder = 1;
+
+  /* Set toplevel_reorder, unless explicitly disabled.  We need
+     reordering so that we emit necessary assembler decls of
+     undeclared variables. */
+  if (!global_options_set.x_flag_toplevel_reorder)
+    flag_toplevel_reorder = 1;
+
+  /* Set flag_no_common, unless explicitly disabled.  We fake common
+     using .weak, and that's not entirely accurate, so avoid it
+     unless forced.  */
+  if (!global_options_set.x_flag_no_common)
+    flag_no_common = 1;
+
   /* Assumes that it will see only hard registers.  */
   flag_var_tracking = 0;
 
@@ -1766,6 +1777,12 @@ nvptx_assemble_undefined_decl (FILE *file, const char *name, const_tree decl)
   if (DECL_IN_CONSTANT_POOL (decl))
     return;
 
+  /*  We support weak defintions, and hence have the right
+      ASM_WEAKEN_DECL definition.  Diagnose the problem here.  */
+  if (DECL_WEAK (decl))
+    error_at (DECL_SOURCE_LOCATION (decl),
+	      "PTX does not support weak declarations"
+	      " (only weak definitions)");
   write_var_marker (file, false, TREE_PUBLIC (decl), name);
 
   fprintf (file, "\t.extern ");

@@ -429,6 +429,7 @@ can_inline_edge_p (struct cgraph_edge *e, bool report,
 		      || check_maybe_up (flag_signed_zeros)
 		      || check_maybe_down (flag_associative_math)
 		      || check_maybe_down (flag_reciprocal_math)
+		      || check_maybe_down (flag_fp_int_builtin_inexact)
 		      /* Strictly speaking only when the callee contains function
 			 calls that may end up setting errno.  */
 		      || check_maybe_up (flag_errno_math)))
@@ -1163,7 +1164,7 @@ edge_badness (struct cgraph_edge *edge, bool dump)
 	  fprintf (dump_file,
 		   "      %f: guessed profile. frequency %f, count %" PRId64
 		   " caller count %" PRId64
-		   " time w/o inlining %f, time w inlining %f"
+		   " time w/o inlining %f, time w/ inlining %f"
 		   " overall growth %i (current) %i (original)"
 		   " %i (compensated)\n",
 		   badness.to_double (),

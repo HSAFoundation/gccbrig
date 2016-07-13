@@ -2376,7 +2376,8 @@ warn_placement_new_too_small (tree type, tree nelts, tree size, tree oper)
 
   STRIP_NOPS (oper);
 
-  if (TREE_CODE (oper) == ARRAY_REF)
+  if (TREE_CODE (oper) == ARRAY_REF
+      && (addr_expr || TREE_CODE (TREE_TYPE (oper)) == ARRAY_TYPE))
     {
       /* Similar to the offset computed above, see if the array index
 	 is a compile-time constant.  If so, and unless the offset was
@@ -2405,8 +2406,8 @@ warn_placement_new_too_small (tree type, tree nelts, tree size, tree oper)
   bool compref = TREE_CODE (oper) == COMPONENT_REF;
 
   /* Descend into a struct or union to find the member whose address
-     is being used as the agument.  */
-  while (TREE_CODE (oper) == COMPONENT_REF)
+     is being used as the argument.  */
+  if (TREE_CODE (oper) == COMPONENT_REF)
     {
       tree op0 = oper;
       while (TREE_CODE (op0 = TREE_OPERAND (op0, 0)) == COMPONENT_REF);
@@ -3331,7 +3332,7 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
     rval = build2 (COMPOUND_EXPR, TREE_TYPE (rval), init_preeval_expr, rval);
 
   /* A new-expression is never an lvalue.  */
-  gcc_assert (!lvalue_p (rval));
+  gcc_assert (!obvalue_p (rval));
 
   return convert (pointer_type, rval);
 }
@@ -3749,7 +3750,7 @@ static bool
 vec_copy_assign_is_trivial (tree inner_elt_type, tree init)
 {
   tree fromtype = inner_elt_type;
-  if (real_lvalue_p (init))
+  if (lvalue_p (init))
     fromtype = cp_build_reference_type (fromtype, /*rval*/false);
   return is_trivially_xible (MODIFY_EXPR, inner_elt_type, fromtype);
 }

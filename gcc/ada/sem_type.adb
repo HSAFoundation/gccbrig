@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2015, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2016, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -638,8 +638,9 @@ package body Sem_Type is
 
          H := Current_Entity (Ent);
          while Present (H) loop
-            exit when (not Is_Overloadable (H))
-              and then Is_Immediately_Visible (H);
+            exit when
+              not Is_Overloadable (H)
+                and then Is_Immediately_Visible (H);
 
             if Is_Immediately_Visible (H) and then H /= Ent then
 
@@ -1606,9 +1607,9 @@ package body Sem_Type is
                   Act1 := Left_Opnd (N);
                   Act2 := Right_Opnd (N);
 
-                  --  Use type of second formal, so as to include
-                  --  exponentiation, where the exponent may be
-                  --  ambiguous and the result non-universal.
+                  --  Use the type of the second formal, so as to include
+                  --  exponentiation, where the exponent may be ambiguous and
+                  --  the result non-universal.
 
                   Next_Formal (F1);
 
@@ -1618,8 +1619,10 @@ package body Sem_Type is
 
                if Nkind (Act1) in N_Op
                  and then Is_Overloaded (Act1)
-                 and then Nkind_In (Left_Opnd (Act1), N_Integer_Literal,
-                                                      N_Real_Literal)
+                 and then
+                   (Nkind (Act1) in N_Unary_Op
+                     or else Nkind_In (Left_Opnd (Act1), N_Integer_Literal,
+                                                         N_Real_Literal))
                  and then Nkind_In (Right_Opnd (Act1), N_Integer_Literal,
                                                        N_Real_Literal)
                  and then Has_Compatible_Type (Act1, Standard_Boolean)

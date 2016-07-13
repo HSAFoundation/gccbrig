@@ -286,6 +286,49 @@ package body Sem_Util is
       end if;
    end Address_Integer_Convert_OK;
 
+   -------------------
+   -- Address_Value --
+   -------------------
+
+   function Address_Value (N : Node_Id) return Node_Id is
+      Expr : Node_Id := N;
+
+   begin
+      loop
+         --  For constant, get constant expression
+
+         if Is_Entity_Name (Expr)
+           and then Ekind (Entity (Expr)) = E_Constant
+         then
+            Expr := Constant_Value (Entity (Expr));
+
+         --  For unchecked conversion, get result to convert
+
+         elsif Nkind (Expr) = N_Unchecked_Type_Conversion then
+            Expr := Expression (Expr);
+
+         --  For (common case) of To_Address call, get argument
+
+         elsif Nkind (Expr) = N_Function_Call
+           and then Is_Entity_Name (Name (Expr))
+           and then Is_RTE (Entity (Name (Expr)), RE_To_Address)
+         then
+            Expr := First (Parameter_Associations (Expr));
+
+            if Nkind (Expr) = N_Parameter_Association then
+               Expr := Explicit_Actual_Parameter (Expr);
+            end if;
+
+         --  We finally have the real expression
+
+         else
+            exit;
+         end if;
+      end loop;
+
+      return Expr;
+   end Address_Value;
+
    -----------------
    -- Addressable --
    -----------------
@@ -1214,9 +1257,9 @@ package body Sem_Util is
          Prag      : constant Node_Id    :=
                        Get_Pragma (Typ, Pragma_Default_Initial_Condition);
          Proc_Id   : constant Entity_Id  := Default_Init_Cond_Procedure (Typ);
-         Spec_Decl : constant Node_Id    := Unit_Declaration_Node (Proc_Id);
          Body_Decl : Node_Id;
          Expr      : Node_Id;
+         Spec_Decl : Node_Id;
          Stmt      : Node_Id;
 
          Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
@@ -1230,11 +1273,18 @@ package body Sem_Util is
 
          pragma Assert (Has_Default_Init_Cond (Typ));
          pragma Assert (Present (Prag));
-         pragma Assert (Present (Proc_Id));
+
+         --  Nothing to do if the spec was not built. This occurs when the
+         --  expression of the Default_Initial_Condition is missing or is
+         --  null.
+
+         if No (Proc_Id) then
+            return;
 
          --  Nothing to do if the body was already built
 
-         if Present (Corresponding_Body (Spec_Decl)) then
+         elsif Present (Corresponding_Body (Unit_Declaration_Node (Proc_Id)))
+         then
             return;
          end if;
 
@@ -1293,6 +1343,7 @@ package body Sem_Util is
          --       <Stmt>;
          --    end <Typ>Default_Init_Cond;
 
+         Spec_Decl := Unit_Declaration_Node (Proc_Id);
          Body_Decl :=
            Make_Subprogram_Body (Loc,
              Specification              =>
@@ -1364,6 +1415,7 @@ package body Sem_Util is
 
       Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
 
+      Args    : List_Id;
       Proc_Id : Entity_Id;
 
    begin
@@ -1374,9 +1426,23 @@ package body Sem_Util is
       pragma Assert (Has_Default_Init_Cond (Typ));
       pragma Assert (Present (Prag));
 
+      Args := Pragma_Argument_Associations (Prag);
+
       --  Nothing to do if default initial condition procedure already built
 
       if Present (Default_Init_Cond_Procedure (Typ)) then
+         return;
+
+      --  Nothing to do if the default initial condition appears without an
+      --  expression.
+
+      elsif No (Args) then
+         return;
+
+      --  Nothing to do if the expression of the default initial condition is
+      --  null.
+
+      elsif Nkind (Get_Pragma_Arg (First (Args))) = N_Null then
          return;
       end if;
 
@@ -4239,7 +4305,11 @@ package body Sem_Util is
             Full_T := Full_View (Typ);
 
             if Ekind (Full_T) = E_Record_Subtype then
-               Full_T := Full_View (Etype (Typ));
+               Full_T := Etype (Typ);
+
+               if Present (Full_View (Full_T)) then
+                  Full_T := Full_View (Full_T);
+               end if;
             end if;
          end if;
 
@@ -4795,7 +4865,7 @@ package body Sem_Util is
          Msgl := Msg'Length;
 
          for J in 1 .. Msgl loop
-            if Msg (J) = '?' and then (J = 1 or else Msg (J) /= ''') then
+            if Msg (J) = '?' and then (J = 1 or else Msg (J - 1) /= ''') then
                Msgc (J) := '<';
             else
                Msgc (J) := Msg (J);
@@ -6287,6 +6357,7 @@ package body Sem_Util is
          Encl_Unit := Library_Unit (Encl_Unit);
       end loop;
 
+      pragma Assert (Nkind (Encl_Unit) = N_Compilation_Unit);
       return Encl_Unit;
    end Enclosing_Lib_Unit_Node;
 
@@ -8595,6 +8666,76 @@ package body Sem_Util is
       return Empty;
    end Get_User_Defined_Eq;
 
+   ---------------
+   -- Get_Views --
+   ---------------
+
+   procedure Get_Views
+     (Typ       : Entity_Id;
+      Priv_Typ  : out Entity_Id;
+      Full_Typ  : out Entity_Id;
+      Full_Base : out Entity_Id;
+      CRec_Typ  : out Entity_Id)
+   is
+   begin
+      --  Assume that none of the views can be recovered
+
+      Priv_Typ  := Empty;
+      Full_Typ  := Empty;
+      Full_Base := Empty;
+      CRec_Typ  := Empty;
+
+      --  The input type is private
+
+      if Is_Private_Type (Typ) then
+         Priv_Typ := Typ;
+         Full_Typ := Full_View (Priv_Typ);
+
+         if Present (Full_Typ) then
+            Full_Base := Base_Type (Full_Typ);
+
+            if Ekind_In (Full_Typ, E_Protected_Type, E_Task_Type) then
+               CRec_Typ := Corresponding_Record_Type (Full_Typ);
+            end if;
+         end if;
+
+      --  The input type is the corresponding record type of a protected or a
+      --  task type.
+
+      elsif Ekind (Typ) = E_Record_Type
+        and then Is_Concurrent_Record_Type (Typ)
+      then
+         CRec_Typ  := Typ;
+         Full_Typ  := Corresponding_Concurrent_Type (CRec_Typ);
+         Full_Base := Base_Type (Full_Typ);
+         Priv_Typ  := Incomplete_Or_Partial_View (Full_Typ);
+
+      --  Otherwise the input type could be the full view of a private type
+
+      else
+         Full_Typ  := Typ;
+         Full_Base := Base_Type (Full_Typ);
+
+         if Ekind_In (Full_Typ, E_Protected_Type, E_Task_Type) then
+            CRec_Typ := Corresponding_Record_Type (Full_Typ);
+         end if;
+
+         --  The type is the full view of a private type, obtain the partial
+         --  view.
+
+         if Has_Private_Declaration (Full_Typ)
+           and then not Is_Private_Type (Full_Typ)
+         then
+            Priv_Typ := Incomplete_Or_Partial_View (Full_Typ);
+
+            --  The full view of a private type should always have a partial
+            --  view.
+
+            pragma Assert (Present (Priv_Typ));
+         end if;
+      end if;
+   end Get_Views;
+
    -----------------------
    -- Has_Access_Values --
    -----------------------
@@ -8776,7 +8917,6 @@ package body Sem_Util is
          elsif Nkind (Expr) = N_Indexed_Component then
             declare
                Typ : constant Entity_Id := Etype (Prefix (Expr));
-               Ind : constant Node_Id   := First_Index (Typ);
 
             begin
                --  Packing generates unknown alignment if layout is not done
@@ -8785,22 +8925,12 @@ package body Sem_Util is
                   Set_Result (Unknown);
                end if;
 
-               --  Check prefix and component offset
+               --  Check prefix and component offset (or at least size)
 
                Check_Prefix;
-               Offs := Component_Size (Typ);
-
-               --  Small optimization: compute the full offset when possible
-
-               if Offs /= No_Uint
-                 and then Offs > Uint_0
-                 and then Present (Ind)
-                 and then Nkind (Ind) = N_Range
-                 and then Compile_Time_Known_Value (Low_Bound (Ind))
-                 and then Compile_Time_Known_Value (First (Expressions (Expr)))
-               then
-                  Offs := Offs * (Expr_Value (First (Expressions (Expr)))
-                                    - Expr_Value (Low_Bound ((Ind))));
+               Offs := Indexed_Component_Bit_Offset (Expr);
+               if Offs = No_Uint then
+                  Offs := Component_Size (Typ);
                end if;
             end;
          end if;
@@ -9581,6 +9711,65 @@ package body Sem_Util is
           and then Nkind (Node (First_Elmt (Constits))) /= N_Null;
    end Has_Non_Null_Refinement;
 
+   -------------------
+   -- Has_Null_Body --
+   -------------------
+
+   function Has_Null_Body (Proc_Id : Entity_Id) return Boolean is
+      Body_Id : Entity_Id;
+      Decl    : Node_Id;
+      Spec    : Node_Id;
+      Stmt1   : Node_Id;
+      Stmt2   : Node_Id;
+
+   begin
+      Spec := Parent (Proc_Id);
+      Decl := Parent (Spec);
+
+      --  Retrieve the entity of the procedure body (e.g. invariant proc).
+
+      if Nkind (Spec) = N_Procedure_Specification
+        and then Nkind (Decl) = N_Subprogram_Declaration
+      then
+         Body_Id := Corresponding_Body (Decl);
+
+      --  The body acts as a spec
+
+      else
+         Body_Id := Proc_Id;
+      end if;
+
+      --  The body will be generated later
+
+      if No (Body_Id) then
+         return False;
+      end if;
+
+      Spec := Parent (Body_Id);
+      Decl := Parent (Spec);
+
+      pragma Assert
+        (Nkind (Spec) = N_Procedure_Specification
+          and then Nkind (Decl) = N_Subprogram_Body);
+
+      Stmt1 := First (Statements (Handled_Statement_Sequence (Decl)));
+
+      --  Look for a null statement followed by an optional return
+      --  statement.
+
+      if Nkind (Stmt1) = N_Null_Statement then
+         Stmt2 := Next (Stmt1);
+
+         if Present (Stmt2) then
+            return Nkind (Stmt2) = N_Simple_Return_Statement;
+         else
+            return True;
+         end if;
+      end if;
+
+      return False;
+   end Has_Null_Body;
+
    ------------------------
    -- Has_Null_Exclusion --
    ------------------------
@@ -10323,6 +10512,58 @@ package body Sem_Util is
       return Name_Find;
    end Remove_Suffix;
 
+   ----------------------------------
+   -- Replace_Null_By_Null_Address --
+   ----------------------------------
+
+   procedure Replace_Null_By_Null_Address (N : Node_Id) is
+      procedure Replace_Null_Operand (Op : Node_Id; Other_Op : Node_Id);
+      --  Replace operand Op with a reference to Null_Address when the operand
+      --  denotes a null Address. Other_Op denotes the other operand.
+
+      --------------------------
+      -- Replace_Null_Operand --
+      --------------------------
+
+      procedure Replace_Null_Operand (Op : Node_Id; Other_Op : Node_Id) is
+      begin
+         --  Check the type of the complementary operand since the N_Null node
+         --  has not been decorated yet.
+
+         if Nkind (Op) = N_Null
+           and then Is_Descendant_Of_Address (Etype (Other_Op))
+         then
+            Rewrite (Op, New_Occurrence_Of (RTE (RE_Null_Address), Sloc (Op)));
+         end if;
+      end Replace_Null_Operand;
+
+   --  Start of processing for Replace_Null_By_Null_Address
+
+   begin
+      pragma Assert (Relaxed_RM_Semantics);
+      pragma Assert (Nkind_In (N, N_Null,
+                                  N_Op_Eq,
+                                  N_Op_Ge,
+                                  N_Op_Gt,
+                                  N_Op_Le,
+                                  N_Op_Lt,
+                                  N_Op_Ne));
+
+      if Nkind (N) = N_Null then
+         Rewrite (N, New_Occurrence_Of (RTE (RE_Null_Address), Sloc (N)));
+
+      else
+         declare
+            L : constant Node_Id := Left_Opnd  (N);
+            R : constant Node_Id := Right_Opnd (N);
+
+         begin
+            Replace_Null_Operand (L, Other_Op => R);
+            Replace_Null_Operand (R, Other_Op => L);
+         end;
+      end if;
+   end Replace_Null_By_Null_Address;
+
    --------------------------
    -- Has_Tagged_Component --
    --------------------------
@@ -10861,20 +11102,31 @@ package body Sem_Util is
          while Present (Decl) loop
             Match := Empty;
 
+            --  The partial view of a Taft-amendment type is an incomplete
+            --  type.
+
             if Taft then
                if Nkind (Decl) = N_Incomplete_Type_Declaration then
                   Match := Defining_Identifier (Decl);
                end if;
 
-            else
-               if Nkind_In (Decl, N_Private_Extension_Declaration,
+            --  Otherwise look for a private type whose full view matches the
+            --  input type. Note that this checks full_type_declaration nodes
+            --  to account for derivations from a private type where the type
+            --  declaration hold the partial view and the full view is an
+            --  itype.
+
+            elsif Nkind_In (Decl, N_Full_Type_Declaration,
+                                  N_Private_Extension_Declaration,
                                   N_Private_Type_Declaration)
-               then
-                  Match := Defining_Identifier (Decl);
-               end if;
+            then
+               Match := Defining_Identifier (Decl);
             end if;
 
+            --  Guard against unanalyzed entities
+
             if Present (Match)
+              and then Is_Type (Match)
               and then Present (Full_View (Match))
               and then Full_View (Match) = Id
             then
@@ -10913,7 +11165,9 @@ package body Sem_Util is
          Pkg_Decl : Node_Id := Pkg;
 
       begin
-         if Present (Pkg) and then Ekind (Pkg) = E_Package then
+         if Present (Pkg)
+           and then Ekind_In (Pkg, E_Generic_Package, E_Package)
+         then
             while Nkind (Pkg_Decl) /= N_Package_Specification loop
                Pkg_Decl := Parent (Pkg_Decl);
             end loop;
@@ -10948,6 +11202,59 @@ package body Sem_Util is
 
       return Empty;
    end Incomplete_Or_Partial_View;
+
+   ----------------------------------
+   -- Indexed_Component_Bit_Offset --
+   ----------------------------------
+
+   function Indexed_Component_Bit_Offset (N : Node_Id) return Uint is
+      Exp : constant Node_Id   := First (Expressions (N));
+      Typ : constant Entity_Id := Etype (Prefix (N));
+      Off : constant Uint      := Component_Size (Typ);
+      Ind : Node_Id;
+
+   begin
+      --  Return early if the component size is not known or variable
+
+      if Off = No_Uint or else Off < Uint_0 then
+         return No_Uint;
+      end if;
+
+      --  Deal with the degenerate case of an empty component
+
+      if Off = Uint_0 then
+         return Off;
+      end if;
+
+      --  Check that both the index value and the low bound are known
+
+      if not Compile_Time_Known_Value (Exp) then
+         return No_Uint;
+      end if;
+
+      Ind := First_Index (Typ);
+      if No (Ind) then
+         return No_Uint;
+      end if;
+
+      if Nkind (Ind) = N_Subtype_Indication then
+         Ind := Constraint (Ind);
+
+         if Nkind (Ind) = N_Range_Constraint then
+            Ind := Range_Expression (Ind);
+         end if;
+      end if;
+
+      if Nkind (Ind) /= N_Range
+        or else not Compile_Time_Known_Value (Low_Bound (Ind))
+      then
+         return No_Uint;
+      end if;
+
+      --  Return the scaled offset
+
+      return Off * (Expr_Value (Exp) - Expr_Value (Low_Bound ((Ind))));
+   end Indexed_Component_Bit_Offset;
 
    -----------------------------------------
    -- Inherit_Default_Init_Cond_Procedure --
@@ -11193,7 +11500,7 @@ package body Sem_Util is
    ------------------------------------------
 
    procedure Inspect_Deferred_Constant_Completion (Decls : List_Id) is
-      Decl   : Node_Id;
+      Decl : Node_Id;
 
    begin
       Decl := First (Decls);
@@ -12363,7 +12670,7 @@ package body Sem_Util is
             return True;
 
          --  An array type is effectively volatile when it is subject to pragma
-         --  Atomic_Components or Volatile_Components or its compolent type is
+         --  Atomic_Components or Volatile_Components or its component type is
          --  effectively volatile.
 
          elsif Is_Array_Type (Id) then
@@ -12406,9 +12713,6 @@ package body Sem_Util is
    function Is_Effectively_Volatile_Object (N : Node_Id) return Boolean is
    begin
       if Is_Entity_Name (N) then
-         return Is_Effectively_Volatile (Entity (N));
-
-      elsif Nkind (N) = N_Expanded_Name then
          return Is_Effectively_Volatile (Entity (N));
 
       elsif Nkind (N) = N_Indexed_Component then
@@ -13634,6 +13938,23 @@ package body Sem_Util is
         and then Is_OK_Volatile_Context
           (Context => Parent (Context),
            Obj_Ref => Context)
+      then
+         return True;
+
+      --  The volatile object appears as the prefix of attributes Address,
+      --  Alignment, Component_Size, First_Bit, Last_Bit, Position, Size,
+      --  Storage_Size.
+
+      elsif Nkind (Context) = N_Attribute_Reference
+        and then Prefix (Context) = Obj_Ref
+        and then Nam_In (Attribute_Name (Context), Name_Address,
+                                                   Name_Alignment,
+                                                   Name_Component_Size,
+                                                   Name_First_Bit,
+                                                   Name_Last_Bit,
+                                                   Name_Position,
+                                                   Name_Size,
+                                                   Name_Storage_Size)
       then
          return True;
 
@@ -15558,11 +15879,15 @@ package body Sem_Util is
             return N = Name (P);
 
          --  Test prefix of component or attribute. Note that the prefix of an
-         --  explicit or implicit dereference cannot be an l-value.
+         --  explicit or implicit dereference cannot be an l-value. In the case
+         --  of a 'Read attribute, the reference can be an actual in the
+         --  argument list of the attribute.
 
          when N_Attribute_Reference =>
-            return N = Prefix (P)
-              and then Name_Implies_Lvalue_Prefix (Attribute_Name (P));
+            return (N = Prefix (P)
+                     and then Name_Implies_Lvalue_Prefix (Attribute_Name (P)))
+                 or else
+                   Attribute_Name (P) = Name_Read;
 
          --  For an expanded name, the name is an lvalue if the expanded name
          --  is an lvalue, but the prefix is never an lvalue, since it is just
@@ -15948,9 +16273,9 @@ package body Sem_Util is
 
    function New_Copy_Tree
      (Source    : Node_Id;
-      Map       : Elist_Id := No_Elist;
+      Map       : Elist_Id   := No_Elist;
       New_Sloc  : Source_Ptr := No_Location;
-      New_Scope : Entity_Id := Empty) return Node_Id
+      New_Scope : Entity_Id  := Empty) return Node_Id
    is
       Actual_Map : Elist_Id := Map;
       --  This is the actual map for the copy. It is initialized with the
@@ -17293,11 +17618,20 @@ package body Sem_Util is
                if Comes_From_Source (Exp)
                  or else Modification_Comes_From_Source
                then
-                  --  Give warning if pragma unmodified given and we are
+                  --  Give warning if pragma unmodified is given and we are
                   --  sure this is a modification.
 
                   if Has_Pragma_Unmodified (Ent) and then Sure then
-                     Error_Msg_NE ("??pragma Unmodified given for &!", N, Ent);
+
+                     --  Note that the entity may be present only as a result
+                     --  of pragma Unused.
+
+                     if Has_Pragma_Unused (Ent) then
+                        Error_Msg_NE ("??pragma Unused given for &!", N, Ent);
+                     else
+                        Error_Msg_NE
+                          ("??pragma Unmodified given for &!", N, Ent);
+                     end if;
                   end if;
 
                   Set_Never_Set_In_Source (Ent, False);
@@ -17409,6 +17743,44 @@ package body Sem_Util is
          null;
       end loop;
    end Note_Possible_Modification;
+
+   --------------------------------------
+   --  Null_To_Null_Address_Convert_OK --
+   --------------------------------------
+
+   function Null_To_Null_Address_Convert_OK
+     (N   : Node_Id;
+      Typ : Entity_Id := Empty) return Boolean
+   is
+   begin
+      if not Relaxed_RM_Semantics then
+         return False;
+      end if;
+
+      if Nkind (N) = N_Null then
+         return Present (Typ) and then Is_Descendant_Of_Address (Typ);
+
+      elsif Nkind_In (N, N_Op_Eq, N_Op_Ge, N_Op_Gt, N_Op_Le, N_Op_Lt, N_Op_Ne)
+      then
+         declare
+            L : constant Node_Id := Left_Opnd (N);
+            R : constant Node_Id := Right_Opnd (N);
+
+         begin
+            --  We check the Etype of the complementary operand since the
+            --  N_Null node is not decorated at this stage.
+
+            return
+              ((Nkind (L) = N_Null
+                 and then Is_Descendant_Of_Address (Etype (R)))
+              or else
+               (Nkind (R) = N_Null
+                 and then Is_Descendant_Of_Address (Etype (L))));
+         end;
+      end if;
+
+      return False;
+   end Null_To_Null_Address_Convert_OK;
 
    -------------------------
    -- Object_Access_Level --
@@ -18282,6 +18654,85 @@ package body Sem_Util is
 
       Set_Sloc (Endl, Loc);
    end Process_End_Label;
+
+   ------------------------------------
+   -- Propagate_Invariant_Attributes --
+   ------------------------------------
+
+   procedure Propagate_Invariant_Attributes
+     (Typ      : Entity_Id;
+      From_Typ : Entity_Id)
+   is
+      Full_IP : Entity_Id;
+      Part_IP : Entity_Id;
+
+   begin
+      if Present (Typ) and then Present (From_Typ) then
+         pragma Assert (Is_Type (Typ) and then Is_Type (From_Typ));
+
+         --  Nothing to do if both the source and the destination denote the
+         --  same type.
+
+         if From_Typ = Typ then
+            return;
+         end if;
+
+         Full_IP := Invariant_Procedure (From_Typ);
+         Part_IP := Partial_Invariant_Procedure (From_Typ);
+
+         --  The setting of the attributes is intentionally conservative. This
+         --  prevents accidental clobbering of enabled attributes.
+
+         if Has_Inheritable_Invariants (From_Typ)
+           and then not Has_Inheritable_Invariants (Typ)
+         then
+            Set_Has_Inheritable_Invariants (Typ, True);
+         end if;
+
+         if Has_Inherited_Invariants (From_Typ)
+           and then not Has_Inherited_Invariants (Typ)
+         then
+            Set_Has_Inherited_Invariants (Typ, True);
+         end if;
+
+         if Has_Own_Invariants (From_Typ)
+           and then not Has_Own_Invariants (Typ)
+         then
+            Set_Has_Own_Invariants (Typ, True);
+         end if;
+
+         if Present (Full_IP) and then No (Invariant_Procedure (Typ)) then
+            Set_Invariant_Procedure (Typ, Full_IP);
+         end if;
+
+         if Present (Part_IP) and then No (Partial_Invariant_Procedure (Typ))
+         then
+            Set_Partial_Invariant_Procedure (Typ, Part_IP);
+         end if;
+      end if;
+   end Propagate_Invariant_Attributes;
+
+   --------------------------------
+   -- Propagate_Concurrent_Flags --
+   --------------------------------
+
+   procedure Propagate_Concurrent_Flags
+     (Typ      : Entity_Id;
+      Comp_Typ : Entity_Id)
+   is
+   begin
+      if Has_Task (Comp_Typ) then
+         Set_Has_Task (Typ);
+      end if;
+
+      if Has_Protected (Comp_Typ) then
+         Set_Has_Protected (Typ);
+      end if;
+
+      if Has_Timing_Event (Comp_Typ) then
+         Set_Has_Timing_Event (Typ);
+      end if;
+   end Propagate_Concurrent_Flags;
 
    ---------------------------------------
    -- Record_Possible_Part_Of_Reference --

@@ -34,7 +34,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "params.h"
 #include "tree-ssa-scopedtables.h"
 #include "tree-ssa-threadedge.h"
-#include "tree-ssa-threadbackward.h"
 #include "tree-ssa-dom.h"
 #include "gimple-fold.h"
 
@@ -573,8 +572,6 @@ simplify_control_stmt_condition_1 (edge e,
 	  enum tree_code rhs_code = gimple_assign_rhs_code (def_stmt);
 	  const tree rhs1 = gimple_assign_rhs1 (def_stmt);
 	  const tree rhs2 = gimple_assign_rhs2 (def_stmt);
-	  const tree zero_cst = build_zero_cst (TREE_TYPE (op0));
-	  const tree one_cst = build_one_cst (TREE_TYPE (op0));
 
 	  /* Is A != 0 ?  */
 	  const tree res1
@@ -589,19 +586,19 @@ simplify_control_stmt_condition_1 (edge e,
 	    {
 	      /* If A == 0 then (A & B) != 0 is always false.  */
 	      if (cond_code == NE_EXPR)
-	        return zero_cst;
+	        return boolean_false_node;
 	      /* If A == 0 then (A & B) == 0 is always true.  */
 	      if (cond_code == EQ_EXPR)
-		return one_cst;
+		return boolean_true_node;
 	    }
 	  else if (rhs_code == BIT_IOR_EXPR && integer_nonzerop (res1))
 	    {
 	      /* If A != 0 then (A | B) != 0 is always true.  */
 	      if (cond_code == NE_EXPR)
-		return one_cst;
+		return boolean_true_node;
 	      /* If A != 0 then (A | B) == 0 is always false.  */
 	      if (cond_code == EQ_EXPR)
-		return zero_cst;
+		return boolean_false_node;
 	    }
 
 	  /* Is B != 0 ?  */
@@ -617,19 +614,19 @@ simplify_control_stmt_condition_1 (edge e,
 	    {
 	      /* If B == 0 then (A & B) != 0 is always false.  */
 	      if (cond_code == NE_EXPR)
-	        return zero_cst;
+	        return boolean_false_node;
 	      /* If B == 0 then (A & B) == 0 is always true.  */
 	      if (cond_code == EQ_EXPR)
-		return one_cst;
+		return boolean_true_node;
 	    }
 	  else if (rhs_code == BIT_IOR_EXPR && integer_nonzerop (res2))
 	    {
 	      /* If B != 0 then (A | B) != 0 is always true.  */
 	      if (cond_code == NE_EXPR)
-		return one_cst;
+		return boolean_true_node;
 	      /* If B != 0 then (A | B) == 0 is always false.  */
 	      if (cond_code == EQ_EXPR)
-		return zero_cst;
+		return boolean_false_node;
 	    }
 
 	  if (res1 != NULL_TREE && res2 != NULL_TREE)
@@ -641,10 +638,10 @@ simplify_control_stmt_condition_1 (edge e,
 		{
 		  /* If A != 0 and B != 0 then (bool)(A & B) != 0 is true.  */
 		  if (cond_code == NE_EXPR)
-		    return one_cst;
+		    return boolean_true_node;
 		  /* If A != 0 and B != 0 then (bool)(A & B) == 0 is false.  */
 		  if (cond_code == EQ_EXPR)
-		    return zero_cst;
+		    return boolean_false_node;
 		}
 
 	      if (rhs_code == BIT_IOR_EXPR
@@ -653,10 +650,10 @@ simplify_control_stmt_condition_1 (edge e,
 		{
 		  /* If A == 0 and B == 0 then (A | B) != 0 is false.  */
 		  if (cond_code == NE_EXPR)
-		    return zero_cst;
+		    return boolean_false_node;
 		  /* If A == 0 and B == 0 then (A | B) == 0 is true.  */
 		  if (cond_code == EQ_EXPR)
-		    return one_cst;
+		    return boolean_true_node;
 		}
 	    }
 	}
@@ -1183,8 +1180,6 @@ thread_across_edge (gcond *dummy_cond,
       path->release ();
       delete path;
 
-      find_jump_threads_backwards (e);
-
       /* A negative status indicates the target block was deemed too big to
 	 duplicate.  Just quit now rather than trying to use the block as
 	 a joiner in a jump threading path.
@@ -1231,10 +1226,7 @@ thread_across_edge (gcond *dummy_cond,
       {
 	if ((e->flags & EDGE_DFS_BACK) != 0
 	    || (taken_edge->flags & EDGE_DFS_BACK) != 0)
-	  {
-	    find_jump_threads_backwards (taken_edge);
-	    continue;
-	  }
+	  continue;
 
 	/* Push a fresh marker so we can unwind the equivalences created
 	   for each of E->dest's successors.  */
@@ -1282,10 +1274,7 @@ thread_across_edge (gcond *dummy_cond,
 	    register_jump_thread (path);
 	  }
 	else
-	  {
-	    find_jump_threads_backwards (path->last ()->e);
-	    delete_jump_thread_path (path);
-	  }
+	  delete_jump_thread_path (path);
 
 	/* And unwind the equivalence table.  */
 	if (avail_exprs_stack)

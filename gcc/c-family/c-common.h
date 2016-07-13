@@ -990,6 +990,15 @@ extern tree lookup_label (tree);
 extern tree lookup_name (tree);
 extern bool lvalue_p (const_tree);
 
+enum lookup_name_fuzzy_kind {
+  /* Names of types.  */
+  FUZZY_LOOKUP_TYPENAME,
+
+  /* Any name.  */
+  FUZZY_LOOKUP_NAME
+};
+extern tree lookup_name_fuzzy (tree, enum lookup_name_fuzzy_kind);
+
 extern bool vector_targets_convertible_p (const_tree t1, const_tree t2);
 extern bool vector_types_convertible_p (const_tree t1, const_tree t2, bool emit_lax_note);
 extern tree c_build_vec_perm_expr (location_t, tree, tree, tree, bool = true);
@@ -1087,6 +1096,16 @@ extern vec<tree, va_gc> *make_tree_vector_copy (const vec<tree, va_gc> *);
 /* Used for communication between c_common_type_for_mode and
    c_register_builtin_type.  */
 extern GTY(()) tree registered_builtin_types;
+
+/* Read SOURCE_DATE_EPOCH from environment to have a deterministic
+   timestamp to replace embedded current dates to get reproducible
+   results.  Returns -1 if SOURCE_DATE_EPOCH is not defined.  */
+extern time_t cb_get_source_date_epoch (cpp_reader *pfile);
+
+/* The value (as a unix timestamp) corresponds to date
+   "Dec 31 9999 23:59:59 UTC", which is the latest date that __DATE__ and
+   __TIME__ can store.  */
+#define MAX_SOURCE_DATE_EPOCH HOST_WIDE_INT_C (253402300799)
 
 /* In c-gimplify.c  */
 extern void c_genericize (tree);
@@ -1368,7 +1387,7 @@ extern tree build_userdef_literal (tree suffix_id, tree value,
 				   enum overflow_type overflow,
 				   tree num_string);
 
-extern bool convert_vector_to_pointer_for_subscript (location_t, tree *, tree);
+extern bool convert_vector_to_array_for_subscript (location_t, tree *, tree);
 
 /* Possibe cases of scalar_to_vector conversion.  */
 enum stv_conv {
@@ -1481,10 +1500,5 @@ extern bool valid_array_size_p (location_t, tree, tree);
 
 extern bool cilk_ignorable_spawn_rhs_op (tree);
 extern bool cilk_recognize_spawn (tree, tree *);
-
-/* Read SOURCE_DATE_EPOCH from environment to have a deterministic
-   timestamp to replace embedded current dates to get reproducible
-   results.  Returns -1 if SOURCE_DATE_EPOCH is not defined.  */
-extern time_t get_source_date_epoch (void);
 
 #endif /* ! GCC_C_COMMON_H */
