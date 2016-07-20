@@ -2292,6 +2292,7 @@ GCC plugins may provide their own attributes.
 * CR16 Function Attributes::
 * Epiphany Function Attributes::
 * H8/300 Function Attributes::
+* HSA Function Attributes::
 * IA-64 Function Attributes::
 * M32C Function Attributes::
 * M32R/D Function Attributes::
@@ -4028,6 +4029,43 @@ all registers except the stack pointer should be saved in the prologue
 regardless of whether they are used or not.
 @end table
 
+@node HSA Function Attributes
+@subsection HSA Function Attributes
+
+These function attributes are supported when compiling certain portion
+of a program to Heterogeneous Systems Architecture Intermediate
+Language (HSAIL).
+
+@table @code
+@item hsa_kernel
+@cindex @code{hsa_kernel} function attribute
+The @code{hsa_kernel} attribute is used to request that the compiler
+compiles it has an HSA kernel that is invoked via
+@code{__builtin_GOMP_hsa_direct_invoke} in programs compiled with
+@option{-fdirecthsa}:
+
+@smallexample
+__builtin_GOMP_hsa_direct_invoke (device_id, kernel_function,
+    hsa_grid_x_size, hsa_group_x_size,
+    hsa_grid_y_size, hsa_group_y_size,
+    hsa_grid_z_size, hsa_group_z_size, actual_argument_pointer);
+@end smallexample
+
+
+The function must have exactly one parameter which must be a pointer.
+Note that this attribute is an experimental feature of the HSA branch
+and the invocation of kernels might change significantly when (and if
+ever) it is up-streamed.
+
+@item hsa_function
+@cindex @code{hsa_function} function attribute
+The @code{hsa_function} requests that the function is compiled into an
+HSA function that is callable by other HSA functions and HSA kernels.
+Note that this attribute is an experimental feature of the HSA branch
+and how HSA functions are identified might change significantly when
+(and if ever) it is up-streamed.
+@end table
+
 @node IA-64 Function Attributes
 @subsection IA-64 Function Attributes
 
@@ -5588,6 +5626,7 @@ attributes.
 * AVR Variable Attributes::
 * Blackfin Variable Attributes::
 * H8/300 Variable Attributes::
+* HSA Variable Attributes::
 * IA-64 Variable Attributes::
 * M32R/D Variable Attributes::
 * MeP Variable Attributes::
@@ -6100,6 +6139,22 @@ The compiler generates more efficient code for loads and stores
 on data in the tiny data section.  Note the tiny data area is limited to
 slightly under 32KB of data.
 
+@end table
+
+@node HSA Variable Attributes
+@subsection HSA Variable Attributes
+
+Offloading to to Heterogeneous Systems Architecture Intermediate
+Language (HSAIL) supports the following variable attribute:
+
+@table @code
+@item hsa_group_segment
+@cindex @code{hsa_group_segment} variable attribute
+This attribute specifies that the variable should be placed into the
+group HSA segment.  The variable must have static allocation.  Note
+that this attribute is an experimental feature of the HSA branch and
+the invocation of kernels might change significantly when (and if
+ever) it is up-streamed.
 @end table
 
 @node IA-64 Variable Attributes

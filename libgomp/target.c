@@ -2396,6 +2396,7 @@ gomp_load_plugin_for_device (struct gomp_device_descr *device,
       DLSYM (async_run);
       DLSYM_OPT (can_run, can_run);
       DLSYM (dev2dev);
+      DLSYM_OPT (direct_invoke, direct_invoke);
     }
   if (device->capabilities & GOMP_OFFLOAD_CAP_OPENACC_200)
     {
@@ -2583,6 +2584,67 @@ gomp_target_init (void)
   if (atexit (gomp_target_fini) != 0)
     gomp_fatal ("atexit failed");
 }
+
+/* ----------------------------------------------------------------------
+
+   The following methods are part of support for HSA direct invocation.  It is
+   only an experiment, at the moment only aimed at the HSA branch, should be
+   viewed as such, might never get upstreamed and if it does, it will certainly
+   change substantially.  For example, it is quite likely that these functions
+   will not be in target.c, if they even are in libgomp.  And the
+   implementation is a hack on purpose.  It is only for evaluation and so speed
+   of implementation was by far the main concern.  */
+
+/* Locate GOMP device structure for HSA direct number DEVICE_ID and initialize
+   it if necessary.  */
+
+static struct gomp_device_descr *
+hsadirect_find_init_gomp_device (int device_id)
+{
+  int i, num_devices = gomp_get_num_devices ();
+  struct gomp_device_descr *devicep = NULL;
+
+  for (i = 0; i < num_devices; i++)
+    if (devices[device_id].type == OFFLOAD_TARGET_TYPE_HSA)
+      {
+	if (!device_id)
+	  {
+	    devicep = &devices[i];
+	    break;
+	  }
+	else
+	  device_id--;
+      }
+
+  if (!devicep)
+    gomp_fatal ("Cannot find HSA direct device number %i", device_id);
+
+  gomp_mutex_lock (&devicep->lock);
+  if (devicep->state == GOMP_DEVICE_UNINITIALIZED)
+    gomp_init_device (devicep);
+  else if (devicep->state == GOMP_DEVICE_FINALIZED)
+    gomp_fatal ("HSA direct device number %i has already been deinitialized",
+		device_id);
+  gomp_mutex_unlock (&devicep->lock);
+  return devicep;
+}
+
+void
+GOMP_hsa_direct_invoke (int device_id, const char *kernel_name,
+			unsigned x_grid, unsigned x_group,
+			unsigned y_grid, unsigned y_group,
+			unsigned z_grid, unsigned z_group,
+			void *vars)
+{
+  struct gomp_device_descr *devicep
+    = hsadirect_find_init_gomp_device (device_id);
+
+  devicep->direct_invoke_func (devicep->target_id, kernel_name, x_grid, x_group,
+			       y_grid, y_group, z_grid, z_group, vars);
+}
+
+/* End of HSA direct invocation  support (see comment above it).
+   ----------------------------------------------------------------------  */
 
 #else /* PLUGIN_SUPPORT */
 /* If dlfcn.h is unavailable we always fallback to host execution.

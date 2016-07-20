@@ -197,6 +197,7 @@ along with GCC; see the file COPYING3.  If not see
                false, true, true, ATTRS, false, \
 	       (flag_openacc \
 		|| flag_openmp \
+		|| flag_directhsa \
 		|| flag_tree_parallelize_loops > 1 \
 		|| flag_cilkplus \
 		|| flag_offload_abi != OFFLOAD_ABI_UNSET))

@@ -27,7 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "vec.h"
 #include "hash-table.h"
 #include "basic-block.h"
-
+#include "symbol-summary.h"
 
 /* Return true if the compiler should produce HSAIL.  */
 
@@ -1220,7 +1220,10 @@ struct hsa_function_summary
 
   /* Pointer to a cgraph node which is a HSA implementation of the function.
      In case of the function is a HSA function, the bound function points
-     to the host function.  */
+     to the host function.
+     This can also be NULL if there is no counterpart, which can happen for GPU
+     implementations if they are functions marked with hsa_kernel or
+     hsa_function attributes.  */
   cgraph_node *m_bound_function;
 
   /* Identifies if the function is an HSA function or a host function.  */
@@ -1250,6 +1253,13 @@ public:
 
   void link_functions (cgraph_node *gpu, cgraph_node *host,
 		       hsa_function_kind kind, bool gridified_kernel_p);
+
+  /* Mark a specific function NODE as a standalone GPU implementation (that has
+     no CPU counterpart).  KIND determines whether this is a host-invokable
+     kernel or gpu-callable function.  */
+
+  void mark_standalone_gpu_implementation (cgraph_node *node,
+					   hsa_function_kind kind);
 
 private:
   void process_gpu_implementation_attributes (tree gdecl);

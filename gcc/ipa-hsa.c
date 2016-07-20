@@ -82,7 +82,11 @@ process_hsa_functions (void)
       if (s->m_bound_function != NULL)
 	continue;
 
-      if (s->m_kind != HSA_NONE)
+      if (lookup_attribute ("hsa_kernel", DECL_ATTRIBUTES (node->decl)))
+	hsa_summaries->mark_standalone_gpu_implementation (node, HSA_KERNEL);
+      else if (lookup_attribute ("hsa_function", DECL_ATTRIBUTES (node->decl)))
+	hsa_summaries->mark_standalone_gpu_implementation (node, HSA_FUNCTION);
+      else if (s->m_kind != HSA_NONE)
 	{
 	  if (!check_warn_node_versionable (node))
 	    continue;

@@ -962,6 +962,12 @@ struct gomp_device_descr
   __typeof (GOMP_OFFLOAD_run) *run_func;
   __typeof (GOMP_OFFLOAD_async_run) *async_run_func;
 
+  /* The following hook is a part of support for HSA direct invocation.  It is
+   only an experiment, should be viewed as such, might never get upstreamed and
+   if it does, it will certainly change substantially. */
+  void (*direct_invoke_func) (int, const char *, unsigned, unsigned, unsigned,
+			      unsigned, unsigned, unsigned, void *);
+
   /* Splay tree containing information about mapped memory regions.  */
   struct splay_tree_s mem_map;
 

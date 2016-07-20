@@ -298,6 +298,11 @@ GOMP_4.5 {
 	GOMP_parallel_loop_nonmonotonic_guided;
 } GOMP_4.0.1;
 
+GOMP_HSADIRECT_0.1 {
+  global:
+  GOMP_hsa_direct_invoke;
+} GOMP_4.5;
+
 OACC_2.0 {
   global:
 	acc_get_num_devices;

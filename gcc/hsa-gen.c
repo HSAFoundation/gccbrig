@@ -6468,6 +6468,58 @@ generate_hsa (bool kernel)
   hsa_deinit_data_for_cfun ();
 }
 
+
+/* Traverse the current function and adjust parameters of all direct hsa
+   invocation calls. */
+
+static unsigned int
+convert_hsadirect_calls (void)
+{
+  basic_block bb;
+  FOR_EACH_BB_FN (bb, cfun)
+    {
+      gimple_stmt_iterator gsi;
+      tree fndecl;
+      for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	if (is_gimple_call (gsi_stmt (gsi))
+	    && (fndecl = gimple_call_fndecl (gsi_stmt (gsi)))
+	    && (DECL_FUNCTION_CODE (fndecl) == BUILT_IN_GOMP_HSA_DIRECT_INVOKE))
+	  {
+	    gcall * call = as_a <gcall *> (gsi_stmt (gsi));
+	    gcc_assert (gimple_call_num_args (call) > 2);
+	    tree kernel = gimple_call_arg (call, 1);
+	    if (TREE_CODE (kernel) != ADDR_EXPR
+		|| TREE_CODE (TREE_OPERAND (kernel, 0)) != FUNCTION_DECL)
+	      {
+		error_at (gimple_location (call),
+			  "HSA direct invoke second argument must be an HSA "
+			  "kernel");
+		return 0;
+	      }
+	    kernel = TREE_OPERAND (kernel, 0);
+	    hsa_function_summary *s
+	      = hsa_summaries->get (cgraph_node::get_create (kernel));
+	    if (s->m_kind != HSA_KERNEL)
+	      {
+		error_at (gimple_location (call),
+			  "HSA direct invoke second argument must be an HSA "
+			  "kernel");
+		return 0;
+	      }
+	    char *name
+	      = hsa_brig_function_name (hsa_get_declaration_name (kernel));
+	    size_t len = strlen (name) + 1;
+	    tree newarg = build_string (len, name);
+	    TREE_TYPE (newarg)
+	      = build_array_type (char_type_node,
+				  build_index_type (size_int (len)));
+
+	    gimple_call_set_arg (call, 1, build_fold_addr_expr (newarg));
+	  }
+    }
+  return 0;
+}
+
 namespace {
 
 const pass_data pass_data_gen_hsail =
@@ -6502,19 +6554,25 @@ bool
 pass_gen_hsail::gate (function *f)
 {
   return hsa_gen_requested_p ()
-    && hsa_gpu_implementation_p (f->decl);
+    && (hsa_gpu_implementation_p (f->decl)
+	|| flag_directhsa);
 }
 
 unsigned int
-pass_gen_hsail::execute (function *)
+pass_gen_hsail::execute (function *f)
 {
-  hsa_function_summary *s
-    = hsa_summaries->get (cgraph_node::get_create (current_function_decl));
+  if (hsa_gpu_implementation_p (f->decl))
+    {
+      hsa_function_summary *s
+	= hsa_summaries->get (cgraph_node::get_create (current_function_decl));
 
-  expand_builtins ();
-  generate_hsa (s->m_kind == HSA_KERNEL);
-  TREE_ASM_WRITTEN (current_function_decl) = 1;
-  return TODO_discard_function;
+      expand_builtins ();
+      generate_hsa (s->m_kind == HSA_KERNEL);
+      TREE_ASM_WRITTEN (current_function_decl) = 1;
+      return TODO_discard_function;
+    }
+  else
+    return convert_hsadirect_calls ();
 }
 
 } // anon namespace

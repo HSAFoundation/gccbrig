@@ -360,6 +360,8 @@ struct brig_image_desc
   struct hsa_kernel_description *kernel_infos;
   const unsigned global_variable_count;
   struct global_var_info *global_variables;
+  const unsigned standalone_kernel_count;
+  struct hsa_kernel_description *standalone_kernel_infos;
 };
 
 struct agent_info;
@@ -894,11 +896,13 @@ int
 GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
 			 struct addr_pair **target_table)
 {
-  if (GOMP_VERSION_DEV (version) > GOMP_VERSION_HSA)
+  unsigned dev_version = GOMP_VERSION_DEV (version);
+  if (dev_version != GOMP_VERSION_HSA
+      && dev_version > (GOMP_VERSION_HSA & ~(1<<15)))
     {
       GOMP_PLUGIN_error ("Offload data incompatible with HSA plugin"
 			 " (expected %u, received %u)",
-			 GOMP_VERSION_HSA, GOMP_VERSION_DEV (version));
+			 GOMP_VERSION_HSA, dev_version);
       return -1;
     }
 
@@ -907,7 +911,15 @@ GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
   struct addr_pair *pair;
   struct module_info *module;
   struct kernel_info *kernel;
-  int kernel_count = image_desc->kernel_count;
+  int omp_kernel_count = image_desc->kernel_count;
+  int s_kernel_count;
+
+  if (dev_version == GOMP_VERSION_HSA)
+    s_kernel_count = image_desc->standalone_kernel_count;
+  else
+    s_kernel_count = 0;
+
+  int total_kernel_count = omp_kernel_count + s_kernel_count;
 
   agent = get_agent_info (ord);
   if (!agent)
@@ -922,19 +934,20 @@ GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
       && !destroy_hsa_program (agent))
     return -1;
 
-  HSA_DEBUG ("Encountered %d kernels in an image\n", kernel_count);
-  pair = GOMP_PLUGIN_malloc (kernel_count * sizeof (struct addr_pair));
+  HSA_DEBUG ("Encountered %d specialized and %d standalone kernels in an "
+	     "image\n", omp_kernel_count, s_kernel_count);
+  pair = GOMP_PLUGIN_malloc (omp_kernel_count * sizeof (struct addr_pair));
   *target_table = pair;
   module = (struct module_info *)
     GOMP_PLUGIN_malloc_cleared (sizeof (struct module_info)
-				+ kernel_count * sizeof (struct kernel_info));
+				+ (total_kernel_count
+				   * sizeof (struct kernel_info)));
   module->image_desc = image_desc;
-  module->kernel_count = kernel_count;
+  module->kernel_count = total_kernel_count;
 
   kernel = &module->kernels[0];
 
-  /* Allocate memory for kernel dependencies.  */
-  for (unsigned i = 0; i < kernel_count; i++)
+  for (unsigned i = 0; i < omp_kernel_count; i++)
     {
       pair->start = (uintptr_t) kernel;
       pair->end = (uintptr_t) (kernel + 1);
@@ -945,6 +958,13 @@ GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
       kernel++;
       pair++;
     }
+  for (unsigned i = 0; i < s_kernel_count; i++)
+    {
+      struct hsa_kernel_description *d = &image_desc->standalone_kernel_infos[i];
+      if (!init_basic_kernel_info (kernel, d, agent, module))
+	return -1;
+      kernel++;
+    }
 
   add_module_to_agent (agent, module);
   if (pthread_rwlock_unlock (&agent->modules_rwlock))
@@ -952,7 +972,7 @@ GOMP_OFFLOAD_load_image (int ord, unsigned version, const void *target_data,
       GOMP_PLUGIN_error ("Unable to unlock an HSA agent rwlock");
       return -1;
     }
-  return kernel_count;
+  return omp_kernel_count;
 }
 
 /* Add a shared BRIG library from a FILE_NAME to an AGENT.  */
@@ -1702,6 +1722,54 @@ GOMP_OFFLOAD_async_run (int device, void *tgt_fn, void *tgt_vars,
   if (err != 0)
     GOMP_PLUGIN_fatal ("Failed to detach a thread to run HSA kernel "
 		       "asynchronously: %s", strerror (err));
+}
+
+/* The following function is a part of support for HSA direct invocation.  It
+   is only an experiment, should be viewed as such, might never get upstreamed
+   and if it does, it will certainly change substantially.
+
+   Extension of the libgomp plugin interface.  Run kernel */
+
+void
+GOMP_OFFLOAD_direct_invoke (int device_ord, const char *kernel_name,
+			    unsigned x_grid, unsigned x_group,
+			    unsigned y_grid, unsigned y_group,
+			    unsigned z_grid, unsigned z_group,
+			    void *vars)
+{
+  if (!x_grid && !y_grid && !z_grid)
+    return;
+  struct agent_info *agent = get_agent_info (device_ord);
+  if (!agent)
+    GOMP_PLUGIN_fatal ("HSADIRECT: Could not access the requested agent");
+  struct kernel_info *kernel = get_kernel_for_agent (agent, kernel_name);
+  if (!kernel)
+    GOMP_PLUGIN_fatal ("HSADIRECT: Could not locate the invoked kernel %s",
+		       kernel_name);
+
+  create_and_finalize_hsa_program (agent);
+  if (agent->prog_finalized_error)
+    GOMP_PLUGIN_fatal ("HSADIRECT: Finalization failure");
+  init_kernel (kernel);
+  if (kernel->initialization_failed)
+    GOMP_PLUGIN_fatal ("HSADIRECT: Kernel cannot be run");
+
+  struct GOMP_kernel_launch_attributes kla;
+  if (z_grid)
+    kla.ndim = 3;
+  else if (y_grid)
+    kla.ndim = 2;
+  else
+    kla.ndim = 1;
+  kla.gdims[0] = x_grid;
+  kla.gdims[1] = y_grid;
+  kla.gdims[2] = z_grid;
+  kla.wdims[0] = x_group;
+  kla.wdims[1] = y_group;
+  kla.wdims[2] = z_group;
+
+  run_kernel (kernel, vars, &kla);
+  return;
 }
 
 /* Deinitialize all information associated with MODULE and kernels within

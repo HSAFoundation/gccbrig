@@ -831,6 +831,17 @@ hsa_summary_t::link_functions (cgraph_node *gpu, cgraph_node *host,
     gpu->create_reference (host, IPA_REF_ADDR);
 }
 
+void
+hsa_summary_t::mark_standalone_gpu_implementation (cgraph_node *node,
+						   hsa_function_kind kind)
+{
+  hsa_function_summary *gpu_summary = get (node);
+  gpu_summary->m_kind = kind;
+  gpu_summary->m_gpu_implementation_p = true;
+  gcc_assert (!gpu_summary->m_bound_function);
+  process_gpu_implementation_attributes (node->decl);
+}
+
 /* Add a HOST function to HSA summaries.  */
 
 void
