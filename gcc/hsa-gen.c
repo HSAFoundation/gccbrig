@@ -63,26 +63,42 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Print a warning message and set that we have seen an error.  */
 
-#define HSA_SORRY_ATV(location, message, ...) \
-  do \
-  { \
-    hsa_fail_cfun (); \
-    if (warning_at (EXPR_LOCATION (hsa_cfun->m_decl), OPT_Whsa, \
-		    HSA_SORRY_MSG)) \
-      inform (location, message, __VA_ARGS__); \
-  } \
+#define HSA_SORRY_ATV(location, message, ...)				\
+  do									\
+    {									\
+      hsa_fail_cfun ();							\
+      if (!flag_directhsa)						\
+	{								\
+	  if (warning_at (EXPR_LOCATION (hsa_cfun->m_decl), OPT_Whsa,	\
+			  HSA_SORRY_MSG))				\
+	    inform (location, message, __VA_ARGS__);			\
+	}								\
+      else								\
+	{								\
+	  sorry (HSA_SORRY_MSG);					\
+	  inform (location, message, __VA_ARGS__);			\
+	}								\
+    }									\
   while (false)
 
-/* Same as previous, but highlight a location.  */
+/* Same as previous, but without any formatting.  */
 
-#define HSA_SORRY_AT(location, message) \
-  do \
-  { \
-    hsa_fail_cfun (); \
-    if (warning_at (EXPR_LOCATION (hsa_cfun->m_decl), OPT_Whsa, \
-		    HSA_SORRY_MSG)) \
-      inform (location, message); \
-  } \
+#define HSA_SORRY_AT(location, message)					\
+  do									\
+    {									\
+      hsa_fail_cfun ();							\
+      if (!flag_directhsa)						\
+	{								\
+	  if (warning_at (EXPR_LOCATION (hsa_cfun->m_decl), OPT_Whsa,	\
+			  HSA_SORRY_MSG))				\
+	    inform (location, message);					\
+	}								\
+      else								\
+	{								\
+	  sorry (HSA_SORRY_MSG);					\
+	  inform (location, message);					\
+	}								\
+    }									\
   while (false)
 
 /* Default number of threads used by kernel dispatch.  */
