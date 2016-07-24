@@ -1428,6 +1428,8 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMFLATABSID:
     case BRIG_OPCODE_WORKITEMFLATID:
     case BRIG_OPCODE_WORKITEMABSID:
+    case BRIG_OPCODE_WORKGROUPSIZE:
+    case BRIG_OPCODE_CURRENTWORKGROUPSIZE:
       /* TO OPTIMIZE: expand more builtins.  At least the (cur)wgsize is already
 	 available in cf.  */
       return true;
@@ -1597,6 +1599,16 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
 		    m_parent.m_cf->m_local_id_vars[0],
 		    sum);
       return add_temp_var ("workitemflatid", sum);
+    }
+  else if (brig_opcode == BRIG_OPCODE_WORKGROUPSIZE)
+    {
+      HOST_WIDE_INT dim = int_constant_value (operands[0]);
+      return m_parent.m_cf->m_wg_size_vars[dim];
+    }
+  else if (brig_opcode == BRIG_OPCODE_CURRENTWORKGROUPSIZE)
+    {
+      HOST_WIDE_INT dim = int_constant_value (operands[0]);
+      return m_parent.m_cf->m_cur_wg_size_vars[dim];
     }
   else
     gcc_unreachable ();
