@@ -4731,11 +4731,13 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
  
   /* vec_lvsl and vec_lvsr are deprecated for use with LE element order.  */
   if (fcode == ALTIVEC_BUILTIN_VEC_LVSL && !VECTOR_ELT_ORDER_BIG)
-    warning (OPT_Wdeprecated, "vec_lvsl is deprecated for little endian; use \
-assignment for unaligned loads and stores");
+    warning (OPT_Wdeprecated,
+	     "vec_lvsl is deprecated for little endian; use "
+	     "assignment for unaligned loads and stores");
   else if (fcode == ALTIVEC_BUILTIN_VEC_LVSR && !VECTOR_ELT_ORDER_BIG)
-    warning (OPT_Wdeprecated, "vec_lvsr is deprecated for little endian; use \
-assignment for unaligned loads and stores");
+    warning (OPT_Wdeprecated,
+	     "vec_lvsr is deprecated for little endian; use "
+	     "assignment for unaligned loads and stores");
 
   if (fcode == ALTIVEC_BUILTIN_VEC_MUL)
     {
@@ -5103,28 +5105,95 @@ assignment for unaligned loads and stores");
 				  arg2);
 	}
 
-      /* If we can use the VSX xxpermdi instruction, use that for extract.  */
+      /* See if we can optimize vec_extracts with the current VSX instruction
+	 set.  */
       mode = TYPE_MODE (arg1_type);
-      if ((mode == V2DFmode || mode == V2DImode) && VECTOR_MEM_VSX_P (mode)
-	  && TREE_CODE (arg2) == INTEGER_CST
-	  && wi::ltu_p (arg2, 2))
+      if (VECTOR_MEM_VSX_P (mode))
+
 	{
 	  tree call = NULL_TREE;
+	  int nunits = GET_MODE_NUNITS (mode);
 
-	  if (mode == V2DFmode)
-	    call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DF];
-	  else if (mode == V2DImode)
-	    call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DI];
+	  /* If the second argument is an integer constant, if the value is in
+	     the expected range, generate the built-in code if we can.  We need
+	     64-bit and direct move to extract the small integer vectors.  */
+	  if (TREE_CODE (arg2) == INTEGER_CST && wi::ltu_p (arg2, nunits))
+	    {
+	      switch (mode)
+		{
+		default:
+		  break;
+
+		case V1TImode:
+		  call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V1TI];
+		  break;
+
+		case V2DFmode:
+		  call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DF];
+		  break;
+
+		case V2DImode:
+		  call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DI];
+		  break;
+
+		case V4SFmode:
+		  call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V4SF];
+		  break;
+
+		case V4SImode:
+		  if (TARGET_DIRECT_MOVE_64BIT)
+		    call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V4SI];
+		  break;
+
+		case V8HImode:
+		  if (TARGET_DIRECT_MOVE_64BIT)
+		    call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V8HI];
+		  break;
+
+		case V16QImode:
+		  if (TARGET_DIRECT_MOVE_64BIT)
+		    call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V16QI];
+		  break;
+		}
+	    }
+
+	  /* If the second argument is variable, we can optimize it if we are
+	     generating 64-bit code on a machine with direct move.  */
+	  else if (TREE_CODE (arg2) != INTEGER_CST && TARGET_DIRECT_MOVE_64BIT)
+	    {
+	      switch (mode)
+		{
+		default:
+		  break;
+
+		case V2DFmode:
+		  call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DF];
+		  break;
+
+		case V2DImode:
+		  call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V2DI];
+		  break;
+
+		case V4SFmode:
+		  call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V4SF];
+		  break;
+
+		case V4SImode:
+		  call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V4SI];
+		  break;
+
+		case V8HImode:
+		  call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V8HI];
+		  break;
+
+		case V16QImode:
+		  call = rs6000_builtin_decls[ALTIVEC_BUILTIN_VEC_EXT_V16QI];
+		  break;
+		}
+	    }
 
 	  if (call)
 	    return build_call_expr (call, 2, arg1, arg2);
-	}
-      else if (mode == V1TImode && VECTOR_MEM_VSX_P (mode)
-	       && TREE_CODE (arg2) == INTEGER_CST
-	       && wi::eq_p (arg2, 0))
-	{
-	  tree call = rs6000_builtin_decls[VSX_BUILTIN_VEC_EXT_V1TI];
-	  return build_call_expr (call, 2, arg1, arg2);
 	}
 
       /* Build *(((arg1_inner_type*)&(vector type){arg1})+arg2). */

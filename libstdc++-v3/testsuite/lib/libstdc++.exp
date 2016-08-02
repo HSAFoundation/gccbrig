@@ -636,8 +636,9 @@ proc v3-build_support { } {
 	set object_file [file tail $obj]
 	# Compile with "-w" so that warnings issued by the compiler
 	# do not prevent compilation.
+        # Disable LTO so that ar/ranlib don't need the LTO plugin.
 	if { [v3_target_compile $srcdir/util/$f $object_file "object" \
-		  [list "incdir=$srcdir" "additional_flags=-w"]]
+		  [list "incdir=$srcdir" "additional_flags=-w -fno-lto"]]
 	     != "" } {
 	    error "could not compile $f"
 	}
@@ -936,13 +937,13 @@ proc check_v3_target_namedlocale { args } {
       puts $f "  try"
       puts $f "  {"
       puts $f "    locale((const char*)namedloc);"
-      puts $f "    delete namedloc;"
+      puts $f "    delete\[\] namedloc;"
       puts $f "    return 0;"
       puts $f "  }"
       puts $f "  catch(...)"
       puts $f "  {"
       puts $f "    printf(\"locale '%s' not supported\\n\", namedloc);"
-      puts $f "    delete namedloc;"
+      puts $f "    delete\[\] namedloc;"
       puts $f "    return 1;"
       puts $f "  }"
       puts $f "}"

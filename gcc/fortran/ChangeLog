@@ -1,3 +1,155 @@
+2016-07-30  Steven G. Kargl <kargl@gcc.gnu.org>
+
+	PR fortran/41922
+	* target-memory.c (expr_to_char): Pass in locus and use it in error
+	messages.
+	(gfc_merge_initializers): Ditto.
+	* target-memory.h: Update prototype for gfc_merge_initializers ().
+	* trans-common.c (get_init_field): Use the correct locus.
+
+2016-07-30  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/68566
+	* check.c (gfc_check_reshape): Check for constant expression.
+
+2016-07-30  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/69867
+	* decl.c (build_struct): Ensure that pointers point to something.
+
+2016-07-30  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/69962
+	* decl.c (gfc_set_constant_character_len):  if expr is not
+	constant issue an error instead of an ICE.
+
+2016-07-30  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/70006
+	* io.c (gfc_resolve_dt): Use correct locus.
+	* resolve.c (resolve_branch): Ditto.
+
+2016-07-30  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71730
+	* decl.c (char_len_param_value): Check return value of
+	gfc_reduce_init_expr().
+
+2016-07-29  Dominik Vogt  <vogt@linux.vnet.ibm.com>
+
+	* trans-array.c (gfc_conv_array_ref): Fix allocation of diagnostic
+	message (was too small).
+
+2016-07-28  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71067
+	* decl.c (match_data_constant): On error, set 'result' to NULL.
+
+2016-07-28  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71799
+	* resolve.c(gfc_resolve_iterator): Failure of type conversion need
+	not ICE.
+
+2016-07-28  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71859
+	* check.c(numeric_check): Prevent ICE.  Issue error for invalid
+	subroutine as an actual argument when numeric argument is expected.
+
+2016-07-28  Steven G. Kargl  <kargl@gcc.gnu.org>
+	    Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/71883
+	* frontend-passes.c (gfc_run_passes): Bail out if there are any
+	errors.
+	* error.c (gfc_internal_error): If there are any errors in the
+	buffer, exit with EXIT_FAILURE.
+
+2016-07-28  Renlin Li  <renlin.li@arm.com>
+
+	Revert
+	2016-07-19  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/71902
+	* dependency.c (gfc_check_dependency): Use dep_ref.  Handle case
+	if identical is true and two array element references differ.
+	(gfc_dep_resovler):  Move most of the code to dep_ref.
+	(dep_ref):  New function.
+	* frontend-passes.c (realloc_string_callback):  Name temporary
+	variable "realloc_string".
+
+2016-07-26  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71862
+	* class.c: Remove assert.  Iterate over component only if non-null.
+
+2016-07-22  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/71935
+	* check.c (is_c_interoperable): Simplify right expression.
+
+2016-07-22  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/71795
+	* frontend-passes.c (combine_array_constructor):  Don't
+	do anything if the expression is inside an array iterator.
+
+2016-07-22  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	* expr.c (gfc_find_stat_co): Fixed whitespaces.
+	* gfortran.texi: Fixed typos and reversed meaning of caf_get()'s
+	src and dst description.
+	* trans-decl.c (gfc_build_builtin_function_decls): Fixed style
+	and corrected fnspec for caf functions.
+	* trans-intrinsic.c (gfc_conv_intrinsic_caf_get): Fixed style.
+	(conv_caf_send): Dito.
+
+2016-07-19  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/71902
+	* dependency.c (gfc_check_dependency): Use dep_ref.  Handle case
+	if identical is true and two array element references differ.
+	(gfc_dep_resovler):  Move most of the code to dep_ref.
+	(dep_ref):  New function.
+	* frontend-passes.c (realloc_string_callback):  Name temporary
+	variable "realloc_string".
+
+2016-07-17  Fritz Reese  <fritzoreese@gmail.com>
+
+	PR fortran/71523
+	* trans-decl.c (gfc_finish_var_decl): Replace automatic initializer with
+	a static one.
+
+2016-07-15  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+	    Marco Restelli <mrestelli@gmail.com>
+
+	PR fortran/62125
+	* symbol.c (select_type_insert_tmp): Recursively call self to take care
+	of nested select type.
+
+2016-07-15  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* openmp.c (gfc_match_omp_clauses): Scan for clause vector_length
+	before vector.
+
+2016-07-15  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	PR fortran/71807
+	* trans-expr.c (gfc_trans_subcomponent_assign): Special casing
+	when allocatable component is set to null() in initializer.
+
+2016-07-14  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/29819
+	* parse.c (parse_contained): Use proper locus.
+
+2016-07-14  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	PR fortran/70842
+	* simplify.c (gfc_simplify_len): Only for unlimited polymorphic
+	types replace the expression's _data ref with a _len ref.
+
 2016-07-09  Thomas Koenig  <tkoenig@gcc.gnu.org>
 
 	PR fortran/71783

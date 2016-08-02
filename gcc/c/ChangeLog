@@ -1,3 +1,80 @@
+2016-08-01  Jan Beulich  <jbeulich@suse.com>
+
+	* c-fold.c (c_fully_fold_internal): Also emit shift count
+	warnings for vector types.
+	* c-typeck.c (build_binary_op): Likewise.
+
+2016-07-29  Marek Polacek  <polacek@redhat.com>
+
+	PR c/71742
+	* c-decl.c (finish_struct): Rephrase an error message.
+
+	PR c/71853
+	* c-parser.c (c_parser_switch_statement): Initialize ce.original_type
+	to error node for invalid code.
+
+	PR c/71573
+	* c-decl.c (implicitly_declare): Return decl early not only for
+	error_mark_nodes, but for anything that is not a FUNCTION_DECL.
+
+2016-07-29  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/71969
+	* c-decl.c (finish_function): Only set DECL_DISREGARD_INLINE_LIMITS
+	on GNU extern inline functions.
+
+2016-07-29  Marek Polacek  <polacek@redhat.com>
+
+	PR c/71583
+	* c-parser.c (c_parser_postfix_expression_after_paren_type): Also
+	check expr.value.
+
+2016-07-22  Uros Bizjak  <ubizjak@gmail.com>
+
+	* c-typeck.c: Use HOST_WIDE_INT_1 instead of (HOST_WIDE_INT) 1,
+
+2016-07-20  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-decl.c (struct edit_distance_traits<cpp_hashnode *>): Move to
+	spellcheck-tree.h
+	(best_macro_match): Likewise, converting from a typedef to a
+	subclass.
+	(find_closest_macro_cpp_cb): Move to spellcheck-tree.c.
+	(lookup_name_fuzzy): Update for change of best_macro_match to a
+	subclass with a ctor that calls cpp_forall_identifiers.
+
+2016-07-20  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-decl.c (implicit_decl_warning): Update for conversion of
+	return type of lookup_name_fuzzy to const char *.
+	(undeclared_variable): Likewise.
+	(lookup_name_fuzzy): Convert return type from tree to
+	const char *.
+	* c-parser.c (c_parser_declaration_or_fndef): Update for
+	conversion of return type of lookup_name_fuzzy to const char *.
+	(c_parser_parameter_declaration): Likewise.
+
+2016-07-15  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* c-parser.c (c_parser_oacc_declare): Don't scan for
+	GOMP_MAP_POINTER.
+	* c-typeck.c (handle_omp_array_sections): Mark data clauses with
+	GOMP_MAP_FORCE_{PRESENT,TO,FROM,TOFROM} as potentially having
+	zero-length subarrays.
+
+2016-07-15  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/71858
+	* c-decl.c (implicit_decl_warning): Use FUZZY_LOOKUP_FUNCTION_NAME
+	instead of FUZZY_LOOKUP_NAME.
+	(lookup_name_fuzzy): For FUZZY_LOOKUP_FUNCTION_NAME consider
+	FUNCTION_DECLs, {VAR,PARM}_DECLs function pointers and macros.
+
+2016-07-14  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/71858
+	* c-decl.c (lookup_name_fuzzy): Ignore binding->invisible.
+
 2016-07-12  Trevor Saunders  <tbsaunde+gcc@tbsaunde.org>
 
 	* c-parser.c (c_parser_generic_selection): Make type of variable

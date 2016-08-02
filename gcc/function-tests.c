@@ -249,6 +249,7 @@ build_trivial_generic_function ()
   tsi_link_after (&stmt_iter, return_stmt, TSI_CONTINUE_LINKING);
 
   DECL_INITIAL (fndecl) = block;
+  BLOCK_SUPERCONTEXT (block) = fndecl;
 
   /* how to add to function? the following appears to be how to
      set the body of a fndecl: */
@@ -433,14 +434,14 @@ verify_three_block_rtl_cfg (function *fun)
 
   basic_block exit = EXIT_BLOCK_PTR_FOR_FN (fun);
   ASSERT_TRUE (exit != NULL);
-  ASSERT_EQ (BB_RTL, entry->flags & BB_RTL);
+  ASSERT_EQ (BB_RTL, exit->flags & BB_RTL);
   ASSERT_EQ (NULL, BB_HEAD (exit));
 
   /* The "real" basic block should be flagged as RTL, and have one
      or more insns.  */
   basic_block bb2 = get_real_block (fun);
   ASSERT_TRUE (bb2 != NULL);
-  ASSERT_EQ (BB_RTL, entry->flags & BB_RTL);
+  ASSERT_EQ (BB_RTL, bb2->flags & BB_RTL);
   ASSERT_TRUE (BB_HEAD (bb2) != NULL);
 }
 

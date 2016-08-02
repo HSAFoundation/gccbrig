@@ -2472,6 +2472,7 @@ create_omp_child_function (omp_context *ctx, bool task_copy)
   DECL_EXTERNAL (decl) = 0;
   DECL_CONTEXT (decl) = NULL_TREE;
   DECL_INITIAL (decl) = make_node (BLOCK);
+  BLOCK_SUPERCONTEXT (DECL_INITIAL (decl)) = decl;
   if (cgraph_node::get (current_function_decl)->offloadable)
     cgraph_node::get_create (decl)->offloadable = 1;
   else
@@ -13670,6 +13671,7 @@ grid_expand_target_grid_body (struct omp_region *target)
   BLOCK_ABSTRACT_ORIGIN (fniniblock) = tgtblock;
   BLOCK_SOURCE_LOCATION (fniniblock) = BLOCK_SOURCE_LOCATION (tgtblock);
   BLOCK_SOURCE_END_LOCATION (fniniblock) = BLOCK_SOURCE_END_LOCATION (tgtblock);
+  BLOCK_SUPERCONTEXT (fniniblock) = kern_fndecl;
   DECL_INITIAL (kern_fndecl) = fniniblock;
   push_struct_function (kern_fndecl);
   cfun->function_end_locus = gimple_location (tgt_stmt);
@@ -16210,6 +16212,10 @@ lower_omp_target (gimple_stmt_iterator *gsi_p, omp_context *ctx)
 		    case GOMP_MAP_ALWAYS_FROM:
 		    case GOMP_MAP_ALWAYS_TOFROM:
 		    case GOMP_MAP_RELEASE:
+		    case GOMP_MAP_FORCE_TO:
+		    case GOMP_MAP_FORCE_FROM:
+		    case GOMP_MAP_FORCE_TOFROM:
+		    case GOMP_MAP_FORCE_PRESENT:
 		      tkind_zero = GOMP_MAP_ZERO_LEN_ARRAY_SECTION;
 		      break;
 		    case GOMP_MAP_DELETE:

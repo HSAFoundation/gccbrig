@@ -40,6 +40,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "tree-scalar-evolution.h"
 #include "tree-vectorizer.h"
+#include "tree-ssa-loop-ivopts.h"
 
 /*************************************************************************
   Simple Loop Peeling Utilities
@@ -1592,10 +1593,26 @@ vect_can_advance_ivs_p (loop_vec_info loop_vinfo)
         }
 
       /* FORNOW: We do not transform initial conditions of IVs
+	 which evolution functions are not invariants in the loop.  */
+
+      if (!expr_invariant_in_loop_p (loop, evolution_part))
+	{
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "evolution not invariant in loop.\n");
+	  return false;
+	}
+
+      /* FORNOW: We do not transform initial conditions of IVs
 	 which evolution functions are a polynomial of degree >= 2.  */
 
       if (tree_is_chrec (evolution_part))
-	return false;
+	{
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "evolution is chrec.\n");
+	  return false;
+	}
     }
 
   return true;
@@ -1734,6 +1751,10 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo, tree niters,
    The peeled iterations form a new epilog loop.  Given that the loop now
    iterates NITERS times, the new epilog loop iterates
    NITERS % VECTORIZATION_FACTOR times.
+
+   If CHECK_PROFITABILITY is 1 then profitability check is generated
+   using TH as a cost model profitability threshold of iterations for
+   vectorization.
 
    The original loop will later be made to iterate
    NITERS / VECTORIZATION_FACTOR times (this value is placed into RATIO).
@@ -1993,7 +2014,11 @@ vect_update_inits_of_drs (loop_vec_info loop_vinfo, tree niters)
    'niters' is set to the misalignment of one of the data references in the
    loop, thereby forcing it to refer to an aligned location at the beginning
    of the execution of this loop.  The data reference for which we are
-   peeling is recorded in LOOP_VINFO_UNALIGNED_DR.  */
+   peeling is recorded in LOOP_VINFO_UNALIGNED_DR.
+
+   If CHECK_PROFITABILITY is 1 then profitability check is generated
+   using TH as a cost model profitability threshold of iterations for
+   vectorization.  */
 
 void
 vect_do_peeling_for_alignment (loop_vec_info loop_vinfo, tree ni_name,
@@ -2074,6 +2099,37 @@ vect_do_peeling_for_alignment (loop_vec_info loop_vinfo, tree ni_name,
   free_original_copy_tables ();
 }
 
+/* Function vect_create_cond_for_niters_checks.
+
+   Create a conditional expression that represents the run-time checks for
+   loop's niter.  The loop is guaranteed to to terminate if the run-time
+   checks hold.
+
+   Input:
+   COND_EXPR  - input conditional expression.  New conditions will be chained
+		with logical AND operation.  If it is NULL, then the function
+		is used to return the number of alias checks.
+   LOOP_VINFO - field LOOP_VINFO_MAY_ALIAS_STMTS contains the list of ddrs
+		to be checked.
+
+   Output:
+   COND_EXPR - conditional expression.
+
+   The returned COND_EXPR is the conditional expression to be used in the
+   if statement that controls which version of the loop gets executed at
+   runtime.  */
+
+static void
+vect_create_cond_for_niters_checks (loop_vec_info loop_vinfo, tree *cond_expr)
+{
+  tree part_cond_expr = LOOP_VINFO_NITERS_ASSUMPTIONS (loop_vinfo);
+
+  if (*cond_expr)
+    *cond_expr = fold_build2 (TRUTH_AND_EXPR, boolean_type_node,
+			      *cond_expr, part_cond_expr);
+  else
+    *cond_expr = part_cond_expr;
+}
 
 /* Function vect_create_cond_for_align_checks.
 
@@ -2313,7 +2369,7 @@ vect_create_cond_for_alias_checks (loop_vec_info loop_vinfo, tree * cond_expr)
 
    The test generated to check which version of loop is executed
    is modified to also check for profitability as indicated by the
-   cost model initially.
+   cost model threshold TH.
 
    The versioning precondition(s) are placed in *COND_EXPR and
    *COND_EXPR_STMT_LIST.  */
@@ -2322,7 +2378,7 @@ void
 vect_loop_versioning (loop_vec_info loop_vinfo,
 		      unsigned int th, bool check_profitability)
 {
-  struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+  struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo), *nloop;
   struct loop *scalar_loop = LOOP_VINFO_SCALAR_LOOP (loop_vinfo);
   basic_block condition_bb;
   gphi_iterator gsi;
@@ -2339,14 +2395,19 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
   tree scalar_loop_iters = LOOP_VINFO_NITERS (loop_vinfo);
   bool version_align = LOOP_REQUIRES_VERSIONING_FOR_ALIGNMENT (loop_vinfo);
   bool version_alias = LOOP_REQUIRES_VERSIONING_FOR_ALIAS (loop_vinfo);
+  bool version_niter = LOOP_REQUIRES_VERSIONING_FOR_NITERS (loop_vinfo);
 
   if (check_profitability)
-    {
-      cond_expr = fold_build2 (GT_EXPR, boolean_type_node, scalar_loop_iters,
-			       build_int_cst (TREE_TYPE (scalar_loop_iters), th));
-      cond_expr = force_gimple_operand_1 (cond_expr, &cond_expr_stmt_list,
-					  is_gimple_condexpr, NULL_TREE);
-    }
+    cond_expr = fold_build2 (GT_EXPR, boolean_type_node, scalar_loop_iters,
+			     build_int_cst (TREE_TYPE (scalar_loop_iters),
+						       th));
+
+  if (version_niter)
+    vect_create_cond_for_niters_checks (loop_vinfo, &cond_expr);
+
+  if (cond_expr)
+    cond_expr = force_gimple_operand_1 (cond_expr, &cond_expr_stmt_list,
+					is_gimple_condexpr, NULL_TREE);
 
   if (version_align)
     vect_create_cond_for_align_checks (loop_vinfo, &cond_expr,
@@ -2367,8 +2428,8 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
 
       /* We don't want to scale SCALAR_LOOP's frequencies, we need to
 	 scale LOOP's frequencies instead.  */
-      loop_version (scalar_loop, cond_expr, &condition_bb,
-		    prob, REG_BR_PROB_BASE, REG_BR_PROB_BASE - prob, true);
+      nloop = loop_version (scalar_loop, cond_expr, &condition_bb, prob,
+			    REG_BR_PROB_BASE, REG_BR_PROB_BASE - prob, true);
       scale_loop_frequencies (loop, prob, REG_BR_PROB_BASE);
       /* CONDITION_BB was created above SCALAR_LOOP's preheader,
 	 while we need to move it above LOOP's preheader.  */
@@ -2395,8 +2456,18 @@ vect_loop_versioning (loop_vec_info loop_vinfo,
 			       condition_bb);
     }
   else
-    loop_version (loop, cond_expr, &condition_bb,
-		  prob, prob, REG_BR_PROB_BASE - prob, true);
+    nloop = loop_version (loop, cond_expr, &condition_bb,
+			  prob, prob, REG_BR_PROB_BASE - prob, true);
+
+  if (version_niter)
+    {
+      /* The versioned loop could be infinite, we need to clear existing
+	 niter information which is copied from the original loop.  */
+      gcc_assert (loop_constraint_set_p (loop, LOOP_C_FINITE));
+      vect_free_loop_info_assumptions (nloop);
+      /* And set constraint LOOP_C_INFINITE for niter analyzer.  */
+      loop_constraint_set (loop, LOOP_C_INFINITE);
+    }
 
   if (LOCATION_LOCUS (vect_location) != UNKNOWN_LOCATION
       && dump_enabled_p ())

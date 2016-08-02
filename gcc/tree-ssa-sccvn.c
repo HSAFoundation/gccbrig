@@ -805,21 +805,30 @@ copy_reference_ops_from_ref (tree ref, vec<vn_reference_op_s> *result)
 	  break;
 	case ARRAY_RANGE_REF:
 	case ARRAY_REF:
-	  /* Record index as operand.  */
-	  temp.op0 = TREE_OPERAND (ref, 1);
-	  /* Always record lower bounds and element size.  */
-	  temp.op1 = array_ref_low_bound (ref);
-	  temp.op2 = array_ref_element_size (ref);
-	  if (TREE_CODE (temp.op0) == INTEGER_CST
-	      && TREE_CODE (temp.op1) == INTEGER_CST
-	      && TREE_CODE (temp.op2) == INTEGER_CST)
-	    {
-	      offset_int off = ((wi::to_offset (temp.op0)
-				 - wi::to_offset (temp.op1))
-				* wi::to_offset (temp.op2));
-	      if (wi::fits_shwi_p (off))
-		temp.off = off.to_shwi();
-	    }
+	  {
+	    tree eltype = TREE_TYPE (TREE_TYPE (TREE_OPERAND (ref, 0)));
+	    /* Record index as operand.  */
+	    temp.op0 = TREE_OPERAND (ref, 1);
+	    /* Always record lower bounds and element size.  */
+	    temp.op1 = array_ref_low_bound (ref);
+	    /* But record element size in units of the type alignment.  */
+	    temp.op2 = TREE_OPERAND (ref, 3);
+	    temp.align = eltype->type_common.align;
+	    if (! temp.op2)
+	      temp.op2 = size_binop (EXACT_DIV_EXPR, TYPE_SIZE_UNIT (eltype),
+				     size_int (TYPE_ALIGN_UNIT (eltype)));
+	    if (TREE_CODE (temp.op0) == INTEGER_CST
+		&& TREE_CODE (temp.op1) == INTEGER_CST
+		&& TREE_CODE (temp.op2) == INTEGER_CST)
+	      {
+		offset_int off = ((wi::to_offset (temp.op0)
+				   - wi::to_offset (temp.op1))
+				  * wi::to_offset (temp.op2)
+				  * vn_ref_op_align_unit (&temp));
+		if (wi::fits_shwi_p (off))
+		  temp.off = off.to_shwi();
+	      }
+	  }
 	  break;
 	case VAR_DECL:
 	  if (DECL_HARD_REGISTER (ref))
@@ -1018,7 +1027,7 @@ ao_ref_init_from_vn_reference (ao_ref *ref,
 	      offset_int woffset
 		= wi::sext (wi::to_offset (op->op0) - wi::to_offset (op->op1),
 			    TYPE_PRECISION (TREE_TYPE (op->op0)));
-	      woffset *= wi::to_offset (op->op2);
+	      woffset *= wi::to_offset (op->op2) * vn_ref_op_align_unit (op);
 	      woffset <<= LOG2_BITS_PER_UNIT;
 	      offset += woffset;
 	    }
@@ -1328,6 +1337,11 @@ fully_constant_vn_reference_p (vn_reference_t ref)
       unsigned i;
       for (i = 0; i < operands.length (); ++i)
 	{
+	  if (TREE_CODE_CLASS (operands[i].opcode) == tcc_constant)
+	    {
+	      ++i;
+	      break;
+	    }
 	  if (operands[i].off == -1)
 	    return NULL_TREE;
 	  off += operands[i].off;
@@ -1468,7 +1482,8 @@ valueize_refs_1 (vec<vn_reference_op_s> orig, bool *valueized_anything)
 	{
 	  offset_int off = ((wi::to_offset (vro->op0)
 			     - wi::to_offset (vro->op1))
-			    * wi::to_offset (vro->op2));
+			    * wi::to_offset (vro->op2)
+			    * vn_ref_op_align_unit (vro));
 	  if (wi::fits_shwi_p (off))
 	    vro->off = off.to_shwi ();
 	}
@@ -1625,10 +1640,12 @@ vn_lookup_simplify_result (code_helper rcode, tree type, tree *ops)
 }
 
 /* Return a value-number for RCODE OPS... either by looking up an existing
-   value-number for the simplified result or by inserting the operation.  */
+   value-number for the simplified result or by inserting the operation if
+   INSERT is true.  */
 
 static tree
-vn_nary_build_or_lookup (code_helper rcode, tree type, tree *ops)
+vn_nary_build_or_lookup_1 (code_helper rcode, tree type, tree *ops,
+			   bool insert)
 {
   tree result = NULL_TREE;
   /* We will be creating a value number for
@@ -1658,7 +1675,7 @@ vn_nary_build_or_lookup (code_helper rcode, tree type, tree *ops)
   else
     {
       tree val = vn_lookup_simplify_result (rcode, type, ops);
-      if (!val)
+      if (!val && insert)
 	{
 	  gimple_seq stmts = NULL;
 	  result = maybe_push_res_to_seq (rcode, type, ops, &stmts);
@@ -1718,6 +1735,29 @@ vn_nary_build_or_lookup (code_helper rcode, tree type, tree *ops)
     }
   return result;
 }
+
+/* Return a value-number for RCODE OPS... either by looking up an existing
+   value-number for the simplified result or by inserting the operation.  */
+
+static tree
+vn_nary_build_or_lookup (code_helper rcode, tree type, tree *ops)
+{
+  return vn_nary_build_or_lookup_1 (rcode, type, ops, true);
+}
+
+/* Try to simplify the expression RCODE OPS... of type TYPE and return
+   its value if present.  */
+
+tree
+vn_nary_simplify (vn_nary_op_t nary)
+{
+  if (nary->length > 3)
+    return NULL_TREE;
+  tree ops[3];
+  memcpy (ops, nary->op, sizeof (tree) * nary->length);
+  return vn_nary_build_or_lookup_1 (nary->opcode, nary->type, ops, false);
+}
+
 
 /* Callback for walk_non_aliased_vuses.  Tries to perform a lookup
    from the statement defining VUSE and if not successful tries to

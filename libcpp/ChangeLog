@@ -1,3 +1,12 @@
+2016-08-01  Andreas Schwab  <schwab@suse.de>
+
+	* include/cpplib.h: Fix comment typo.
+
+2016-07-27  David Malcolm  <dmalcolm@redhat.com>
+
+	* include/line-map.h (source_location): Fix line numbers in
+	comment.
+
 2016-07-11  David Malcolm  <dmalcolm@redhat.com>
 
 	* include/line-map.h (LINE_MAP_MAX_LOCATION_WITH_PACKED_RANGES):

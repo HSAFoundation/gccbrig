@@ -171,6 +171,47 @@ proc dg-final-use { args } {
 }
 
 #
+# dg-final-use-not-autofdo -- process code to run after the profile-use step
+# but only if not running autofdo
+# ARGS is the line number of the directive followed by the commands.
+#
+proc dg-final-use-not-autofdo { args } {
+    global use_final_code
+    global run_autofdo
+
+    if { [llength $args] > 2 } {
+	error "[lindex $args 0]: too many arguments"
+	return
+    }
+
+    if { $run_autofdo == 1 } {
+        return
+    }
+    append use_final_code "[lindex $args 1]\n"
+}
+
+#
+# dg-final-use-autofdo -- process code to run after the profile-use step
+# but only if running autofdo
+# ARGS is the line number of the directive followed by the commands.
+#
+
+proc dg-final-use-autofdo { args } {
+    global use_final_code
+    global run_autofdo
+
+    if { [llength $args] > 2 } {
+	error "[lindex $args 0]: too many arguments"
+	return
+    }
+
+    if { $run_autofdo != 1 } {
+        return
+    }
+    append use_final_code "[lindex $args 1]\n"
+}
+
+#
 # profopt-final-code -- run final code
 #
 # WHICH is "generate" or "use".
@@ -210,6 +251,8 @@ proc profopt-get-options { src } {
 	     || ![string compare "dg-skip-if" $cmd] \
 	     || ![string compare "dg-final-generate" $cmd] \
 	     || ![string compare "dg-final-use" $cmd] \
+	     || ![string compare "dg-final-use-not-autofdo" $cmd] \
+	     || ![string compare "dg-final-use-autofdo" $cmd] \
              || ![string compare "dg-additional-sources" $cmd] \
 	     || [string match "dg-require-*" $cmd]  } {
 	    set status [catch "$op" errmsg]
@@ -374,7 +417,7 @@ proc profopt-execute { src } {
 	    }
 	    set orig_ld_library_path "[getenv LD_LIBRARY_PATH]"
 	    setenv LD_LIBRARY_PATH "$ld_library_path:$orig_ld_library_path"
-	    verbose "Running $profile_wrapper $execname1"
+	    verbose -log "Running $profile_wrapper $execname1"
 	    set id [remote_spawn "" "$profile_wrapper $execname1" "readonly"]
 	    setenv LD_LIBRARY_PATH $orig_ld_library_path
 	    if { $id < 0 } {
@@ -475,6 +518,7 @@ proc profopt-execute { src } {
 	foreach ext $prof_ext {
 	    profopt-target-cleanup $tmpdir $base $ext
 	    profopt-target-cleanup $tmpdir perf data
+	    profopt-target-cleanup $tmpdir $base "gcda.imports"
 	}
 
 	if { $status != "pass" } {

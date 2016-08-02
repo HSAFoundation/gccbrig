@@ -1,3 +1,68 @@
+2016-07-29  Marek Polacek  <polacek@redhat.com>
+
+	PR c/71926
+	* c-common.c (c_common_truthvalue_conversion): Use LOCATION for the
+	parentheses warning.
+
+	PR c/71574
+	* c-common.c (handle_alloc_align_attribute): Also check FUNCTION_DECL.
+
+2016-07-28  Martin Liska  <mliska@suse.cz>
+
+	PR gcov-profile/68025
+	* c-common.c (handle_no_profile_instrument_function_attribute):
+
+2016-07-27  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* c-common.c (check_user_alignment): Use LOG2_BITS_PER_UNIT instead of
+	BITS_PER_UNIT_LOG.
+
+2016-07-25  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65970
+	* c.opt (fconstexpr-loop-limit): New.
+
+2016-07-22 Martin Sebor  <msebor@redhat.com>
+
+	PR c++/71675
+	* c-common.c (resolve_overloaded_builtin): Avoid converting
+	__atomic_compare_exchange_n return type to that of what its
+	first argument points to.
+
+2016-07-22  Uros Bizjak  <ubizjak@gmail.com>
+
+	* c-common.c: Use HOST_WIDE_INT_M1U instead of
+	~(unsigned HOST_WIDE_INT) 0.
+
+2016-07-22  Martin Liska  <mliska@suse.cz>
+
+	PR gcov-profile/69028
+	PR gcov-profile/62047
+	* cilk.c (create_cilk_helper_decl): Set location of a new decl
+	to the current_function_decl.
+
+2016-07-21  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65168
+	* c-common.c (c_common_truthvalue_conversion): Check
+	c_inhibit_evaluation_warnings for warning about address of
+	reference.
+
+2016-07-20  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-common.h (lookup_name_fuzzy): Convert return type from tree to
+	const char *.
+
+2016-07-15  Jason Merrill  <jason@redhat.com>
+
+	* c-opts.c (c_common_post_options): Update -fabi-version default to 11.
+
+2016-07-15  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/71858
+	* c-common.h (enum lookup_name_fuzzy_kind): Add
+	FUZZY_LOOKUP_FUNCTION_NAME.
+
 2016-07-08  Jason Merrill  <jason@redhat.com>
 
 	P0145: Refining Expression Order for C++.

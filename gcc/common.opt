@@ -882,6 +882,9 @@ Driver Undocumented
 ;     identity, such as ia32 calling convention attributes (stdcall, etc.)
 ;     Default in G++ 6 (set in c_common_post_options).
 ;
+; 11: The version of the ABI that corrects mangling of sizeof... expressions.
+;     Default in G++ 7.
+;
 ; Additional positive integers will be assigned as new versions of
 ; the ABI become the default version of the ABI.
 fabi-version=
@@ -2504,8 +2507,8 @@ Perform loop unrolling for all loops.
 ; that control loops do not overflow and that the loops with nontrivial
 ; exit condition are not infinite
 funsafe-loop-optimizations
-Common Report Var(flag_unsafe_loop_optimizations) Optimization
-Allow loop optimizations to assume that the loops behave in normal way.
+Common Ignore
+Does nothing.  Preserved for backward compatibility.
 
 fassociative-math
 Common Report Var(flag_associative_math) SetByCombined Optimization

@@ -976,6 +976,7 @@ unsigned char\n\
 mode_size_inline (machine_mode mode)\n\
 {\n\
   extern %sunsigned char mode_size[NUM_MACHINE_MODES];\n\
+  gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {\n", adj_bytesize ? "" : "const ");
 
@@ -1006,6 +1007,7 @@ unsigned char\n\
 mode_nunits_inline (machine_mode mode)\n\
 {\n\
   extern const unsigned char mode_nunits[NUM_MACHINE_MODES];\n\
+  gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {");
 
@@ -1035,6 +1037,7 @@ unsigned char\n\
 mode_inner_inline (machine_mode mode)\n\
 {\n\
   extern const unsigned char mode_inner[NUM_MACHINE_MODES];\n\
+  gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {");
 
@@ -1067,6 +1070,7 @@ mode_unit_size_inline (machine_mode mode)\n\
 {\n\
   extern CONST_MODE_UNIT_SIZE unsigned char mode_unit_size[NUM_MACHINE_MODES];\
 \n\
+  gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {");
 
@@ -1103,6 +1107,7 @@ unsigned short\n\
 mode_unit_precision_inline (machine_mode mode)\n\
 {\n\
   extern const unsigned short mode_unit_precision[NUM_MACHINE_MODES];\n\
+  gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {");
 
@@ -1409,8 +1414,8 @@ emit_mode_mask (void)
   puts ("\
 #define MODE_MASK(m)                          \\\n\
   ((m) >= HOST_BITS_PER_WIDE_INT)             \\\n\
-   ? ~(unsigned HOST_WIDE_INT) 0              \\\n\
-   : ((unsigned HOST_WIDE_INT) 1 << (m)) - 1\n");
+   ? HOST_WIDE_INT_M1U                        \\\n\
+   : (HOST_WIDE_INT_1U << (m)) - 1\n");
 
   for_all_modes (c, m)
     if (m->precision != (unsigned int)-1)

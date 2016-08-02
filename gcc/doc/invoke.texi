@@ -191,7 +191,8 @@ in the following sections.
 @xref{C++ Dialect Options,,Options Controlling C++ Dialect}.
 @gccoptlist{-fabi-version=@var{n}  -fno-access-control @gol
 -fargs-in-order=@var{n} -fcheck-new @gol
--fconstexpr-depth=@var{n}  -ffriend-injection @gol
+-fconstexpr-depth=@var{n} -fconstexpr-loop-limit=@var{n} @gol
+-ffriend-injection @gol
 -fno-elide-constructors @gol
 -fno-enforce-eh-specs @gol
 -ffor-scope  -fno-for-scope  -fno-gnu-keywords @gol
@@ -414,7 +415,7 @@ Objective-C and Objective-C++ Dialects}.
 -ftree-switch-conversion -ftree-tail-merge -ftree-ter @gol
 -ftree-vectorize -ftree-vrp -funconstrained-commons @gol
 -funit-at-a-time -funroll-all-loops -funroll-loops @gol
--funsafe-loop-optimizations -funsafe-math-optimizations -funswitch-loops @gol
+-funsafe-math-optimizations -funswitch-loops @gol
 -fipa-ra -fvariable-expansion-in-unroller -fvect-cost-model -fvpt @gol
 -fweb -fwhole-program -fwpa -fuse-linker-plugin @gol
 --param @var{name}=@var{value}
@@ -1011,10 +1012,9 @@ See RS/6000 and PowerPC Options.
 -mcompat-align-parm -mno-compat-align-parm @gol
 -mupper-regs-df -mno-upper-regs-df -mupper-regs-sf -mno-upper-regs-sf @gol
 -mupper-regs-di -mno-upper-regs-di @gol
--mupper-regs -mno-upper-regs -mmodulo -mno-modulo @gol
+-mupper-regs -mno-upper-regs @gol
 -mfloat128 -mno-float128 -mfloat128-hardware -mno-float128-hardware @gol
--mpower9-fusion -mno-mpower9-fusion -mpower9-vector -mno-power9-vector @gol
--mpower9-dform -mno-power9-dform -mlra -mno-lra}
+-mlra -mno-lra}
 
 @emph{RX Options}
 @gccoptlist{-m64bit-doubles  -m32bit-doubles  -fpu  -nofpu@gol
@@ -2269,6 +2269,12 @@ Set the maximum nested evaluation depth for C++11 constexpr functions
 to @var{n}.  A limit is needed to detect endless recursion during
 constant expression evaluation.  The minimum specified by the standard
 is 512.
+
+@item -fconstexpr-loop-limit=@var{n}
+@opindex fconstexpr-loop-limit
+Set the maximum number of iterations for a loop in C++14 constexpr functions
+to @var{n}.  A limit is needed to detect infinite loops during
+constant expression evaluation.  The default is 262144 (1<<18).
 
 @item -fdeduce-init-list
 @opindex fdeduce-init-list
@@ -6822,15 +6828,6 @@ number of iterations of a loop are used to guide loop unrolling and peeling
 and loop exit test optimizations.
 This option is enabled by default.
 
-@item -funsafe-loop-optimizations
-@opindex funsafe-loop-optimizations
-This option tells the loop optimizer to assume that loop indices do not
-overflow, and that loops with nontrivial exit condition are not
-infinite.  This enables a wider range of loop optimizations even if
-the loop optimizer itself cannot prove that these assumptions are valid.
-If you use @option{-Wunsafe-loop-optimizations}, the compiler warns you
-if it finds this kind of loop.
-
 @item -funconstrained-commons
 @opindex funconstrained-commons
 This option tells the compiler that variables declared in common blocks
@@ -7264,7 +7261,11 @@ any called function.  In that case it is not necessary to save and restore
 them around calls.  This is only possible if called functions are part of
 same compilation unit as current function and they are compiled before it.
 
-Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
+Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}, however the option
+is disabled if generated code will be instrumented for profiling
+(@option{-p}, or @option{-pg}) or if callee's register usage cannot be known
+exactly (this happens on targets that do not expose prologues
+and epilogues in RTL).
 
 @item -fconserve-stack
 @opindex fconserve-stack
@@ -7284,7 +7285,7 @@ Perform code hoisting.  Code hoisting tries to move the
 evaluation of expressions executed on all paths to the function exit
 as early as possible.  This is especially useful as a code size
 optimization, but it often helps for code speed as well.
-This flag is enabled by defailt at @option{-O2} and higher.
+This flag is enabled by default at @option{-O2} and higher.
 
 @item -ftree-pre
 @opindex ftree-pre
@@ -8869,6 +8870,17 @@ considered for if-conversion.  The default is 10, though the compiler will
 also use other heuristics to decide whether if-conversion is likely to be
 profitable.
 
+@item max-rtl-if-conversion-predictable-cost
+@item max-rtl-if-conversion-unpredictable-cost
+RTL if-conversion will try to remove conditional branches around a block
+and replace them with conditionally executed instructions.  These parameters
+give the maximum permissible cost for the sequence that would be generated
+by if-conversion depending on whether the branch is statically determined
+to be predictable or not.  The units for this parameter are the same as
+those for the GCC internal seq_cost metric.  The compiler will try to
+provide a reasonable default for this parameter using the BRANCH_COST
+target macro.
+
 @item max-crossjump-edges
 The maximum number of incoming edges to consider for cross-jumping.
 The algorithm used by @option{-fcrossjumping} is @math{O(N^2)} in
@@ -9773,6 +9785,10 @@ enable it.
 The maximum number of may-defs we analyze when looking for a must-def
 specifying the dynamic type of an object that invokes a virtual call
 we may be able to devirtualize speculatively.
+
+@item max-vrp-switch-assertions
+The maximum number of assertions to add along the default edge of a switch
+statement during VRP.  The default is 10.
 @end table
 @end table
 
@@ -20114,8 +20130,7 @@ following options:
 -mpowerpc-gpopt  -mpowerpc-gfxopt  -msingle-float -mdouble-float @gol
 -msimple-fpu -mstring  -mmulhw  -mdlmzb  -mmfpgpr -mvsx @gol
 -mcrypto -mdirect-move -mhtm -mpower8-fusion -mpower8-vector @gol
--mquad-memory -mquad-memory-atomic -mmodulo -mfloat128 -mfloat128-hardware @gol
--mpower9-fusion -mpower9-vector -mpower9-dform}
+-mquad-memory -mquad-memory-atomic -mfloat128 -mfloat128-hardware}
 
 The particular options set for any particular CPU varies between
 compiler versions, depending on what setting seems to produce optimal
@@ -20359,7 +20374,7 @@ instructions that target all 64 registers in the vector/scalar
 floating point register set that were added in version 2.07 of the
 PowerPC ISA.  @option{-mupper-regs-sf} is turned on by default if you
 use either of the @option{-mcpu=power8}, @option{-mpower8-vector}, or
-@option{-mpower9} options.
+@option{-mcpu=power9} options.
 
 @item -mupper-regs
 @itemx -mno-upper-regs
@@ -20403,40 +20418,6 @@ If you use @option{-mfloat128-hardware}, it will enable the option
 If you select ISA 3.0 instructions with @option{-mcpu=power9}, but do
 not use either @option{-mfloat128} or @option{-mfloat128-hardware},
 the IEEE 128-bit floating point support will not be enabled.
-
-@item -mmodulo
-@itemx -mno-modulo
-@opindex mmodulo
-@opindex mno-module
-Generate code that uses (does not use) the ISA 3.0 integer modulo
-instructions.  The @option{-mmodulo} option is enabled by default
-with the @option{-mcpu=power9} option.
-
-@item -mpower9-fusion
-@itemx -mno-power9-fusion
-@opindex mpower9-fusion
-@opindex mno-power9-fusion
-Generate code that keeps (does not keeps) some operations adjacent so
-that the instructions can be fused together on power9 and later
-processors.
-
-@item -mpower9-vector
-@itemx -mno-power9-vector
-@opindex mpower9-vector
-@opindex mno-power9-vector
-Generate code that uses (does not use) the vector and scalar
-instructions that were added in version 3.0 of the PowerPC ISA.  Also
-enable the use of built-in functions that allow more direct access to
-the vector instructions.
-
-@item -mpower9-dform
-@itemx -mno-power9-dform
-@opindex mpower9-dform
-@opindex mno-power9-dform
-Enable (disable) scalar d-form (register + offset) memory instructions
-to load/store traditional Altivec registers. If the @var{LRA} register
-allocator is enabled, also enable (disable) vector d-form memory
-instructions.
 
 @item -mfloat-gprs=@var{yes/single/double/no}
 @itemx -mfloat-gprs

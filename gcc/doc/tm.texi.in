@@ -4762,6 +4762,8 @@ Define this macro if a non-short-circuit operation produced by
 
 @hook TARGET_ADDRESS_COST
 
+@hook TARGET_MAX_NOCE_IFCVT_SEQ_COST
+
 @hook TARGET_NO_SPECULATION_IN_DELAY_SLOTS_P
 
 @node Scheduling
@@ -7485,6 +7487,8 @@ c_register_addr_space ("__ea", ADDR_SPACE_EA);
 @hook TARGET_ADDR_SPACE_CONVERT
 
 @hook TARGET_ADDR_SPACE_DEBUG
+
+@hook TARGET_ADDR_SPACE_DIAGNOSE_USAGE
 
 @node Misc
 @section Miscellaneous Parameters

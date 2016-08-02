@@ -574,8 +574,10 @@ contains_no_active_insn_p (const_basic_block bb)
 {
   rtx_insn *insn;
 
-  if (bb == EXIT_BLOCK_PTR_FOR_FN (cfun) || bb == ENTRY_BLOCK_PTR_FOR_FN (cfun)
-      || !single_succ_p (bb))
+  if (bb == EXIT_BLOCK_PTR_FOR_FN (cfun)
+      || bb == ENTRY_BLOCK_PTR_FOR_FN (cfun)
+      || !single_succ_p (bb)
+      || (single_succ_edge (bb)->flags & EDGE_FAKE) != 0)
     return false;
 
   for (insn = BB_HEAD (bb); insn != BB_END (bb); insn = NEXT_INSN (insn))
@@ -4270,11 +4272,10 @@ cfg_layout_initialize (unsigned int flags)
 void
 break_superblocks (void)
 {
-  sbitmap superblocks;
   bool need = false;
   basic_block bb;
 
-  superblocks = sbitmap_alloc (last_basic_block_for_fn (cfun));
+  auto_sbitmap superblocks (last_basic_block_for_fn (cfun));
   bitmap_clear (superblocks);
 
   FOR_EACH_BB_FN (bb, cfun)
@@ -4290,8 +4291,6 @@ break_superblocks (void)
       rebuild_jump_labels (get_insns ());
       find_many_sub_basic_blocks (superblocks);
     }
-
-  free (superblocks);
 }
 
 /* Finalize the changes: reorder insn list according to the sequence specified

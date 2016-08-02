@@ -2109,11 +2109,12 @@ record_dep_loop (struct loop *loop, im_mem_ref *ref, bool stored_p)
     loop = loop_outer (loop);
 }
 
-/* Returns true if REF is independent on all other memory references in
-   LOOP.  */
+/* Returns true if REF in REF_LOOP is independent on all other memory
+   references in LOOP.  */
 
 static bool
-ref_indep_loop_p_1 (struct loop *loop, im_mem_ref *ref, bool stored_p)
+ref_indep_loop_p_1 (int safelen, struct loop *loop,
+		    im_mem_ref *ref, bool stored_p)
 {
   bitmap refs_to_check;
   unsigned i;
@@ -2128,13 +2129,14 @@ ref_indep_loop_p_1 (struct loop *loop, im_mem_ref *ref, bool stored_p)
   if (bitmap_bit_p (refs_to_check, UNANALYZABLE_MEM_ID))
     return false;
 
-  if (loop->safelen > 0)
+  if (safelen > 1)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
-	  fprintf(dump_file,"Consider REF independent in loop#%d\n", loop->num);
-	  print_generic_expr(dump_file, ref->mem.ref, TDF_SLIM);
-	  fprintf(dump_file, "\n");
+	  fprintf (dump_file,"REF is independent due to safelen %d\n",
+		   safelen);
+	  print_generic_expr (dump_file, ref->mem.ref, TDF_SLIM);
+	  fprintf (dump_file, "\n");
 	}
       return true;
     }
@@ -2149,11 +2151,13 @@ ref_indep_loop_p_1 (struct loop *loop, im_mem_ref *ref, bool stored_p)
   return true;
 }
 
-/* Returns true if REF is independent on all other memory references in
-   LOOP.  Wrapper over ref_indep_loop_p_1, caching its results.  */
+/* Returns true if REF in REF_LOOP is independent on all other memory
+   references in LOOP.  Wrapper over ref_indep_loop_p_1, caching its
+   results.  */
 
 static bool
-ref_indep_loop_p_2 (struct loop *loop, im_mem_ref *ref, bool stored_p)
+ref_indep_loop_p_2 (int safelen, struct loop *loop,
+		    im_mem_ref *ref, bool stored_p)
 {
   stored_p |= (ref->stored && bitmap_bit_p (ref->stored, loop->num));
 
@@ -2162,15 +2166,18 @@ ref_indep_loop_p_2 (struct loop *loop, im_mem_ref *ref, bool stored_p)
   if (bitmap_bit_p (&ref->dep_loop, LOOP_DEP_BIT (loop->num, stored_p)))
     return false;
 
+  if (loop->safelen > safelen)
+    safelen = loop->safelen;
+
   struct loop *inner = loop->inner;
   while (inner)
     {
-      if (!ref_indep_loop_p_2 (inner, ref, stored_p))
+      if (!ref_indep_loop_p_2 (safelen, inner, ref, stored_p))
 	return false;
       inner = inner->next;
     }
 
-  bool indep_p = ref_indep_loop_p_1 (loop, ref, stored_p);
+  bool indep_p = ref_indep_loop_p_1 (safelen, loop, ref, stored_p);
 
   if (dump_file && (dump_flags & TDF_DETAILS))
     fprintf (dump_file, "Querying dependencies of ref %u in loop %d: %s\n",
@@ -2209,7 +2216,7 @@ ref_indep_loop_p (struct loop *loop, im_mem_ref *ref)
 {
   gcc_checking_assert (MEM_ANALYZABLE (ref));
 
-  return ref_indep_loop_p_2 (loop, ref, false);
+  return ref_indep_loop_p_2 (0, loop, ref, false);
 }
 
 /* Returns true if we can perform store motion of REF from LOOP.  */
@@ -2405,10 +2412,10 @@ fill_always_executed_in_1 (struct loop *loop, sbitmap contains_call)
 static void
 fill_always_executed_in (void)
 {
-  sbitmap contains_call = sbitmap_alloc (last_basic_block_for_fn (cfun));
   basic_block bb;
   struct loop *loop;
 
+  auto_sbitmap contains_call (last_basic_block_for_fn (cfun));
   bitmap_clear (contains_call);
   FOR_EACH_BB_FN (bb, cfun)
     {
@@ -2425,8 +2432,6 @@ fill_always_executed_in (void)
 
   for (loop = current_loops->tree_root->inner; loop; loop = loop->next)
     fill_always_executed_in_1 (loop, contains_call);
-
-  sbitmap_free (contains_call);
 }
 
 

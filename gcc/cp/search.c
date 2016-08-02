@@ -947,6 +947,7 @@ accessible_p (tree type, tree decl, bool consider_local_p)
      in default arguments for template parameters), and access
      checking should be performed in the outermost parameter list.  */
   if (processing_template_decl
+      && !expanding_concept ()
       && (!processing_template_parmlist || processing_template_decl > 1))
     return 1;
 
@@ -1398,13 +1399,7 @@ lookup_field_fuzzy_info::fuzzy_lookup_fnfields (tree type)
 void
 lookup_field_fuzzy_info::fuzzy_lookup_field (tree type)
 {
-  if (TREE_CODE (type) == TEMPLATE_TYPE_PARM
-      || TREE_CODE (type) == BOUND_TEMPLATE_TEMPLATE_PARM
-      || TREE_CODE (type) == TYPENAME_TYPE)
-    /* The TYPE_FIELDS of a TEMPLATE_TYPE_PARM and
-       BOUND_TEMPLATE_TEMPLATE_PARM are not fields at all;
-       instead TYPE_FIELDS is the TEMPLATE_PARM_INDEX.
-       The TYPE_FIELDS of TYPENAME_TYPE is its TYPENAME_TYPE_FULLNAME.  */
+  if (!CLASS_TYPE_P (type))
     return;
 
   for (tree field = TYPE_FIELDS (type); field; field = DECL_CHAIN (field))

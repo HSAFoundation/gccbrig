@@ -28,8 +28,8 @@ void test01()
   any x(1);
   any y;
   swap(x, y);
-  VERIFY( x.empty() );
-  VERIFY( !y.empty() );
+  VERIFY( !x.has_value() );
+  VERIFY( y.has_value() );
 }
 
 int main()

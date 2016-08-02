@@ -3088,9 +3088,9 @@ implicit_decl_warning (location_t loc, tree id, tree olddecl)
   if (warn_implicit_function_declaration)
     {
       bool warned;
-      tree hint = NULL_TREE;
+      const char *hint = NULL;
       if (!olddecl)
-	hint = lookup_name_fuzzy (id, FUZZY_LOOKUP_NAME);
+	hint = lookup_name_fuzzy (id, FUZZY_LOOKUP_FUNCTION_NAME);
 
       if (flag_isoc99)
 	if (hint)
@@ -3099,7 +3099,7 @@ implicit_decl_warning (location_t loc, tree id, tree olddecl)
 	    richloc.add_fixit_misspelled_id (loc, hint);
 	    warned = pedwarn_at_rich_loc
 	      (&richloc, OPT_Wimplicit_function_declaration,
-	       "implicit declaration of function %qE; did you mean %qE?",
+	       "implicit declaration of function %qE; did you mean %qs?",
 	       id, hint);
 	  }
 	else
@@ -3112,7 +3112,7 @@ implicit_decl_warning (location_t loc, tree id, tree olddecl)
 	    richloc.add_fixit_misspelled_id (loc, hint);
 	    warned = warning_at_rich_loc
 	      (&richloc, OPT_Wimplicit_function_declaration,
-	       G_("implicit declaration of function %qE;did you mean %qE?"),
+	       G_("implicit declaration of function %qE;did you mean %qs?"),
 	       id, hint);
 	  }
 	else
@@ -3327,7 +3327,7 @@ implicitly_declare (location_t loc, tree functionid)
 
   if (decl)
     {
-      if (decl == error_mark_node)
+      if (TREE_CODE (decl) != FUNCTION_DECL)
 	return decl;
 
       /* FIXME: Objective-C has weird not-really-builtin functions
@@ -3433,14 +3433,14 @@ undeclared_variable (location_t loc, tree id)
 
   if (current_function_decl == 0)
     {
-      tree guessed_id = lookup_name_fuzzy (id, FUZZY_LOOKUP_NAME);
+      const char *guessed_id = lookup_name_fuzzy (id, FUZZY_LOOKUP_NAME);
       if (guessed_id)
 	{
 	  gcc_rich_location richloc (loc);
 	  richloc.add_fixit_misspelled_id (loc, guessed_id);
 	  error_at_rich_loc (&richloc,
 			     "%qE undeclared here (not in a function);"
-			     " did you mean %qE?",
+			     " did you mean %qs?",
 			     id, guessed_id);
 	}
       else
@@ -3451,7 +3451,7 @@ undeclared_variable (location_t loc, tree id)
     {
       if (!objc_diagnose_private_ivar (id))
 	{
-	  tree guessed_id = lookup_name_fuzzy (id, FUZZY_LOOKUP_NAME);
+	  const char *guessed_id = lookup_name_fuzzy (id, FUZZY_LOOKUP_NAME);
 	  if (guessed_id)
 	    {
 	      gcc_rich_location richloc (loc);
@@ -3459,7 +3459,7 @@ undeclared_variable (location_t loc, tree id)
 	      error_at_rich_loc
 		(&richloc,
 		 "%qE undeclared (first use in this function);"
-		 " did you mean %qE?",
+		 " did you mean %qs?",
 		 id, guessed_id);
 	    }
 	  else
@@ -3955,45 +3955,6 @@ lookup_name_in_scope (tree name, struct c_scope *scope)
   return NULL_TREE;
 }
 
-/* Specialization of edit_distance_traits for preprocessor macros.  */
-
-template <>
-struct edit_distance_traits<cpp_hashnode *>
-{
-  static size_t get_length (cpp_hashnode *hashnode)
-  {
-    return hashnode->ident.len;
-  }
-
-  static const char *get_string (cpp_hashnode *hashnode)
-  {
-    return (const char *)hashnode->ident.str;
-  }
-};
-
-/* Specialization of best_match<> for finding the closest preprocessor
-   macro to a given identifier.  */
-
-typedef best_match<tree, cpp_hashnode *> best_macro_match;
-
-/* A callback for cpp_forall_identifiers, for use by lookup_name_fuzzy.
-   Process HASHNODE and update the best_macro_match instance pointed to be
-   USER_DATA.  */
-
-static int
-find_closest_macro_cpp_cb (cpp_reader *, cpp_hashnode *hashnode,
-			   void *user_data)
-{
-  if (hashnode->type != NT_MACRO)
-    return 1;
-
-  best_macro_match *bmm = (best_macro_match *)user_data;
-  bmm->consider (hashnode);
-
-  /* Keep iterating.  */
-  return 1;
-}
-
 /* Look for the closest match for NAME within the currently valid
    scopes.
 
@@ -4010,7 +3971,7 @@ find_closest_macro_cpp_cb (cpp_reader *, cpp_hashnode *hashnode,
    It also looks for start_typename keywords, to detect "singed" vs "signed"
    typos.  */
 
-tree
+const char *
 lookup_name_fuzzy (tree name, enum lookup_name_fuzzy_kind kind)
 {
   gcc_assert (TREE_CODE (name) == IDENTIFIER_NODE);
@@ -4021,16 +3982,37 @@ lookup_name_fuzzy (tree name, enum lookup_name_fuzzy_kind kind)
   for (c_scope *scope = current_scope; scope; scope = scope->outer)
     for (c_binding *binding = scope->bindings; binding; binding = binding->prev)
       {
-	if (!binding->id)
+	if (!binding->id || binding->invisible)
 	  continue;
 	/* Don't use bindings from implicitly declared functions,
 	   as they were likely misspellings themselves.  */
 	if (TREE_CODE (binding->decl) == FUNCTION_DECL)
 	  if (C_DECL_IMPLICIT (binding->decl))
 	    continue;
-	if (kind == FUZZY_LOOKUP_TYPENAME)
-	  if (TREE_CODE (binding->decl) != TYPE_DECL)
-	    continue;
+	switch (kind)
+	  {
+	  case FUZZY_LOOKUP_TYPENAME:
+	    if (TREE_CODE (binding->decl) != TYPE_DECL)
+	      continue;
+	    break;
+
+	  case FUZZY_LOOKUP_FUNCTION_NAME:
+	    if (TREE_CODE (binding->decl) != FUNCTION_DECL)
+	      {
+		/* Allow function pointers.  */
+		if ((VAR_P (binding->decl)
+		     || TREE_CODE (binding->decl) == PARM_DECL)
+		    && TREE_CODE (TREE_TYPE (binding->decl)) == POINTER_TYPE
+		    && (TREE_CODE (TREE_TYPE (TREE_TYPE (binding->decl)))
+			== FUNCTION_TYPE))
+		  break;
+		continue;
+	      }
+	    break;
+
+	  default:
+	    break;
+	  }
 	bm.consider (binding->id);
       }
 
@@ -4047,8 +4029,7 @@ lookup_name_fuzzy (tree name, enum lookup_name_fuzzy_kind kind)
      non-NULL result for best_macro_match if it's better than any of
      the identifiers already checked, which avoids needless creation
      of identifiers for macro hashnodes.  */
-  best_macro_match bmm (name, bm.get_best_distance ());
-  cpp_forall_identifiers (parse_in, find_closest_macro_cpp_cb, &bmm);
+  best_macro_match bmm (name, bm.get_best_distance (), parse_in);
   cpp_hashnode *best_macro = bmm.get_best_meaningful_candidate ();
   /* If a macro is the closest so far to NAME, use it, creating an
      identifier tree node for it.  */
@@ -4079,7 +4060,11 @@ lookup_name_fuzzy (tree name, enum lookup_name_fuzzy_kind kind)
 	}
     }
 
-  return bm.get_best_meaningful_candidate ();
+  tree best = bm.get_best_meaningful_candidate ();
+  if (best)
+    return IDENTIFIER_POINTER (best);
+  else
+    return NULL;
 }
 
 
@@ -7895,7 +7880,8 @@ finish_struct (location_t loc, tree t, tree fieldlist, tree attributes,
 	  else if (!saw_named_field)
 	    {
 	      error_at (DECL_SOURCE_LOCATION (x),
-			"flexible array member in otherwise empty struct");
+			"flexible array member in a struct with no named "
+			"members");
 	      TREE_TYPE (x) = error_mark_node;
 	    }
 	}
@@ -9277,7 +9263,9 @@ finish_function (void)
 
   /* For GNU C extern inline functions disregard inline limits.  */
   if (DECL_EXTERNAL (fndecl)
-      && DECL_DECLARED_INLINE_P (fndecl))
+      && DECL_DECLARED_INLINE_P (fndecl)
+      && (flag_gnu89_inline
+	  || lookup_attribute ("gnu_inline", DECL_ATTRIBUTES (fndecl))))
     DECL_DISREGARD_INLINE_LIMITS (fndecl) = 1;
 
   /* Genericize before inlining.  Delay genericizing nested functions

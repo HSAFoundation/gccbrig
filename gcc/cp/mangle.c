@@ -1,4 +1,4 @@
-/* Name mangling for the 3.0 C++ ABI.
+/* Name mangling for the 3.0 -*- C++ -*- ABI.
    Copyright (C) 2000-2016 Free Software Foundation, Inc.
    Written by Alex Samuel <samuel@codesourcery.com>
 
@@ -447,6 +447,30 @@ is_std_substitution (const tree node,
 	      == subst_identifiers[index]));
 }
 
+/* Return the ABI tags (the TREE_VALUE of the "abi_tag" attribute entry) for T,
+   which can be a decl or type.  */
+
+static tree
+get_abi_tags (tree t)
+{
+  if (!t || TREE_CODE (t) == NAMESPACE_DECL)
+    return NULL_TREE;
+
+  if (DECL_P (t) && DECL_DECLARES_TYPE_P (t))
+    t = TREE_TYPE (t);
+
+  tree attrs;
+  if (TYPE_P (t))
+    attrs = TYPE_ATTRIBUTES (t);
+  else
+    attrs = DECL_ATTRIBUTES (t);
+
+  tree tags = lookup_attribute ("abi_tag", attrs);
+  if (tags)
+    tags = TREE_VALUE (tags);
+  return tags;
+}
+
 /* Helper function for find_substitution.  Returns nonzero if NODE,
    which may be a decl or a CLASS_TYPE, is the template-id
    ::std::identifier<char>, where identifier is
@@ -601,7 +625,7 @@ find_substitution (tree node)
 
   tree tags = NULL_TREE;
   if (OVERLOAD_TYPE_P (node) || DECL_CLASS_TEMPLATE_P (node))
-    tags = lookup_attribute ("abi_tag", TYPE_ATTRIBUTES (type));
+    tags = get_abi_tags (type);
   /* Now check the list of available substitutions for this mangling
      operation.  */
   if (!abbr || tags) for (i = 0; i < size; ++i)
@@ -667,7 +691,7 @@ unmangled_name_p (const tree decl)
 	return false;
 
       /* Declarations with ABI tags are mangled.  */
-      if (lookup_attribute ("abi_tag", DECL_ATTRIBUTES (decl)))
+      if (get_abi_tags (decl))
 	return false;
 
       /* The names of non-static global variables aren't mangled.  */
@@ -1314,12 +1338,7 @@ write_unqualified_name (tree decl)
     decl = DECL_TEMPLATE_RESULT (tmpl);
   /* Don't crash on an unbound class template.  */
   if (decl && TREE_CODE (decl) != NAMESPACE_DECL)
-    {
-      tree attrs = (TREE_CODE (decl) == TYPE_DECL
-		    ? TYPE_ATTRIBUTES (TREE_TYPE (decl))
-		    : DECL_ATTRIBUTES (decl));
-      write_abi_tags (lookup_attribute ("abi_tag", attrs));
-    }
+    write_abi_tags (get_abi_tags (decl));
 }
 
 /* Write the unqualified-name for a conversion operator to TYPE.  */
@@ -1370,8 +1389,6 @@ write_abi_tags (tree tags)
 {
   if (tags == NULL_TREE)
     return;
-
-  tags = TREE_VALUE (tags);
 
   vec<tree, va_gc> * vec = make_tree_vector();
 
@@ -2767,17 +2784,67 @@ write_expression (tree expr)
       write_mangled_name (expr, false);
       write_char ('E');
     }
-  else if (TREE_CODE (expr) == SIZEOF_EXPR
-	   && SIZEOF_EXPR_TYPE_P (expr))
+  else if (TREE_CODE (expr) == SIZEOF_EXPR)
     {
-      write_string ("st");
-      write_type (TREE_TYPE (TREE_OPERAND (expr, 0)));
-    }
-  else if (TREE_CODE (expr) == SIZEOF_EXPR
-	   && TYPE_P (TREE_OPERAND (expr, 0)))
-    {
-      write_string ("st");
-      write_type (TREE_OPERAND (expr, 0));
+      tree op = TREE_OPERAND (expr, 0);
+
+      if (PACK_EXPANSION_P (op))
+	{
+	  if (abi_warn_or_compat_version_crosses (11))
+	    G.need_abi_warning = true;
+	  if (abi_version_at_least (11))
+	    {
+	      /* sZ rather than szDp.  */
+	      write_string ("sZ");
+	      write_expression (PACK_EXPANSION_PATTERN (op));
+	      return;
+	    }
+	}
+
+      if (SIZEOF_EXPR_TYPE_P (expr))
+	{
+	  write_string ("st");
+	  write_type (TREE_TYPE (op));
+	}
+      else if (ARGUMENT_PACK_P (op))
+	{
+	  tree args = ARGUMENT_PACK_ARGS (op);
+	  int length = TREE_VEC_LENGTH (args);
+	  if (abi_warn_or_compat_version_crosses (10))
+	    G.need_abi_warning = true;
+	  if (abi_version_at_least (10))
+	    {
+	      /* sP <template-arg>* E # sizeof...(T), size of a captured
+		 template parameter pack from an alias template */
+	      write_string ("sP");
+	      for (int i = 0; i < length; ++i)
+		write_template_arg (TREE_VEC_ELT (args, i));
+	      write_char ('E');
+	    }
+	  else
+	    {
+	      /* In GCC 5 we represented this sizeof wrong, with the effect
+		 that we mangled it as the last element of the pack.  */
+	      tree arg = TREE_VEC_ELT (args, length-1);
+	      if (TYPE_P (op))
+		{
+		  write_string ("st");
+		  write_type (arg);
+		}
+	      else
+		{
+		  write_string ("sz");
+		  write_expression (arg);
+		}
+	    }
+	}
+      else if (TYPE_P (TREE_OPERAND (expr, 0)))
+	{
+	  write_string ("st");
+	  write_type (TREE_OPERAND (expr, 0));
+	}
+      else
+	goto normal_expr;
     }
   else if (TREE_CODE (expr) == ALIGNOF_EXPR
 	   && TYPE_P (TREE_OPERAND (expr, 0)))
@@ -2947,6 +3014,7 @@ write_expression (tree expr)
     }
   else
     {
+    normal_expr:
       int i, len;
       const char *name;
 
@@ -3093,6 +3161,29 @@ write_expression (tree expr)
 		  error ("omitted middle operand to %<?:%> operand "
 			 "cannot be mangled");
 		  continue;
+		}
+	      else if (FOLD_EXPR_P (expr))
+		{
+		  /* The first 'operand' of a fold-expression is the operator
+		     that it folds over.  */
+		  if (i == 0)
+		    {
+		      int fcode = TREE_INT_CST_LOW (operand);
+		      write_string (operator_name_info[fcode].mangled_name);
+		      continue;
+		    }
+		  else if (code == BINARY_LEFT_FOLD_EXPR)
+		    {
+		      /* The order of operands of the binary left and right
+			 folds is the same, but we want to mangle them in
+			 lexical order, i.e. non-pack first.  */
+		      if (i == 1)
+			operand = FOLD_EXPR_INIT (expr);
+		      else
+			operand = FOLD_EXPR_PACK (expr);
+		    }
+		  if (PACK_EXPANSION_P (operand))
+		    operand = PACK_EXPANSION_PATTERN (operand);
 		}
 	      write_expression (operand);
 	    }
@@ -3609,55 +3700,58 @@ mangle_decl (const tree decl)
   SET_DECL_ASSEMBLER_NAME (decl, id);
 
   if (id != DECL_NAME (decl)
-      && !DECL_REALLY_EXTERN (decl)
       /* Don't do this for a fake symbol we aren't going to emit anyway.  */
       && TREE_CODE (decl) != TYPE_DECL
       && !DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (decl)
       && !DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (decl))
     {
-      bool set = false;
+      int save_ver = flag_abi_version;
+      tree id2 = NULL_TREE;
 
-      /* Check IDENTIFIER_GLOBAL_VALUE before setting to avoid redundant
-	 errors from multiple definitions.  */
-      tree d = IDENTIFIER_GLOBAL_VALUE (id);
-      if (!d || decl_implicit_alias_p (d))
+      if (!DECL_REALLY_EXTERN (decl))
 	{
-	  set = true;
-	  SET_IDENTIFIER_GLOBAL_VALUE (id, decl);
+	  bool set = false;
+
+	  /* Check IDENTIFIER_GLOBAL_VALUE before setting to avoid redundant
+	     errors from multiple definitions.  */
+	  tree d = IDENTIFIER_GLOBAL_VALUE (id);
+	  if (!d || decl_implicit_alias_p (d))
+	    {
+	      set = true;
+	      SET_IDENTIFIER_GLOBAL_VALUE (id, decl);
+	    }
+
+	  if (!G.need_abi_warning)
+	    return;
+
+	  /* If the mangling will change in the future, emit an alias with the
+	     future mangled name for forward-compatibility.  */
+	  if (!set)
+	    {
+	      SET_IDENTIFIER_GLOBAL_VALUE (id, decl);
+	      inform (DECL_SOURCE_LOCATION (decl), "a later -fabi-version= (or "
+		      "=0) avoids this error with a change in mangling");
+	    }
+
+	  flag_abi_version = flag_abi_compat_version;
+	  id2 = mangle_decl_string (decl);
+	  id2 = targetm.mangle_decl_assembler_name (decl, id2);
+	  flag_abi_version = save_ver;
+
+	  if (id2 != id)
+	    note_mangling_alias (decl, id2);
 	}
-
-      if (!G.need_abi_warning)
-	return;
-
-      /* If the mangling will change in the future, emit an alias with the
-	 future mangled name for forward-compatibility.  */
-      int save_ver;
-      tree id2;
-
-      if (!set)
-	{
-	  SET_IDENTIFIER_GLOBAL_VALUE (id, decl);
-	  inform (DECL_SOURCE_LOCATION (decl), "a later -fabi-version= (or "
-		  "=0) avoids this error with a change in mangling");
-	}
-
-      save_ver = flag_abi_version;
-
-      flag_abi_version = flag_abi_compat_version;
-      id2 = mangle_decl_string (decl);
-      id2 = targetm.mangle_decl_assembler_name (decl, id2);
-
-      if (id2 != id)
-	note_mangling_alias (decl, id2);
 
       if (warn_abi)
 	{
-	  if (flag_abi_compat_version != warn_abi_version)
+	  if (flag_abi_compat_version != warn_abi_version
+	      || id2 == NULL_TREE)
 	    {
 	      flag_abi_version = warn_abi_version;
 	      id2 = mangle_decl_string (decl);
 	      id2 = targetm.mangle_decl_assembler_name (decl, id2);
 	    }
+	  flag_abi_version = save_ver;
 
 	  if (id2 == id)
 	    /* OK.  */;
@@ -3666,8 +3760,8 @@ mangle_decl (const tree decl)
 	    warning_at (DECL_SOURCE_LOCATION (G.entity), OPT_Wabi,
 			"the mangled name of %qD changed between "
 			"-fabi-version=%d (%D) and -fabi-version=%d (%D)",
-			G.entity, save_ver, id2,
-			warn_abi_version, id);
+			G.entity, warn_abi_version, id2,
+			save_ver, id);
 	  else
 	    warning_at (DECL_SOURCE_LOCATION (G.entity), OPT_Wabi,
 			"the mangled name of %qD changes between "
@@ -3952,16 +4046,12 @@ maybe_check_abi_tags (tree t, tree for_decl)
   if (DECL_ASSEMBLER_NAME_SET_P (t))
     return;
 
-  tree attr = lookup_attribute ("abi_tag", DECL_ATTRIBUTES (t));
-  tree oldtags = NULL_TREE;
-  if (attr)
-    oldtags = TREE_VALUE (attr);
+  tree oldtags = get_abi_tags (t);
 
   mangle_decl (t);
 
-  if (!attr)
-    attr = lookup_attribute ("abi_tag", DECL_ATTRIBUTES (t));
-  if (attr && TREE_VALUE (attr) != oldtags
+  tree newtags = get_abi_tags (t);
+  if (newtags && newtags != oldtags
       && abi_version_crosses (10))
     {
       if (for_decl)

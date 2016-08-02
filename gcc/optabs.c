@@ -4214,6 +4214,17 @@ emit_conditional_move (rtx target, enum rtx_code code, rtx op0, rtx op1,
   enum insn_code icode;
   enum rtx_code reversed;
 
+  /* If the two source operands are identical, that's just a move.  */
+
+  if (rtx_equal_p (op2, op3))
+    {
+      if (!target)
+	target = gen_reg_rtx (mode);
+
+      emit_move_insn (target, op3);
+      return target;
+    }
+
   /* If one operand is constant, make it the second one.  Only do this
      if the other operand is not constant as well.  */
 
@@ -4903,7 +4914,7 @@ expand_fix (rtx to, rtx from, int unsignedp)
 	  expand_fix (to, target, 0);
 	  target = expand_binop (GET_MODE (to), xor_optab, to,
 				 gen_int_mode
-				 ((HOST_WIDE_INT) 1 << (bitsize - 1),
+				 (HOST_WIDE_INT_1 << (bitsize - 1),
 				  GET_MODE (to)),
 				 to, 1, OPTAB_LIB_WIDEN);
 
