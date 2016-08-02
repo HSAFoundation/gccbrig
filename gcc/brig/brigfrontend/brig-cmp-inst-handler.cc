@@ -34,7 +34,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 
   tree cmp_type = get_tree_expr_type_for_hsa_type (inst->sourceType);
 
-  // The destination type to convert the comparison result to.
+  /* The destination type to convert the comparison result to. */
   tree dest_type = get_tree_type_for_hsa_type (inst_base->type);
 
   const bool is_fp16_dest = (inst_base->type & 0x01F) == BRIG_TYPE_F16;
@@ -44,17 +44,16 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 		      ? INTEGRAL_TYPE_P (TREE_TYPE (cmp_type))
 		      : INTEGRAL_TYPE_P (cmp_type);
 
-  // The type for the GENERIC comparison.  It should match the
-  // input operand width for vector comparisons, a boolean
-  // otherwise.
+  /* The type for the GENERIC comparison.  It should match the
+     input operand width for vector comparisons, a boolean
+     otherwise. */
   tree result_type = get_comparison_result_type (cmp_type);
 
-  // Save the result as a boolean and extend/convert it to the
-  // wanted destination type.
+  /* Save the result as a boolean and extend/convert it to the
+     wanted destination type. */
   tree expr = NULL_TREE;
 
-  // If there's no direct tree expr but a negated one, this is
-  // set.
+  /* If there's no direct tree expr but a negated one, this is set. */
   tree neg_expr = NULL_TREE;
 
   std::vector<tree> operands = build_operands (*inst_base);
@@ -72,7 +71,8 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       if (!is_int_cmp)
 	expr = build2 (BIT_AND_EXPR, TREE_TYPE (expr), 
 		       expr,
-		       build2 (ORDERED_EXPR, result_type, operands[1], operands[2]));
+		       build2 (ORDERED_EXPR, result_type, operands[1],
+			       operands[2]));
       break;
     case BRIG_COMPARE_SLT:
     case BRIG_COMPARE_LT:
@@ -92,14 +92,15 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     case BRIG_COMPARE_SEQU:
     case BRIG_COMPARE_EQU:
-      // For some reason gcc trunk (as of 2016-04-06) doesn't handle
-      // NaNs correctly with UNEQ_EXPR (at least with x86_64), thus
-      // implement via two or'd expressions. This worked in gcc 4.9.1.
+      /* For some reason gcc trunk (as of 2016-04-06) doesn't handle
+	 NaNs correctly with UNEQ_EXPR (at least with x86_64), thus
+	 implement via two or'd expressions.  This worked in gcc 4.9.1. */
       expr = build2 (EQ_EXPR, result_type, operands[1], operands[2]);
 
       expr = build2 (BIT_IOR_EXPR, TREE_TYPE (expr), 
 		     expr,
-		     build2 (UNORDERED_EXPR, result_type, operands[1], operands[2]));
+		     build2 (UNORDERED_EXPR, result_type, operands[1],
+			     operands[2]));
       break;
     case BRIG_COMPARE_SNEU:
     case BRIG_COMPARE_NEU:
@@ -149,11 +150,11 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 	   && !is_boolean_dest 
 	   && (inst->sourceType & 0x01F) != BRIG_TYPE_F16)
     {
-      // In later gcc versions, the output of comparison is not
-      // all ones for vectors like still in 4.9.1. We need to use
-      // an additional VEC_COND_EXPR to produce the all ones 'true' value
-      // required by HSA.
-      // VEC_COND_EXPR <a == b, { -1, -1, -1, -1 }, { 0, 0, 0, 0 }>;
+      /* In later gcc versions, the output of comparison is not
+	 all ones for vectors like still in 4.9.1.  We need to use
+	 an additional VEC_COND_EXPR to produce the all ones 'true' value
+	 required by HSA.
+	 VEC_COND_EXPR <a == b, { -1, -1, -1, -1 }, { 0, 0, 0, 0 }>; */
       
       tree all_ones =
 	build_vector_from_val (dest_type,
@@ -166,9 +167,9 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
     }
   else if (INTEGRAL_TYPE_P (dest_type) && !is_boolean_dest)
     {
-      // We need to produce the all-ones pattern for the width of the whole
-      // resulting integer type. Use back and forth shifts for propagating
-      // the lower 1.
+      /* We need to produce the all-ones pattern for the width of the whole
+	 resulting integer type.  Use back and forth shifts for propagating
+	 the lower 1. */
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
       
@@ -190,10 +191,10 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
   else if (VECTOR_TYPE_P (dest_type)
 	   && (inst->sourceType & 0x01F) == BRIG_TYPE_F16)
     {
-      // Because F16 comparison is emulated as an F32 comparison with S32
-      // results, we must now truncate the result vector to S16s so it
-      // fits to the destination register.  We can build the target vector
-      // type from the f16 storage type (unsigned ints).
+      /* Because F16 comparison is emulated as an F32 comparison with S32
+	 results, we must now truncate the result vector to S16s so it
+	 fits to the destination register.  We can build the target vector
+	 type from the f16 storage type (unsigned ints). */
       expr = add_temp_var ("wide_cmp_result", expr);
       tree_stl_vec wide_elements;
       tree_stl_vec shrunk_elements;

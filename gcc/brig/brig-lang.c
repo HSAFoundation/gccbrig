@@ -53,7 +53,10 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "brig-c.h"
 
+/* This file is based on Go frontent'd go-lang.c and gogo-tree.cc. */
+
 /* If -v set.  */
+
 int gccbrig_verbose = 0;
 
 /* Language-dependent contents of a type.  */
@@ -224,8 +227,6 @@ brig_langhook_type_for_size (unsigned int bits ATTRIBUTE_UNUSED,
   return NULL_TREE;
 }
 
-// Most of the implementation adapted (stolen) from gogo-tree.cc and
-// go-lang.c.
 static tree
 brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 {
@@ -245,7 +246,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
       return NULL_TREE;
     }
 
-  // FIXME: This static_cast should be in machmode.h.
+  /* FIXME: This static_cast should be in machmode.h. */
   enum mode_class mc = (enum mode_class) (GET_MODE_CLASS (mode));
   if (mc == MODE_FLOAT)
     {
@@ -256,8 +257,8 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	case 64:
 	  return double_type_node;
 	default:
-	  // We have to check for long double in order to support
-	  // i386 excess precision.
+	  /* We have to check for long double in order to support
+	     i386 excess precision. */
 	  if (mode == TYPE_MODE (long_double_type_node))
 	    return long_double_type_node;
 
@@ -331,8 +332,9 @@ brig_langhook_pushdecl (tree decl ATTRIBUTE_UNUSED)
 }
 
 /* This hook is used to get the current list of declarations as trees.
-   From Go: We don't support that; instead we use the write_globals hook.  This
-   can't simply crash because it is called by -gstabs.  */
+   From Go: We don't support that; instead we use the write_globals hook.
+   This can't simply crash because it is called by -gstabs.  */
+
 static tree
 brig_langhook_getdecls (void)
 {
@@ -344,18 +346,15 @@ brig_langhook_gimplify_expr (tree *expr_p, gimple_seq *pre_p ATTRIBUTE_UNUSED,
 			     gimple_seq *post_p ATTRIBUTE_UNUSED)
 {
 
-  // Strip off the static chain info that appears to function
-  // calls for some strange reason even though we don't add
-  // nested functions.  Maybe something wrong with the function
-  // declaration contexts?
+  /* Strip off the static chain info that appears to function
+     calls for some strange reason even though we don't add
+     nested functions.  Maybe something wrong with the function
+     declaration contexts? */
   if (TREE_CODE (*expr_p) == CALL_EXPR
       && CALL_EXPR_STATIC_CHAIN (*expr_p) != NULL_TREE)
     CALL_EXPR_STATIC_CHAIN (*expr_p) = NULL_TREE;
   return GS_UNHANDLED;
 }
-
-/* Return a decl for the exception personality function.  The function
-   itself is implemented in libbrig/runtime/brig-unwind.c.  */
 
 static tree
 brig_langhook_eh_personality (void)
@@ -363,9 +362,9 @@ brig_langhook_eh_personality (void)
   gcc_unreachable ();
 }
 
-/* Functions called directly by the generic backend.  */
+/* Functions called directly by the generic backend.
+   Adapted from go-lang.c */
 
-/* from go-lang.c */
 tree
 convert (tree type ATTRIBUTE_UNUSED, tree expr ATTRIBUTE_UNUSED)
 {
@@ -399,6 +398,7 @@ convert (tree type ATTRIBUTE_UNUSED, tree expr ATTRIBUTE_UNUSED)
 
 /* FIXME: This is a hack to preserve trees that we create from the
    garbage collector.  */
+
 static GTY (()) tree brig_gc_root;
 
 void

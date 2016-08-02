@@ -32,6 +32,7 @@ brig_directive_arg_block_handler::operator () (const BrigBase *base)
 {
   if (base->kind == BRIG_KIND_DIRECTIVE_ARG_BLOCK_START)
     {
+      /* Initiate a new code block for the call site. */
       tree stmt_list = alloc_stmt_list ();
       tree bind_expr
 	= build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
@@ -50,10 +51,8 @@ brig_directive_arg_block_handler::operator () (const BrigBase *base)
     }
   else if (base->kind == BRIG_KIND_DIRECTIVE_ARG_BLOCK_END)
     {
-      // Restore the used bind expression back to the function
-      // scope.
-      // TODO: CHECK SPECS Is a deeper binding scope hierarchy required by
-      // HSAIL? That is, can one have a call segment inside a call segment?
+      /* Restore the used bind expression back to the function
+	 scope. */
       tree new_bind_expr = m_parent.m_cf->m_current_bind_expr;
       m_parent.m_cf->m_current_bind_expr
 	= DECL_SAVED_TREE (m_parent.m_cf->m_func_decl);

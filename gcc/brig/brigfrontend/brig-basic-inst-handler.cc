@@ -90,11 +90,11 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
   if (brig_inst->opcode != BRIG_OPCODE_MULHI)
     return false;
 
-  // There is limited support for vector highpart mul nodes,
-  // and it probably depends on the target which ones are
-  // supported.  TO DO: figure out a more robust way to ask this
-  // from the target.  can_mult_highpart_p () from optabs.c seems
-  // not to be reliable enough.
+  /* There is limited support for vector highpart mul nodes,
+     and it probably depends on the target which ones are
+     supported.  TO DO: figure out a more robust way to ask this
+     from the target.  can_mult_highpart_p () from optabs.c seems
+     not to be reliable enough. */
 
   size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
   BrigType16_t element_type = brig_inst->type & 0x01F;
@@ -106,8 +106,9 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
     return false;
 }
 
-// Returns a "raw" type (unsigned integer) with the same bit width as
-// the given type.
+/* Returns a "raw" type (unsigned integer) with the same bit width as
+   the given type. */
+
 tree
 brig_basic_inst_handler::get_raw_type (tree orig_type)
 {
@@ -115,25 +116,31 @@ brig_basic_inst_handler::get_raw_type (tree orig_type)
   return build_nonstandard_integer_type (esize, true);
 }
 
+/* Implements a vector shuffle. ARITH_TYPE is the type of the vector,
+   OPERANDS[0] is the first vector, OPERAND[1] the second vector and
+   OPERANDS[2] the shuffle mask in HSAIL format.  The output is a VEC_PERM_EXPR
+   that implements the shuffle as a GENERIC expression. */
+
 tree
 brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
 {
   tree element_type = get_raw_type (TREE_TYPE (TREE_TYPE (operands[0])));
 
-  // Offsets to add to the mask values to convert from the
-  // HSAIL mask to VEC_PERM_EXPR masks.  VEC_PERM_EXPR mask
-  // assumes an index spanning from 0 to 2 times the vec
-  // width while HSAIL refers separately to two different
-  // input vectors, thus is not a "full shuffle" where all
-  // output elements can originate from any input element.
+  /* Offsets to add to the mask values to convert from the
+     HSAIL mask to VEC_PERM_EXPR masks.  VEC_PERM_EXPR mask
+     assumes an index spanning from 0 to 2 times the vec
+     width while HSAIL refers separately to two different
+     input vectors, thus is not a "full shuffle" where all
+     output elements can originate from any input element. */
   vec<constructor_elt, va_gc> *mask_offset_vals = NULL;
 
   vec<constructor_elt, va_gc> *input_mask_vals = NULL;
   size_t input_mask_element_size
     = exact_log2 (TYPE_VECTOR_SUBPARTS (arith_type));
-  // Unpack the tightly packed mask elements to BIT_FIELD_REFs
-  // from which to construct the mask vector as understood by
-  // VEC_PERM_EXPR.
+
+  /* Unpack the tightly packed mask elements to BIT_FIELD_REFs
+     from which to construct the mask vector as understood by
+     VEC_PERM_EXPR. */
   tree mask_operand = add_temp_var ("shuffle_mask", operands[2]);
 
   tree mask_element_type
@@ -173,15 +180,18 @@ brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
   return perm;
 }
 
+/* Unpacks (extracts) a scalar element with an index in OPERANDS[1]
+   from the vector expression in OPERANDS[0]. */
+
 tree
 brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
 {
-  // Implement the unpack with a shuffle that stores the unpacked
-  // element to the lowest bit positions in the dest.  After that
-  // a bit AND is used to clear the uppermost bits.
+  /* Implement the unpack with a shuffle that stores the unpacked
+     element to the lowest bit positions in the dest.  After that
+     a bitwise AND is used to clear the uppermost bits. */
   tree src_element_type = TREE_TYPE (TREE_TYPE (operands[0]));
 
-  // Perform the operations with a raw (unsigned int type) type.
+  /* Perform the operations with a raw (unsigned int type) type. */
   tree element_type = get_raw_type (src_element_type);
 
   vec<constructor_elt, va_gc> *input_mask_vals = NULL;
@@ -231,12 +241,16 @@ brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
   return as_int;
 }
 
+/* Packs (inserts) a scalar element in OPERANDS[1]
+   to the vector in OPERANDS[0] at element position defined by
+   OPERANDS[2]. */
+
 tree
 brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
 {
-  // Implement pack using a bit level insertion.
-  // TO OPTIMIZE: Reuse this for implementing the bitinsert
-  // without a builtin call.
+  /* Implement using a bit level insertion.
+     TO OPTIMIZE: Reuse this for implementing 'bitinsert'
+     without a builtin call. */
 
   size_t ecount = TYPE_VECTOR_SUBPARTS (TREE_TYPE (operands[0]));
   size_t vecsize = int_size_in_bytes (TREE_TYPE (operands[0])) * 8;
@@ -250,8 +264,8 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
 
   tree pos = operands[2];
 
-  // The upper bits of the position can contain garbage.
-  // We need to zero them out for defined behavior.
+  /* The upper bits of the position can contain garbage.
+     Zero them for well-defined semantics. */
   tree t = build2 (BIT_AND_EXPR, TREE_TYPE (pos), operands[2],
 		   build_int_cstu (TREE_TYPE (pos), ecount - 1));
   pos = add_temp_var ("pos", convert (wide_type, t));
@@ -277,9 +291,9 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
   tree zeroed_element
     = build2 (BIT_AND_EXPR, wide_type, src_vect, clearing_mask);
 
-  // TO OPTIMIZE: Is the AND necessary: does HSA define what
-  // happens if the upper bits in the inserted element are not
-  // zero?
+  /* TO OPTIMIZE: Is the AND necessary: does HSA define what
+     happens if the upper bits in the inserted element are not
+     zero? */
   tree element_in_position
     = build2 (LSHIFT_EXPR, wide_type,
 	      build2 (BIT_AND_EXPR, wide_type, scalar, mask), bitoffset);
@@ -288,6 +302,10 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
     = build2 (BIT_IOR_EXPR, wide_type, zeroed_element, element_in_position);
   return inserted;
 }
+
+/* Implement the unpack{lo,hi}.  BRIG_OPCODE should tell which one and
+   ARITH_TYPE describe the type of the vector arithmetics.
+   OPERANDS[0] and OPERANDS[1] are the input vectors. */
 
 tree
 brig_basic_inst_handler::build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode,
@@ -319,6 +337,11 @@ brig_basic_inst_handler::build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode,
   return perm;
 }
 
+/* Builds a basic instruction expression from a BRIG instruction.  BRIG_OPCODE
+   is the opcode, BRIG_TYPE the brig type of the instruction, ARITH_TYPE the
+   desired tree type for the instruction, and OPERANDS the instruction's
+   operands already converted to tree nodes. */
+
 tree
 brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 					   BrigType16_t brig_type,
@@ -340,9 +363,9 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 
   if (opcode == RSHIFT_EXPR || opcode == LSHIFT_EXPR)
     {
-      // HSA defines modulo/clipping behavior for shift amounts larger
-      // than the bit width, while tree.def leaves it undefined.
-      // We need to mask the upper bits to ensure the defined behavior.
+      /* HSA defines modulo/clipping behavior for shift amounts larger
+	 than the bit width, while tree.def leaves it undefined.
+	 We need to mask the upper bits to ensure the defined behavior. */
       tree scalar_mask
 	= build_int_cst (instr_inner_type,
 			 gccbrig_hsa_type_bit_size (inner_type) - 1);
@@ -351,8 +374,8 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 		    ? build_vector_from_val (arith_type, scalar_mask)
 		    : scalar_mask;
 
-      // The shift amount is a scalar -- broadcast it to produce
-      // a vector shift.
+      /* The shift amount is a scalar, broadcast it to produce
+	 a vector shift. */
       if (VECTOR_TYPE_P (arith_type))
 	operands[1] = build_vector_from_val (arith_type, operands[1]);
       operands[1] = build2 (BIT_AND_EXPR, arith_type, operands[1], mask);
@@ -360,15 +383,15 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 
   if (opcode == TREE_LIST)
     {
-      // There was no direct GENERIC opcode for the instruction;
-      // try to emulate it with a chain of GENERIC nodes.
+      /* There was no direct GENERIC opcode for the instruction;
+	 try to emulate it with a chain of GENERIC nodes. */
       if (brig_opcode == BRIG_OPCODE_MAD || brig_opcode == BRIG_OPCODE_MAD24)
 	{
-	  // There doesn't seem to be a "standard" MAD built-in in gcc so let's
-	  // use a chain of multiply + add for now (double rounding method).
-	  // It should be easier for optimizers
-	  // than a custom built-in call.  WIDEN_MULT_EXPR is close, but
-	  // requires a double size result type.
+	  /* There doesn't seem to be a "standard" MAD built-in in gcc so let's
+	     use a chain of multiply + add for now (double rounding method).
+	     It should be easier for optimizers than a custom built-in call
+	     WIDEN_MULT_EXPR is close, but requires a double size result
+	     type. */
 	  tree mult_res
 	    = build2 (MULT_EXPR, arith_type, operands[0], operands[1]);
 	  return build2 (PLUS_EXPR, arith_type, mult_res, operands[2]);
@@ -398,19 +421,19 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	}
       else if (brig_opcode == BRIG_OPCODE_NRSQRT)
 	{
-	  // Implement as 1.0/sqrt (x) and assume gcc instruction selects to
-	  // native ISA other than a division, if available.
-	  // TO OPTIMIZE: this will happen only with unsafe math optimizations
-	  // on which cannot be used in general for HSAIL compliance.  Perhaps
-	  // a builtin call would be better option here.
+	  /* Implement as 1.0/sqrt (x) and assume gcc instruction selects to
+	     native ISA other than a division, if available.
+	     TO OPTIMIZE: this will happen only with unsafe math optimizations
+	     on which cannot be used in general to remain HSAIL compliant.
+	     Perhaps a builtin call would be better option here. */
 	  return build2 (RDIV_EXPR, arith_type, build_one_cst (arith_type),
 			 expand_or_call_builtin (BRIG_OPCODE_SQRT, brig_type,
 						 arith_type, operands));
 	}
       else if (brig_opcode == BRIG_OPCODE_NRCP)
 	{
-	  // Implement as 1.0/x and assume gcc instruction selects to
-	  // native ISA other than a division, if available.
+	  /* Implement as 1.0/x and assume gcc instruction selects to
+	     native ISA other than a division, if available. */
 	  return build2 (RDIV_EXPR, arith_type, build_one_cst (arith_type),
 			 operands[0]);
 	}
@@ -418,8 +441,8 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	       || brig_opcode == BRIG_OPCODE_MAXWAVEID
 	       || brig_opcode == BRIG_OPCODE_WAVEID)
 	{
-	  // Assuming WAVESIZE 1 (for now), therefore LANEID, WAVEID and
-	  // MAXWAVEID always return 0.
+	  /* Assuming WAVESIZE 1 (for now), therefore LANEID, WAVEID and
+	     MAXWAVEID always return 0. */
 	  return build_zero_cst (arith_type);
 	}
       else
@@ -432,7 +455,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
     {
       if (input_count == 1)
 	{
-	  if (opcode == MODIFY_EXPR) // mov
+	  if (opcode == MODIFY_EXPR) /* mov */
 	    return operands[0];
 	  else
 	    return build1 (opcode, arith_type, operands[0]);
@@ -484,9 +507,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	   || brig_inst->opcode == BRIG_OPCODE_LASTBIT
 	   || brig_inst->opcode == BRIG_OPCODE_SAD)
     {
-      // These instructions are reported to be always 32b in HSAIL,
-      // but we want to treat them according to their input
-      // argument's type to select the correct instruction/builtin.
+      /* These instructions are reported to be always 32b in HSAIL, but we want
+	 to treat them according to their input argument's type to select the
+	 correct instruction/builtin. */
       brig_inst_type
 	= gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
     }
@@ -526,9 +549,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       element_count = 1;
     }
 
-  // The actual arithmetics type that should be performed with the
-  // operation.  This is not always the same as the original BRIG
-  // opcode's type due to implicit conversions of storage-only f16.
+  /* The actual arithmetics type that should be performed with the
+     operation.  This is not always the same as the original BRIG
+     opcode's type due to implicit conversions of storage-only f16. */
   tree arith_type = gccbrig_is_raw_operation (brig_inst->opcode)
 		      ? get_tree_type_for_hsa_type (brig_inst_type)
 		      : get_tree_expr_type_for_hsa_type (brig_inst_type);
@@ -633,9 +656,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     }
   else
     {
-      // 'class' is always of b1 type, let's consider it by its
-      // float type when building the instruction to find the
-      // correct builtin
+      /* 'class' is always of b1 type, let's consider it by its
+	 float type when building the instruction to find the
+	 correct builtin. */
       if (brig_inst->opcode == BRIG_OPCODE_CLASS)
 	brig_inst_type = ((const BrigInstSourceType *) base)->sourceType;
       instr_expr = build_instr_expr (brig_inst->opcode, brig_inst_type,
@@ -652,11 +675,11 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   if (p == BRIG_PACK_SS || p == BRIG_PACK_S || p == BRIG_PACK_SSSAT
       || p == BRIG_PACK_SSAT)
     {
-      // In case of _s_ or _ss_, select only the lowest element
-      // from the new input to the output.  We could extract
-      // the element and use a scalar operation, but try
-      // to keep data in vector registers as much as possible
-      // to avoid copies between scalar and vector datapaths.
+      /* In case of _s_ or _ss_, select only the lowest element
+	 from the new input to the output.  We could extract
+	 the element and use a scalar operation, but try
+	 to keep data in vector registers as much as possible
+	 to avoid copies between scalar and vector datapaths. */
       tree old_value;
       tree half_storage_type = get_tree_type_for_hsa_type (brig_inst_type);
       if (is_fp16_operation)
@@ -668,8 +691,8 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
       size_t esize = is_fp16_operation ? 32 : element_size_bits;
 
-      // Construct a permutation mask where other elements
-      // than the lowest one is picked from the old_value.
+      /* Construct a permutation mask where other elements than the lowest one
+	 is picked from the old_value. */
       tree mask_inner_type = build_nonstandard_integer_type (esize, 1);
       vec<constructor_elt, va_gc> *constructor_vals = NULL;
       for (size_t i = 0; i < element_count; ++i)
@@ -707,19 +730,23 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   return base->byteCount;
 }
 
+/* Create an expression that broadcasts the lowest element of the
+   vector in VEC_OPERAND to all elements of the returned vector. */
+
 tree
 brig_basic_inst_handler::build_lower_element_broadcast (tree vec_operand)
 {
-  // Build the broadcast using shuffle because there's no
-  // direct broadcast in GENERIC and this way there's no need for
-  // a separate extract of the lowest element.
+  /* Build the broadcast using shuffle because there's no
+     direct broadcast in GENERIC and this way there's no need for
+     a separate extract of the lowest element. */
   tree element_type = TREE_TYPE (TREE_TYPE (vec_operand));
   size_t esize = 8 * int_size_in_bytes (element_type);
 
   size_t element_count = TYPE_VECTOR_SUBPARTS (TREE_TYPE (vec_operand));
   tree mask_inner_type = build_nonstandard_integer_type (esize, 1);
   vec<constructor_elt, va_gc> *constructor_vals = NULL;
-  // Construct the mask.
+
+  /* Construct the mask. */
   for (size_t i = 0; i < element_count; ++i)
     {
       tree cst = build_int_cstu (mask_inner_type, element_count);
@@ -730,4 +757,122 @@ brig_basic_inst_handler::build_lower_element_broadcast (tree vec_operand)
 
   return build3 (VEC_PERM_EXPR, TREE_TYPE (vec_operand), vec_operand,
 		 vec_operand, mask);
+}
+
+/* Returns the tree code that should be used to implement the given
+   HSA instruction opcode (BRIG_OPCODE) for the given type of
+   instruction (BRIG_TYPE). */
+
+tree_code
+brig_basic_inst_handler::get_tree_code_for_hsa_opcode
+  (BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
+{
+  BrigType16_t brig_inner_type = brig_type & 0x01F;
+  switch (brig_opcode)
+    {
+    case BRIG_OPCODE_NOP:
+      return NOP_EXPR;
+    case BRIG_OPCODE_ADD:
+      return PLUS_EXPR;
+    case BRIG_OPCODE_CMOV:
+      if (brig_inner_type == brig_type)
+	return COND_EXPR;
+      else
+	return VEC_COND_EXPR;
+    case BRIG_OPCODE_SUB:
+      return MINUS_EXPR;
+    case BRIG_OPCODE_MUL:
+    case BRIG_OPCODE_MUL24:
+      return MULT_EXPR;
+    case BRIG_OPCODE_MULHI:
+    case BRIG_OPCODE_MUL24HI:
+      return MULT_HIGHPART_EXPR;
+    case BRIG_OPCODE_DIV:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return RDIV_EXPR;
+      else
+	return TRUNC_DIV_EXPR;
+    case BRIG_OPCODE_NEG:
+      return NEGATE_EXPR;
+    case BRIG_OPCODE_MIN:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return CALL_EXPR;
+      else
+	return MIN_EXPR;
+    case BRIG_OPCODE_MAX:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return CALL_EXPR;
+      else
+	return MAX_EXPR;
+    case BRIG_OPCODE_FMA:
+      return FMA_EXPR;
+    case BRIG_OPCODE_ABS:
+      return ABS_EXPR;
+    case BRIG_OPCODE_SHL:
+      return LSHIFT_EXPR;
+    case BRIG_OPCODE_SHR:
+      return RSHIFT_EXPR;
+    case BRIG_OPCODE_OR:
+      return BIT_IOR_EXPR;
+    case BRIG_OPCODE_XOR:
+      return BIT_XOR_EXPR;
+    case BRIG_OPCODE_AND:
+      return BIT_AND_EXPR;
+    case BRIG_OPCODE_NOT:
+      return BIT_NOT_EXPR;
+    case BRIG_OPCODE_RET:
+      return RETURN_EXPR;
+    case BRIG_OPCODE_MOV:
+    case BRIG_OPCODE_LDF:
+      return MODIFY_EXPR;
+    case BRIG_OPCODE_LD:
+    case BRIG_OPCODE_ST:
+      return MEM_REF;
+    case BRIG_OPCODE_BR:
+      return GOTO_EXPR;
+    case BRIG_OPCODE_REM:
+      if (brig_type == BRIG_TYPE_U64 || brig_type == BRIG_TYPE_U32)
+	return TRUNC_MOD_EXPR;
+      else
+	return CALL_EXPR;
+    case BRIG_OPCODE_NRCP:
+    case BRIG_OPCODE_NRSQRT:
+      /* Implement as 1/f (x).  gcc should pattern detect that and
+	 use a native instruction, if available, for it. */
+      return TREE_LIST;
+    case BRIG_OPCODE_FLOOR:
+    case BRIG_OPCODE_CEIL:
+    case BRIG_OPCODE_SQRT:
+    case BRIG_OPCODE_NSQRT:
+    case BRIG_OPCODE_RINT:
+    case BRIG_OPCODE_TRUNC:
+    case BRIG_OPCODE_POPCOUNT:
+    case BRIG_OPCODE_COPYSIGN:
+    case BRIG_OPCODE_NCOS:
+    case BRIG_OPCODE_NSIN:
+    case BRIG_OPCODE_NLOG2:
+    case BRIG_OPCODE_NEXP2:
+    case BRIG_OPCODE_NFMA:
+      /* Class has type B1 regardless of the float type, thus
+	 the below builtin map search cannot find it. */
+    case BRIG_OPCODE_CLASS:
+      /* Model the ID etc. special instructions as (builtin) calls. */
+      return CALL_EXPR;
+    default:
+      builtin_map::const_iterator i
+	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
+      if (i != s_custom_builtins.end ())
+	return CALL_EXPR;
+      else if (s_custom_builtins.find
+	       (std::make_pair (brig_opcode, brig_inner_type))
+	       != s_custom_builtins.end ())
+	return CALL_EXPR;
+      if (brig_inner_type == BRIG_TYPE_F16
+	  && s_custom_builtins.find
+	  (std::make_pair (brig_opcode, BRIG_TYPE_F32))
+	  != s_custom_builtins.end ())
+	return CALL_EXPR;
+      break;
+    }
+  return TREE_LIST; /* Emulate using a chain of nodes. */
 }

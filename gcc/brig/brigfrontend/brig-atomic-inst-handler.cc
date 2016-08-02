@@ -209,8 +209,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 
   tree instr_type = get_tree_type_for_hsa_type (inst.type);
 
-  // Utilize the atomic data types (from C++11 support) for implementing
-  // atomic operations.
+  /* Utilize the atomic data types (from C++11 support) for implementing
+     atomic operations. */
 
   tree atomic_type = build_qualified_type (instr_type, TYPE_QUAL_ATOMIC);
 
@@ -237,10 +237,10 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   else if (atomic_opcode == BRIG_ATOMIC_LD
 	   || (atomic_opcode >= BRIG_ATOMIC_WAIT_EQ
 	       && atomic_opcode <= BRIG_ATOMIC_WAITTIMEOUT_GTE))
-    // signal_wait* instructions can return spuriously before the
-    // condition becomes true.  Therefore it's legal to return
-    // right away.  TO OPTIMIZE: builtin calls which can be
-    // implemented with a power efficient sleep-wait.
+    /* signal_wait* instructions can return spuriously before the
+       condition becomes true.  Therefore it's legal to return
+       right away.  TO OPTIMIZE: builtin calls which can be
+       implemented with a power efficient sleep-wait. */
     instr_expr = mem_ref;
   else if (atomic_opcode == BRIG_ATOMIC_CAS)
     {
@@ -329,8 +329,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	}
       else
 	{
-	  // Use gcc's atomic builtin.  They have the byte size appended to the
-	  // end of the name.
+	  /* Use gcc's atomic builtin.  They have the byte size appended to the
+	     end of the name. */
 	  builtin_name << "_" << gccbrig_hsa_type_bit_size (inst.type) / 8;
 	}
 
@@ -348,9 +348,9 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       instr_expr = call_builtin (&built_in, NULL, 2, instr_type, ptr_type_node,
 				 ptr, arg0_type, src0);
 
-      // We need a temp variable for the result, because otherwise
-      // the gimplifier drops a necessary (unsigned to signed) cast in
-      // the output assignment and fails a check later.
+      /* We need a temp variable for the result, because otherwise
+	 the gimplifier drops a necessary (unsigned to signed) cast in
+	 the output assignment and fails a check later. */
       tree tmp_var = create_tmp_var (arg0_type, "builtin_out");
       tree tmp_assign
 	= build2 (MODIFY_EXPR, TREE_TYPE (tmp_var), tmp_var, instr_expr);

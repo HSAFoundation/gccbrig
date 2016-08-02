@@ -63,6 +63,4 @@ extern void brig_write_export_data (const char *, unsigned int);
 
 extern const char *brig_read_export_data (int, off_t, char **, size_t *, int *);
 
-// extern GTY (()) tree brig_non_zero_struct;
-
 #endif /* !defined (BRIG_BRIG_C_H) */

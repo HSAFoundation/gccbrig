@@ -33,10 +33,9 @@ class tree_element_unary_visitor;
 /// for the code section.
 class brig_code_entry_handler : public brig_entry_handler
 {
-private:
+public:
   typedef std::map<std::pair<BrigOpcode16_t, BrigType16_t>, tree> builtin_map;
 
-public:
   brig_code_entry_handler (brig_to_generic &parent);
   // Handles the brig_code data at the given pointer and adds it to the
   // currently built tree.  Returns the number of consumed bytes;
@@ -54,13 +53,6 @@ protected:
 
   tree get_tree_cst_for_hsa_operand (const BrigOperandConstantBytes *brigConst,
 				     tree type) const;
-  // Produce a tree code for the given BRIG opcode.
-  // Return NULL_TREE in case the opcode cannot be
-  // mapped to the tree directly, but should be either
-  // emulated with a number of tree nodes or a builtin.
-  tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
-					  BrigType16_t brig_type) const;
-
   // Return a builtin function node that matches the given brig opcode.
   tree get_builtin_for_hsa_opcode (tree type, BrigOpcode16_t brig_opcode,
 				   BrigType16_t brig_type) const;
@@ -130,14 +122,14 @@ protected:
 
   tree extend_int (tree input, tree dest_type, tree src_type);
 
+  // HSAIL-specific builtin functions not yet integrated to gcc.
+  static builtin_map s_custom_builtins;
+
 private:
   tree add_custom_builtin (BrigOpcode16_t brig_opcode, BrigType16_t itype,
 			   const char *name, int nargs, tree rettype, ...);
 
   tree get_raw_tree_type (tree original_type);
-
-  // HSAIL-specific builtin functions not yet integrated to gcc.
-  static builtin_map s_custom_builtins;
 };
 
 class tree_element_unary_visitor
@@ -315,6 +307,13 @@ private:
 
   tree build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode, tree arith_type,
 			      tree_stl_vec &operands);
+
+  // Produce a tree code for the given BRIG opcode.
+  // Return NULL_TREE in case the opcode cannot be
+  // mapped to the tree directly, but should be either
+  // emulated with a number of tree nodes or a builtin.
+  tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
+					  BrigType16_t brig_type) const;
 
   tree get_raw_type (tree orig_type);
 };
