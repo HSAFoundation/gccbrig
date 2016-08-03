@@ -250,23 +250,6 @@ brig_to_generic::parse (const char *brig_blob)
        {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
        {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}};
 
-  const BrigSectionHeader *dsection_header = (const BrigSectionHeader *) m_data;
-
-  /* Go through the data section just to sanity check the BRIG data section.  */
-  for (size_t b = dsection_header->headerByteCount; b < m_data_size;)
-    {
-      const BrigData *entry = (const BrigData *) (m_data + b);
-      /* Rounds upwards towards the closest multiple of 4.
-	 The byteCount itself is 4 bytes and included in 7.  */
-      b += ((7 + entry->byteCount) / 4) * 4;
-
-      /* There can be zero padding at the end of the section to round the
-	 size to a 4 multiple.  Break before trying to read that in as
-	 an incomplete BrigData.  */
-      if (m_data_size - b < sizeof (BrigData))
-	break;
-    }
-
   const BrigSectionHeader *csection_header = (const BrigSectionHeader *) m_code;
 
   for (size_t b = csection_header->headerByteCount; b < m_code_size;)
@@ -509,6 +492,8 @@ build_reinterpret_cast (tree destination_type, tree source)
   size_t dst_size = int_size_in_bytes (destination_type);
   if (src_size <= dst_size)
     {
+      /* The src_size can be smaller at least with f16 scalars which are
+	 stored to 32b register variables.  */
       tree conv = build1 (VIEW_CONVERT_EXPR, destination_type, source);
       return conv;
     }
