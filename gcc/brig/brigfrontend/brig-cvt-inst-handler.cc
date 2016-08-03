@@ -74,8 +74,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
   if (!dest_type || !src_type)
     {
-      internal_error ("unknown src %x or dst %x in a cvt instr opcode",
-		      brig_inst->type, cvt_inst->sourceType);
+      gcc_unreachable ();
       return base->byteCount;
     }
 

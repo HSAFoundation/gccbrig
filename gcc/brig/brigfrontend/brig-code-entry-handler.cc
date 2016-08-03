@@ -487,7 +487,7 @@ brig_code_entry_handler::build_code_ref (const BrigBase &ref)
       return build_int_cst (uint32_type_node, offset);
     }
   else
-    internal_error ("unimplemented code ref %x", ref.kind);
+    gcc_unreachable ();
 }
 
 /* Produce a tree operand for the given BRIG_INST and its OPERAND.
@@ -591,8 +591,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       {
 	if (!INTEGRAL_TYPE_P (operand_type))
 	  {
-	    debug_tree (operand_type);
-	    internal_error ("non-integer operand_type with WAVESIZE");
+	    gcc_unreachable ();
 	    return NULL_TREE;
 	  }
 	return build_int_cstu (operand_type, gccbrig_get_target_wavesize ());
@@ -613,7 +612,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 				      (const BrigOperandAddress &) operand);
       }
     default:
-      internal_error ("unimplemented operand type %x", operand.kind);
+      gcc_unreachable ();
       break;
     }
   return NULL_TREE;
@@ -875,7 +874,7 @@ brig_code_entry_handler::build_address_operand
       addr = ptr_offset;
     }
   else if (addr == NULL_TREE)
-    internal_error ("illegal address operand");
+    gcc_unreachable ();
 
   addr = build_reinterpret_cast (ptype, addr);
 
@@ -967,9 +966,7 @@ brig_code_entry_handler::build_tree_cst_element
 	break;
       }
     default:
-      fprintf (stderr, "tree_element_type:\n");
-      debug_tree (tree_element_type);
-      internal_error ("unimplemented const operand type %u", element_type);
+      gcc_unreachable ();
       return NULL_TREE;
     }
   return cst;
@@ -1245,8 +1242,7 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
 	    return (*i).second;
 	}
 
-      internal_error ("unimplemented opcode %u for type %u inner %u",
-		      brig_opcode, brig_type, brig_inner_type);
+      gcc_unreachable ();
     }
 
   if (VECTOR_TYPE_P (type) && builtin != NULL_TREE)
@@ -1262,7 +1258,7 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
 	return builtin;
     }
   if (builtin == NULL_TREE)
-    internal_error ("couldn't find a built-in for opcode %u", brig_opcode);
+    gcc_unreachable ();
   return builtin;
 }
 
@@ -1844,8 +1840,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
       tree operand = build_tree_operand (brig_inst, *operand_data, operand_type,
 					 !is_output);
       if (operand == NULL_TREE)
-	internal_error ("unimplemented operand type (opcode %x)",
-			brig_inst.opcode);
+	gcc_unreachable ();
 
       /* Cast/convert the inputs to correct types as expected by the GENERIC
 	 opcode instruction.  */

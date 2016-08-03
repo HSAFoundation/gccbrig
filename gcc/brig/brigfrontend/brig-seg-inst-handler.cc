@@ -126,8 +126,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 			   ptr_type_node, m_parent.m_cf->m_context_arg);
     }
   else
-    internal_error ("unexpected segment related instruction %x",
-		    inst_base.opcode);
+    gcc_unreachable ();
 
   build_output_assignment (inst_base, operands[0], expr);
   return base->byteCount;

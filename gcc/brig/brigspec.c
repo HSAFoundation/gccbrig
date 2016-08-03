@@ -78,20 +78,6 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
   /* The total number of arguments with the new stuff.  */
   int num_args = 1;
 
-  /* Whether the -o option was used.  */
-  bool saw_opt_o = false;
-
-  /* Whether the -c option was used.  Also used for -E, -fsyntax-only,
-     in general anything which implies only compilation and not
-     linking.  */
-  bool saw_opt_c = false;
-
-  /* Whether the -S option was used.  */
-  bool saw_opt_S = false;
-
-  /* The first input file with an extension of .brig.  */
-  const char *first_brig_file = NULL;
-
   argc = *in_decoded_options_count;
   decoded_options = *in_decoded_options;
   added_libraries = *in_added_libraries;
@@ -100,24 +86,12 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 
   for (i = 1; i < argc; i++)
     {
-      const char *arg = decoded_options[i].arg;
-
       switch (decoded_options[i].opt_index)
 	{
 	case OPT_o:
-	  saw_opt_o = true;
 	  break;
 
 	case OPT_SPECIAL_input_file:
-	  if (first_brig_file == NULL)
-	    {
-	      int len;
-
-	      len = strlen (arg);
-	      if (len > 3 && strcmp (arg + len - 3, ".brig") == 0)
-		first_brig_file = arg;
-	    }
-
 	  break;
 	}
     }
@@ -141,40 +115,6 @@ lang_specific_driver (struct cl_decoded_option **in_decoded_options,
 	--j;
 
       i++;
-      j++;
-    }
-
-  /* If we didn't see a -o option, add one.  This is because we need
-     the driver to pass all .brig files to brig1.  Without a -o option the
-     driver will invoke brig1 separately for each input file.  FIXME:
-     This should probably use some other interface to force the driver
-     to set combine_inputs.  */
-  if (first_brig_file != NULL && !saw_opt_o)
-    {
-      if (saw_opt_c || saw_opt_S)
-	{
-	  const char *base;
-	  int baselen;
-	  int alen;
-	  char *out;
-
-	  base = lbasename (first_brig_file);
-	  baselen = strlen (base) - 3;
-	  alen = baselen + 3;
-	  out = XNEWVEC (char, alen);
-	  memcpy (out, base, baselen);
-	  /* The driver will convert .o to some other suffix (e.g.,
-	     .obj) if appropriate.  */
-	  out[baselen] = '.';
-	  if (saw_opt_S)
-	    out[baselen + 1] = 's';
-	  else
-	    out[baselen + 1] = 'o';
-	  out[baselen + 2] = '\0';
-	  generate_option (OPT_o, out, 1, CL_DRIVER, &new_decoded_options[j]);
-	}
-      else
-	generate_option (OPT_o, "a.out", 1, CL_DRIVER, &new_decoded_options[j]);
       j++;
     }
 

@@ -104,7 +104,7 @@ brig_inst_mod_handler::operator () (const BrigBase *base)
     case BRIG_ROUND_FLOAT_DEFAULT:
       break;
     default:
-      internal_error ("rounding mode %d unimplemented", brig_rounding_mode);
+      gcc_unreachable ();
       break;
     }
 

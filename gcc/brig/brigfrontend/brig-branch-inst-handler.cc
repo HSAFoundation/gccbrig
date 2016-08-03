@@ -216,6 +216,6 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 				 uint32_type_node, operands));
     }
   else
-    internal_error ("unsupported branch %u", brig_inst->opcode);
+    gcc_unreachable ();
   return base->byteCount;
 }

@@ -353,17 +353,20 @@ brig_to_generic::add_function_decl (const std::string &name, tree func_decl)
   m_function_index[name] = func_decl;
 }
 
+/* Adds a GENERIC global variable VAR_DECL with the given NAME to the
+   current module.  If we have generated a host def var ptr (a place holder
+   for variables that are defined by the HSA host code) for this global
+   variable definition (because there was a declaration earlier which looked
+   like it might have been a host defined variable), we now have
+   to assign its address and make it private to allow the references to
+   point to the defined variable instead.  */
+
 void
 brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
 {
   append_global (var_decl);
   m_global_variables[name] = var_decl;
 
-  /* If we have generated a host def var ptr for this global variable
-     definition (because there was a declaration earlier which looked
-     like it might have been a host defined variable), we now have
-     to assign its address and make it non-public to allow the
-     references to point to the defined variable instead.  */
   std::string host_def_var_name
     = std::string (PHSA_HOST_DEF_PTR_PREFIX) + name;
   tree host_def_var = global_variable (host_def_var_name.c_str ());
@@ -488,8 +491,7 @@ build_reinterpret_cast (tree destination_type, tree source)
   if (!source || !destination_type || TREE_TYPE (source) == NULL_TREE
       || destination_type == NULL_TREE)
     {
-      /* TODO: handle void pointers etc.  */
-      internal_error ("illegal type");
+      gcc_unreachable ();
       return NULL_TREE;
     }
 
@@ -512,10 +514,7 @@ build_reinterpret_cast (tree destination_type, tree source)
     }
   else
     {
-      debug_tree (destination_type);
-      debug_tree (source);
-      internal_error ("unable to truncate the source (%u > %u)",
-		      (unsigned) src_size, (unsigned) dst_size);
+      gcc_unreachable ();
     }
   return NULL_TREE;
 }
@@ -674,8 +673,11 @@ brig_to_generic::private_segment_size () const
 typedef std::map<std::string, tree> builtin_index;
 builtin_index builtin_cache_;
 
-/* Build a call to a builtin function.  Stolen from gogo-tree.cc in the
-   Go frontend.  */
+/* Build a call to a builtin function.  PDECL is the builtin function to
+   call or NULL.  In case it's NULL, NAME should be set to the builtin
+   function's name using which it can be found from the builtin index.
+   NARGS is the number of input arguments, RETTYPE the built-in functions
+   return value type, and ... is the set of arguments passed to the call.  */
 
 tree
 call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)

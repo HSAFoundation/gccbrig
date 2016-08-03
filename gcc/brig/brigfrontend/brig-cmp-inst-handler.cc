@@ -135,8 +135,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
     }
 
   if (expr == NULL_TREE && neg_expr == NULL_TREE)
-    internal_error ("unimplemented comparison  %x for type %x", inst->compare,
-		    inst->sourceType);
+    gcc_unreachable ();
 
   if (neg_expr != NULL_TREE)
     expr = build1 (BIT_NOT_EXPR, TREE_TYPE (neg_expr), neg_expr);

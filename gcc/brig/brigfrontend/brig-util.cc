@@ -206,7 +206,7 @@ gccbrig_type_name (BrigType16_t type)
     case BRIG_TYPE_S64:
       return "s64";
     default:
-      internal_error ("unsupported type %d", type);
+      gcc_unreachable ();
       break;
     }
 }
@@ -221,7 +221,7 @@ gccbrig_segment_name (BrigSegment8_t segment)
   else if (segment == BRIG_SEGMENT_PRIVATE)
     return "private";
   else
-    internal_error ("unexpected segment %u", segment);
+    gcc_unreachable();
 }
 
 bool
@@ -293,7 +293,7 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
 	    = TYPE_UNSIGNED (element_type) ? BRIG_TYPE_U64 : BRIG_TYPE_S64;
 	  break;
 	default:
-	  internal_error ("cannot convert the given tree type to a HSA type");
+	  gcc_unreachable ();
 	}
 
       BrigType16_t pack_type;
@@ -309,11 +309,11 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
 	  pack_type = BRIG_TYPE_PACK_128;
 	  break;
 	default:
-	  internal_error ("cannot convert the given tree type to a HSA type");
+	  gcc_unreachable ();
 	}
       return brig_element_type | pack_type;
     }
-  internal_error ("cannot convert the given tree type to a HSA type");
+  gcc_unreachable ();
 }
 
 /* Returns true in case the operation is a "bit level" operation,

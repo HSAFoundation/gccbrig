@@ -323,7 +323,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	      builtin_name << gccbrig_type_name (inst.type);
 	      break;
 	    default:
-	      internal_error ("unuspported atomic opcode %x", atomic_opcode);
+	      gcc_unreachable ();
 	      break;
 	    }
 	}
@@ -337,8 +337,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       atomic_builtins_map::iterator i
 	= s_atomic_builtins.find (builtin_name.str ());
       if (i == s_atomic_builtins.end ())
-	internal_error ("couldn't find the builtin %qs",
-			builtin_name.str ().c_str ());
+	gcc_unreachable ();
 
       tree built_in = (*i).second;
 

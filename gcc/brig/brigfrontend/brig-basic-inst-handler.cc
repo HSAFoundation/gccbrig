@@ -59,7 +59,7 @@ public:
 	builtin_name << "mul";
 	break;
       default:
-	internal_error ("unsupported saturating opcode %d", brig_inst.opcode);
+	gcc_unreachable ();
       }
     BrigType16_t element_type = brig_inst.type & 0x01F;
     builtin_name << "_" << gccbrig_type_name (element_type);
@@ -518,8 +518,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
   if (!instr_type)
     {
-      internal_error ("unimplemented opcode %u (its tree type is unknown)",
-		      brig_inst->opcode);
+      gcc_unreachable ();
       return base->byteCount;
     }
 
@@ -667,8 +666,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
   if (instr_expr == NULL_TREE)
     {
-      internal_error ("opcode %u %u inputs %u outputs", brig_inst->opcode,
-		      (unsigned) input_count, (unsigned) output_count);
+      gcc_unreachable ();
       return base->byteCount;
     }
 

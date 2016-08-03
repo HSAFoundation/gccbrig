@@ -151,7 +151,7 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
 
 static bool
 brig_langhook_handle_option
-  (size_t scode ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED,
+  (size_t scode, const char *arg ATTRIBUTE_UNUSED,
   int value ATTRIBUTE_UNUSED, int kind ATTRIBUTE_UNUSED,
   location_t loc ATTRIBUTE_UNUSED,
   const struct cl_option_handlers *handlers ATTRIBUTE_UNUSED)
@@ -219,8 +219,8 @@ brig_langhook_parse_file (void)
 }
 
 static tree
-brig_langhook_type_for_size (unsigned int bits ATTRIBUTE_UNUSED,
-			     int unsignedp ATTRIBUTE_UNUSED)
+brig_langhook_type_for_size (unsigned int bits,
+			     int unsignedp)
 {
   if (bits == 64)
     return unsignedp ? uint64_type_node : long_integer_type_node;
@@ -240,14 +240,11 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
       inner = brig_langhook_type_for_mode (GET_MODE_INNER (mode), unsignedp);
       if (inner != NULL_TREE)
 	return build_vector_type_for_mode (inner, mode);
-      internal_error ("unsupported vector mode %s unsignedp %d",
-		      GET_MODE_NAME (mode), unsignedp);
-
+      gcc_unreachable ();
       return NULL_TREE;
     }
 
-  /* FIXME: This static_cast should be in machmode.h. */
-  enum mode_class mc = (enum mode_class) (GET_MODE_CLASS (mode));
+  enum mode_class mc = GET_MODE_CLASS (mode);
   if (mc == MODE_FLOAT)
     {
       switch (GET_MODE_BITSIZE (mode))
@@ -262,8 +259,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	  if (mode == TYPE_MODE (long_double_type_node))
 	    return long_double_type_node;
 
-	  internal_error ("unsupported float mode %s unsignedp %d",
-			  GET_MODE_NAME (mode), unsignedp);
+	  gcc_unreachable ();
 	  return NULL_TREE;
 	}
     }
@@ -286,9 +282,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	case 128:
 	  return build_nonstandard_integer_type (128, unsignedp);
 	default:
-	  internal_error ("unsupported int mode %s unsignedp %d size %d",
-			  GET_MODE_NAME (mode), unsignedp,
-			  GET_MODE_BITSIZE (mode));
+	  gcc_unreachable ();
 	  return NULL_TREE;
 	}
     }
@@ -366,7 +360,7 @@ brig_langhook_eh_personality (void)
    Adapted from go-lang.c */
 
 tree
-convert (tree type ATTRIBUTE_UNUSED, tree expr ATTRIBUTE_UNUSED)
+convert (tree type, tree expr)
 {
   if (type == error_mark_node || expr == error_mark_node
       || TREE_TYPE (expr) == error_mark_node)
@@ -396,10 +390,9 @@ convert (tree type ATTRIBUTE_UNUSED, tree expr ATTRIBUTE_UNUSED)
   gcc_unreachable ();
 }
 
-/* FIXME: This is a hack to preserve trees that we create from the
-   garbage collector.  */
-
 static GTY (()) tree brig_gc_root;
+
+/* Preserve trees that we create from the garbage collector.  */
 
 void
 brig_preserve_from_gc (tree t)
