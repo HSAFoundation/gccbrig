@@ -72,6 +72,9 @@ brig_function::~brig_function ()
     }
 }
 
+/* Returns a GENERIC label with the given name in the given function.
+   Creates it, if not yet found.  */
+
 tree
 brig_function::label (const std::string &name)
 {
@@ -94,8 +97,9 @@ brig_function::label (const std::string &name)
     return (*i).second;
 }
 
-// Record an argument variable for later use.  This includes both local
-// variables inside arg blocks and incoming function arguments.
+/* Record an argument variable for later use.  This includes both local
+   variables inside arg blocks and incoming function arguments.  */
+
 void
 brig_function::add_arg_variable (const BrigDirectiveVariable *brigVar,
 				 tree treeDecl)
@@ -112,6 +116,9 @@ brig_function::arg_variable (const BrigDirectiveVariable *var) const
   else
     return (*i).second;
 }
+
+/* Appends a new kernel argument descriptor for the current kernel's
+   arg space.  */
 
 void
 brig_function::append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
@@ -138,13 +145,17 @@ brig_function::kernel_arg_offset (const BrigDirectiveVariable *var) const
   return (*i).second;
 }
 
+/* Add work-item ID variables to the beginning of the kernel function
+   which can be used for address computation as kernel dispatch packet
+   instructions can be expanded to GENERIC nodes referring to them.  */
+
 void
 brig_function::add_id_variables ()
 {
   tree bind_expr = m_current_bind_expr;
   tree stmts = BIND_EXPR_BODY (bind_expr);
 
-  // Initialize the WG limits and local ids.
+  /* Initialize the WG limits and local ids.  */
   static tree workitemid_builtin;
   static tree currentworkgroupsize_builtin;
   static tree workgroupsize_builtin;
@@ -157,8 +168,8 @@ brig_function::add_id_variables ()
     {
       char dim_char = (char) ((int) 'x' + i);
 
-      // The local sizes are limited to 16b values, but let's still use 32b
-      // to avoid unnecessary casts (the ID functions are 32b).
+      /* The local sizes are limited to 16b values, but let's still use 32b
+	 to avoid unnecessary casts (the ID functions are 32b).  */
       m_local_id_vars[i]
 	= add_local_variable (std::string ("__local_") + dim_char,
 			      uint32_type_node);
@@ -238,7 +249,9 @@ brig_function::add_id_variables ()
   m_kernel_entry = entry;
 }
 
-// Adds a new local variable to the current function.
+/* Creates a new local variable with the given NAME and given GENERIC
+   TYPE.  */
+
 tree
 brig_function::add_local_variable (std::string name, tree type)
 {
@@ -262,9 +275,10 @@ brig_function::add_local_variable (std::string name, tree type)
   return variable;
 }
 
-// Returns a DECL_VAR for the given HSAIL operand register.
-// If it has not been created yet for the function being generated,
-// creates it as an unsigned int variable.
+/* Returns a DECL_VAR for the given HSAIL operand register.
+   If it has not been created yet for the function being generated,
+   creates it as an unsigned int variable.  */
+
 tree
 brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
 {
@@ -294,8 +308,8 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
       else
 	type = boolean_type_node;
 
-      // Drop the const qualifier so we do not end up with a read only
-      // register variable which cannot be written to later.
+      /* Drop the const qualifier so we do not end up with a read only
+	 register variable which cannot be written to later.  */
       tree nonconst_type = build_type_variant (type, false, false);
 
       regEntry = new reg_decl_index_entry;
@@ -307,10 +321,11 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
   return regEntry->m_var_decl;
 }
 
-// Builds a work-item do..while loop for a single DIM.  HEADER_ENTRY is
-// a statement after which the iteration variables should be initialized and
-// the loop body starts.  BRANCH_AFTER is the statement after which the loop
-// predicate check and the back edge goto will be appended.
+/* Builds a work-item do..while loop for a single DIM.  HEADER_ENTRY is
+   a statement after which the iteration variables should be initialized and
+   the loop body starts.  BRANCH_AFTER is the statement after which the loop
+   predicate check and the back edge goto will be appended.  */
+
 void
 brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 			    tree_stmt_iterator *branch_after)
@@ -319,12 +334,14 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   tree ivar_max = m_cur_wg_size_vars[dim];
   tree_stmt_iterator entry = *header_entry;
 
-  // TODO: this is not a parallel loop as we share the "register
-  // variables" across work-items.  Should create a copy of them
-  // per WI instance.  That is, declare them inside the loop, not
-  // at function scope.
+  /* TODO: this is not a parallel loop as we share the "register variables"
+     across work-items.  Should create a copy of them per WI instance.  That
+     is, declare temporaries for new definitions inside the loop body, not at
+     function scope.  */
 
-  // TODO: Initialize the iteration variable.  Assume always starting from 0.
+  /* TODO: Initialize the iteration variable.   Assume always starting
+     from 0.  */
+     
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
@@ -338,8 +355,8 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   if (m_has_unexpanded_dp_builtins)
     {
       static tree id_set_builtin;
-      // Set the local ID to the current wi-loop iteration variable value to
-      // ensure the builtins see the correct values.
+      /* Set the local ID to the current wi-loop iteration variable value to
+	 ensure the builtins see the correct values.  */
       tree id_set_call
 	= call_builtin (&id_set_builtin, "__phsa_builtin_setworkitemid", 3,
 			void_type_node, uint32_type_node,
@@ -348,13 +365,13 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
       tsi_link_after (&entry, id_set_call, TSI_NEW_STMT);
     }
 
-  // Increment the WI iteration variable.
+  /* Increment the WI iteration variable.  */
   tree incr = build2 (PREINCREMENT_EXPR, TREE_TYPE (ivar), ivar,
 		      build_one_cst (TREE_TYPE (ivar)));
 
   tsi_link_after (branch_after, incr, TSI_NEW_STMT);
 
-  // Append the predicate check with the back edge goto.
+  /* Append the predicate check with the back edge goto.  */
   tree condition = build2 (LT_EXPR, TREE_TYPE (ivar), ivar, ivar_max);
   tree target_goto = build1 (GOTO_EXPR, void_type_node, loop_body_label);
   tree if_stmt
@@ -362,17 +379,18 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   tsi_link_after (branch_after, if_stmt, TSI_NEW_STMT);
 }
 
-// Recursively analyzes the function and its callees for barrier usage.
+/* Recursively analyzes the function and its callees for barrier usage.  */
+
 void
 brig_function::analyze_calls ()
 {
   if (m_calls_analyzed) return;
 
-  // Set this early to not get stuck in case of recursive call graphs.
-  // This is safe because if the function calls itself, either the function
-  // has barrier calls which implies a call to a function with barrier calls,
-  // or it doesn't in which case the result depends on the later called
-  // functions.
+  /* Set this early to not get stuck in case of recursive call graphs.
+     This is safe because if the function calls itself, either the function
+     has barrier calls which implies a call to a function with barrier calls,
+     or it doesn't in which case the result depends on the later called
+     functions.  */
   m_calls_analyzed = true;
 
   for (size_t i = 0; i < m_called_functions.size (); ++i)
@@ -381,26 +399,30 @@ brig_function::analyze_calls ()
       brig_function *called_f = m_parent->get_finished_function (f);
       if (called_f == NULL)
 	{
-	  // Unfinished function (only declaration within the set of BRIGs)
-	  // found.  Cannot finish the CG analysis.  Have to assume it does have
-	  // a barrier for safety.
+	  /* Unfinished function (only declaration within the set of BRIGs)
+	     found.  Cannot finish the CG analysis.  Have to assume it does have
+	     a barrier for safety.  */
 	  m_has_function_calls_with_barriers = true;
 	  m_has_unexpanded_dp_builtins = true;
 	  break;
 	}
       called_f->analyze_calls ();
-      // We can assume m_has_barriers has been correctly set during the
-      // construction of the function decl.  No need to reanalyze it.
+      /* We can assume m_has_barriers has been correctly set during the
+	 construction of the function decl.  No need to reanalyze it.  */
       m_has_function_calls_with_barriers |= called_f->m_has_barriers;
 
-      // If the function or any of its called functions has dispatch
-      // packet builtin calls that require the local id, we need to
-      // set the local id to the context in the work item loop before
-      // the functions are called.  If we analyze the opposite, these
-      // function calls can be omitted.
+      /* If the function or any of its called functions has dispatch
+	 packet builtin calls that require the local id, we need to
+	 set the local id to the context in the work item loop before
+	 the functions are called.  If we analyze the opposite, these
+	 function calls can be omitted.  */
       m_has_unexpanded_dp_builtins |= called_f->m_has_unexpanded_dp_builtins;
     }
 }
+
+/* Tries to convert the current kernel to a work-group function that executes
+   all work-items using loops.  Returns true in case the conversion was
+   successful.  */
 
 bool
 brig_function::convert_to_wg_function ()
@@ -411,15 +433,15 @@ brig_function::convert_to_wg_function ()
   if (m_has_barriers || m_has_function_calls_with_barriers)
     return false;
 
-  // The most trivial case: No barriers at all in the kernel.
-  // We can create one big work-item loop around the whole kernel.
+  /* The most trivial case: No barriers at all in the kernel.
+     We can create one big work-item loop around the whole kernel.  */
   tree bind_expr = m_current_bind_expr;
   tree stmts = BIND_EXPR_BODY (bind_expr);
 
   for (int i = 0; i < 3; ++i)
     {
-      // The previous loop has added a new label to the end of the function,
-      // the next level loop should wrap around it also.
+      /* The previous loop has added a new label to the end of the function,
+	 the next level loop should wrap around it also.  */
       tree_stmt_iterator function_exit = tsi_last (stmts);
       add_wi_loop (i, &m_kernel_entry, &function_exit);
     }
@@ -428,31 +450,35 @@ brig_function::convert_to_wg_function ()
   return false;
 }
 
+/* Builds the kernel launcher function and the kernel descriptor
+   for the kernel.  
+  
+   The launcher function calls the device-side runtime
+   that runs the kernel for all work-items.  In C:
+
+   void KernelName (void* context, void* group_base_addr)
+   {
+     __phsa_launch_kernel (_KernelName, context, group_base_addr);
+   }
+
+   or, in case of a successful conversion to a work-group function:
+
+   void KernelName (void* context, void* group_base_addr)
+   {
+     __phsa_launch_wg_function (_KernelName, context, group_base_addr);
+   }
+
+   The user/host sees this function as the kernel to call from the
+   outside.  The actual kernel generated from HSAIL was named _KernelName.
+*/
+
 tree
 brig_function::build_launcher_and_metadata (size_t group_segment_size,
 					    size_t private_segment_size)
 {
 
-  /* The launcher function calls the device-side runtime
-     that runs the kernel for all work-items.  In C:
 
-     void KernelName (void* context, void* group_base_addr)
-     {
-     __phsa_launch_kernel (_KernelName, context, group_base_addr);
-     }
-
-     or, in case of a successful conversion to a work-group function:
-
-     void KernelName (void* context, void* group_base_addr)
-     {
-     __phsa_launch_wg_function (_KernelName, context, group_base_addr);
-     }
-
-     The user/host sees this function as the kernel to call from the
-     outside.  The actual kernel generated from HSAIL was named _KernelName.
-  */
-
-  // The original kernel name without the '_' prefix.
+  /* The original kernel name without the '_' prefix.  */
   std::string kern_name = m_name.substr (1);
 
   tree name_identifier
@@ -526,23 +552,21 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
   append_to_statement_list_force (phsail_launch_kernel_call, &stmt_list);
 
   phsa_kernel_descriptor desc;
-  // TO FIX: This does not compute the total group segment size correctly,
-  // in case the kernel is calling another function later in the program
-  // that defines group variables.  We should first do a pass for collecting
-  // all the variables used by the kernels to get the total size, and
-  // preferably use a call graph to track which functions are called by which
-  // kernels.
+  /* TO FIX: This does not compute the total group segment size correctly,
+     in case the kernel is calling another function later in the program
+     that defines group variables.  We should first do a pass for collecting
+     all the variables used by the kernels to get the total size, and
+     preferably use a call graph to track which functions are called by which
+     kernels.  */
   desc.group_segment_size = group_segment_size;
   desc.private_segment_size = private_segment_size;
   desc.kernarg_segment_size = m_next_kernarg_offset;
   desc.kernarg_max_align = m_kernarg_max_align;
 
-  /* Generate a descriptor for the kernel with HSAIL-
-     specific info needed by the runtime.  It's done
-     via an assembly directive that generates a special
-     ELF section for each kernel that contains raw bytes
-     of a descriptor object.  This is slightly disgusting,
-     but life is never perfect ;) */
+  /* Generate a descriptor for the kernel with HSAIL-specific info needed by
+     the runtime.  It's done via an assembly directive that generates a special
+     ELF section for each kernel that contains raw bytes of a descriptor
+     object.  This is slightly disgusting, but life is never perfect ;) */
 
   std::ostringstream strstr;
   strstr << std::endl
@@ -583,18 +607,16 @@ brig_function::append_statement (tree stmt)
   return stmt;
 }
 
-/**
- * Creates a new "alloca frame" for the current function by
- * injecting an alloca frame push in the beginning of the function
- * and an alloca frame pop before all function exit points.
- */
+/* Creates a new "alloca frame" for the current function by
+   injecting an alloca frame push in the beginning of the function
+   and an alloca frame pop before all function exit points.  */
 void
 brig_function::create_alloca_frame ()
 {
   tree_stmt_iterator entry;
 
-  // Adds the allocal push only after the ids have been initialized,
-  // in case of a kernel function.
+  /* Adds the allocal push only after the ids have been initialized,
+     in case of a kernel function.  */
   if (m_is_kernel)
     entry = m_kernel_entry;
   else
@@ -630,14 +652,14 @@ brig_function::create_alloca_frame ()
   while (!tsi_end_p (entry));
 }
 
-// Finishes the currently built function.  After calling this, no new
-// statements should be appeneded to the function.
+/* Finishes the currently built function.  After calling this, no new
+   statements should be appeneded to the function.  */
 void
 brig_function::finish ()
 {
   append_return_stmt ();
 
-  // Currently assume single alloca frame per WG.
+  /* Currently assume single alloca frame per WG.  */
   if (m_has_allocas)
     create_alloca_frame ();
 }
@@ -645,17 +667,17 @@ brig_function::finish ()
 void
 brig_function::finish_kernel ()
 {
-  // Kernel functions should have a single exit point.
-  // Let's create one.  The return instructions should have
-  // been converted to branches to this label.
+  /* Kernel functions should have a single exit point.
+     Let's create one.  The return instructions should have
+     been converted to branches to this label.  */
   append_statement (build_stmt (LABEL_EXPR, m_exit_label));
-  // Attempt to convert the kernel to a work-group function that
-  // executes all work-items of the WG using a loop.
+  /* Attempt to convert the kernel to a work-group function that
+     executes all work-items of the WG using a loop.  */
   convert_to_wg_function ();
 
   append_return_stmt ();
 
-  // Currently assume single alloca frame per WG.
+  /* Currently assume single alloca frame per WG.  */
   if (m_has_allocas)
     create_alloca_frame ();
 }
@@ -667,7 +689,7 @@ brig_function::append_return_stmt ()
   tree stmts = BIND_EXPR_BODY (m_current_bind_expr);
 
   if (STATEMENT_LIST_TAIL (stmts) == NULL)
-    return; // Empty function.
+    return; /* Empty function.  */
 
   tree last_stmt = tsi_stmt (tsi_last (stmts));
 

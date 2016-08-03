@@ -64,13 +64,13 @@ brig_to_generic::brig_to_generic ()
 {
   m_globals = NULL_TREE;
 
-  // Initialize the basic REAL types.
-  // This doesn't work straight away because most of the targets
-  // do not support fp16 natively.  Let's by default convert
-  // to fp32 and back before and after each instruction (handle it as
-  // a storage format only), and later add an optimization pass
-  // that removes the extra converts (in case of multiple fp16 ops
-  // in a row).
+  /* Initialize the basic REAL types.
+     This doesn't work straight away because most of the targets
+     do not support fp16 natively.  Let's by default convert
+     to fp32 and back before and after each instruction (handle it as
+     a storage format only), and later add an optimization pass
+     that removes the extra converts (in case of multiple fp16 ops
+     in a row).  */
   s_fp16_type = make_node (REAL_TYPE);
   TYPE_PRECISION (s_fp16_type) = 16;
   TYPE_SIZE (s_fp16_type) = bitsize_int (16);
@@ -78,15 +78,15 @@ brig_to_generic::brig_to_generic ()
   SET_TYPE_ALIGN (s_fp16_type, 16);
   layout_type (s_fp16_type);
 
-  // TODO: make sure that the alignment of these types created in tree.c
-  // are at least as strict than mandated by HSA, and conform to
-  // IEEE (like mandated by HSA)
+  /* TODO: make sure that the alignment of these types created in tree.c
+     are at least as strict than mandated by HSA, and conform to
+     IEEE (like mandated by HSA).  */
   s_fp32_type = float_type_node;
   s_fp64_type = double_type_node;
 
-  // TODO: (machine)query the preferred rounding mode that is set by
-  // the machine by default.  This can be redefined by each BRIG module
-  // header.
+  /* TODO: (machine)query the preferred rounding mode that is set by
+     the machine by default.  This can be redefined by each BRIG module
+     header.  */
   m_default_float_rounding_mode = BRIG_ROUND_FLOAT_ZERO;
 
   m_dump_file = dump_begin (TDI_original, &m_dump_flags);
@@ -108,8 +108,9 @@ public:
   }
 };
 
-// Handler for entries that can be (and are) safely skipped
-// for the purposes of tree generation.
+/* Handler for entries that can be (and are) safely skipped for the purposes
+   of GENERIC generation.  */
+
 class skipped_entry_handler : public brig_code_entry_handler
 {
 public:
@@ -125,6 +126,8 @@ public:
   }
 };
 
+/* Parses the given BRIG blob.  */
+
 void
 brig_to_generic::parse (const char *brig_blob)
 {
@@ -135,7 +138,7 @@ brig_to_generic::parse (const char *brig_blob)
 
   m_data = m_code = m_operand = NULL;
 
-  // Find the positions of the different sections.
+  /* Find the positions of the different sections.  */
   for (uint32_t sec = 0; sec < mheader->sectionCount; ++sec)
     {
       uint64_t offset
@@ -209,8 +212,8 @@ brig_to_generic::parse (const char *brig_blob)
     brig_code_entry_handler *handler;
   };
 
-  // @todo: Convert to a hash table / map.  For now, put the more common
-  // entries to the top to keep the scan fast on average.
+  /* TODO: Convert to a hash table / map.  For now, put the more common
+     entries to the top to keep the scan fast on average.  */
   code_entry_handler_info handlers[]
     = {{BRIG_KIND_INST_BASIC, &inst_handler},
        {BRIG_KIND_INST_CMP, &cmp_inst_handler},
@@ -226,8 +229,8 @@ brig_to_generic::parse (const char *brig_blob)
        {BRIG_KIND_INST_BR, &branch_inst_handler},
        {BRIG_KIND_INST_LANE, &lane_inst_handler},
        {BRIG_KIND_INST_QUEUE, &queue_inst_handler},
-       // Assuming fences are not needed.  FIXME: call builtins
-       // when porting to a platform where they are.
+       /* Assuming fences are not needed.  FIXME: call builtins
+	  when porting to a platform where they are.  */
        {BRIG_KIND_INST_MEM_FENCE, &skipped_handler},
        {BRIG_KIND_DIRECTIVE_LABEL, &label_handler},
        {BRIG_KIND_DIRECTIVE_VARIABLE, &var_handler},
@@ -240,26 +243,26 @@ brig_to_generic::parse (const char *brig_blob)
        {BRIG_KIND_DIRECTIVE_FUNCTION, &func_handler},
        {BRIG_KIND_DIRECTIVE_INDIRECT_FUNCTION, &func_handler},
        {BRIG_KIND_DIRECTIVE_MODULE, &module_handler},
-       // Skipping debug locations for now as not needed for conformance.
+       /* Skipping debug locations for now as not needed for conformance.  */
        {BRIG_KIND_DIRECTIVE_LOC, &skipped_handler},
-       // There are no supported pragmas at this moment.
+       /* There are no supported pragmas at this moment.  */
        {BRIG_KIND_DIRECTIVE_PRAGMA, &skipped_handler},
        {BRIG_KIND_DIRECTIVE_CONTROL, &control_handler},
        {BRIG_KIND_DIRECTIVE_EXTENSION, &skipped_handler}};
 
   const BrigSectionHeader *dsection_header = (const BrigSectionHeader *) m_data;
 
-  // Go through the data section just to sanity check the BRIG data section.
+  /* Go through the data section just to sanity check the BRIG data section.  */
   for (size_t b = dsection_header->headerByteCount; b < m_data_size;)
     {
       const BrigData *entry = (const BrigData *) (m_data + b);
-      // Rounds upwards towards the closest multiple of 4.
-      // The byteCount itself is 4 bytes and included in 7.
+      /* Rounds upwards towards the closest multiple of 4.
+	 The byteCount itself is 4 bytes and included in 7.  */
       b += ((7 + entry->byteCount) / 4) * 4;
 
-      // There can be zero padding at the end of the section to round the
-      // size to a 4 multiple.  Break before trying to read that in as
-      // an incomplete BrigData.
+      /* There can be zero padding at the end of the section to round the
+	 size to a 4 multiple.  Break before trying to read that in as
+	 an incomplete BrigData.  */
       if (m_data_size - b < sizeof (BrigData))
 	break;
     }
@@ -273,9 +276,9 @@ brig_to_generic::parse (const char *brig_blob)
       brig_code_entry_handler *handler = &unimplemented_handler;
 
       if (m_cf != NULL && b >= m_cf->m_brig_def->nextModuleEntry)
-	finish_function (); // The function definition ended.
+	finish_function (); /* The function definition ended.  */
 
-      // Find a handler.
+      /* Find a handler.  */
       for (size_t i = 0;
 	   i < sizeof (handlers) / sizeof (code_entry_handler_info); ++i)
 	{
@@ -332,6 +335,9 @@ brig_to_generic::global_variable (const std::string &name) const
     return (*i).second;
 }
 
+/* Returns a function declaration with the given name.  Assumes it has been
+   created previously via a DirectiveFunction or similar.  */
+
 tree
 brig_to_generic::function_decl (const std::string &name)
 {
@@ -353,11 +359,11 @@ brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
   append_global (var_decl);
   m_global_variables[name] = var_decl;
 
-  // If we have generated a host def var ptr for this global variable
-  // definition (because there was a declaration earlier which looked
-  // like it might have been a host defined variable), we now have
-  // to assign its address and make it non-public to allow the
-  // references to point to the defined variable instead.
+  /* If we have generated a host def var ptr for this global variable
+     definition (because there was a declaration earlier which looked
+     like it might have been a host defined variable), we now have
+     to assign its address and make it non-public to allow the
+     references to point to the defined variable instead.  */
   std::string host_def_var_name
     = std::string (PHSA_HOST_DEF_PTR_PREFIX) + name;
   tree host_def_var = global_variable (host_def_var_name.c_str ());
@@ -371,8 +377,9 @@ brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
   TREE_PUBLIC (host_def_var) = 0;
 }
 
-// Adds an indirection pointer for a potential host-defined program scope
-// variable declaration.
+/* Adds an indirection pointer for a potential host-defined program scope
+   variable declaration.  */
+
 void
 brig_to_generic::add_host_def_var_ptr (const std::string &name, tree var_decl)
 {
@@ -398,18 +405,21 @@ std::string
 brig_to_generic::get_mangled_name
 (const BrigDirectiveExecutable *func) const
 {
-  // Strip the leading &.
+  /* Strip the leading &.  */
   std::string func_name = get_string (func->name).substr (1);
   if (func->linkage == BRIG_LINKAGE_MODULE)
     {
-      // Mangle the module scope function names with the module name and
-      // make them public so they can be queried by the HSA runtime from
-      // the produced binary.  Assume it's the currently processed function
-      // we are always referring to.
+      /* Mangle the module scope function names with the module name and
+	 make them public so they can be queried by the HSA runtime from
+	 the produced binary.  Assume it's the currently processed function
+	 we are always referring to.  */
       func_name = "gccbrig." + m_module_name + "." + func_name;
     }
   return func_name;
 }
+
+/* Returns a string from the data section as a zero terminated
+   string.  Owned by the callee.  */
 
 char *
 brig_to_generic::get_c_string (size_t entry_offset) const
@@ -425,7 +435,8 @@ brig_to_generic::get_string (size_t entry_offset) const
   return std::string ((const char *) &data_item->bytes, data_item->byteCount);
 }
 
-// Adapted from c-semantics.c.
+/* Adapted from c-semantics.c.  */
+
 tree
 build_stmt (enum tree_code code, ...)
 {
@@ -463,6 +474,13 @@ build_stmt (enum tree_code code, ...)
   return ret;
 }
 
+/* BRIG regs are untyped, but GENERIC is not.  We need to add implicit casts
+   in case treating the operand with an instruction with a type different
+   than the created reg var type in order to select correct instruction type
+   later on.  This function creates the necessary reinterpret type cast from
+   a source variable to the destination type.  In case no cast is needed to
+   the same type, SOURCE is returned directly.  */
+
 tree
 build_reinterpret_cast (tree destination_type, tree source)
 {
@@ -470,7 +488,7 @@ build_reinterpret_cast (tree destination_type, tree source)
   if (!source || !destination_type || TREE_TYPE (source) == NULL_TREE
       || destination_type == NULL_TREE)
     {
-      // TODO: handle void pointers etc.
+      /* TODO: handle void pointers etc.  */
       internal_error ("illegal type");
       return NULL_TREE;
     }
@@ -502,8 +520,9 @@ build_reinterpret_cast (tree destination_type, tree source)
   return NULL_TREE;
 }
 
-// Returns a finished brig_function for the given generic FUNC_DECL,
-// or NULL, if not found.
+/* Returns the finished brig_function for the given generic FUNC_DECL,
+   or NULL, if not found.  */
+
 brig_function *
 brig_to_generic::get_finished_function (tree func_decl)
 {
@@ -517,19 +536,26 @@ brig_to_generic::get_finished_function (tree func_decl)
     return NULL;
 }
 
+/* Finalizes the currently handled function.  Should be called before
+   setting a new function.  */
+
 void
 brig_to_generic::finish_function ()
 {
   if (m_cf == NULL || m_cf->m_func_decl == NULL_TREE)
     {
-      // It can be a finished func declaration fingerprint,
-      // in that case we don't have m_func_decl.
+      /* It can be a finished func declaration fingerprint, in that case we
+	 don't have m_func_decl.  */
       m_cf = NULL;
       return;
     }
 
-  //debug_function (m_cf->m_func_decl,
-  //		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+#if 0
+  /* Enable to get dumps of the finished functions.  */
+  debug_function (m_cf->m_func_decl,
+  		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+#endif
+
   if (!m_cf->m_is_kernel)
     {
       m_cf->finish ();
@@ -545,6 +571,8 @@ brig_to_generic::finish_function ()
   m_cf = NULL;
 }
 
+/* Initializes a new currently handled function.  */
+
 void
 brig_to_generic::start_function (tree f)
 {
@@ -555,6 +583,9 @@ brig_to_generic::start_function (tree f)
 
   m_cf->m_func_decl = f;
 }
+
+/* Appends a new group variable (or an fbarrier) to the current kernel's
+   group segment.  */
 
 void
 brig_to_generic::append_group_variable (const std::string &name, size_t size,
@@ -575,11 +606,17 @@ brig_to_generic::group_variable_segment_offset (const std::string &name) const
   return (*i).second;
 }
 
+/* The size of the group and private segments required by the currently
+   processed kernel.  Private segment size must be multiplied by the
+   number of work-items in the launch, in case of a work-group function.  */
+
 size_t
 brig_to_generic::group_segment_size () const
 {
   return m_next_group_offset;
 }
+
+/* Appends a new group variable to the current kernel's private segment.  */
 
 void
 brig_to_generic::append_private_variable (const std::string &name,
@@ -632,9 +669,13 @@ brig_to_generic::private_segment_size () const
   return m_next_private_offset;
 }
 
-// Cached builtins indexed by name.
+/* Cached builtins indexed by name.  */
+
 typedef std::map<std::string, tree> builtin_index;
 builtin_index builtin_cache_;
+
+/* Build a call to a builtin function.  Stolen from gogo-tree.cc in the
+   Go frontend.  */
 
 tree
 call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
@@ -722,26 +763,29 @@ brig_to_generic::dump_function (brig_function *f)
     }
 }
 
+/* Generate all global declarations.  Should be called after the last
+   BRIG has been fed in.  */
+
 void
 brig_to_generic::write_globals ()
 {
-  // Now that the whole BRIG module has been processed, build a launcher
-  // and a metadata section for each built kernel.
+  /* Now that the whole BRIG module has been processed, build a launcher
+     and a metadata section for each built kernel.  */
   for (size_t i = 0; i < m_kernels.size (); ++i)
     {
 
       brig_function *f = m_kernels[i];
 
-      // Finish kernels now that we know the call graphs and their
-      // barrier usage.
+      /* Finish kernels now that we know the call graphs and their barrier
+	 usage.  */
       f->finish_kernel ();
 
       dump_function (f);
       gimplify_function_tree (f->m_func_decl);
       cgraph_node::finalize_function (f->m_func_decl, true);
 
-      // TODO: analyze the kernel's actual group and private segment usage
-      // using a call graph.  Now this is overly pessimistic.
+      /* TODO: analyze the kernel's actual group and private segment usage
+	 using a call graph.  Now this is overly pessimistic.  */
       tree launcher = f->build_launcher_and_metadata (group_segment_size (),
 						      private_segment_size ());
 

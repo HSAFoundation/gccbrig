@@ -293,7 +293,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 
       if (builtin_name.str ().empty ())
 	{
-	  // Use phsail's builtin.
+	  /* Use phsail's builtin.  */
 	  switch (atomic_opcode)
 	    {
 	    case BRIG_ATOMIC_MIN:

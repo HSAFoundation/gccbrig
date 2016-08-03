@@ -58,9 +58,9 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   const bool is_kernel = base->kind == BRIG_KIND_DIRECTIVE_KERNEL;
 
-  // There doesn't seem to be actual use cases for kernel declarations
-  // as they cannot be called by the program.  Ignore them until there's
-  // a reason not to.
+  /* There doesn't seem to be actual use cases for kernel declarations
+     as they cannot be called by the program.  Ignore them until there's
+     a reason not to.  */
   if (is_kernel && !is_definition)
     return bytes_consumed;
 
@@ -73,27 +73,28 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   tree stmt_list = alloc_stmt_list ();
 
-  // Add a function scope BIND_EXPR using which we can push local variables that
-  // represent HSAIL registers.
+  /* Add a function scope BIND_EXPR using which we can push local variables that
+     represent HSAIL registers.  */
   tree bind_expr = build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
 
   if (is_kernel)
     {
-      // The generated kernel function is not the one that should be
-      // called by the host.
+      /* The generated kernel function is not the one that should be
+	 called by the host.  */
       func_name = std::string ("_") + func_name;
 
       tree name_identifier
 	= get_identifier_with_length (func_name.c_str (), func_name.size ());
 
-      // The generated kernel functions take the following arguments:
-      //
-      // 1) a char* which is a starting address of the argument segment where
-      // the call's arguments are stored by the launcher.
-      // 2) a void* parameter that points to a phsail-finalizer context object
-      // which passes the hsa kernel packet etc.
-      // 3) a void* parameter that contains the first flat address of the group
-      // region allocated to the current work-group.
+      /* The generated kernel functions take the following arguments:
+
+	 1) a char* which is a starting address of the argument segment where
+	 the call's arguments are stored by the launcher.
+	 2) a void* parameter that points to a phsail-finalizer context object
+	 which passes the hsa kernel packet etc.
+	 3) a void* parameter that contains the first flat address of the group
+	 region allocated to the current work-group.  */
+
       tree char_ptr_type_node = build_pointer_type (char_type_node);
       fndecl = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, name_identifier,
 			   build_function_type_list (void_type_node,
@@ -126,8 +127,8 @@ brig_directive_function_handler::operator () (const BrigBase *base)
     }
   else
     {
-      // Build a regular function fingerprint to enable targets to optimize
-      // the calling convention as they see fit.
+      /* Build a regular function fingerprint to enable targets to optimize
+	 the calling convention as they see fit.  */
       tree name_identifier
 	= get_identifier_with_length (func_name.c_str (), func_name.size ());
 
@@ -143,8 +144,8 @@ brig_directive_function_handler::operator () (const BrigBase *base)
       tree ret_type = void_type_node;
       if (exec->outArgCount == 1)
 	{
-	  // The return value variable should be the first entry after the
-	  // function directive.
+	  /* The return value variable should be the first entry after the
+	     function directive.  */
 	  const BrigBase *retval
 	    = (const BrigBase *) ((const char *) base + base->byteCount);
 	  assert (retval->kind == BRIG_KIND_DIRECTIVE_VARIABLE);
@@ -156,9 +157,9 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
 	  if (brigVar->type & BRIG_TYPE_ARRAY)
 	    {
-	      // Push array output arguments to the beginning of the
-	      // function argument list instead of regular function
-	      // return values.
+	      /* Push array output arguments to the beginning of the
+		 function argument list instead of regular function
+		 return values.  */
 
 	      tree arg_var = varhandler.build_variable (brigVar, PARM_DECL);
 	      vec_safe_push (args, TREE_TYPE (arg_var));
@@ -202,7 +203,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
 	      assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
-	      // Delegate to the brig_directive_variable_handler.
+	      /* Delegate to the brig_directive_variable_handler.  */
 	      brig_directive_variable_handler varhandler (m_parent);
 	      tree arg_var = varhandler.build_variable (brigVar, PARM_DECL);
 	      arg_offset += brigVar->base.byteCount;
@@ -229,9 +230,9 @@ brig_directive_function_handler::operator () (const BrigBase *base)
       DECL_ARGUMENTS (fndecl) = arg_decls;
     }
 
-  // All functions need the hidden __context argument passed on
-  // because they might call WI-specific functions which need
-  // the context info.
+  /* All functions need the hidden __context argument passed on
+     because they might call WI-specific functions which need
+     the context info.  */
   tree context_arg = build_decl (UNKNOWN_LOCATION, PARM_DECL,
 				 get_identifier ("__context"), ptr_type_node);
   if (DECL_ARGUMENTS (fndecl) == NULL_TREE)
@@ -244,8 +245,8 @@ brig_directive_function_handler::operator () (const BrigBase *base)
   TREE_READONLY (context_arg) = 1;
   TREE_USED (context_arg) = 1;
 
-  // They can also access group memory, so we need to pass the
-  // group pointer along too.
+  /* They can also access group memory, so we need to pass the
+     group pointer along too.  */
   tree group_base_arg
     = build_decl (UNKNOWN_LOCATION, PARM_DECL,
 		  get_identifier ("__group_base_addr"), ptr_type_node);
@@ -256,7 +257,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
   TREE_READONLY (group_base_arg) = 1;
   TREE_USED (group_base_arg) = 1;
 
-  // Same for private.
+  /* Same for private.  */
   tree private_base_arg
     = build_decl (UNKNOWN_LOCATION, PARM_DECL,
 		  get_identifier ("__private_base_addr"), ptr_type_node);
@@ -269,7 +270,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   DECL_SAVED_TREE (fndecl) = bind_expr;
 
-  // Try to preserve the functions across IPA.
+  /* Try to preserve the functions across IPA.  */
   DECL_PRESERVE_P (fndecl) = 1;
   TREE_SIDE_EFFECTS (fndecl) = 1;
 
@@ -338,10 +339,10 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   if (ret_value != NULL_TREE && TREE_TYPE (ret_value) != void_type_node)
     {
-      // We cannot assign to <<retval>> directly in gcc trunk. We need to
-      // create a local temporary variable which can be stored to and when
-      // returning from the function, we'll copy it to the actual <<retval>>
-      // in return statement's argument.
+      /* We cannot assign to <<retval>> directly in gcc trunk. We need to
+	 create a local temporary variable which can be stored to and when
+	 returning from the function, we'll copy it to the actual <<retval>>
+	 in return statement's argument.  */
       tree temp_var = m_parent.m_cf->m_ret_temp
 	= m_parent.m_cf->add_local_variable ("_retvalue_temp",
 					     TREE_TYPE (ret_value));
@@ -352,7 +353,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
     {
       m_parent.m_cf->add_id_variables ();
 
-      // Create a single entry point in the function.
+      /* Create a single entry point in the function.  */
       m_parent.m_cf->m_entry_label_stmt
 	= build_stmt (LABEL_EXPR, m_parent.m_cf->label ("__kernel_entry"));
       m_parent.m_cf->append_statement (m_parent.m_cf->m_entry_label_stmt);
@@ -362,10 +363,10 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
       m_parent.m_cf->m_kernel_entry = tsi_last (stmts);
 
-      // Let's not append the exit label yet, but only after the
-      // function has been built.  We need to build it so it can
-      // be referred to because returns are converted to gotos to this
-      // label.
+      /* Let's not append the exit label yet, but only after the
+	 function has been built.  We need to build it so it can
+	 be referred to because returns are converted to gotos to this
+	 label.  */
       m_parent.m_cf->m_exit_label = m_parent.m_cf->label ("__kernel_exit");
     }
 

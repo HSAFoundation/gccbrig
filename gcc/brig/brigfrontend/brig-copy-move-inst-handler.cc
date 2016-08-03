@@ -38,8 +38,9 @@ brig_copy_move_inst_handler::operator () (const BrigBase *base)
   tree output = build_tree_operand_from_brig (brig_inst, dest_type, 0);
   if (brig_inst->opcode == BRIG_OPCODE_COMBINE)
     {
-      // For Combine, a simple reinterpret cast from the array constructor
-      // works.
+      /* For combine, a simple reinterpret cast from the array constructor
+	 works.  */
+
       tree casted = build_reinterpret_cast (dest_type, input);
       tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
       m_parent.m_cf->append_statement (assign);

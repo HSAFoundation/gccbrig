@@ -24,6 +24,6 @@ along with GCC; see the file COPYING3.  If not see
 size_t
 brig_directive_control_handler::operator () (const BrigBase *base)
 {
-  // Skip (for now) control directives that can be ignored safely.
+  /* Skip (for now) control directives that can be ignored safely.  */
   return base->byteCount;
 }

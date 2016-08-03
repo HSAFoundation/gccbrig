@@ -62,12 +62,12 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   const BrigAluModifier8_t *inst_modifier = modifier (base);
   const bool FTZ = inst_modifier != NULL && (*inst_modifier) & BRIG_ALU_FTZ;
 
-  // The conversion source type.
+  /* The conversion source type.  */
   tree src_type = get_tree_expr_type_for_hsa_type (cvt_inst->sourceType);
 
   bool src_is_fp16 = cvt_inst->sourceType == BRIG_TYPE_F16;
 
-  // The conversion destination type.
+  /* The conversion destination type.  */
   tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
 
   bool dest_is_fp16 = brig_inst->type == BRIG_TYPE_F16;
@@ -87,16 +87,16 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   size_t conv_dst_size = int_size_in_bytes (dest_type);
   size_t src_reg_size = int_size_in_bytes (TREE_TYPE (input));
 
-  // The input register can be of different type&size than the
-  // conversion input size.  First cast the input to the conversion
-  // input type.  These casts are always bitcasts which can be
-  // expressed as casts between different unsigned integers.
+  /* The input register can be of different type&size than the
+     conversion input size.  First cast the input to the conversion
+     input type.  These casts are always bitcasts which can be
+     expressed as casts between different unsigned integers.  */
   if (src_reg_size != conv_src_size)
     {
       tree unsigned_int_type = NULL_TREE;
       if (INTEGRAL_TYPE_P (src_type))
 	unsigned_int_type = unsigned_type_for (src_type);
-      else // Find a matching size int type for the REAL type
+      else /* Find a matching size int type for the REAL type.  */
 	{
 	  if (conv_src_size == 2)
 	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U16);
@@ -113,7 +113,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   if (src_is_fp16)
     input = build_h2f_conversion (input);
 
-  // Flush the float operand to zero if indicated with 'ftz'.
+  /* Flush the float operand to zero if indicated with 'ftz'.  */
   if (FTZ && SCALAR_FLOAT_TYPE_P (src_type))
     {
       tree casted_input = build_reinterpret_cast (src_type, input);
@@ -123,23 +123,23 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   tree conversion_result = NULL_TREE;
   if (brig_inst->type == BRIG_TYPE_B1)
     {
-      // When the destination is b1, cvt does a 'ztest' operation which is
-      // defined as a != 0 for integers and similarly (!= 0.0f) for floats.
+      /* When the destination is b1, cvt does a 'ztest' operation which is
+	 defined as a != 0 for integers and similarly (!= 0.0f) for floats.  */
       if (INTEGRAL_TYPE_P (src_type))
 	{
-	  // Generate an integer not equal operation.
+	  /* Generate an integer not equal operation.  */
 	  conversion_result = build2 (NE_EXPR, TREE_TYPE (input), input,
 				      build_int_cst (TREE_TYPE (input), 0));
 	}
       else
 	{
-	  // For REAL source types, ztest returns 1 if the value is not +- 0.0f.
-	  // We can perform this check with an integer comparison after
-	  // masking away the sign bit from a correct position.  This is safer
-	  // than using absf because of exceptions in case of a NaN
-	  // input (NaN exceptions are not generated with cvt).
+	  /* For REAL source types, ztest returns 1 if the value is not +- 0.0f.
+	     We can perform this check with an integer comparison after
+	     masking away the sign bit from a correct position.  This is safer
+	     than using absf because of exceptions in case of a NaN
+	     input (NaN exceptions are not generated with cvt).  */
 	  tree unsigned_int_type = NULL_TREE;
-	  // Bit battern with all but the upper bit 1.
+	  /* Bit battern with all but the upper bit 1.  */
 	  tree and_mask = NULL_TREE;
 	  if (conv_src_size == 2)
 	    {
@@ -165,7 +165,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	    = build2 (NE_EXPR, TREE_TYPE (masked_input), masked_input,
 		      build_int_cst (unsigned_int_type, 0));
 	}
-      // The result from the comparison is a boolean, convert it to such.
+      /* The result from the comparison is a boolean, convert it to such.  */
       conversion_result
 	= convert_to_integer (get_tree_type_for_hsa_type (BRIG_TYPE_B1),
 			      conversion_result);
@@ -195,7 +195,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	{
 	  tree casted_input = build_reinterpret_cast (src_type, input);
 
-	  // Use builtins for the saturating conversions.
+	  /* Use builtins for the saturating conversions.  */
 	  std::ostringstream strstr;
 	  strstr << "__phsa_builtin_cvt_zeroi_sat_";
 	  if (TYPE_UNSIGNED (dest_type))
@@ -212,17 +212,17 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	{
 	  tree casted_input = build_reinterpret_cast (src_type, input);
 
-	  // Perform the int to float conversion.
+	  /* Perform the int to float conversion.  */
 	  conversion_result = convert_to_integer (dest_type, casted_input);
 	}
-      // The converted result is finally extended to the target register
-      // width, using the same sign as the destination.
+      /* The converted result is finally extended to the target register
+	 width, using the same sign as the destination.  */
       conversion_result
 	= convert_to_integer (TREE_TYPE (output), conversion_result);
     }
   else
     {
-      // Just use CONVERT_EXPR and hope for the best.
+      /* Just use CONVERT_EXPR and hope for the best.  */
       tree casted_input = build_reinterpret_cast (dest_type, input);
       conversion_result = build1 (CONVERT_EXPR, dest_type, casted_input);
     }
@@ -230,8 +230,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   size_t dst_reg_size = int_size_in_bytes (TREE_TYPE (output));
 
   tree assign = NULL_TREE;
-  // The output register can be of different type&size than the
-  // conversion output size.  Cast it to the register variable type.
+  /* The output register can be of different type&size than the
+     conversion output size.  Cast it to the register variable type.  */
   if (dst_reg_size > conv_dst_size)
     {
       tree casted_output

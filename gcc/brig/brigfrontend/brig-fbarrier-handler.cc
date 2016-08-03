@@ -24,16 +24,16 @@ along with GCC; see the file COPYING3.  If not see
 #include "stringpool.h"
 #include "errors.h"
 
-// Allocate this many bytes from the group segment for each fbarrier.
+/* Allocate this many bytes from the group segment for each fbarrier.  */
 #define FBARRIER_STRUCT_SIZE 32
 
 size_t
 brig_directive_fbarrier_handler::operator () (const BrigBase *base)
 {
-  // Model fbarriers as group segment variables with fixed size
-  // large enough to store whatever data the actual target needs
-  // to store to maintain the barrier info.  The handle is the
-  // offset to the beginning of the object.
+  /* Model fbarriers as group segment variables with fixed size
+     large enough to store whatever data the actual target needs
+     to store to maintain the barrier info.  The handle is the
+     offset to the beginning of the object.  */
 
   const BrigDirectiveFbarrier* fbar = (const BrigDirectiveFbarrier*)base;
   if (m_parent.m_cf != NULL)

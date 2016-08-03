@@ -761,7 +761,9 @@ brig_basic_inst_handler::build_lower_element_broadcast (tree vec_operand)
 
 /* Returns the tree code that should be used to implement the given
    HSA instruction opcode (BRIG_OPCODE) for the given type of
-   instruction (BRIG_TYPE). */
+   instruction (BRIG_TYPE). Return NULL_TREE in case the opcode cannot be
+   mapped to the tree directly, but should be either emulated with a number of
+   tree nodes or a builtin.  */
 
 tree_code
 brig_basic_inst_handler::get_tree_code_for_hsa_opcode

@@ -72,7 +72,7 @@ brig_directive_variable_handler::build_variable
     }
   TYPE_ADDR_SPACE (t) = gccbrig_get_target_addr_space_id (brigVar->segment);
 
-  // Non-default alignment.
+  /* Non-default alignment.  */
   if (brigVar->align != BRIG_ALIGNMENT_NONE)
     {
       alignment = 1 << (brigVar->align - 1);
@@ -82,7 +82,7 @@ brig_directive_variable_handler::build_variable
 
   SET_DECL_ALIGN (var_decl, alignment * 8);
 
-  // Force the HSA alignments.
+  /* Force the HSA alignments.  */
   DECL_USER_ALIGN (var_decl) = 1;
 
   TREE_USED (var_decl) = 1;
@@ -91,7 +91,7 @@ brig_directive_variable_handler::build_variable
   if (is_definition)
     DECL_EXTERNAL (var_decl) = 0;
   else
-    DECL_EXTERNAL (var_decl) = 1; // The definition is elsewhere.
+    DECL_EXTERNAL (var_decl) = 1; /* The definition is elsewhere.  */
 
   if (brigVar->init != 0)
     {
@@ -168,12 +168,10 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
   std::string var_name = m_parent.get_mangled_name (brigVar);
   if (brigVar->segment == BRIG_SEGMENT_KERNARG)
     {
-      // Do not create a real variable, but only a table of
-      // offsets to the kernarg segment buffer passed as the
-      // single argument by the kernel launcher for later
-      // reference.
-
-      // Ignore kernel declarations.
+      /* Do not create a real variable, but only a table of
+	 offsets to the kernarg segment buffer passed as the
+	 single argument by the kernel launcher for later
+	 reference. Ignore kernel declarations.  */
       if (m_parent.m_cf != NULL && m_parent.m_cf->m_func_decl != NULL_TREE)
 	m_parent.m_cf->append_kernel_arg (brigVar, var_size, alignment);
       return base->byteCount;
@@ -208,8 +206,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 
       if (!is_definition && def != NULL_TREE)
 	{
-	  // We have a definition already for this declaration.
-	  // Use the definition instead of the declaration.
+	  /* We have a definition already for this declaration.
+	     Use the definition instead of the declaration.  */
 	}
       else if (might_be_host_defined_var (brigVar))
 	{
@@ -219,8 +217,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       else
 	{
 	  tree var_decl = build_variable (brigVar);
-	  // Make all global variables program scope for now
-	  // so we can get their address from the Runtime API.
+	  /* Make all global variables program scope for now
+	     so we can get their address from the Runtime API.  */
 	  DECL_CONTEXT (var_decl) = NULL_TREE;
 	  TREE_STATIC (var_decl) = 1;
 	  m_parent.add_global_variable (var_name, var_decl);
@@ -243,9 +241,9 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	}
       else
 	{
-	  // Must be an incoming function argument which has
-	  // been parsed in brig-function-handler.cc.  No
-	  // need to generate anything here.
+	  /* Must be an incoming function argument which has
+	     been parsed in brig-function-handler.cc.  No
+	     need to generate anything here.  */
 	}
     }
   else

@@ -29,36 +29,31 @@
 
 class tree_element_unary_visitor;
 
-/// An interface to organize the different types of element handlers
-/// for the code section.
+/* An interface to organize the different types of element handlers
+   for the code section.  */
+
 class brig_code_entry_handler : public brig_entry_handler
 {
 public:
   typedef std::map<std::pair<BrigOpcode16_t, BrigType16_t>, tree> builtin_map;
 
   brig_code_entry_handler (brig_to_generic &parent);
-  // Handles the brig_code data at the given pointer and adds it to the
-  // currently built tree.  Returns the number of consumed bytes;
+
+  /* Handles the brig_code data at the given pointer and adds it to the
+     currently built tree.  Returns the number of consumed bytes.  */
+
   virtual size_t operator () (const BrigBase *base) = 0;
 
   void append_statement (tree stmt);
 
 protected:
-  // Returns a GENERIC storage type for the given HSA type.  Returns
-  // the element type in case of vector instructions.
-  tree get_tree_type_for_hsa_type (BrigType16_t brig_type) const;
-  // Returns a GENERIC expression type for the given HSA type.
-  // This differs from the storage type in case of f32 emulated f16s.
-  tree get_tree_expr_type_for_hsa_type (BrigType16_t brig_type) const;
 
+  tree get_tree_type_for_hsa_type (BrigType16_t brig_type) const;
+  tree get_tree_expr_type_for_hsa_type (BrigType16_t brig_type) const;
   tree get_tree_cst_for_hsa_operand (const BrigOperandConstantBytes *brigConst,
 				     tree type) const;
-  // Return a builtin function node that matches the given brig opcode.
   tree get_builtin_for_hsa_opcode (tree type, BrigOpcode16_t brig_opcode,
 				   BrigType16_t brig_type) const;
-
-  // Return a type for storing a comparison result given the SOURCE_TYPE
-  // operand type.
   tree get_comparison_result_type (tree source_type);
 
   tree build_code_ref (const BrigBase &ref);
@@ -79,7 +74,6 @@ protected:
 
   bool needs_workitem_context_data (BrigOpcode16_t brig_opcode) const;
 
-  // Unpack/pack a vector value to/from its elements.
   void unpack (tree value, tree_stl_vec &elements);
   tree pack (tree_stl_vec &elements);
 
@@ -93,24 +87,13 @@ protected:
 
   tree add_temp_var (std::string name, tree expr);
 
-  // Creates a FP32 to FP16 conversion call, assuming the source and destination
-  // are FP32 type variables.
   tree build_f2h_conversion (tree source);
-  // Creates a FP16 to FP32 conversion call, assuming the source and destination
-  // are FP32 type variables.
   tree build_h2f_conversion (tree source);
-  // Builds and "normalizes" the dest and source operands for the instruction
-  // execution; converts the input operands to the expected instruction type,
-  // performs half to float conversions, constant to correct type variable,
-  // and flush to zero (if applicable).
+
   tree_stl_vec build_operands (const BrigInstBase &brig_inst);
-  // Builds the final assignment to the output (register) variable along
-  // with all required bitcasts and fp32 to fp16 conversions.
   tree build_output_assignment (const BrigInstBase &brig_inst, tree output,
 				tree inst_expr);
 
-  // Applies the given Visitor to all (vector) elements of the operand.
-  // Scalars are considered single element vectors.
   tree apply_to_all_elements (tree_element_unary_visitor &visitor,
 			      tree operand);
 
@@ -122,7 +105,8 @@ protected:
 
   tree extend_int (tree input, tree dest_type, tree src_type);
 
-  // HSAIL-specific builtin functions not yet integrated to gcc.
+  /* HSAIL-specific builtin functions not yet integrated to gcc.  */
+
   static builtin_map s_custom_builtins;
 
 private:
@@ -137,8 +121,9 @@ class tree_element_unary_visitor
 public:
   tree operator () (brig_code_entry_handler &handler, tree operand);
 
-  // Performs an action to a single element, which can have originally
-  // been a vector element or a scalar.
+  /* Performs an action to a single element, which can have originally
+     been a vector element or a scalar.  */
+
   virtual tree visit_element (brig_code_entry_handler &handler, tree operand)
     = 0;
 };
@@ -149,14 +134,16 @@ public:
   tree operator () (brig_code_entry_handler &handler, tree operand0,
 		   tree operand1);
 
-  // Performs an action to a pair of elements, which can have originally
-  // been a vector element or a scalar.
+  /* Performs an action to a pair of elements, which can have originally
+     been a vector element or a scalar.  */
+
   virtual tree visit_element (brig_code_entry_handler &handler, tree operand0,
 			      tree operand1)
     = 0;
 };
 
-// Flushes real elements to zero.
+/* Visitor for flushing float elements to zero.  */
+
 class flush_to_zero : public tree_element_unary_visitor
 {
 public:
@@ -167,29 +154,34 @@ public:
   virtual tree visit_element (brig_code_entry_handler &caller, tree operand);
 
 private:
-  // If the value should be flushed according to fp16 limits.
+
+  /* True if the value should be flushed according to fp16 limits.  */
+
   bool m_fp16;
 };
 
-// Converts F16 elements to F32.
+/* Visitor for converting F16 elements to F32.  */
+
 class half_to_float : public tree_element_unary_visitor
 {
 public:
   virtual tree visit_element (brig_code_entry_handler &caller, tree operand);
 };
 
-// Converts F32 elements to F16.
+/* Visitor for converting F32 elements to F16.  */
+
 class float_to_half : public tree_element_unary_visitor
 {
 public:
   virtual tree visit_element (brig_code_entry_handler &caller, tree operand);
 };
 
-// A base class for instruction types that support floating point
-// modifiers.
-//
-// operator () delegates to subclasses (template method pattern) in
-// type specific parts.
+/* A base class for instruction types that support floating point
+   modifiers.
+   
+   operator () delegates to subclasses (template method pattern) in
+   type specific parts.  */
+
 class brig_inst_mod_handler : public brig_code_entry_handler
 {
 public:
@@ -292,7 +284,6 @@ public:
   size_t operator () (const BrigBase *base);
 
 private:
-  // Builds a broadcast of the lowest element in the given vector operand.
   tree build_lower_element_broadcast (tree vec_operand);
 
   bool must_be_scalarized (const BrigInstBase *brig_inst,
@@ -308,10 +299,6 @@ private:
   tree build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode, tree arith_type,
 			      tree_stl_vec &operands);
 
-  // Produce a tree code for the given BRIG opcode.
-  // Return NULL_TREE in case the opcode cannot be
-  // mapped to the tree directly, but should be either
-  // emulated with a number of tree nodes or a builtin.
   tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
 					  BrigType16_t brig_type) const;
 
@@ -384,7 +371,7 @@ protected:
 private:
   void add_custom_atomic_builtin (const char *name, int nargs, tree rettype,
 				  ...);
-  // __sync*() builtin func declarations.
+  /* __sync*() builtin func declarations.  */
   static atomic_builtins_map s_atomic_builtins;
 };
 

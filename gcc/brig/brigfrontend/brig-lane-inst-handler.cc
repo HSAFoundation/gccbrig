@@ -37,8 +37,8 @@ brig_lane_inst_handler::operator () (const BrigBase *base)
   tree expr = NULL_TREE;
   if (inst.base.opcode == BRIG_OPCODE_ACTIVELANECOUNT)
     {
-      // Because we are fixed to single WI per wave, it's enough to
-      // just check the src value of the single work item itself.
+      /* Because we are fixed to single WI per wave, it's enough to
+	 just check the src value of the single work item itself.  */
       expr = build2 (NE_EXPR, uint32_type_node,
 		     build_zero_cst (uint32_type_node), operands[1]);
     }
@@ -66,8 +66,8 @@ brig_lane_inst_handler::operator () (const BrigBase *base)
       tree identity = operands[3];
       tree use_identity = operands[4];
 
-      // When WAVESIZE is 1, we either select the src of the work-item
-      // itself or 'identity' in case use_identity is 1.
+      /* When WAVESIZE is 1, we either select the src of the work-item
+	 itself or 'identity' in case use_identity is 1.  */
 
       tree cmp = build2 (EQ_EXPR, uint32_type_node,
 			 build_int_cstu (uint32_type_node, 1), use_identity);

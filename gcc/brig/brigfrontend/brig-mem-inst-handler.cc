@@ -48,18 +48,19 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
 
   tree ptype = build_pointer_type (instr_type);
 
-  // The HSAIL mem instructions are unaligned by default.
-  // TODO/OPTIMIZE: exploit the align modifier, it should lead to faster code.
+  /* The HSAIL mem instructions are unaligned by default.
+     TODO/OPTIMIZE: exploit the align modifier, it should lead to faster code.
+  */
   tree unaligned_type = build_aligned_type (instr_type, 8);
 
-  // Create a mem ref from the previous result, without offset.
+  /* Create a mem ref from the previous result, without offset.  */
   tree mem_ref
     = build2 (MEM_REF, unaligned_type, addr, build_int_cst (ptype, 0));
 
   if (is_load)
     {
-      // Add a temporary variable so there won't be multiple
-      // reads in case of vector unpack.
+      /* Add a temporary variable so there won't be multiple
+	 reads in case of vector unpack.  */
       mem_ref = add_temp_var ("mem_read", mem_ref);
       return build_output_assignment (*brig_inst, data, mem_ref);
     }
@@ -122,9 +123,9 @@ brig_mem_inst_handler::operator () (const BrigBase *base)
 
   if (is_three_element_vector_access)
     {
-      // We need to scalarize the 3-element vector accesses here
-      // because gcc assumes the GENERIC vector datatypes are of two exponent
-      // size internally.
+      /* We need to scalarize the 3-element vector accesses here
+	 because gcc assumes the GENERIC vector datatypes are of two exponent
+	 size internally.  */
       size_t bytes = operandData->byteCount;
       const BrigOperandOffset32_t *operand_ptr
 	= (const BrigOperandOffset32_t *) operandData->bytes;

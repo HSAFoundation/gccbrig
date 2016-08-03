@@ -24,11 +24,18 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "brig-machine.h"
 
+/* Return the numerical address space id for the segment in the current
+   target.  Currently a dummy function that always returns 0, serves as
+   a placeholder for multi-AS machines.  */
+
 unsigned
 gccbrig_get_target_addr_space_id (BrigSegment8_t /*segment*/)
 {
   return 0;
 }
+
+/* Return the WAVESIZE for the current target. For now a dummy placeholder
+   returning always 1.  */
 
 unsigned
 gccbrig_get_target_wavesize ()

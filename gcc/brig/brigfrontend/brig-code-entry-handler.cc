@@ -1051,7 +1051,8 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
     return cst;
 }
 
-/* Produce a tree type for the given BRIG type. */
+/* Produce a GENERIC type for the given HSA/BRIG type.  Returns
+   the element type in case of vector instructions.  */
 
 tree
 brig_code_entry_handler::get_tree_type_for_hsa_type
@@ -1090,7 +1091,7 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
 	case BRIG_TYPE_S16:
 	case BRIG_TYPE_S32:
 	case BRIG_TYPE_S64:
-	  // Ensure a fixed width integer.
+	  /* Ensure a fixed width integer.  */
 	  tree_type
 	    = build_nonstandard_integer_type
 	    (gccbrig_hsa_type_bit_size (brig_type), false);
@@ -1100,12 +1101,12 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
 	case BRIG_TYPE_U16:
 	case BRIG_TYPE_U32:
 	case BRIG_TYPE_U64:
-	case BRIG_TYPE_B8: // handle bit vectors as unsigned ints
+	case BRIG_TYPE_B8: /* Handle bit vectors as unsigned ints.  */
 	case BRIG_TYPE_B16:
 	case BRIG_TYPE_B32:
 	case BRIG_TYPE_B64:
 	case BRIG_TYPE_B128:
-	case BRIG_TYPE_SIG32: // handle signals as integers for now
+	case BRIG_TYPE_SIG32: /* Handle signals as integers for now.  */
 	case BRIG_TYPE_SIG64:
 	  tree_type = build_nonstandard_integer_type
 	    (gccbrig_hsa_type_bit_size (brig_type), true);
@@ -1124,12 +1125,12 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
 	case BRIG_TYPE_WOIMG:
 	case BRIG_TYPE_RWIMG:
 	  {
-	    // Handle images and samplers as target-specific blobs of data
-	    // that should be allocated earlier on from the runtime side.
-	    // Create a void* that should be initialized to point to the blobs
-	    // by the kernel launcher.  Images and samplers are accessed
-	    // via builtins that take void* as the reference.
-	    // TODO: who and how these arrays should be initialized?
+	    /* Handle images and samplers as target-specific blobs of data
+	       that should be allocated earlier on from the runtime side.
+	       Create a void* that should be initialized to point to the blobs
+	       by the kernel launcher.  Images and samplers are accessed
+	       via builtins that take void* as the reference. TODO: who and
+	       how these arrays should be initialized?  */
 	    tree void_ptr = build_pointer_type (void_type_node);
 	    return void_ptr;
 	  }
@@ -1489,9 +1490,9 @@ brig_code_entry_handler::expand_builtin (BrigOpcode16_t brig_opcode,
       tree sum
 	= build2 (PLUS_EXPR, uint32_type_node, wg_id_x_wg_size, local_id_var);
 
-      // We need a modulo here because of work-groups which have dimensions
-      // larger than the grid size :( TO CHECK: is this really allowed in the
-      // specs?
+      /* We need a modulo here because of work-groups which have dimensions
+	 larger than the grid size :( TO CHECK: is this really allowed in the
+	 specs?  */
       tree modulo
 	= build2 (TRUNC_MOD_EXPR, uint32_type_node, sum, grid_size_var);
 
@@ -1621,11 +1622,17 @@ brig_code_entry_handler::add_custom_builtin (BrigOpcode16_t brig_opcode,
   return builtin;
 }
 
+/* Creates a FP32 to FP16 conversion call, assuming the source and destination
+   are FP32 type variables.  */
+
 tree
 brig_code_entry_handler::build_f2h_conversion (tree source)
 {
   return float_to_half () (*this, source);
 }
+
+/* Creates a FP16 to FP32 conversion call, assuming the source and destination
+   are FP32 type variables.  */
 
 tree
 brig_code_entry_handler::build_h2f_conversion (tree source)
@@ -1652,7 +1659,10 @@ brig_code_entry_handler::get_raw_tree_type (tree original_type)
 					   true);
 }
 
-/* Construct GENERIC versions of the operands in the given BRIG_INST.  */
+/* Builds and "normalizes" the dest and source operands for the instruction
+   execution; converts the input operands to the expected instruction type,
+   performs half to float conversions, constant to correct type variable,
+   and flush to zero (if applicable).  */
 
 std::vector<tree>
 brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
@@ -1908,7 +1918,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 /* Build the GENERIC for assigning the result of an instruction to the result
    "register" (variable).  BRIG_INST is the original brig instruction,
    OUTPUT the result variable/register, INST_EXPR the one producing the
-   result.  */
+   result. Required bitcasts and fp32 to fp16 conversions are added as well.  */
 
 tree
 brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,

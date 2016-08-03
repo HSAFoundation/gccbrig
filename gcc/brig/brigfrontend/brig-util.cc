@@ -19,11 +19,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-// Some code reused from Martin Jambor's gcc-hsa tree.
-
-/* Return true if operand number OPNUM of instruction with OPCODE is an output.
-   False if it is an input.  */
-
 #include <sstream>
 
 #include "stdint.h"
@@ -31,6 +26,10 @@ along with GCC; see the file COPYING3.  If not see
 #include "brig-util.h"
 #include "errors.h"
 #include "diagnostic-core.h"
+
+/* Return true if operand number OPNUM of instruction with OPCODE is an output.
+   False if it is an input.  Some code reused from Martin Jambor's gcc-hsa
+   tree. */
 
 bool
 gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum)
@@ -127,12 +126,12 @@ gccbrig_hsa_type_bit_size (BrigType16_t t)
       return 128;
 
     default:
-      // Uknown size.
+      /* Uknown size.  */
       return 0;
     }
 }
 
-// gcc-hsa borrowed code ENDS
+/* gcc-hsa borrowed code ENDS  */
 
 uint64_t
 gccbrig_to_uint64_t (const BrigUInt64 &brig_type)
@@ -317,8 +316,9 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
   internal_error ("cannot convert the given tree type to a HSA type");
 }
 
-// Returns true in case the operation is a "bit level" operation,
-// not having operand type depending differences in the semantics.
+/* Returns true in case the operation is a "bit level" operation,
+   that is, not having operand type depending semantical differences.  */
+
 bool
 gccbrig_is_raw_operation (BrigOpcode16_t opcode)
 {
@@ -328,14 +328,15 @@ gccbrig_is_raw_operation (BrigOpcode16_t opcode)
 	 || opcode == BRIG_OPCODE_PACK;
 }
 
-// The program scope definition could be left external within the
-// kernel binary which means it must be defined by the host via
-// HSA runtime. For these we have special treatment: 
-// Create additional pointer indirection when accessing the variable
-// value from kernel code through a generated pointer
-// __gccbrig_ptr_variable_name. The pointer value then can be set either
-// within the kernel binary (in case of a later linked in definition)
-// or from the host.
+/* The program scope definition can be left external within the
+   kernel binary which means it must be defined by the host via
+   HSA runtime.  For these we have special treatment: 
+   Create additional pointer indirection when accessing the variable
+   value from kernel code through a generated pointer
+   __gccbrig_ptr_variable_name. The pointer value then can be set either
+   within the kernel binary (in case of a later linked in definition)
+   or from the host.  */
+
 bool
 might_be_host_defined_var (const BrigDirectiveVariable *brigVar)
 {

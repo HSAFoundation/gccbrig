@@ -62,8 +62,8 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
-	  // Need to convert the null value. -1 is used for 32b segments,
-	  // and 0 for flat/global.
+	  /* Need to convert the null value. -1 is used for 32b segments,
+	     and 0 for flat/global.  */
 	  tree cmp
 	    = build2 (EQ_EXPR, uint32_type_node,
 		      build_int_cstu (uint32_type_node, -1), operands[1]);
@@ -93,8 +93,8 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
-	  // Need to convert the null value. -1 is used for 32b segments,
-	  // and 0 for flat/global.
+	  /* Need to convert the null value. -1 is used for 32b segments,
+	     and 0 for flat/global.  */
 	  tree cmp = build2 (EQ_EXPR, size_type_node,
 			     build_int_cstu (size_type_node, 0), operands[1]);
 
