@@ -74,7 +74,7 @@ BRIG_OBJS = \
 	brig/brig-module-handler.o \
 	brig/brig-inst-mod-handler.o \
 	brig/brig-function.o \
-	brig/brig_to_generic.o \
+	brig/brig-to-generic.o \
 	brig/brig-machine.o \
 	brig/brig-util.o
 

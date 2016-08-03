@@ -43,7 +43,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "langhooks-def.h"
 #include "target.h"
 #include "vec.h"
-#include "brigfrontend/brig_to_generic.h"
+#include "brigfrontend/brig-to-generic.h"
 #include "machmode.h"
 #include "fold-const.h"
 

@@ -41,7 +41,7 @@
 #include "tree-cfg.h"
 #include "errors.h"
 #include "function.h"
-#include "brig_to_generic.h"
+#include "brig-to-generic.h"
 
 brig_function::brig_function (const BrigDirectiveExecutable *exec,
 			      brig_to_generic *parent)

@@ -1,4 +1,4 @@
-/* brig_to_generic.h -- brig to gcc generic conversion
+/* brig-to-generic.h -- brig to gcc generic conversion
    Copyright (C) 2016 Free Software Foundation, Inc.
    Contributed by Pekka Jaaskelainen <pekka.jaaskelainen@parmance.com>
    for General Processor Tech.

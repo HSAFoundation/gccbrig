@@ -29,7 +29,7 @@
 #include "coretypes.h"
 #include "target.h"
 #include "function.h"
-#include "brig_to_generic.h"
+#include "brig-to-generic.h"
 #include "stringpool.h"
 #include "tree-iterator.h"
 #include "toplev.h"

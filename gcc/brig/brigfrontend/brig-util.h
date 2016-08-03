@@ -22,7 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef GCC_BRIG_UTIL_H
 #define GCC_BRIG_UTIL_H
 
-#include "brig_to_generic.h"
+#include "brig-to-generic.h"
 
 bool gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum);
 

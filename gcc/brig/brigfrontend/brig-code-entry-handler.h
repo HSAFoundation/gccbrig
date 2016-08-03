@@ -22,7 +22,7 @@
 #ifndef GCC_BRIG_CODE_ENTRY_HANDLER_H
 #define GCC_BRIG_CODE_ENTRY_HANDLER_H
 
-#include "brig_to_generic.h"
+#include "brig-to-generic.h"
 
 #include <map>
 #include <vector>
