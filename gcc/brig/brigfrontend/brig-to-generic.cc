@@ -579,7 +579,7 @@ brig_to_generic::append_group_variable (const std::string &name, size_t size,
   m_next_group_offset += align_padding;
   m_group_offsets[name] = m_next_group_offset;
   if (alignment > size) size = alignment;
-  m_next_group_offset += size + align_padding;
+  m_next_group_offset += size;
 }
 
 size_t
