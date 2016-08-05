@@ -99,21 +99,6 @@ struct GTY (()) language_function
   int dummy;
 };
 
-/* Language hooks.  */
-
-static bool
-brig_langhook_init (void)
-{
-  build_common_tree_nodes (false);
-
-  /* From Go: I don't know why this has to be done explicitly.  */
-  void_list_node = build_tree_list (NULL_TREE, void_type_node);
-
-  targetm.init_builtins ();
-  build_common_builtin_nodes ();
-
-  return true;
-}
 
 /* The option mask.  */
 
@@ -296,13 +281,30 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
   return NULL_TREE;
 }
 
-/* Record a builtin function.  We just ignore builtin functions.  */
-
 static tree
 brig_langhook_builtin_function (tree decl)
 {
   return decl;
 }
+
+static GTY(()) tree registered_builtin_types;
+
+static void
+brig_langhook_register_builtin_type (tree type, const char *name)
+{
+  tree decl;
+
+  if (!TYPE_NAME (type))
+    {
+      decl = build_decl (UNKNOWN_LOCATION, TYPE_DECL,
+			 get_identifier (name), type);
+      DECL_ARTIFICIAL (decl) = 1;
+      TYPE_NAME (type) = decl;
+    }
+
+  registered_builtin_types = tree_cons (0, type, registered_builtin_types);
+}
+
 
 /* Return true if we are in the global binding level.  */
 
@@ -408,6 +410,392 @@ brig_localize_identifier (const char *ident)
   return identifier_to_locale (ident);
 }
 
+/* Built-in initialization code cribbed from lto-lang.c which cribbed it
+   from c-common.c.  */
+
+enum built_in_attribute
+{
+#define DEF_ATTR_NULL_TREE(ENUM) ENUM,
+#define DEF_ATTR_INT(ENUM, VALUE) ENUM,
+#define DEF_ATTR_STRING(ENUM, VALUE) ENUM,
+#define DEF_ATTR_IDENT(ENUM, STRING) ENUM,
+#define DEF_ATTR_TREE_LIST(ENUM, PURPOSE, VALUE, CHAIN) ENUM,
+#include "builtin-attrs.def"
+#undef DEF_ATTR_NULL_TREE
+#undef DEF_ATTR_INT
+#undef DEF_ATTR_STRING
+#undef DEF_ATTR_IDENT
+#undef DEF_ATTR_TREE_LIST
+  ATTR_LAST
+};
+
+static GTY(()) tree built_in_attributes[(int) ATTR_LAST];
+
+/* Builtin types.  */
+
+enum brig_builtin_type
+{
+#define DEF_PRIMITIVE_TYPE(NAME, VALUE) NAME,
+#define DEF_FUNCTION_TYPE_0(NAME, RETURN) NAME,
+#define DEF_FUNCTION_TYPE_1(NAME, RETURN, ARG1) NAME,
+#define DEF_FUNCTION_TYPE_2(NAME, RETURN, ARG1, ARG2) NAME,
+#define DEF_FUNCTION_TYPE_3(NAME, RETURN, ARG1, ARG2, ARG3) NAME,
+#define DEF_FUNCTION_TYPE_4(NAME, RETURN, ARG1, ARG2, ARG3, ARG4) NAME,
+#define DEF_FUNCTION_TYPE_5(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5) NAME,
+#define DEF_FUNCTION_TYPE_6(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6) NAME,
+#define DEF_FUNCTION_TYPE_7(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7) NAME,
+#define DEF_FUNCTION_TYPE_8(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7, ARG8) NAME,
+#define DEF_FUNCTION_TYPE_9(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7, ARG8, ARG9) NAME,
+#define DEF_FUNCTION_TYPE_10(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			     ARG6, ARG7, ARG8, ARG9, ARG10) NAME,
+#define DEF_FUNCTION_TYPE_11(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			     ARG6, ARG7, ARG8, ARG9, ARG10, ARG11) NAME,
+#define DEF_FUNCTION_TYPE_VAR_0(NAME, RETURN) NAME,
+#define DEF_FUNCTION_TYPE_VAR_1(NAME, RETURN, ARG1) NAME,
+#define DEF_FUNCTION_TYPE_VAR_2(NAME, RETURN, ARG1, ARG2) NAME,
+#define DEF_FUNCTION_TYPE_VAR_3(NAME, RETURN, ARG1, ARG2, ARG3) NAME,
+#define DEF_FUNCTION_TYPE_VAR_4(NAME, RETURN, ARG1, ARG2, ARG3, ARG4) NAME,
+#define DEF_FUNCTION_TYPE_VAR_5(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG6) \
+				NAME,
+#define DEF_FUNCTION_TYPE_VAR_6(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+				 ARG6) NAME,
+#define DEF_FUNCTION_TYPE_VAR_7(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+				ARG6, ARG7) NAME,
+#define DEF_POINTER_TYPE(NAME, TYPE) NAME,
+#include "builtin-types.def"
+#undef DEF_PRIMITIVE_TYPE
+#undef DEF_FUNCTION_TYPE_0
+#undef DEF_FUNCTION_TYPE_1
+#undef DEF_FUNCTION_TYPE_2
+#undef DEF_FUNCTION_TYPE_3
+#undef DEF_FUNCTION_TYPE_4
+#undef DEF_FUNCTION_TYPE_5
+#undef DEF_FUNCTION_TYPE_6
+#undef DEF_FUNCTION_TYPE_7
+#undef DEF_FUNCTION_TYPE_8
+#undef DEF_FUNCTION_TYPE_9
+#undef DEF_FUNCTION_TYPE_10
+#undef DEF_FUNCTION_TYPE_11
+#undef DEF_FUNCTION_TYPE_VAR_0
+#undef DEF_FUNCTION_TYPE_VAR_1
+#undef DEF_FUNCTION_TYPE_VAR_2
+#undef DEF_FUNCTION_TYPE_VAR_3
+#undef DEF_FUNCTION_TYPE_VAR_4
+#undef DEF_FUNCTION_TYPE_VAR_5
+#undef DEF_FUNCTION_TYPE_VAR_6
+#undef DEF_FUNCTION_TYPE_VAR_7
+#undef DEF_POINTER_TYPE
+  BT_LAST
+};
+
+typedef enum brig_builtin_type builtin_type;
+
+static GTY(()) tree builtin_types[(int) BT_LAST + 1];
+
+static GTY(()) tree string_type_node;
+static GTY(()) tree const_string_type_node;
+static GTY(()) tree wint_type_node;
+static GTY(()) tree intmax_type_node;
+static GTY(()) tree uintmax_type_node;
+static GTY(()) tree signed_size_type_node;
+
+/* Flags needed to process builtins.def.  */
+int flag_isoc94;
+int flag_isoc99;
+int flag_isoc11;
+
+static void
+def_fn_type (builtin_type def, builtin_type ret, bool var, int n, ...)
+{
+  tree t;
+  tree *args = XALLOCAVEC (tree, n);
+  va_list list;
+  int i;
+  bool err = false;
+
+  va_start (list, n);
+  for (i = 0; i < n; ++i)
+    {
+      builtin_type a = (builtin_type) va_arg (list, int);
+      t = builtin_types[a];
+      if (t == error_mark_node)
+	err = true;
+      args[i] = t;
+    }
+  va_end (list);
+
+  t = builtin_types[ret];
+  if (err)
+    t = error_mark_node;
+  if (t == error_mark_node)
+    ;
+  else if (var)
+    t = build_varargs_function_type_array (t, n, args);
+  else
+    t = build_function_type_array (t, n, args);
+
+  builtin_types[def] = t;
+}
+
+/* Used to help initialize the builtin-types.def table.  When a type of
+   the correct size doesn't exist, use error_mark_node instead of NULL.
+   The later results in segfaults even when a decl using the type doesn't
+   get invoked.  */
+
+static tree
+builtin_type_for_size (int size, bool unsignedp)
+{
+  tree type = brig_langhook_type_for_size (size, unsignedp);
+  return type ? type : error_mark_node;
+}
+
+/* Support for DEF_BUILTIN.  */
+
+static void
+def_builtin_1 (enum built_in_function fncode, const char *name,
+	       enum built_in_class fnclass, tree fntype, tree libtype,
+	       bool both_p, bool fallback_p, bool nonansi_p,
+	       tree fnattrs, bool implicit_p)
+{
+  tree decl;
+  const char *libname;
+
+  if (fntype == error_mark_node)
+    return;
+
+  libname = name + strlen ("__builtin_");
+  decl = add_builtin_function (name, fntype, fncode, fnclass,
+			       (fallback_p ? libname : NULL),
+			       fnattrs);
+
+  if (both_p
+      && !flag_no_builtin
+      && !(nonansi_p && flag_no_nonansi_builtin))
+    add_builtin_function (libname, libtype, fncode, fnclass,
+			  NULL, fnattrs);
+
+  set_builtin_decl (fncode, decl, implicit_p);
+}
+
+
+/* Initialize the attribute table for all the supported builtins.  */
+
+static void
+brig_init_attributes (void)
+{
+  /* Fill in the built_in_attributes array.  */
+#define DEF_ATTR_NULL_TREE(ENUM)				\
+  built_in_attributes[(int) ENUM] = NULL_TREE;
+#define DEF_ATTR_INT(ENUM, VALUE)				\
+  built_in_attributes[(int) ENUM] = build_int_cst (NULL_TREE, VALUE);
+#define DEF_ATTR_STRING(ENUM, VALUE)				\
+  built_in_attributes[(int) ENUM] = build_string (strlen (VALUE), VALUE);
+#define DEF_ATTR_IDENT(ENUM, STRING)				\
+  built_in_attributes[(int) ENUM] = get_identifier (STRING);
+#define DEF_ATTR_TREE_LIST(ENUM, PURPOSE, VALUE, CHAIN)	\
+  built_in_attributes[(int) ENUM]			\
+    = tree_cons (built_in_attributes[(int) PURPOSE],	\
+		 built_in_attributes[(int) VALUE],	\
+		 built_in_attributes[(int) CHAIN]);
+#include "builtin-attrs.def"
+#undef DEF_ATTR_NULL_TREE
+#undef DEF_ATTR_INT
+#undef DEF_ATTR_STRING
+#undef DEF_ATTR_IDENT
+#undef DEF_ATTR_TREE_LIST
+}
+
+/* Create builtin types and functions.  VA_LIST_REF_TYPE_NODE and
+   VA_LIST_ARG_TYPE_NODE are used in builtin-types.def.  */
+
+static void
+brig_define_builtins (tree va_list_ref_type_node ATTRIBUTE_UNUSED,
+		     tree va_list_arg_type_node ATTRIBUTE_UNUSED)
+{
+#define DEF_PRIMITIVE_TYPE(ENUM, VALUE) \
+  builtin_types[ENUM] = VALUE;
+#define DEF_FUNCTION_TYPE_0(ENUM, RETURN) \
+  def_fn_type (ENUM, RETURN, 0, 0);
+#define DEF_FUNCTION_TYPE_1(ENUM, RETURN, ARG1) \
+  def_fn_type (ENUM, RETURN, 0, 1, ARG1);
+#define DEF_FUNCTION_TYPE_2(ENUM, RETURN, ARG1, ARG2) \
+  def_fn_type (ENUM, RETURN, 0, 2, ARG1, ARG2);
+#define DEF_FUNCTION_TYPE_3(ENUM, RETURN, ARG1, ARG2, ARG3) \
+  def_fn_type (ENUM, RETURN, 0, 3, ARG1, ARG2, ARG3);
+#define DEF_FUNCTION_TYPE_4(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4) \
+  def_fn_type (ENUM, RETURN, 0, 4, ARG1, ARG2, ARG3, ARG4);
+#define DEF_FUNCTION_TYPE_5(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5)	\
+  def_fn_type (ENUM, RETURN, 0, 5, ARG1, ARG2, ARG3, ARG4, ARG5);
+#define DEF_FUNCTION_TYPE_6(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6)					\
+  def_fn_type (ENUM, RETURN, 0, 6, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
+#define DEF_FUNCTION_TYPE_7(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7)					\
+  def_fn_type (ENUM, RETURN, 0, 7, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6, ARG7);
+#define DEF_FUNCTION_TYPE_8(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7, ARG8)				\
+  def_fn_type (ENUM, RETURN, 0, 8, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6,	\
+	       ARG7, ARG8);
+#define DEF_FUNCTION_TYPE_9(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			    ARG6, ARG7, ARG8, ARG9)			\
+  def_fn_type (ENUM, RETURN, 0, 9, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6,	\
+	       ARG7, ARG8, ARG9);
+#define DEF_FUNCTION_TYPE_10(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			     ARG6, ARG7, ARG8, ARG9, ARG10)		 \
+  def_fn_type (ENUM, RETURN, 0, 10, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6,	 \
+	       ARG7, ARG8, ARG9, ARG10);
+#define DEF_FUNCTION_TYPE_11(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+			     ARG6, ARG7, ARG8, ARG9, ARG10, ARG11)	 \
+  def_fn_type (ENUM, RETURN, 0, 11, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6,	 \
+	       ARG7, ARG8, ARG9, ARG10, ARG11);
+#define DEF_FUNCTION_TYPE_VAR_0(ENUM, RETURN) \
+  def_fn_type (ENUM, RETURN, 1, 0);
+#define DEF_FUNCTION_TYPE_VAR_1(ENUM, RETURN, ARG1) \
+  def_fn_type (ENUM, RETURN, 1, 1, ARG1);
+#define DEF_FUNCTION_TYPE_VAR_2(ENUM, RETURN, ARG1, ARG2) \
+  def_fn_type (ENUM, RETURN, 1, 2, ARG1, ARG2);
+#define DEF_FUNCTION_TYPE_VAR_3(ENUM, RETURN, ARG1, ARG2, ARG3) \
+  def_fn_type (ENUM, RETURN, 1, 3, ARG1, ARG2, ARG3);
+#define DEF_FUNCTION_TYPE_VAR_4(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4) \
+  def_fn_type (ENUM, RETURN, 1, 4, ARG1, ARG2, ARG3, ARG4);
+#define DEF_FUNCTION_TYPE_VAR_5(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5) \
+  def_fn_type (ENUM, RETURN, 1, 5, ARG1, ARG2, ARG3, ARG4, ARG5);
+#define DEF_FUNCTION_TYPE_VAR_6(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+				 ARG6)	\
+  def_fn_type (ENUM, RETURN, 1, 6, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
+#define DEF_FUNCTION_TYPE_VAR_7(ENUM, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
+				ARG6, ARG7)				\
+  def_fn_type (ENUM, RETURN, 1, 7, ARG1, ARG2, ARG3, ARG4, ARG5, ARG6, ARG7);
+#define DEF_POINTER_TYPE(ENUM, TYPE) \
+  builtin_types[(int) ENUM] = build_pointer_type (builtin_types[(int) TYPE]);
+
+#include "builtin-types.def"
+
+#undef DEF_PRIMITIVE_TYPE
+#undef DEF_FUNCTION_TYPE_0
+#undef DEF_FUNCTION_TYPE_1
+#undef DEF_FUNCTION_TYPE_2
+#undef DEF_FUNCTION_TYPE_3
+#undef DEF_FUNCTION_TYPE_4
+#undef DEF_FUNCTION_TYPE_5
+#undef DEF_FUNCTION_TYPE_6
+#undef DEF_FUNCTION_TYPE_7
+#undef DEF_FUNCTION_TYPE_8
+#undef DEF_FUNCTION_TYPE_9
+#undef DEF_FUNCTION_TYPE_10
+#undef DEF_FUNCTION_TYPE_11
+#undef DEF_FUNCTION_TYPE_VAR_0
+#undef DEF_FUNCTION_TYPE_VAR_1
+#undef DEF_FUNCTION_TYPE_VAR_2
+#undef DEF_FUNCTION_TYPE_VAR_3
+#undef DEF_FUNCTION_TYPE_VAR_4
+#undef DEF_FUNCTION_TYPE_VAR_5
+#undef DEF_FUNCTION_TYPE_VAR_6
+#undef DEF_FUNCTION_TYPE_VAR_7
+#undef DEF_POINTER_TYPE
+  builtin_types[(int) BT_LAST] = NULL_TREE;
+
+  brig_init_attributes ();
+
+#define DEF_BUILTIN(ENUM, NAME, CLASS, TYPE, LIBTYPE, BOTH_P, FALLBACK_P,\
+		    NONANSI_P, ATTRS, IMPLICIT, COND)			\
+    if (NAME && COND)							\
+      def_builtin_1 (ENUM, NAME, CLASS, builtin_types[(int) TYPE],	\
+		     builtin_types[(int) LIBTYPE], BOTH_P, FALLBACK_P,	\
+		     NONANSI_P, built_in_attributes[(int) ATTRS], IMPLICIT);
+#include "builtins.def"
+}
+
+/* Build nodes that would have be created by the C front-end; necessary
+   for including builtin-types.def and ultimately builtins.def.  Borrowed
+   from lto-lang.c  */
+
+static void
+brig_build_c_type_nodes (void)
+{
+  gcc_assert (void_type_node);
+
+  void_list_node = build_tree_list (NULL_TREE, void_type_node);
+  string_type_node = build_pointer_type (char_type_node);
+  const_string_type_node
+    = build_pointer_type (build_qualified_type (char_type_node, TYPE_QUAL_CONST));
+
+  if (strcmp (SIZE_TYPE, "unsigned int") == 0)
+    {
+      intmax_type_node = integer_type_node;
+      uintmax_type_node = unsigned_type_node;
+      signed_size_type_node = integer_type_node;
+    }
+  else if (strcmp (SIZE_TYPE, "long unsigned int") == 0)
+    {
+      intmax_type_node = long_integer_type_node;
+      uintmax_type_node = long_unsigned_type_node;
+      signed_size_type_node = long_integer_type_node;
+    }
+  else if (strcmp (SIZE_TYPE, "long long unsigned int") == 0)
+    {
+      intmax_type_node = long_long_integer_type_node;
+      uintmax_type_node = long_long_unsigned_type_node;
+      signed_size_type_node = long_long_integer_type_node;
+    }
+  else
+    {
+      int i;
+
+      signed_size_type_node = NULL_TREE;
+      for (i = 0; i < NUM_INT_N_ENTS; i++)
+	if (int_n_enabled_p[i])
+	  {
+	    char name[50];
+	    sprintf (name, "__int%d unsigned", int_n_data[i].bitsize);
+
+	    if (strcmp (name, SIZE_TYPE) == 0)
+	      {
+		intmax_type_node = int_n_trees[i].signed_type;
+		uintmax_type_node = int_n_trees[i].unsigned_type;
+		signed_size_type_node = int_n_trees[i].signed_type;
+	      }
+	  }
+      if (signed_size_type_node == NULL_TREE)
+	gcc_unreachable ();
+    }
+
+  wint_type_node = unsigned_type_node;
+  pid_type_node = integer_type_node;
+}
+
+
+static bool
+brig_langhook_init (void)
+{
+  build_common_tree_nodes (false);
+
+  /* Builtin initialization related code borrowed from lto-lang.c. */
+  void_list_node = build_tree_list (NULL_TREE, void_type_node);
+
+  brig_build_c_type_nodes ();
+
+  if (TREE_CODE (va_list_type_node) == ARRAY_TYPE)
+    {
+      tree x = build_pointer_type (TREE_TYPE (va_list_type_node));
+      brig_define_builtins (x, x);
+    }
+  else
+    {
+      brig_define_builtins (build_reference_type (va_list_type_node),
+			    va_list_type_node);
+    }
+
+  targetm.init_builtins ();
+  build_common_builtin_nodes ();
+
+  return true;
+}
+
 #undef LANG_HOOKS_NAME
 #undef LANG_HOOKS_INIT
 #undef LANG_HOOKS_OPTION_LANG_MASK
@@ -417,6 +805,7 @@ brig_localize_identifier (const char *ident)
 #undef LANG_HOOKS_PARSE_FILE
 #undef LANG_HOOKS_TYPE_FOR_MODE
 #undef LANG_HOOKS_TYPE_FOR_SIZE
+#undef LANG_HOOKS_REGISTER_BUILTIN_TYPE
 #undef LANG_HOOKS_BUILTIN_FUNCTION
 #undef LANG_HOOKS_GLOBAL_BINDINGS_P
 #undef LANG_HOOKS_PUSHDECL
@@ -434,6 +823,7 @@ brig_localize_identifier (const char *ident)
 #define LANG_HOOKS_PARSE_FILE brig_langhook_parse_file
 #define LANG_HOOKS_TYPE_FOR_MODE brig_langhook_type_for_mode
 #define LANG_HOOKS_TYPE_FOR_SIZE brig_langhook_type_for_size
+#define LANG_HOOKS_REGISTER_BUILTIN_TYPE brig_langhook_register_builtin_type
 #define LANG_HOOKS_BUILTIN_FUNCTION brig_langhook_builtin_function
 #define LANG_HOOKS_GLOBAL_BINDINGS_P brig_langhook_global_bindings_p
 #define LANG_HOOKS_PUSHDECL brig_langhook_pushdecl

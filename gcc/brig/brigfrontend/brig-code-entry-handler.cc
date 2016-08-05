@@ -57,94 +57,6 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
   tree u8x4_type = get_tree_type_for_hsa_type (BRIG_TYPE_U8X4);
   tree u16x2_type = get_tree_type_for_hsa_type (BRIG_TYPE_U16X2);
 
-  /* Define the needed builtin fingerprints. */
-  tree f_f_fn
-    = build_function_type_list (float_type_node, float_type_node, NULL_TREE);
-  tree f_f_f_fn = build_function_type_list (float_type_node, float_type_node,
-					    float_type_node, NULL_TREE);
-  tree f_f_f_f_fn = build_function_type_list (float_type_node, float_type_node,
-					      float_type_node, float_type_node,
-					      NULL_TREE);
-  tree d_d_fn
-    = build_function_type_list (double_type_node, double_type_node, NULL_TREE);
-
-  tree ul_ul_fn = build_function_type_list (u64_type,
-					    u64_type, NULL_TREE);
-
-  /* The standard libgcc builtins used by HSAIL: */
-  tree decl = add_builtin_function ("__builtin_ceilf", f_f_fn, BUILT_IN_CEILF,
-				    BUILT_IN_NORMAL, "ceilf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_CEILF, decl, true);
-
-  decl = add_builtin_function ("__builtin_ceil", d_d_fn, BUILT_IN_CEIL,
-			       BUILT_IN_NORMAL, "ceil", NULL_TREE);
-  set_builtin_decl (BUILT_IN_CEIL, decl, true);
-
-  decl
-    = add_builtin_function ("__builtin_copysignf", f_f_f_fn, BUILT_IN_COPYSIGNF,
-			    BUILT_IN_NORMAL, "copysignf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_COPYSIGNF, decl, true);
-
-  decl = add_builtin_function ("__builtin_floorf", f_f_fn, BUILT_IN_FLOORF,
-			       BUILT_IN_NORMAL, "floorf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_FLOORF, decl, true);
-
-  decl = add_builtin_function ("__builtin_floor", d_d_fn, BUILT_IN_FLOOR,
-			       BUILT_IN_NORMAL, "floor", NULL_TREE);
-  set_builtin_decl (BUILT_IN_FLOOR, decl, true);
-
-  decl = add_builtin_function ("__builtin_fmaf", f_f_f_f_fn, BUILT_IN_FMAF,
-			       BUILT_IN_NORMAL, "fmaf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_FMAF, decl, true);
-
-  decl = add_builtin_function ("__builtin_fma", d_d_fn, BUILT_IN_FMA,
-			       BUILT_IN_NORMAL, "fma", NULL_TREE);
-  set_builtin_decl (BUILT_IN_FMA, decl, true);
-
-  decl = add_builtin_function ("__builtin_sqrt", d_d_fn, BUILT_IN_SQRT,
-			       BUILT_IN_NORMAL, "sqrt", NULL_TREE);
-  set_builtin_decl (BUILT_IN_SQRT, decl, true);
-
-  decl = add_builtin_function ("__builtin_sqrtf", f_f_fn, BUILT_IN_SQRTF,
-			       BUILT_IN_NORMAL, "sqrtf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_SQRTF, decl, true);
-
-  decl = add_builtin_function ("__builtin_sinf", f_f_fn, BUILT_IN_SINF,
-			       BUILT_IN_NORMAL, "sinf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_SINF, decl, true);
-
-  decl = add_builtin_function ("__builtin_cosf", f_f_fn, BUILT_IN_COSF,
-			       BUILT_IN_NORMAL, "cosf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_COSF, decl, true);
-
-  decl = add_builtin_function ("__builtin_log2f", f_f_fn, BUILT_IN_LOG2F,
-			       BUILT_IN_NORMAL, "log2f", NULL_TREE);
-  set_builtin_decl (BUILT_IN_LOG2F, decl, true);
-
-  decl = add_builtin_function ("__builtin_exp2f", f_f_fn, BUILT_IN_EXP2F,
-			       BUILT_IN_NORMAL, "exp2f", NULL_TREE);
-  set_builtin_decl (BUILT_IN_EXP2F, decl, true);
-
-  decl = add_builtin_function ("__builtin_rintf", f_f_fn, BUILT_IN_RINTF,
-			       BUILT_IN_NORMAL, "rintf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_RINTF, decl, true);
-
-  decl = add_builtin_function ("__builtin_rint", d_d_fn, BUILT_IN_RINT,
-			       BUILT_IN_NORMAL, "rint", NULL_TREE);
-  set_builtin_decl (BUILT_IN_RINT, decl, true);
-
-  decl = add_builtin_function ("__builtin_truncf", f_f_fn, BUILT_IN_TRUNCF,
-			       BUILT_IN_NORMAL, "truncf", NULL_TREE);
-  set_builtin_decl (BUILT_IN_TRUNCF, decl, true);
-
-  decl = add_builtin_function ("__builtin_trunc", d_d_fn, BUILT_IN_TRUNC,
-			       BUILT_IN_NORMAL, "trunc", NULL_TREE);
-  set_builtin_decl (BUILT_IN_TRUNC, decl, true);
-
-  decl = add_builtin_function ("__builtin_popcount", ul_ul_fn, BUILT_IN_POPCOUNT,
-			       BUILT_IN_NORMAL, "popcount", NULL_TREE);
-  set_builtin_decl (BUILT_IN_POPCOUNT, decl, true);
-
   /* phsail-specific builtins opcodes
      TO DO: Convert these to "official" gcc builtins when upstreaming
      gccbrig */
@@ -1215,7 +1127,9 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
       builtin = mathfn_built_in (builtin_type, BUILT_IN_COS);
       break;
     case BRIG_OPCODE_POPCOUNT:
-      builtin = builtin_decl_explicit (BUILT_IN_POPCOUNT);
+      /* Popcount should be typed by its argument type (the return value
+	 is always u32).  Let's use a b64 version for also for b32 for now.  */
+      builtin = builtin_decl_explicit (BUILT_IN_POPCOUNTL);
       break;
     default:
       builtin_map::const_iterator i
