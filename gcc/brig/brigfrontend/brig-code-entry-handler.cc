@@ -779,6 +779,23 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
     builtin_type = TREE_TYPE (type);
   BrigType16_t brig_inner_type = brig_type & 0x01F;
 
+  /* Some BRIG opcodes can use the same builtins for unsigned and
+     signed types.  Force these cases to unsigned types.
+
+     TODO: remove the signed lastbit builtins from hsail-builtins.defs
+  */
+
+  if (brig_opcode == BRIG_OPCODE_BORROW
+      || brig_opcode == BRIG_OPCODE_CARRY
+      || brig_opcode == BRIG_OPCODE_LASTBIT
+      || brig_opcode == BRIG_OPCODE_BITINSERT)
+    {
+      if (brig_type == BRIG_TYPE_S32)
+	brig_type = BRIG_TYPE_U32;
+      else if (brig_type == BRIG_TYPE_S64)
+	brig_type = BRIG_TYPE_U64;
+    }
+
   switch (brig_opcode)
     {
     case BRIG_OPCODE_FLOOR:
@@ -819,6 +836,18 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
       /* Popcount should be typed by its argument type (the return value
 	 is always u32).  Let's use a b64 version for also for b32 for now.  */
       return builtin_decl_explicit (BUILT_IN_POPCOUNTL);
+    case BRIG_OPCODE_BORROW:
+      /* Borrow uses the same builtin for unsigned and signed types.  */
+      if (brig_type == BRIG_TYPE_S32 || brig_type == BRIG_TYPE_U32)
+	return builtin_decl_explicit (BUILT_IN_HSAIL_BORROW_U32);
+      else
+	return builtin_decl_explicit (BUILT_IN_HSAIL_BORROW_U64);
+    case BRIG_OPCODE_CARRY:
+      /* Carry also uses the same builtin for unsigned and signed types.  */
+      if (brig_type == BRIG_TYPE_S32 || brig_type == BRIG_TYPE_U32)
+	return builtin_decl_explicit (BUILT_IN_HSAIL_CARRY_U32);
+      else
+	return builtin_decl_explicit (BUILT_IN_HSAIL_CARRY_U64);
     default:
 
       /* Use our builtin index for finding a proper builtin for the BRIG

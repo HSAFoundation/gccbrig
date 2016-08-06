@@ -857,9 +857,25 @@ brig_basic_inst_handler::get_tree_code_for_hsa_opcode
 	 the below builtin map search cannot find it. */
     case BRIG_OPCODE_CLASS:
     case BRIG_OPCODE_WORKITEMABSID:
-      /* Model the ID etc. special instructions as (builtin) calls. */
       return CALL_EXPR;
     default:
+
+      /* Some BRIG opcodes can use the same builtins for unsigned and
+	 signed types.  Force these cases to unsigned types.  
+      */
+
+      if (brig_opcode == BRIG_OPCODE_BORROW
+	  || brig_opcode == BRIG_OPCODE_CARRY
+	  || brig_opcode == BRIG_OPCODE_LASTBIT
+	  || brig_opcode == BRIG_OPCODE_BITINSERT)
+	{
+	  if (brig_type == BRIG_TYPE_S32)
+	    brig_type = BRIG_TYPE_U32;
+	  else if (brig_type == BRIG_TYPE_S64)
+	    brig_type = BRIG_TYPE_U64;
+	}
+
+
       builtin_map::const_iterator i
 	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
       if (i != s_custom_builtins.end ())
