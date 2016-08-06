@@ -118,7 +118,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
     {
       const BrigInstSegCvt &inst = *(const BrigInstSegCvt *) base;
 
-      std::string builtin_name ("__phsa_builtin_segmentp_");
+      std::string builtin_name ("__hsail_segmentp_");
       builtin_name += gccbrig_segment_name (inst.segment);
 
       expr = call_builtin (NULL, builtin_name.c_str (), 2,

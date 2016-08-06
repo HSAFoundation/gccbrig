@@ -72,15 +72,15 @@ static clock_t start_time;
 // but is not useful for much else.
 // #define EXECUTE_WGS_BACKWARDS
 
-uint32_t __phsa_builtin_workitemabsid (uint32_t dim, PHSAWorkItem *context);
+uint32_t __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context);
 
-uint32_t __phsa_builtin_workitemid (uint32_t dim, PHSAWorkItem *context);
+uint32_t __hsail_workitemid (uint32_t dim, PHSAWorkItem *context);
 
-uint32_t __phsa_builtin_gridgroups (uint32_t dim, PHSAWorkItem *context);
+uint32_t __hsail_gridgroups (uint32_t dim, PHSAWorkItem *context);
 
-uint32_t __phsa_builtin_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi);
+uint32_t __hsail_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi);
 
-uint32_t __phsa_builtin_workgroupsize (uint32_t dim, PHSAWorkItem *wi);
+uint32_t __hsail_workgroupsize (uint32_t dim, PHSAWorkItem *wi);
 
 static void
 phsa_fatal_error (int code)
@@ -115,9 +115,9 @@ phsa_work_item_thread (void *arg)
 	l_data->wg_max_y, l_data->wg_max_z);
 #endif
 
-      if (wi->x < __phsa_builtin_currentworkgroupsize (0, wi)
-	  && wi->y < __phsa_builtin_currentworkgroupsize (1, wi)
-	  && wi->z < __phsa_builtin_currentworkgroupsize (2, wi))
+      if (wi->x < __hsail_currentworkgroupsize (0, wi)
+	  && wi->y < __hsail_currentworkgroupsize (1, wi)
+	  && wi->z < __hsail_currentworkgroupsize (2, wi))
 	{
 	  l_data->kernel (l_data->kernarg_addr, wi, wg->group_base_ptr,
 			  wg->private_base_ptr);
@@ -187,9 +187,9 @@ phsa_work_item_thread (void *arg)
 	  /* Reinitialize the work-group barrier according to the new WG's
 	     size, which might not be the same as the previous ones, due
 	     to "partial WGs".  */
-	  size_t wg_size = __phsa_builtin_currentworkgroupsize (0, wi)
-			   * __phsa_builtin_currentworkgroupsize (1, wi)
-			   * __phsa_builtin_currentworkgroupsize (2, wi);
+	  size_t wg_size = __hsail_currentworkgroupsize (0, wi)
+			   * __hsail_currentworkgroupsize (1, wi)
+			   * __hsail_currentworkgroupsize (2, wi);
 
 #ifdef DEBUG_PHSA_RT
 	  printf ("Reinitializing the WG barrier to %lu.\n", wg_size);
@@ -455,9 +455,9 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
   uint64_t wg_count = 0;
 #endif
 
-  size_t wg_size = __phsa_builtin_workgroupsize (0, &wi)
-		   * __phsa_builtin_workgroupsize (1, &wi)
-		   * __phsa_builtin_workgroupsize (2, &wi);
+  size_t wg_size = __hsail_workgroupsize (0, &wi)
+		   * __hsail_workgroupsize (1, &wi)
+		   * __hsail_workgroupsize (2, &wi);
 
   void *private_base_ptr = NULL;
   if (dp->private_segment_size > 0
@@ -568,7 +568,7 @@ __phsa_launch_wg_function (gccbrigKernelFunc kernel,
 }
 
 uint32_t
-__phsa_builtin_workitemabsid (uint32_t dim, PHSAWorkItem *context)
+__hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context)
 {
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
@@ -594,7 +594,7 @@ __phsa_builtin_workitemabsid (uint32_t dim, PHSAWorkItem *context)
 }
 
 uint32_t
-__phsa_builtin_workitemid (uint32_t dim, PHSAWorkItem *context)
+__hsail_workitemid (uint32_t dim, PHSAWorkItem *context)
 {
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
@@ -620,7 +620,7 @@ __phsa_builtin_workitemid (uint32_t dim, PHSAWorkItem *context)
 }
 
 uint32_t
-__phsa_builtin_gridgroups (uint32_t dim, PHSAWorkItem *context)
+__hsail_gridgroups (uint32_t dim, PHSAWorkItem *context)
 {
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
   int dims = dp->setup & 0x3;
@@ -645,7 +645,7 @@ __phsa_builtin_gridgroups (uint32_t dim, PHSAWorkItem *context)
 }
 
 uint32_t
-__phsa_builtin_workitemflatid (PHSAWorkItem *c)
+__hsail_workitemflatid (PHSAWorkItem *c)
 {
   hsa_kernel_dispatch_packet_t *dp = c->launch_data->dp;
 
@@ -654,17 +654,17 @@ __phsa_builtin_workitemflatid (PHSAWorkItem *c)
 }
 
 uint32_t
-__phsa_builtin_currentworkitemflatid (PHSAWorkItem *c)
+__hsail_currentworkitemflatid (PHSAWorkItem *c)
 {
   hsa_kernel_dispatch_packet_t *dp = c->launch_data->dp;
 
-  return c->x + c->y * __phsa_builtin_currentworkgroupsize (0, c)
-	 + c->z * __phsa_builtin_currentworkgroupsize (0, c)
-	     * __phsa_builtin_currentworkgroupsize (1, c);
+  return c->x + c->y * __hsail_currentworkgroupsize (0, c)
+	 + c->z * __hsail_currentworkgroupsize (0, c)
+	     * __hsail_currentworkgroupsize (1, c);
 }
 
 void
-__phsa_builtin_setworkitemid (uint32_t dim, uint32_t id, PHSAWorkItem *context)
+__hsail_setworkitemid (uint32_t dim, uint32_t id, PHSAWorkItem *context)
 {
   switch (dim)
     {
@@ -682,15 +682,15 @@ __phsa_builtin_setworkitemid (uint32_t dim, uint32_t id, PHSAWorkItem *context)
 }
 
 uint64_t
-__phsa_builtin_workitemflatabsid_u64 (PHSAWorkItem *context)
+__hsail_workitemflatabsid_u64 (PHSAWorkItem *context)
 {
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
   // work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1
-  uint64_t id0 = __phsa_builtin_workitemabsid (0, context);
-  uint64_t id1 = __phsa_builtin_workitemabsid (1, context);
-  uint64_t id2 = __phsa_builtin_workitemabsid (2, context);
+  uint64_t id0 = __hsail_workitemabsid (0, context);
+  uint64_t id1 = __hsail_workitemabsid (1, context);
+  uint64_t id2 = __hsail_workitemabsid (2, context);
 
   uint64_t max0 = dp->grid_size_x;
   uint64_t max1 = dp->grid_size_y;
@@ -700,15 +700,15 @@ __phsa_builtin_workitemflatabsid_u64 (PHSAWorkItem *context)
 }
 
 uint32_t
-__phsa_builtin_workitemflatabsid_u32 (PHSAWorkItem *context)
+__hsail_workitemflatabsid_u32 (PHSAWorkItem *context)
 {
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
   // work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1
-  uint64_t id0 = __phsa_builtin_workitemabsid (0, context);
-  uint64_t id1 = __phsa_builtin_workitemabsid (1, context);
-  uint64_t id2 = __phsa_builtin_workitemabsid (2, context);
+  uint64_t id0 = __hsail_workitemabsid (0, context);
+  uint64_t id1 = __hsail_workitemabsid (1, context);
+  uint64_t id2 = __hsail_workitemabsid (2, context);
 
   uint64_t max0 = dp->grid_size_x;
   uint64_t max1 = dp->grid_size_y;
@@ -717,7 +717,7 @@ __phsa_builtin_workitemflatabsid_u32 (PHSAWorkItem *context)
 }
 
 uint32_t
-__phsa_builtin_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi)
+__hsail_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi)
 {
   hsa_kernel_dispatch_packet_t *dp = wi->launch_data->dp;
   uint32_t wg_size = 0;
@@ -747,7 +747,7 @@ __phsa_builtin_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_workgroupsize (uint32_t dim, PHSAWorkItem *wi)
+__hsail_workgroupsize (uint32_t dim, PHSAWorkItem *wi)
 {
   hsa_kernel_dispatch_packet_t *dp = wi->launch_data->dp;
   switch (dim)
@@ -763,7 +763,7 @@ __phsa_builtin_workgroupsize (uint32_t dim, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_gridsize (uint32_t dim, PHSAWorkItem *wi)
+__hsail_gridsize (uint32_t dim, PHSAWorkItem *wi)
 {
   hsa_kernel_dispatch_packet_t *dp = wi->launch_data->dp;
   switch (dim)
@@ -779,7 +779,7 @@ __phsa_builtin_gridsize (uint32_t dim, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_workgroupid (uint32_t dim, PHSAWorkItem *wi)
+__hsail_workgroupid (uint32_t dim, PHSAWorkItem *wi)
 {
   switch (dim)
     {
@@ -794,33 +794,33 @@ __phsa_builtin_workgroupid (uint32_t dim, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_dim (PHSAWorkItem *wi)
+__hsail_dim (PHSAWorkItem *wi)
 {
   hsa_kernel_dispatch_packet_t *dp = wi->launch_data->dp;
   return dp->setup & 0x3;
 }
 
 uint64_t
-__phsa_builtin_packetid (PHSAWorkItem *wi)
+__hsail_packetid (PHSAWorkItem *wi)
 {
   return wi->launch_data->packet_id;
 }
 
 uint32_t
-__phsa_builtin_packetcompletionsig_sig32 (PHSAWorkItem *wi)
+__hsail_packetcompletionsig_sig32 (PHSAWorkItem *wi)
 {
   return (uint32_t) wi->launch_data->dp->completion_signal.handle;
 }
 
 uint64_t
-__phsa_builtin_packetcompletionsig_sig64 (PHSAWorkItem *wi)
+__hsail_packetcompletionsig_sig64 (PHSAWorkItem *wi)
 {
   return (uint64_t) (wi->launch_data->dp->completion_signal.handle);
 }
 
 #ifdef HAVE_PTH
 void
-__phsa_builtin_barrier (PHSAWorkItem *wi)
+__hsail_barrier (PHSAWorkItem *wi)
 {
   pth_barrier_reach ((pth_barrier_t *) wi->launch_data->wg_sync_barrier);
 }
@@ -858,7 +858,7 @@ __phsa_builtin_barrier (PHSAWorkItem *wi)
  * function.
  */
 uint32_t
-__phsa_builtin_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
+__hsail_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
 {
   volatile PHSAWorkGroup *wg = wi->wg;
   uint32_t new_pos = wg->alloca_stack_p - size;
@@ -880,7 +880,7 @@ __phsa_builtin_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
  * the function contains at least one call to alloca.
  */
 void
-__phsa_builtin_alloca_push_frame (PHSAWorkItem *wi)
+__hsail_alloca_push_frame (PHSAWorkItem *wi)
 {
   volatile PHSAWorkGroup *wg = wi->wg;
 /* Store the alloca_frame_p without any alignment padding so
@@ -889,7 +889,7 @@ __phsa_builtin_alloca_push_frame (PHSAWorkItem *wi)
 #ifdef DEBUG_ALLOCA
   printf ("--- push frame ");
 #endif
-  uint32_t last_word_offs = __phsa_builtin_alloca (4, 1, wi);
+  uint32_t last_word_offs = __hsail_alloca (4, 1, wi);
   memcpy (wg->private_base_ptr + last_word_offs,
 	  (const void *) &wg->alloca_frame_p, 4);
   wg->alloca_frame_p = last_word_offs;
@@ -909,7 +909,7 @@ __phsa_builtin_alloca_push_frame (PHSAWorkItem *wi)
  * the last time.
  */
 void
-__phsa_builtin_alloca_pop_frame (PHSAWorkItem *wi)
+__hsail_alloca_pop_frame (PHSAWorkItem *wi)
 {
   volatile PHSAWorkGroup *wg = wi->wg;
 

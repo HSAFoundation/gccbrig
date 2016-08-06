@@ -175,7 +175,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree workitemid_call
-	= call_builtin (&workitemid_builtin, "__phsa_builtin_workitemid", 2,
+	= call_builtin (&workitemid_builtin, "__hsail_workitemid", 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -190,7 +190,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree cwgz_call = call_builtin (&currentworkgroupsize_builtin,
-				     "__phsa_builtin_currentworkgroupsize", 2,
+				     "__hsail_currentworkgroupsize", 2,
 				     uint32_type_node, uint32_type_node,
 				     build_int_cst (uint32_type_node, i),
 				     ptr_type_node, m_context_arg);
@@ -205,7 +205,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgid_call
-	= call_builtin (&workgroupid_builtin, "__phsa_builtin_workgroupid", 2,
+	= call_builtin (&workgroupid_builtin, "__hsail_workgroupid", 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -220,7 +220,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgsize_call
-	= call_builtin (&workgroupsize_builtin, "__phsa_builtin_workgroupsize",
+	= call_builtin (&workgroupsize_builtin, "__hsail_workgroupsize",
 			2, uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -235,7 +235,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree gridsize_call
-	= call_builtin (&gridsize_builtin, "__phsa_builtin_gridsize", 2,
+	= call_builtin (&gridsize_builtin, "__hsail_gridsize", 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -358,7 +358,7 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
       /* Set the local ID to the current wi-loop iteration variable value to
 	 ensure the builtins see the correct values.  */
       tree id_set_call
-	= call_builtin (&id_set_builtin, "__phsa_builtin_setworkitemid", 3,
+	= call_builtin (&id_set_builtin, "__hsail_setworkitemid", 3,
 			void_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, dim), uint32_type_node,
 			ivar, ptr_type_node, m_context_arg);
@@ -628,7 +628,7 @@ brig_function::create_alloca_frame ()
 
   static tree push_frame_builtin = NULL_TREE;
   tree push_frame_call
-    = call_builtin (&push_frame_builtin, "__phsa_builtin_alloca_push_frame", 1,
+    = call_builtin (&push_frame_builtin, "__hsail_alloca_push_frame", 1,
 		    void_type_node, ptr_type_node, m_context_arg);
 
   tsi_link_before (&entry, push_frame_call, TSI_NEW_STMT);
@@ -642,7 +642,7 @@ brig_function::create_alloca_frame ()
 	{
 	  tree pop_frame_call
 	    = call_builtin (&pop_frame_builtin,
-			    "__phsa_builtin_alloca_pop_frame", 1,
+			    "__hsail_alloca_pop_frame", 1,
 			    void_type_node, ptr_type_node, m_context_arg);
 
 	  tsi_link_before (&entry, pop_frame_call, TSI_SAME_STMT);

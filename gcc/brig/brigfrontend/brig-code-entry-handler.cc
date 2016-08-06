@@ -44,326 +44,15 @@ brig_code_entry_handler::builtin_map brig_code_entry_handler::s_custom_builtins;
 brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
   : brig_entry_handler (parent)
 {
-  if (s_custom_builtins.size () > 0)
-    return;
-
-  tree u32_type = get_tree_type_for_hsa_type (BRIG_TYPE_U32);
-  tree s32_type = get_tree_type_for_hsa_type (BRIG_TYPE_S32);
-  tree u64_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
-  tree s64_type = get_tree_type_for_hsa_type (BRIG_TYPE_S64);
-  tree f32_type = get_tree_type_for_hsa_type (BRIG_TYPE_F32);
-  tree f64_type = get_tree_type_for_hsa_type (BRIG_TYPE_F64);
-
-  tree u8x4_type = get_tree_type_for_hsa_type (BRIG_TYPE_U8X4);
-  tree u16x2_type = get_tree_type_for_hsa_type (BRIG_TYPE_U16X2);
-
-  /* phsail-specific builtins opcodes
-     TO DO: Convert these to "official" gcc builtins when upstreaming
-     gccbrig */
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMABSID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workitemabsid", 2, uint32_type_node,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_GRIDSIZE, BRIG_TYPE_U32,
-		      "__phsa_builtin_gridsize", 2, uint32_type_node,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMFLATABSID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workitemflatabsid_u32", 1,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMFLATABSID, BRIG_TYPE_U64,
-		      "__phsa_builtin_workitemflatabsid_u64", 1,
-		      uint64_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMFLATID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workitemflatid", 1, uint32_type_node,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workitemid", 2, uint32_type_node,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKGROUPID, BRIG_TYPE_U32,
-		      "__phsa_builtin_workgroupid", 2, uint32_type_node,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_CURRENTWORKITEMFLATID, BRIG_TYPE_U32,
-		      "__phsa_builtin_currentworkitemflatid", 1,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKITEMABSID, BRIG_TYPE_U64,
-		      "__phsa_builtin_workitemabsid", 1, uint64_type_node,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_PACKETID, BRIG_TYPE_U64,
-		      "__phsa_builtin_packetid", 1, uint64_type_node,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_PACKETCOMPLETIONSIG, BRIG_TYPE_SIG64,
-		      "__phsa_builtin_packetcompletionsig_sig64", 1,
-		      uint64_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_PACKETCOMPLETIONSIG, BRIG_TYPE_SIG32,
-		      "__phsa_builtin_packetcompletionsig_sig32", 1,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_CURRENTWORKGROUPSIZE, BRIG_TYPE_U32,
-		      "__phsa_builtin_currentworkgroupsize", 2,
-		      uint32_type_node, uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WORKGROUPSIZE, BRIG_TYPE_U32,
-		      "__phsa_builtin_workgroupsize", 2,
-		      uint32_type_node, uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_DIM, BRIG_TYPE_U32, "__phsa_builtin_dim", 1,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_GRIDGROUPS, BRIG_TYPE_U32,
-		      "__phsa_builtin_gridgroups", 2, uint32_type_node,
-		      uint32_type_node, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_BITEXTRACT, BRIG_TYPE_S32,
-		      "__phsa_builtin_bitextract_s32", 3, s32_type, s32_type,
-		      u32_type, u32_type);
-
-  /* TO OPTIMIZE: these often map to ISA, but when not, would produce quite
-     short GENERIC trees. */
-  add_custom_builtin (BRIG_OPCODE_BITEXTRACT, BRIG_TYPE_U32,
-		      "__phsa_builtin_bitextract_u32", 3, u32_type, u32_type,
-		      u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITEXTRACT, BRIG_TYPE_S64,
-		      "__phsa_builtin_bitextract_s64", 3, s64_type, s64_type,
-		      u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITEXTRACT, BRIG_TYPE_U64,
-		      "__phsa_builtin_bitextract_u64", 3, u64_type, u64_type,
-		      u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S32,
-		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
-		      u32_type, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U32,
-		      "__phsa_builtin_bitinsert_u32", 4, u32_type, u32_type,
-		      u32_type, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_S64,
-		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
-		      u64_type, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITINSERT, BRIG_TYPE_U64,
-		      "__phsa_builtin_bitinsert_u64", 4, u64_type, u64_type,
-		      u64_type, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITMASK, BRIG_TYPE_B32,
-		      "__phsa_builtin_bitmask_u32", 2, u32_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITMASK, BRIG_TYPE_B64,
-		      "__phsa_builtin_bitmask_u64", 2, u64_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITREV, BRIG_TYPE_B32,
-		      "__phsa_builtin_bitrev_u32", 1, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITREV, BRIG_TYPE_B64,
-		      "__phsa_builtin_bitrev_u64", 1, u64_type, u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITSELECT, BRIG_TYPE_B32,
-		      "__phsa_builtin_bitselect_u32", 3, u32_type, u32_type,
-		      u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BITSELECT, BRIG_TYPE_B64,
-		      "__phsa_builtin_bitselect_u64", 3, u64_type, u64_type,
-		      u64_type, u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_FIRSTBIT, BRIG_TYPE_U32,
-		      "__phsa_builtin_firstbit_u32", 1, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_FIRSTBIT, BRIG_TYPE_S32,
-		      "__phsa_builtin_firstbit_s32", 1, u32_type, s32_type);
-
-  add_custom_builtin (BRIG_OPCODE_FIRSTBIT, BRIG_TYPE_U64,
-		      "__phsa_builtin_firstbit_u64", 1, u32_type, u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_FIRSTBIT, BRIG_TYPE_S64,
-		      "__phsa_builtin_firstbit_s64", 1, u32_type, s64_type);
-
-  add_custom_builtin (BRIG_OPCODE_LASTBIT, BRIG_TYPE_U32,
-		      "__phsa_builtin_lastbit_u32", 1, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_LASTBIT, BRIG_TYPE_S32,
-		      "__phsa_builtin_lastbit_u32", 1, u32_type, s32_type);
-
-  add_custom_builtin (BRIG_OPCODE_LASTBIT, BRIG_TYPE_U64,
-		      "__phsa_builtin_lastbit_u64", 1, u32_type, u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_LASTBIT, BRIG_TYPE_S64,
-		      "__phsa_builtin_lastbit_u64", 1, u32_type, s64_type);
-
-  add_custom_builtin (BRIG_OPCODE_BORROW, BRIG_TYPE_U32,
-		      "__phsa_builtin_borrow_u32", 2, u32_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BORROW, BRIG_TYPE_S32,
-		      "__phsa_builtin_borrow_u32", 2, s32_type, s32_type,
-		      s32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BORROW, BRIG_TYPE_U64,
-		      "__phsa_builtin_borrow_u64", 2, u64_type, u64_type,
-		      u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_BORROW, BRIG_TYPE_S64,
-		      "__phsa_builtin_borrow_u64", 2, s64_type, s64_type,
-		      s64_type);
-
-  add_custom_builtin (BRIG_OPCODE_BORROW, BRIG_TYPE_U32,
-		      "__phsa_builtin_borrow_u32", 2, u32_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_CARRY, BRIG_TYPE_S32,
-		      "__phsa_builtin_carry_u32", 2, s32_type, s32_type,
-		      s32_type);
-
-  add_custom_builtin (BRIG_OPCODE_CARRY, BRIG_TYPE_U64,
-		      "__phsa_builtin_carry_u64", 2, u64_type, u64_type,
-		      u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_CARRY, BRIG_TYPE_S64,
-		      "__phsa_builtin_carry_u64", 2, s64_type, s64_type,
-		      s64_type);
-
-  add_custom_builtin (BRIG_OPCODE_CARRY, BRIG_TYPE_U32,
-		      "__phsa_builtin_carry_u32", 2, u32_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_REM, BRIG_TYPE_S32, "__phsa_builtin_rem_s32",
-		      2, s32_type, s32_type, s32_type);
-
-  add_custom_builtin (BRIG_OPCODE_REM, BRIG_TYPE_S64, "__phsa_builtin_rem_s64",
-		      2, s64_type, s64_type, s64_type);
-
-  add_custom_builtin (BRIG_OPCODE_MIN, BRIG_TYPE_F32, "__phsa_builtin_min_f32",
-		      2, f32_type, f32_type, f32_type);
-
-  add_custom_builtin (BRIG_OPCODE_MIN, BRIG_TYPE_F64, "__phsa_builtin_min_f64",
-		      2, f64_type, f64_type, f64_type);
-
-  add_custom_builtin (BRIG_OPCODE_MAX, BRIG_TYPE_F32, "__phsa_builtin_max_f32",
-		      2, f32_type, f32_type, f32_type);
-
-  add_custom_builtin (BRIG_OPCODE_CLASS, BRIG_TYPE_F32,
-		      "__phsa_builtin_class_f32", 2, u32_type, f32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_CLASS, BRIG_TYPE_F16,
-		      "__phsa_builtin_class_f32_f16", 2, u32_type, f32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_MAX, BRIG_TYPE_F64, "__phsa_builtin_max_f64",
-		      2, f64_type, f64_type, f64_type);
-
-  add_custom_builtin (BRIG_OPCODE_FRACT, BRIG_TYPE_F32,
-		      "__phsa_builtin_fract_f32", 1, f32_type, f32_type);
-
-  add_custom_builtin (BRIG_OPCODE_FRACT, BRIG_TYPE_F64,
-		      "__phsa_builtin_fract_f64", 1, f64_type, f64_type);
-
-  add_custom_builtin (BRIG_OPCODE_BARRIER, BRIG_TYPE_NONE,
-		      "__phsa_builtin_barrier", 1, void_type_node,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_INITFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_initfbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_JOINFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_joinfbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_WAITFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_waitfbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_ARRIVEFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_arrivefbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_LEAVEFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_leavefbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_RELEASEFBAR, BRIG_TYPE_NONE,
-		      "__phsa_builtin_releasefbar", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_BITALIGN, BRIG_TYPE_B32,
-		      "__phsa_builtin_bitalign", 3, u32_type, u64_type,
-		      u64_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_BYTEALIGN, BRIG_TYPE_B32,
-		      "__phsa_builtin_bytealign", 3, u32_type, u64_type,
-		      u64_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_LERP, BRIG_TYPE_U8X4, "__phsa_builtin_lerp",
-		      3, u8x4_type, u8x4_type, u8x4_type, u8x4_type);
-
-  add_custom_builtin (BRIG_OPCODE_PACKCVT, BRIG_TYPE_U8X4,
-		      "__phsa_builtin_packcvt", 4, u8x4_type, f32_type,
-		      f32_type, f32_type, f32_type);
-
-  add_custom_builtin (BRIG_OPCODE_UNPACKCVT, BRIG_TYPE_F32,
-		      "__phsa_builtin_unpackcvt", 2, f32_type, u32_type,
-		      u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_SAD, BRIG_TYPE_U16X2,
-		      "__phsa_builtin_sad_u16x2", 3, u16x2_type, u16x2_type,
-		      u16x2_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_SAD, BRIG_TYPE_U32, "__phsa_builtin_sad_u32",
-		      3, u32_type, u32_type, u32_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_SAD, BRIG_TYPE_U8X4,
-		      "__phsa_builtin_sad_u8x4", 3, u8x4_type, u8x4_type,
-		      u8x4_type, u32_type);
-
-  add_custom_builtin (BRIG_OPCODE_SADHI, BRIG_TYPE_U16X2,
-		      "__phsa_builtin_sadhi_u16x2_u8x4", 3, u16x2_type,
-		      u8x4_type, u8x4_type, u16x2_type);
-
-  /* TODO: clock has code motion constraints.  Should add function attributes
-     to prevent reordering with mem instructions or other clock () calls. */
-  add_custom_builtin (BRIG_OPCODE_CLOCK, BRIG_TYPE_U64, "__phsa_builtin_clock",
-		      0, u64_type);
-
-  add_custom_builtin (BRIG_OPCODE_CUID, BRIG_TYPE_U32, "__phsa_builtin_cuid", 1,
-		      u32_type, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_MAXCUID, BRIG_TYPE_U32,
-		      "__phsa_builtin_maxcuid", 1, u32_type, ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_DEBUGTRAP, BRIG_TYPE_U32,
-		      "__phsa_builtin_debugtrap", 2, void_type_node, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_GROUPBASEPTR, BRIG_TYPE_U32,
-		      "__phsa_builtin_groupbaseptr", 1, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_KERNARGBASEPTR, BRIG_TYPE_U64,
-		      "__phsa_builtin_kernargbaseptr_u64", 1, u64_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_KERNARGBASEPTR, BRIG_TYPE_U32,
-		      "__phsa_builtin_kernargbaseptr_u32", 1, u32_type,
-		      ptr_type_node);
-
-  add_custom_builtin (BRIG_OPCODE_ALLOCA, BRIG_TYPE_U32,
-		      "__phsa_builtin_alloca", 3, u32_type, u32_type, u32_type,
-		      ptr_type_node);
+  if (s_custom_builtins.size() > 1) return;
+
+  /* Populate the builtin index.  */
+#undef DEF_HSAIL_BUILTIN
+#define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE, NAME, TYPE, ATTRS) \
+ s_custom_builtins[std::make_pair (HSAIL_OPCODE, HSAIL_TYPE)]		\
+   = builtin_decl_explicit (ENUM);
+
+#include "hsail-builtins.def"  
 }
 
 /* Build a tree operand which is a reference to a piece of code. REF is the
@@ -1129,9 +818,13 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
     case BRIG_OPCODE_POPCOUNT:
       /* Popcount should be typed by its argument type (the return value
 	 is always u32).  Let's use a b64 version for also for b32 for now.  */
-      builtin = builtin_decl_explicit (BUILT_IN_POPCOUNTL);
-      break;
+      return builtin_decl_explicit (BUILT_IN_POPCOUNTL);
     default:
+
+      /* Use our builtin index for finding a proper builtin for the BRIG
+	 opcode and BRIG type.  This takes care most of the builtin cases,
+	 the special cases are handled in the separate 'case' statements
+	 above.  */
       builtin_map::const_iterator i
 	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
       if (i != s_custom_builtins.end ())
@@ -2108,7 +1801,7 @@ flush_to_zero::visit_element (brig_code_entry_handler &, tree operand)
   if (size == 4)
     {
       const char *builtin_fn_name
-	= (m_fp16) ? "__phsa_builtin_ftz_f32_f16" : "__phsa_builtin_ftz_f32";
+	= (m_fp16) ? "__hsail_ftz_f32_f16" : "__hsail_ftz_f32";
 
       return call_builtin (NULL, builtin_fn_name, 1, float_type_node,
 			   float_type_node, operand);
@@ -2116,7 +1809,7 @@ flush_to_zero::visit_element (brig_code_entry_handler &, tree operand)
   else if (size == 8)
     {
       static tree builtin_ftz_d;
-      return call_builtin (&builtin_ftz_d, "__phsa_builtin_ftz_f64", 1,
+      return call_builtin (&builtin_ftz_d, "__hsail_ftz_f64", 1,
 			   double_type_node, double_type_node, operand);
     }
   else

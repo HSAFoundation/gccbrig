@@ -63,7 +63,7 @@ brig_inst_mod_handler::operator () (const BrigBase *base)
   if (FTZ)
     {
       static tree built_in = NULL_TREE;
-      tree call = call_builtin (&built_in, "__phsa_builtin_enable_ftz", 0,
+      tree call = call_builtin (&built_in, "__hsail_enable_ftz", 0,
 				void_type_node);
       m_parent.append_statement (call);
       DECL_IS_NOVOPS (built_in) = 1;
@@ -152,7 +152,7 @@ brig_inst_mod_handler::operator () (const BrigBase *base)
     if (FTZ)
       {
 	static tree built_in = NULL_TREE;
-	tree call = call_builtin (&built_in, "__phsa_builtin_disable_ftz", 0,
+	tree call = call_builtin (&built_in, "__hsail_disable_ftz", 0,
 				  void_type_node);
 	m_parent.append_statement (call);
 	DECL_IS_NOVOPS (built_in) = 1;

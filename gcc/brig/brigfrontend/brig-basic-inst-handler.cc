@@ -45,7 +45,7 @@ public:
     : brig_inst_ (brig_inst)
   {
     std::ostringstream builtin_name;
-    builtin_name << "__phsa_builtin_sat_";
+    builtin_name << "__hsail_sat_";
 
     switch (brig_inst.opcode)
       {
@@ -856,6 +856,7 @@ brig_basic_inst_handler::get_tree_code_for_hsa_opcode
       /* Class has type B1 regardless of the float type, thus
 	 the below builtin map search cannot find it. */
     case BRIG_OPCODE_CLASS:
+    case BRIG_OPCODE_WORKITEMABSID:
       /* Model the ID etc. special instructions as (builtin) calls. */
       return CALL_EXPR;
     default:

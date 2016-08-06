@@ -146,44 +146,44 @@ brig_atomic_inst_handler::brig_atomic_inst_handler (brig_to_generic &parent)
   set_builtin_decl (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8, decl, true);
   s_atomic_builtins["__sync_val_compare_and_swap_8"] = decl;
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_min_s32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_min_s32", 2,
 			     integer_type_node, ptr_type_node,
 			     integer_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_min_s64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_min_s64", 2,
 			     long_integer_type_node, ptr_type_node,
 			     long_integer_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_min_u32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_min_u32", 2,
 			     uint32_type_node, ptr_type_node, uint32_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_min_u64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_min_u64", 2,
 			     uint64_type_node, ptr_type_node, uint64_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_max_s32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_max_s32", 2,
 			     integer_type_node, ptr_type_node,
 			     integer_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_max_u32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_max_u32", 2,
 			     uint32_type_node, ptr_type_node, uint32_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_max_s64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_max_s64", 2,
 			     long_integer_type_node, ptr_type_node,
 			     long_integer_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_max_u64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_max_u64", 2,
 			     uint64_type_node, ptr_type_node, uint64_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_wrapdec_u32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_wrapdec_u32", 2,
 			     uint32_type_node, ptr_type_node, uint32_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_wrapdec_u64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_wrapdec_u64", 2,
 			     uint64_type_node, ptr_type_node, uint64_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_wrapinc_u32", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_wrapinc_u32", 2,
 			     uint32_type_node, ptr_type_node, uint32_type_node);
 
-  add_custom_atomic_builtin ("__phsa_builtin_atomic_wrapinc_u64", 2,
+  add_custom_atomic_builtin ("__hsail_atomic_wrapinc_u64", 2,
 			     uint64_type_node, ptr_type_node, uint64_type_node);
 }
 
@@ -300,7 +300,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	    case BRIG_ATOMIC_MAX:
 	    case BRIG_ATOMIC_WRAPINC:
 	    case BRIG_ATOMIC_WRAPDEC:
-	      builtin_name << "__phsa_builtin_atomic_";
+	      builtin_name << "__hsail_atomic_";
 
 	      switch (atomic_opcode)
 		{

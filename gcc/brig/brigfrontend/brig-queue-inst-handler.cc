@@ -46,8 +46,8 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
     {
       std::string builtin_name
 	= inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX
-	    ? "__phsa_builtin_ldqueuewriteindex"
-	    : "__phsa_builtin_ldqueuereadindex";
+	    ? "__hsail_ldqueuewriteindex"
+	    : "__hsail_ldqueuereadindex";
 
       tree expr
 	= call_builtin (NULL, builtin_name.c_str (), 1, uint64_type_node,
@@ -59,8 +59,8 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
     {
       std::string builtin_name
 	= inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX
-	    ? "__phsa_builtin_stqueuewriteindex"
-	    : "__phsa_builtin_stqueuereadindex";
+	    ? "__hsail_stqueuewriteindex"
+	    : "__hsail_stqueuereadindex";
 
       call_builtin (NULL, builtin_name.c_str (), 2, void_type_node,
 		    uint64_type_node, operands[0], uint64_type_node,
@@ -68,7 +68,7 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
     }
   else if (inst_base.opcode == BRIG_OPCODE_ADDQUEUEWRITEINDEX)
     {
-      std::string builtin_name = "__phsa_builtin_addqueuewriteindex";
+      std::string builtin_name = "__hsail_addqueuewriteindex";
 
       tree expr = call_builtin (NULL, builtin_name.c_str (), 2,
 				uint64_type_node, uint64_type_node, operands[1],
@@ -77,7 +77,7 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
     }
   else if (inst_base.opcode == BRIG_OPCODE_CASQUEUEWRITEINDEX)
     {
-      std::string builtin_name = "__phsa_builtin_casqueuewriteindex";
+      std::string builtin_name = "__hsail_casqueuewriteindex";
 
       tree expr
 	= call_builtin (NULL, builtin_name.c_str (), 3, uint64_type_node,

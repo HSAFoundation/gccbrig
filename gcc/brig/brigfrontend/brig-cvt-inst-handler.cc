@@ -196,7 +196,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
 	  /* Use builtins for the saturating conversions.  */
 	  std::ostringstream strstr;
-	  strstr << "__phsa_builtin_cvt_zeroi_sat_";
+	  strstr << "__hsail_cvt_zeroi_sat_";
 	  if (TYPE_UNSIGNED (dest_type))
 	    strstr << "u";
 	  else

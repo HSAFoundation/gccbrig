@@ -28,7 +28,7 @@
 #include <stdint.h>
 
 uint32_t
-__phsa_builtin_bitalign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
+__hsail_bitalign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
 {
   shift_amount = shift_amount & 31;
   uint64_t packed_value = (upper << 32) | lower;
@@ -36,7 +36,7 @@ __phsa_builtin_bitalign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
 }
 
 uint32_t
-__phsa_builtin_bytealign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
+__hsail_bytealign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
 {
   shift_amount = (shift_amount & 3) * 8;
   uint64_t packed_value = (upper << 32) | lower;
@@ -44,7 +44,7 @@ __phsa_builtin_bytealign (uint64_t lower, uint64_t upper, uint32_t shift_amount)
 }
 
 uint32_t
-__phsa_builtin_lerp (uint32_t a, uint32_t b, uint32_t c)
+__hsail_lerp (uint32_t a, uint32_t b, uint32_t c)
 {
   uint32_t e3
     = (((((a >> 24) & 0xff) + ((b >> 24) & 0xff) + ((c >> 24) & 0x1)) / 2)
@@ -80,7 +80,7 @@ cvt_neari_sat_u8_f32 (float a)
 }
 
 uint32_t
-__phsa_builtin_packcvt (float a, float b, float c, float d)
+__hsail_packcvt (float a, float b, float c, float d)
 {
   return (uint32_t) cvt_neari_sat_u8_f32 (a)
 	 | (uint32_t) cvt_neari_sat_u8_f32 (b) << 8
@@ -89,7 +89,7 @@ __phsa_builtin_packcvt (float a, float b, float c, float d)
 }
 
 float
-__phsa_builtin_unpackcvt (uint32_t val, uint32_t index)
+__hsail_unpackcvt (uint32_t val, uint32_t index)
 {
   return (float) ((val >> (index * 8)) & 0xff);
 }
@@ -104,7 +104,7 @@ abs_diff (uint32_t a, uint32_t b)
 }
 
 uint32_t
-__phsa_builtin_sad_u8x4 (uint32_t a, uint32_t b, uint32_t add)
+__hsail_sad_u8x4 (uint32_t a, uint32_t b, uint32_t add)
 {
   return abs_diff ((a >> 24) & 0xff, (b >> 24) & 0xff)
 	 + abs_diff ((a >> 16) & 0xff, (b >> 16) & 0xff)
@@ -113,20 +113,20 @@ __phsa_builtin_sad_u8x4 (uint32_t a, uint32_t b, uint32_t add)
 }
 
 uint32_t
-__phsa_builtin_sad_u16x2 (uint32_t a, uint32_t b, uint32_t add)
+__hsail_sad_u16x2 (uint32_t a, uint32_t b, uint32_t add)
 {
   return abs_diff ((a >> 16) & 0xffff, (b >> 16) & 0xffff)
 	 + abs_diff ((a >> 0) & 0xffff, (b >> 0) & 0xffff) + add;
 }
 
 uint32_t
-__phsa_builtin_sad_u32 (uint32_t a, uint32_t b, uint32_t add)
+__hsail_sad_u32 (uint32_t a, uint32_t b, uint32_t add)
 {
   return abs_diff (a, b) + add;
 }
 
 uint32_t
-__phsa_builtin_sadhi_u16x2_u8x4 (uint32_t a, uint32_t b, uint32_t add)
+__hsail_sadhi_u16x2_u8x4 (uint32_t a, uint32_t b, uint32_t add)
 {
   return (abs_diff ((a >> 24) & 0xff, (b >> 24) & 0xff) << 16)
 	 + (abs_diff ((a >> 16) & 0xff, (b >> 16) & 0xff) << 16)

@@ -37,25 +37,25 @@
 	 >> (sizeof (DEST_TYPE) * 8 - width)
 
 uint32_t
-__phsa_builtin_bitextract_u32 (uint32_t src0, uint32_t src1, uint32_t src2)
+__hsail_bitextract_u32 (uint32_t src0, uint32_t src1, uint32_t src2)
 {
   BITEXTRACT (uint32_t, src0, src1, src2);
 }
 
 int32_t
-__phsa_builtin_bitextract_s32 (int32_t src0, uint32_t src1, uint32_t src2)
+__hsail_bitextract_s32 (int32_t src0, uint32_t src1, uint32_t src2)
 {
   BITEXTRACT (int32_t, src0, src1, src2);
 }
 
 uint64_t
-__phsa_builtin_bitextract_u64 (uint64_t src0, uint32_t src1, uint32_t src2)
+__hsail_bitextract_u64 (uint64_t src0, uint32_t src1, uint32_t src2)
 {
   BITEXTRACT (uint64_t, src0, src1, src2);
 }
 
 int64_t
-__phsa_builtin_bitextract_s64 (int64_t src0, uint32_t src1, uint32_t src2)
+__hsail_bitextract_s64 (int64_t src0, uint32_t src1, uint32_t src2)
 {
   BITEXTRACT (int64_t, src0, src1, src2);
 }
@@ -67,14 +67,14 @@ __phsa_builtin_bitextract_s64 (int64_t src0, uint32_t src1, uint32_t src2)
   return (SRC0 & ~(mask << offset)) | ((SRC1 & mask) << offset)
 
 uint32_t
-__phsa_builtin_bitinsert_u32 (uint32_t src0, uint32_t src1, uint32_t src2,
+__hsail_bitinsert_u32 (uint32_t src0, uint32_t src1, uint32_t src2,
 			      uint32_t src3)
 {
   BITINSERT (uint32_t, src0, src1, src2, src3);
 }
 
 int64_t
-__phsa_builtin_bitinsert_u64 (uint64_t src0, uint64_t src1, uint32_t src2,
+__hsail_bitinsert_u64 (uint64_t src0, uint64_t src1, uint32_t src2,
 			      uint32_t src3)
 {
   BITINSERT (uint64_t, src0, src1, src2, src3);
@@ -87,13 +87,13 @@ __phsa_builtin_bitinsert_u64 (uint64_t src0, uint64_t src1, uint32_t src2,
   return mask << offset
 
 uint32_t
-__phsa_builtin_bitmask_u32 (uint32_t src0, uint32_t src1)
+__hsail_bitmask_u32 (uint32_t src0, uint32_t src1)
 {
   BITMASK (uint32_t, src0, src1);
 }
 
 uint64_t
-__phsa_builtin_bitmask_u64 (uint32_t src0, uint32_t src1)
+__hsail_bitmask_u64 (uint32_t src0, uint32_t src1)
 {
   BITMASK (uint64_t, src0, src1);
 }
@@ -115,25 +115,25 @@ __phsa_builtin_bitmask_u64 (uint32_t src0, uint32_t src1)
   return r << s
 
 uint32_t
-__phsa_builtin_bitrev_u32 (uint32_t src0)
+__hsail_bitrev_u32 (uint32_t src0)
 {
   BITREV (uint32_t, src0);
 }
 
 uint64_t
-__phsa_builtin_bitrev_u64 (uint64_t src0)
+__hsail_bitrev_u64 (uint64_t src0)
 {
   BITREV (uint64_t, src0);
 }
 
 uint32_t
-__phsa_builtin_bitselect_u32 (uint32_t src0, uint32_t src1, uint32_t src2)
+__hsail_bitselect_u32 (uint32_t src0, uint32_t src1, uint32_t src2)
 {
   return (src1 & src0) | (src2 & ~src0);
 }
 
 uint64_t
-__phsa_builtin_bitselect_u64 (uint64_t src0, uint64_t src1, uint64_t src2)
+__hsail_bitselect_u64 (uint64_t src0, uint64_t src1, uint64_t src2)
 {
   return (src1 & src0) | (src2 & ~src0);
 }
@@ -142,7 +142,7 @@ __phsa_builtin_bitselect_u64 (uint64_t src0, uint64_t src1, uint64_t src2)
    __builtin_clz*() directly. __builtin_ffs() has defined behavior, but
    returns 0 while HSAIL requires to return -1.  */
 uint32_t
-__phsa_builtin_firstbit_u32 (uint32_t src0)
+__hsail_firstbit_u32 (uint32_t src0)
 {
   if (src0 == 0)
     return -1;
@@ -150,14 +150,14 @@ __phsa_builtin_firstbit_u32 (uint32_t src0)
 }
 
 uint32_t
-__phsa_builtin_firstbit_s32 (int32_t src0)
+__hsail_firstbit_s32 (int32_t src0)
 {
   uint32_t converted = src0 >= 0 ? src0 : ~src0;
-  return __phsa_builtin_firstbit_u32 (converted);
+  return __hsail_firstbit_u32 (converted);
 }
 
 uint32_t
-__phsa_builtin_firstbit_u64 (uint64_t src0)
+__hsail_firstbit_u64 (uint64_t src0)
 {
   if (src0 == 0)
     return -1;
@@ -165,14 +165,14 @@ __phsa_builtin_firstbit_u64 (uint64_t src0)
 }
 
 uint32_t
-__phsa_builtin_firstbit_s64 (int64_t src0)
+__hsail_firstbit_s64 (int64_t src0)
 {
   uint64_t converted = src0 >= 0 ? src0 : ~src0;
-  return __phsa_builtin_firstbit_u64 (converted);
+  return __hsail_firstbit_u64 (converted);
 }
 
 uint32_t
-__phsa_builtin_lastbit_u32 (uint32_t src0)
+__hsail_lastbit_u32 (uint32_t src0)
 {
   if (src0 == 0)
     return -1;
@@ -180,7 +180,7 @@ __phsa_builtin_lastbit_u32 (uint32_t src0)
 }
 
 uint32_t
-__phsa_builtin_lastbit_u64 (uint64_t src0)
+__hsail_lastbit_u64 (uint64_t src0)
 {
   if (src0 == 0)
     return -1;
