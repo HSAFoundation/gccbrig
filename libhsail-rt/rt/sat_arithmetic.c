@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 uint8_t
-__phsa_builtin_sat_add_u8 (uint8_t a, uint8_t b)
+__hsail_sat_add_u8 (uint8_t a, uint8_t b)
 {
   uint16_t c = (uint16_t) a + (uint16_t) b;
   if (c > UINT8_MAX)
@@ -43,7 +43,7 @@ __phsa_builtin_sat_add_u8 (uint8_t a, uint8_t b)
 }
 
 uint16_t
-__phsa_builtin_sat_add_u16 (uint16_t a, uint16_t b)
+__hsail_sat_add_u16 (uint16_t a, uint16_t b)
 {
   uint32_t c = (uint32_t) a + (uint32_t) b;
   if (c > UINT16_MAX)
@@ -53,7 +53,7 @@ __phsa_builtin_sat_add_u16 (uint16_t a, uint16_t b)
 }
 
 uint32_t
-__phsa_builtin_sat_add_u32 (uint32_t a, uint32_t b)
+__hsail_sat_add_u32 (uint32_t a, uint32_t b)
 {
   uint64_t c = (uint64_t) a + (uint64_t) b;
   if (c > UINT32_MAX)
@@ -63,7 +63,7 @@ __phsa_builtin_sat_add_u32 (uint32_t a, uint32_t b)
 }
 
 uint64_t
-__phsa_builtin_sat_add_u64 (uint64_t a, uint64_t b)
+__hsail_sat_add_u64 (uint64_t a, uint64_t b)
 {
   __uint128_t c = (__uint128_t) a + (__uint128_t) b;
   if (c > UINT64_MAX)
@@ -73,7 +73,7 @@ __phsa_builtin_sat_add_u64 (uint64_t a, uint64_t b)
 }
 
 int8_t
-__phsa_builtin_sat_add_s8 (int8_t a, int8_t b)
+__hsail_sat_add_s8 (int8_t a, int8_t b)
 {
   int16_t c = (int16_t) a + (int16_t) b;
   if (c > INT8_MAX)
@@ -85,7 +85,7 @@ __phsa_builtin_sat_add_s8 (int8_t a, int8_t b)
 }
 
 int16_t
-__phsa_builtin_sat_add_s16 (int16_t a, int16_t b)
+__hsail_sat_add_s16 (int16_t a, int16_t b)
 {
   int32_t c = (int32_t) a + (int32_t) b;
   if (c > INT16_MAX)
@@ -97,7 +97,7 @@ __phsa_builtin_sat_add_s16 (int16_t a, int16_t b)
 }
 
 int32_t
-__phsa_builtin_sat_add_s32 (int32_t a, int32_t b)
+__hsail_sat_add_s32 (int32_t a, int32_t b)
 {
   int64_t c = (int64_t) a + (int64_t) b;
   if (c > INT32_MAX)
@@ -109,7 +109,7 @@ __phsa_builtin_sat_add_s32 (int32_t a, int32_t b)
 }
 
 int64_t
-__phsa_builtin_sat_add_s64 (int64_t a, int64_t b)
+__hsail_sat_add_s64 (int64_t a, int64_t b)
 {
   __int128_t c = (__int128_t) a + (__int128_t) b;
   if (c > INT64_MAX)
@@ -121,7 +121,7 @@ __phsa_builtin_sat_add_s64 (int64_t a, int64_t b)
 }
 
 uint8_t
-__phsa_builtin_sat_sub_u8 (uint8_t a, uint8_t b)
+__hsail_sat_sub_u8 (uint8_t a, uint8_t b)
 {
   int16_t c = (uint16_t) a - (uint16_t) b;
   if (c < 0)
@@ -133,7 +133,7 @@ __phsa_builtin_sat_sub_u8 (uint8_t a, uint8_t b)
 }
 
 uint16_t
-__phsa_builtin_sat_sub_u16 (uint16_t a, uint16_t b)
+__hsail_sat_sub_u16 (uint16_t a, uint16_t b)
 {
   int32_t c = (uint32_t) a - (uint32_t) b;
   if (c < 0)
@@ -145,7 +145,7 @@ __phsa_builtin_sat_sub_u16 (uint16_t a, uint16_t b)
 }
 
 uint32_t
-__phsa_builtin_sat_sub_u32 (uint32_t a, uint32_t b)
+__hsail_sat_sub_u32 (uint32_t a, uint32_t b)
 {
   int64_t c = (uint64_t) a - (uint64_t) b;
   if (c < 0)
@@ -157,7 +157,7 @@ __phsa_builtin_sat_sub_u32 (uint32_t a, uint32_t b)
 }
 
 uint64_t
-__phsa_builtin_sat_sub_u64 (uint64_t a, uint64_t b)
+__hsail_sat_sub_u64 (uint64_t a, uint64_t b)
 {
   __int128_t c = (__uint128_t) a - (__uint128_t) b;
   if (c < 0)
@@ -169,7 +169,7 @@ __phsa_builtin_sat_sub_u64 (uint64_t a, uint64_t b)
 }
 
 int8_t
-__phsa_builtin_sat_sub_s8 (int8_t a, int8_t b)
+__hsail_sat_sub_s8 (int8_t a, int8_t b)
 {
   int16_t c = (int16_t) a - (int16_t) b;
   if (c > INT8_MAX)
@@ -181,7 +181,7 @@ __phsa_builtin_sat_sub_s8 (int8_t a, int8_t b)
 }
 
 int16_t
-__phsa_builtin_sat_sub_s16 (int16_t a, int16_t b)
+__hsail_sat_sub_s16 (int16_t a, int16_t b)
 {
   int32_t c = (int32_t) a - (int32_t) b;
   if (c > INT16_MAX)
@@ -193,7 +193,7 @@ __phsa_builtin_sat_sub_s16 (int16_t a, int16_t b)
 }
 
 int32_t
-__phsa_builtin_sat_sub_s32 (int32_t a, int32_t b)
+__hsail_sat_sub_s32 (int32_t a, int32_t b)
 {
   int64_t c = (int64_t) a - (int64_t) b;
   if (c > INT32_MAX)
@@ -205,7 +205,7 @@ __phsa_builtin_sat_sub_s32 (int32_t a, int32_t b)
 }
 
 int64_t
-__phsa_builtin_sat_sub_s64 (int64_t a, int64_t b)
+__hsail_sat_sub_s64 (int64_t a, int64_t b)
 {
   __int128_t c = (__int128_t) a - (__int128_t) b;
   if (c > INT64_MAX)
@@ -217,7 +217,7 @@ __phsa_builtin_sat_sub_s64 (int64_t a, int64_t b)
 }
 
 uint8_t
-__phsa_builtin_sat_mul_u8 (uint8_t a, uint8_t b)
+__hsail_sat_mul_u8 (uint8_t a, uint8_t b)
 {
   uint16_t c = (uint16_t) a * (uint16_t) b;
   if (c > UINT8_MAX)
@@ -227,7 +227,7 @@ __phsa_builtin_sat_mul_u8 (uint8_t a, uint8_t b)
 }
 
 uint16_t
-__phsa_builtin_sat_mul_u16 (uint16_t a, uint16_t b)
+__hsail_sat_mul_u16 (uint16_t a, uint16_t b)
 {
   uint32_t c = (uint32_t) a * (uint32_t) b;
   if (c > UINT16_MAX)
@@ -237,7 +237,7 @@ __phsa_builtin_sat_mul_u16 (uint16_t a, uint16_t b)
 }
 
 uint32_t
-__phsa_builtin_sat_mul_u32 (uint32_t a, uint32_t b)
+__hsail_sat_mul_u32 (uint32_t a, uint32_t b)
 {
   uint64_t c = (uint64_t) a * (uint64_t) b;
   if (c > UINT32_MAX)
@@ -247,7 +247,7 @@ __phsa_builtin_sat_mul_u32 (uint32_t a, uint32_t b)
 }
 
 uint64_t
-__phsa_builtin_sat_mul_u64 (uint64_t a, uint64_t b)
+__hsail_sat_mul_u64 (uint64_t a, uint64_t b)
 {
   __uint128_t c = (__uint128_t) a * (__uint128_t) b;
   if (c > UINT64_MAX)
@@ -257,7 +257,7 @@ __phsa_builtin_sat_mul_u64 (uint64_t a, uint64_t b)
 }
 
 int8_t
-__phsa_builtin_sat_mul_s8 (int8_t a, int8_t b)
+__hsail_sat_mul_s8 (int8_t a, int8_t b)
 {
   int16_t c = (int16_t) a * (int16_t) b;
   if (c > INT8_MAX)
@@ -269,7 +269,7 @@ __phsa_builtin_sat_mul_s8 (int8_t a, int8_t b)
 }
 
 int16_t
-__phsa_builtin_sat_mul_s16 (int16_t a, int16_t b)
+__hsail_sat_mul_s16 (int16_t a, int16_t b)
 {
   int32_t c = (int32_t) a * (int32_t) b;
   if (c > INT16_MAX)
@@ -281,7 +281,7 @@ __phsa_builtin_sat_mul_s16 (int16_t a, int16_t b)
 }
 
 int32_t
-__phsa_builtin_sat_mul_s32 (int32_t a, int32_t b)
+__hsail_sat_mul_s32 (int32_t a, int32_t b)
 {
   int64_t c = (int64_t) a * (int64_t) b;
   if (c > INT32_MAX)
@@ -293,7 +293,7 @@ __phsa_builtin_sat_mul_s32 (int32_t a, int32_t b)
 }
 
 int64_t
-__phsa_builtin_sat_mul_s64 (int64_t a, int64_t b)
+__hsail_sat_mul_s64 (int64_t a, int64_t b)
 {
   __int128_t c = (__int128_t) a * (__int128_t) b;
   if (c > INT64_MAX)
