@@ -877,7 +877,6 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
 	  if (i != s_custom_builtins.end ())
 	    return (*i).second;
 	}
-
       gcc_unreachable ();
     }
 
@@ -998,7 +997,11 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 	= get_builtin_for_hsa_opcode (arith_type, brig_opcode, brig_type);
 
       if (!VECTOR_TYPE_P (TREE_TYPE (TREE_TYPE (built_in)))
-	  && arith_type != NULL_TREE && VECTOR_TYPE_P (arith_type))
+	  && arith_type != NULL_TREE && VECTOR_TYPE_P (arith_type)
+	  && brig_opcode != BRIG_OPCODE_LERP
+	  && brig_opcode != BRIG_OPCODE_PACKCVT
+	  && brig_opcode != BRIG_OPCODE_SAD
+	  && brig_opcode != BRIG_OPCODE_SADHI)
 	{
 	  /* Call the scalar built-in for all elements in the vector.  */
 	  tree_stl_vec operand0_elements;
@@ -1061,9 +1064,9 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 }
 
 /* Instead of calling a built-in, reuse a previously returned value known to
-   be still valid.  This is beneficial especially for the work-item identification
-   related builtins as not having them as calls can lead to more easily
-   vectorizable parallel loops for multi work-item work-groups.
+   be still valid.  This is beneficial especially for the work-item
+   identification related builtins as not having them as calls can lead to
+   more easily vectorizable parallel loops for multi work-item work-groups.
    BRIG_OPCODE identifies the builtin and OPERANDS store the operands.  */
 
 tree
