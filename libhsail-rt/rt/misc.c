@@ -29,7 +29,8 @@
 
 #include "workitems.h"
 
-// Return the monotonic clock as nanoseconds.
+/* Return the monotonic clock as nanoseconds.  */
+
 uint64_t
 __hsail_clock ()
 {
@@ -41,24 +42,26 @@ __hsail_clock ()
 uint32_t
 __hsail_cuid (PHSAWorkItem *wi)
 {
-  // All WIs are executed with a single compute unit (core/thread)
-  // for now.
+  /* All WIs are executed with a single compute unit (core/thread)
+     for now.  */
   return 0;
 }
 
 uint32_t
 __hsail_maxcuid (PHSAWorkItem *wi)
 {
-  // All WIs are executed with a single compute unit (core/thread)
-  // for now.
+  /* All WIs are executed with a single compute unit (core/thread)
+     for now.  */
   return 0;
 }
 
 void
 __hsail_debugtrap (uint32_t src, PHSAWorkItem *wi)
 {
-  // Could we produce a SIGTRAP signal here to drop to gdb
-  // console, or similar?
+  /* Could we produce a SIGTRAP signal here to drop to gdb
+     console, or similar?  In any case, the execution of the
+     kernel should halt.
+  */
   return;
 }
 
@@ -72,15 +75,15 @@ __hsail_groupbaseptr (PHSAWorkItem *wi)
 uint64_t
 __hsail_kernargbaseptr_u64 (PHSAWorkItem *wi)
 {
-  // For now assume only a single kernarg allocation at a time.
-  // Proper kernarg memory management to do.
+  /* For now assume only a single kernarg allocation at a time.
+     Proper kernarg memory management to do.  */
   return (uint64_t) wi->launch_data->kernarg_addr;
 }
 
 uint32_t
 __hsail_kernargbaseptr_u32 (PHSAWorkItem *wi)
 {
-  // For now assume only a single kernarg allocation at a time.
-  // Proper kernarg memory management to do.
+  /* For now assume only a single kernarg allocation at a time.
+     Proper kernarg memory management to do.  */
   return 0;
 }

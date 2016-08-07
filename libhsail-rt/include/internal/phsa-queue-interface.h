@@ -40,15 +40,15 @@ extern "C" {
 
 typedef __attribute__((aligned(64))) struct phsa_queue_s
 {
-  /// An HSA Architectured Queue object. Must be in the beginning
-  /// of the struct to enable direct pointer casting between hsa_queue_
-  /// and phsa_queue_t.
+  /* An HSA Architectured Queue object. Must be in the beginning
+     of the struct to enable direct pointer casting between hsa_queue_
+     and phsa_queue_t.  */
   hsa_queue_t hsa_queue;
 
   volatile uint64_t write_index;
   volatile uint64_t read_index;
 
-  /// True if global mem addresses are 64b.
+  /* True if global mem addresses are 64b.  */
   uint64_t is_ptr64 : 1;
 
 } phsa_queue_t;
