@@ -40,7 +40,7 @@ brig_atomic_inst_handler::brig_atomic_inst_handler (brig_to_generic &parent)
 {
   if (s_atomic_builtins.size () > 0)
     return;
-
+#if 0
   tree sync_4_fn = build_function_type_list (integer_type_node, ptr_type_node,
 					     integer_type_node, NULL_TREE);
 
@@ -185,6 +185,8 @@ brig_atomic_inst_handler::brig_atomic_inst_handler (brig_to_generic &parent)
 
   add_custom_atomic_builtin ("__hsail_atomic_wrapinc_u64", 2,
 			     uint64_type_node, ptr_type_node, uint64_type_node);
+  #endif
+
 }
 
 void
@@ -244,14 +246,22 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
     instr_expr = mem_ref;
   else if (atomic_opcode == BRIG_ATOMIC_CAS)
     {
-      std::ostringstream builtin_name;
-      builtin_name << "__sync_val_compare_and_swap"
-		   << "_" << gccbrig_hsa_type_bit_size (inst.type) / 8;
+      /* Special case for CAS due to the two args.  */
+      tree built_in = NULL_TREE;
+      switch (gccbrig_hsa_type_bit_size (inst.type))
+	{
+	case 32:
+	  built_in =
+	    builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4);
+	  break;
+	case 64:
+	  built_in =
+	    builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8);
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
 
-      atomic_builtins_map::iterator i
-	= s_atomic_builtins.find (builtin_name.str ());
-      gcc_assert (i != s_atomic_builtins.end ());
-      tree built_in = (*i).second;
       tree src1 = operands[first_input + 2];
 
       tree src0_type
@@ -265,82 +275,116 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
     }
   else
     {
-      std::ostringstream builtin_name;
+      tree built_in = NULL_TREE;
+      /* The rest of the builtins have the same number of parameters,
+	 generate a big if..else that finds the correct builtin
+	 automagically from the .def file.  */
+#define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE,	\
+				 NAME, TYPE, ATTRS)			\
+      if (inst.opcode == HSAIL_OPCODE && inst.type == HSAIL_TYPE)	\
+	built_in = builtin_decl_explicit (ENUM);			\
+      else								\
+#include "hsail-builtins.def"
+      gcc_unreachable (); /* The last else branch. */
 
+#if 0     
       switch (atomic_opcode)
 	{
 	case BRIG_ATOMIC_ADD:
-	  builtin_name << "__sync_fetch_and_add";
-	  break;
-	case BRIG_ATOMIC_SUB:
-	  builtin_name << "__sync_fetch_and_sub";
-	  break;
-	case BRIG_ATOMIC_AND:
-	  builtin_name << "__sync_fetch_and_and";
-	  break;
-	case BRIG_ATOMIC_XOR:
-	  builtin_name << "__sync_fetch_and_xor";
-	  break;
-	case BRIG_ATOMIC_OR:
-	  builtin_name << "__sync_fetch_and_or";
-	  break;
-	case BRIG_ATOMIC_EXCH:
-	  builtin_name << "__sync_lock_test_and_set";
-	  break;
-	default:
-	  break;
-	}
-
-      if (builtin_name.str ().empty ())
-	{
-	  /* Use phsail's builtin.  */
-	  switch (atomic_opcode)
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
-	    case BRIG_ATOMIC_MIN:
-	    case BRIG_ATOMIC_MAX:
-	    case BRIG_ATOMIC_WRAPINC:
-	    case BRIG_ATOMIC_WRAPDEC:
-	      builtin_name << "__hsail_atomic_";
-
-	      switch (atomic_opcode)
-		{
-		case BRIG_ATOMIC_MIN:
-		  builtin_name << "min_";
-		  break;
-		case BRIG_ATOMIC_MAX:
-		  builtin_name << "max_";
-		  break;
-		case BRIG_ATOMIC_WRAPINC:
-		  builtin_name << "wrapinc_";
-		  break;
-		case BRIG_ATOMIC_WRAPDEC:
-		  builtin_name << "wrapdec_";
-		  break;
-		default:
-		  break;
-		}
-
-	      builtin_name << gccbrig_type_name (inst.type);
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_4);
+	      break;
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
+	    }	  
+	  break;
+	case BRIG_ATOMIC_SUB:
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
+	    {
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_4);
 	      break;
-	    }
-	}
-      else
-	{
-	  /* Use gcc's atomic builtin.  They have the byte size appended to the
-	     end of the name. */
-	  builtin_name << "_" << gccbrig_hsa_type_bit_size (inst.type) / 8;
-	}
-
-      atomic_builtins_map::iterator i
-	= s_atomic_builtins.find (builtin_name.str ());
-      if (i == s_atomic_builtins.end ())
-	gcc_unreachable ();
-
-      tree built_in = (*i).second;
-
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_8);
+	      break;
+	    default:
+	      gcc_unreachable ();	      
+	    }	  
+	  break;
+	case BRIG_ATOMIC_AND:
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
+	    {
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_4);
+	      break;
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_8);
+	      break;
+	    default:
+	      gcc_unreachable ();      
+	    }	  
+	  break;
+	case BRIG_ATOMIC_XOR:
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
+	    {
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_4);
+	      break;
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_8);
+	      break;
+	    default:
+	      gcc_unreachable ();      
+	    }	  
+	  break;	
+	case BRIG_ATOMIC_OR:
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
+	    {
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_4);
+	      break;
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_8);
+	      break;
+	    default:
+	      gcc_unreachable ();      
+	    }	  
+	  break;
+	case BRIG_ATOMIC_EXCH:
+	  switch (gccbrig_hsa_type_bit_size (inst.type))
+	    {
+	    case 32:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_4);
+	      break;
+	    case 64:
+	      built_in =
+		builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_8);
+	      break;
+	    default:
+	      gcc_unreachable ();     
+	    }	  
+	  break;  	  
+	default:
+	  gcc_unreachable ();
+	};
+#endif      
+      gcc_assert (built_in != NULL_TREE);
       tree arg0_type
 	= TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in))));
 

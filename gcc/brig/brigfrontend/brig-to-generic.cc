@@ -662,7 +662,8 @@ builtin_index builtin_cache_;
    call or NULL.  In case it's NULL, NAME should be set to the builtin
    function's name using which it can be found from the builtin index.
    NARGS is the number of input arguments, RETTYPE the built-in functions
-   return value type, and ... is the set of arguments passed to the call.  */
+   return value type, and ... is the list of arguments passed to the call
+   with type first, then the value. */
 
 tree
 call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)

@@ -209,6 +209,8 @@ brig_langhook_type_for_size (unsigned int bits,
 {
   if (bits == 64)
     return unsignedp ? uint64_type_node : long_integer_type_node;
+  else if (bits == 32)
+    return unsignedp ? unsigned_type_node : integer_type_node;
   return NULL_TREE;
 }
 
