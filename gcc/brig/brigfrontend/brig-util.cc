@@ -59,7 +59,7 @@ unsigned
 gccbrig_hsa_type_bit_size (BrigType16_t t)
 {
 
-  unsigned pack_type = t & ~0x01F;
+  unsigned pack_type = t & ~BRIG_TYPE_BASE_MASK;
 
   if (pack_type == BRIG_TYPE_PACK_32)
     return 32;

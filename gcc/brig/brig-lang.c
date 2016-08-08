@@ -46,12 +46,10 @@ along with GCC; see the file COPYING3.  If not see
 #include "brigfrontend/brig-to-generic.h"
 #include "machmode.h"
 #include "fold-const.h"
-
 #include "common/common-target.h"
-
 #include <mpfr.h>
-
 #include "brig-c.h"
+#include "brig-builtins.h"
 
 /* This file is based on Go frontent'd go-lang.c and gogo-tree.cc. */
 
@@ -415,86 +413,9 @@ brig_localize_identifier (const char *ident)
 /* Built-in initialization code cribbed from lto-lang.c which cribbed it
    from c-common.c.  */
 
-enum built_in_attribute
-{
-#define DEF_ATTR_NULL_TREE(ENUM) ENUM,
-#define DEF_ATTR_INT(ENUM, VALUE) ENUM,
-#define DEF_ATTR_STRING(ENUM, VALUE) ENUM,
-#define DEF_ATTR_IDENT(ENUM, STRING) ENUM,
-#define DEF_ATTR_TREE_LIST(ENUM, PURPOSE, VALUE, CHAIN) ENUM,
-#include "builtin-attrs.def"
-#undef DEF_ATTR_NULL_TREE
-#undef DEF_ATTR_INT
-#undef DEF_ATTR_STRING
-#undef DEF_ATTR_IDENT
-#undef DEF_ATTR_TREE_LIST
-  ATTR_LAST
-};
 
 static GTY(()) tree built_in_attributes[(int) ATTR_LAST];
 
-/* Builtin types.  */
-
-enum brig_builtin_type
-{
-#define DEF_PRIMITIVE_TYPE(NAME, VALUE) NAME,
-#define DEF_FUNCTION_TYPE_0(NAME, RETURN) NAME,
-#define DEF_FUNCTION_TYPE_1(NAME, RETURN, ARG1) NAME,
-#define DEF_FUNCTION_TYPE_2(NAME, RETURN, ARG1, ARG2) NAME,
-#define DEF_FUNCTION_TYPE_3(NAME, RETURN, ARG1, ARG2, ARG3) NAME,
-#define DEF_FUNCTION_TYPE_4(NAME, RETURN, ARG1, ARG2, ARG3, ARG4) NAME,
-#define DEF_FUNCTION_TYPE_5(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5) NAME,
-#define DEF_FUNCTION_TYPE_6(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			    ARG6) NAME,
-#define DEF_FUNCTION_TYPE_7(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			    ARG6, ARG7) NAME,
-#define DEF_FUNCTION_TYPE_8(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			    ARG6, ARG7, ARG8) NAME,
-#define DEF_FUNCTION_TYPE_9(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			    ARG6, ARG7, ARG8, ARG9) NAME,
-#define DEF_FUNCTION_TYPE_10(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			     ARG6, ARG7, ARG8, ARG9, ARG10) NAME,
-#define DEF_FUNCTION_TYPE_11(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-			     ARG6, ARG7, ARG8, ARG9, ARG10, ARG11) NAME,
-#define DEF_FUNCTION_TYPE_VAR_0(NAME, RETURN) NAME,
-#define DEF_FUNCTION_TYPE_VAR_1(NAME, RETURN, ARG1) NAME,
-#define DEF_FUNCTION_TYPE_VAR_2(NAME, RETURN, ARG1, ARG2) NAME,
-#define DEF_FUNCTION_TYPE_VAR_3(NAME, RETURN, ARG1, ARG2, ARG3) NAME,
-#define DEF_FUNCTION_TYPE_VAR_4(NAME, RETURN, ARG1, ARG2, ARG3, ARG4) NAME,
-#define DEF_FUNCTION_TYPE_VAR_5(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG6) \
-				NAME,
-#define DEF_FUNCTION_TYPE_VAR_6(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-				 ARG6) NAME,
-#define DEF_FUNCTION_TYPE_VAR_7(NAME, RETURN, ARG1, ARG2, ARG3, ARG4, ARG5, \
-				ARG6, ARG7) NAME,
-#define DEF_POINTER_TYPE(NAME, TYPE) NAME,
-#include "builtin-types.def"
-#undef DEF_PRIMITIVE_TYPE
-#undef DEF_FUNCTION_TYPE_0
-#undef DEF_FUNCTION_TYPE_1
-#undef DEF_FUNCTION_TYPE_2
-#undef DEF_FUNCTION_TYPE_3
-#undef DEF_FUNCTION_TYPE_4
-#undef DEF_FUNCTION_TYPE_5
-#undef DEF_FUNCTION_TYPE_6
-#undef DEF_FUNCTION_TYPE_7
-#undef DEF_FUNCTION_TYPE_8
-#undef DEF_FUNCTION_TYPE_9
-#undef DEF_FUNCTION_TYPE_10
-#undef DEF_FUNCTION_TYPE_11
-#undef DEF_FUNCTION_TYPE_VAR_0
-#undef DEF_FUNCTION_TYPE_VAR_1
-#undef DEF_FUNCTION_TYPE_VAR_2
-#undef DEF_FUNCTION_TYPE_VAR_3
-#undef DEF_FUNCTION_TYPE_VAR_4
-#undef DEF_FUNCTION_TYPE_VAR_5
-#undef DEF_FUNCTION_TYPE_VAR_6
-#undef DEF_FUNCTION_TYPE_VAR_7
-#undef DEF_POINTER_TYPE
-  BT_LAST
-};
-
-typedef enum brig_builtin_type builtin_type;
 
 static GTY(()) tree builtin_types[(int) BT_LAST + 1];
 

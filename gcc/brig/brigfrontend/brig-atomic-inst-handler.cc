@@ -31,6 +31,7 @@
 #include "langhooks.h"
 #include "gimple-expr.h"
 #include "stringpool.h"
+#include "brig-builtins.h"
 
 brig_atomic_inst_handler::atomic_builtins_map
   brig_atomic_inst_handler::s_atomic_builtins;
@@ -222,9 +223,6 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   tree atomic_ptype = build_pointer_type (atomic_type);
   tree casted_to_ptr = convert_to_pointer (atomic_ptype, signal_handle);
 
-  tree mem_ref = build2 (MEM_REF, atomic_type, casted_to_ptr,
-			 build_int_cst (atomic_ptype, 0));
-
   tree src0 = NULL_TREE;
   if (atomic_opcode != BRIG_ATOMIC_LD)
     src0 = operands[first_input + 1];
@@ -235,15 +233,23 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   tree ptr = convert_to_pointer (ptype, operands[first_input]);
 
   if (atomic_opcode == BRIG_ATOMIC_ST)
-    instr_expr = build2 (MODIFY_EXPR, atomic_type, mem_ref, src0);
+    {
+      tree mem_ref = build2 (MEM_REF, atomic_type, casted_to_ptr,
+			     build_int_cst (atomic_ptype, 0));
+      instr_expr = build2 (MODIFY_EXPR, atomic_type, mem_ref, src0);
+    }
   else if (atomic_opcode == BRIG_ATOMIC_LD
 	   || (atomic_opcode >= BRIG_ATOMIC_WAIT_EQ
 	       && atomic_opcode <= BRIG_ATOMIC_WAITTIMEOUT_GTE))
-    /* signal_wait* instructions can return spuriously before the
-       condition becomes true.  Therefore it's legal to return
-       right away.  TO OPTIMIZE: builtin calls which can be
-       implemented with a power efficient sleep-wait. */
-    instr_expr = mem_ref;
+    {
+      tree mem_ref = build2 (MEM_REF, atomic_type, casted_to_ptr,
+			     build_int_cst (atomic_ptype, 0));
+      /* signal_wait* instructions can return spuriously before the
+	 condition becomes true.  Therefore it's legal to return
+	 right away.  TO OPTIMIZE: builtin calls which can be
+	 implemented with a power efficient sleep-wait. */
+      instr_expr = mem_ref;
+    }
   else if (atomic_opcode == BRIG_ATOMIC_CAS)
     {
       /* Special case for CAS due to the two args.  */
@@ -277,17 +283,20 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
     {
       tree built_in = NULL_TREE;
       /* The rest of the builtins have the same number of parameters,
-	 generate a big if..else that finds the correct builtin
+	 generate a big switch..case that finds the correct builtin
 	 automagically from the .def file.  */
-#define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE,	\
-				 NAME, TYPE, ATTRS)			\
-      if (inst.opcode == HSAIL_OPCODE && inst.type == HSAIL_TYPE)	\
-	built_in = builtin_decl_explicit (ENUM);			\
-      else								\
-#include "hsail-builtins.def"
-      gcc_unreachable (); /* The last else branch. */
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_BUILTIN
+#define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE,	\
+			  NAME, TYPE, ATTRS)
 
-#if 0     
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE,	\
+				 NAME, TYPE, ATTRS)			\
+      if (atomic_opcode == ATOMIC_OPCODE && inst.type == HSAIL_TYPE)	\
+	built_in = builtin_decl_explicit (ENUM);			\
+      else
+#include "hsail-builtins.def"
       switch (atomic_opcode)
 	{
 	case BRIG_ATOMIC_ADD:
@@ -383,7 +392,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	default:
 	  gcc_unreachable ();
 	};
-#endif      
+ 
       gcc_assert (built_in != NULL_TREE);
       tree arg0_type
 	= TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in))));

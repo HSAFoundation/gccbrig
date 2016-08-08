@@ -37,8 +37,10 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
   /* The destination type to convert the comparison result to. */
   tree dest_type = get_tree_type_for_hsa_type (inst_base->type);
 
-  const bool is_fp16_dest = (inst_base->type & 0x01F) == BRIG_TYPE_F16;
-  const bool is_boolean_dest = (inst_base->type & 0x01F) == BRIG_TYPE_B1;
+  const bool is_fp16_dest
+    = (inst_base->type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16;
+  const bool is_boolean_dest
+    = (inst_base->type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_B1;
 
   bool is_int_cmp = VECTOR_TYPE_P (cmp_type)
 		      ? INTEGRAL_TYPE_P (TREE_TYPE (cmp_type))
@@ -147,7 +149,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
     }
   else if (VECTOR_TYPE_P (dest_type) && ANY_INTEGRAL_TYPE_P (dest_type)
 	   && !is_boolean_dest 
-	   && (inst->sourceType & 0x01F) != BRIG_TYPE_F16)
+	   && (inst->sourceType & BRIG_TYPE_BASE_MASK) != BRIG_TYPE_F16)
     {
       /* In later gcc versions, the output of comparison is not
 	 all ones for vectors like still in 4.9.1.  We need to use
@@ -188,7 +190,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       expr = convert_to_real (dest_type, expr);
     }
   else if (VECTOR_TYPE_P (dest_type)
-	   && (inst->sourceType & 0x01F) == BRIG_TYPE_F16)
+	   && (inst->sourceType & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16)
     {
       /* Because F16 comparison is emulated as an F32 comparison with S32
 	 results, we must now truncate the result vector to S16s so it

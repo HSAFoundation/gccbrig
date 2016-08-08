@@ -61,7 +61,7 @@ public:
       default:
 	gcc_unreachable ();
       }
-    BrigType16_t element_type = brig_inst.type & 0x01F;
+    BrigType16_t element_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
     builtin_name << "_" << gccbrig_type_name (element_type);
     builtin_name_ = builtin_name.str ();
   }
@@ -97,7 +97,7 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
      not to be reliable enough. */
 
   size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
-  BrigType16_t element_type = brig_inst->type & 0x01F;
+  BrigType16_t element_type = brig_inst->type & BRIG_TYPE_BASE_MASK;
   if (elements < 16
       && (element_type == BRIG_TYPE_S8 || element_type == BRIG_TYPE_U8
 	  || element_type == BRIG_TYPE_S16 || element_type == BRIG_TYPE_U16))
@@ -356,7 +356,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
   size_t input_count = operands.size ();
   size_t output_count = first_input;
 
-  BrigType16_t inner_type = brig_type & 0x01f;
+  BrigType16_t inner_type = brig_type & BRIG_TYPE_BASE_MASK;
 
   tree instr_inner_type
     = VECTOR_TYPE_P (arith_type) ? TREE_TYPE (arith_type) : arith_type;
@@ -500,19 +500,15 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   BrigType16_t brig_inst_type = brig_inst->type;
 
   if (brig_inst->opcode == BRIG_OPCODE_NOP)
-    {
-      return base->byteCount;
-    }
+    return base->byteCount;
   else if (brig_inst->opcode == BRIG_OPCODE_FIRSTBIT
 	   || brig_inst->opcode == BRIG_OPCODE_LASTBIT
 	   || brig_inst->opcode == BRIG_OPCODE_SAD)
-    {
-      /* These instructions are reported to be always 32b in HSAIL, but we want
-	 to treat them according to their input argument's type to select the
-	 correct instruction/builtin. */
-      brig_inst_type
-	= gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
-    }
+    /* These instructions are reported to be always 32b in HSAIL, but we want
+       to treat them according to their input argument's type to select the
+       correct instruction/builtin. */
+    brig_inst_type
+      = gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst_type);
 
@@ -525,8 +521,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   tree_code opcode
     = get_tree_code_for_hsa_opcode (brig_inst->opcode, brig_inst_type);
 
-  bool is_fp16_operation = (brig_inst_type & 0x01F) == BRIG_TYPE_F16
-			   && !gccbrig_is_raw_operation (brig_inst->opcode);
+  bool is_fp16_operation
+    = (brig_inst_type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
+    && !gccbrig_is_raw_operation (brig_inst->opcode);
 
   bool is_vec_instr = brig_inst_type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64
 					| BRIG_TYPE_PACK_128);
@@ -537,7 +534,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   size_t element_size_bits;
   if (is_vec_instr)
     {
-      BrigType16_t brig_element_type = brig_inst_type & 0x01F;
+      BrigType16_t brig_element_type = brig_inst_type & BRIG_TYPE_BASE_MASK;
       element_size_bits = gccbrig_hsa_type_bit_size (brig_element_type);
       element_count = gccbrig_hsa_type_bit_size (brig_inst_type)
 		      / gccbrig_hsa_type_bit_size (brig_element_type);
@@ -616,7 +613,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       tree_stl_vec result_elements;
 
       tree scalar_type = TREE_TYPE (arith_type);
-      BrigType16_t element_type = brig_inst_type & 0x01F;
+      BrigType16_t element_type = brig_inst_type & BRIG_TYPE_BASE_MASK;
       tree promoted_type = short_integer_type_node;
       switch (element_type)
 	{
@@ -767,7 +764,7 @@ tree_code
 brig_basic_inst_handler::get_tree_code_for_hsa_opcode
   (BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
 {
-  BrigType16_t brig_inner_type = brig_type & 0x01F;
+  BrigType16_t brig_inner_type = brig_type & BRIG_TYPE_BASE_MASK;
   switch (brig_opcode)
     {
     case BRIG_OPCODE_NOP:

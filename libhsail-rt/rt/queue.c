@@ -24,7 +24,7 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include "phsa_queue_interface.h"
+#include "phsa-queue-interface.h"
 
 uint64_t
 __hsail_ldqueuereadindex (uint64_t queue_addr)
