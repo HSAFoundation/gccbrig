@@ -736,6 +736,42 @@ call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
   return ret;
 }
 
+tree
+call_builtin (tree pdecl, int nargs, tree rettype, ...)
+{
+  if (rettype == error_mark_node)
+    return error_mark_node;
+
+  tree *types = new tree[nargs];
+  tree *args = new tree[nargs];
+
+  va_list ap;
+  va_start (ap, rettype);
+  for (int i = 0; i < nargs; ++i)
+    {
+      types[i] = va_arg (ap, tree);
+      tree arg = va_arg (ap, tree);
+      args[i] = build_reinterpret_cast (types[i], arg);
+      if (types[i] == error_mark_node || args[i] == error_mark_node)
+	{
+	  delete[] types;
+	  delete[] args;
+	  return error_mark_node;
+	}
+    }
+  va_end (ap);
+
+  tree fnptr = build_fold_addr_expr (pdecl);
+
+  tree ret = build_call_array (rettype, fnptr, nargs, args);
+
+  delete[] types;
+  delete[] args;
+
+  return ret;
+}
+
+
 void
 brig_to_generic::dump_function (brig_function *f)
 {

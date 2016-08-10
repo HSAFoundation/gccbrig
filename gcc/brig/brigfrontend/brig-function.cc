@@ -156,11 +156,6 @@ brig_function::add_id_variables ()
   tree stmts = BIND_EXPR_BODY (bind_expr);
 
   /* Initialize the WG limits and local ids.  */
-  static tree workitemid_builtin;
-  static tree currentworkgroupsize_builtin;
-  static tree workgroupsize_builtin;
-  static tree workgroupid_builtin;
-  static tree gridsize_builtin;
 
   tree_stmt_iterator entry = tsi_start (stmts);
 
@@ -175,7 +170,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree workitemid_call
-	= call_builtin (&workitemid_builtin, "__hsail_workitemid", 2,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKITEMID), 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -189,11 +184,11 @@ brig_function::add_id_variables ()
 	= add_local_variable (std::string ("__cur_wg_size_") + dim_char,
 			      uint32_type_node);
 
-      tree cwgz_call = call_builtin (&currentworkgroupsize_builtin,
-				     "__hsail_currentworkgroupsize", 2,
-				     uint32_type_node, uint32_type_node,
-				     build_int_cst (uint32_type_node, i),
-				     ptr_type_node, m_context_arg);
+      tree cwgz_call
+	= call_builtin
+	(builtin_decl_explicit (BUILT_IN_HSAIL_CURRENTWORKGROUPSIZE),
+	 2, uint32_type_node, uint32_type_node,
+	 build_int_cst (uint32_type_node, i), ptr_type_node, m_context_arg);
 
       tree limit_init = build2 (MODIFY_EXPR, TREE_TYPE (m_cur_wg_size_vars[i]),
 				m_cur_wg_size_vars[i], cwgz_call);
@@ -205,8 +200,8 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgid_call
-	= call_builtin (&workgroupid_builtin, "__hsail_workgroupid", 2,
-			uint32_type_node, uint32_type_node,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKGROUPID),
+			2, uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
 
@@ -220,7 +215,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgsize_call
-	= call_builtin (&workgroupsize_builtin, "__hsail_workgroupsize",
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKGROUPSIZE),
 			2, uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -235,7 +230,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree gridsize_call
-	= call_builtin (&gridsize_builtin, "__hsail_gridsize", 2,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_GRIDSIZE), 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -341,7 +336,7 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   /* TODO: Initialize the iteration variable.   Assume always starting
      from 0.  */
-     
+
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
