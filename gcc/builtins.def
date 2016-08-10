@@ -229,12 +229,26 @@ along with GCC; see the file COPYING3.  If not see
   DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
 	       false, true, true, ATTRS, false, true)
 
-/* HSAIL atomic builtins do not have identifying opcodes, they just
-   use the one of the operation that's being atomic. */
+/* HSAIL atomic builtins do not have separate identifying opcodes.  */
 
 #undef DEF_HSAIL_ATOMIC_BUILTIN
 #define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE, NAME, \
 	TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+	       false, true, true, ATTRS, false, true)
+
+/* HSAIL saturating arithmetics builtins.  */
+
+#undef DEF_HSAIL_SAT_BUILTIN
+#define DEF_HSAIL_SAT_BUILTIN(ENUM, BRIG_OPCODE, HSAIL_TYPE, NAME, \
+	TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+	       false, true, true, ATTRS, false, true)
+
+/* HSAIL builtins used internally by the frontend.  */
+
+#undef DEF_HSAIL_INTR_BUILTIN
+#define DEF_HSAIL_INTR_BUILTIN(ENUM, NAME, TYPE, ATTRS) \
   DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
 	       false, true, true, ATTRS, false, true)
 

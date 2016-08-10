@@ -48,14 +48,14 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
   if (s_custom_builtins.size() > 1) return;
 
   /* Populate the builtin index.  */
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_INTR_BUILTIN
+#undef DEF_HSAIL_SAT_BUILTIN
 #undef DEF_HSAIL_BUILTIN
 #define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE, NAME, TYPE, ATTRS) \
  s_custom_builtins[std::make_pair (HSAIL_OPCODE, HSAIL_TYPE)]		\
    = builtin_decl_explicit (ENUM);
 
-#undef DEF_HSAIL_ATOMIC_BUILTIN
-#define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE,	\
-				 NAME, TYPE, ATTRS)
 
 #include "hsail-builtins.def"  
 }
@@ -1248,23 +1248,6 @@ brig_code_entry_handler::build_builtin (const char *name, int nargs,
   return builtin;
 }
 
-/* Add a custom builtin function declaration to the custom builtin index.  */
-
-tree
-brig_code_entry_handler::add_custom_builtin (BrigOpcode16_t brig_opcode,
-					     BrigType16_t itype,
-					     const char *name, int nargs,
-					     tree rettype, ...)
-{
-  va_list ap;
-  va_start (ap, rettype);
-  tree builtin = vbuild_builtin (name, nargs, rettype, ap);
-  va_end (ap);
-
-  s_custom_builtins[std::make_pair (brig_opcode, itype)] = builtin;
-  return builtin;
-}
-
 /* Creates a FP32 to FP16 conversion call, assuming the source and destination
    are FP32 type variables.  */
 
@@ -1850,20 +1833,20 @@ flush_to_zero::visit_element (brig_code_entry_handler &, tree operand)
   size_t size = int_size_in_bytes (TREE_TYPE (operand));
   if (size == 4)
     {
-      const char *builtin_fn_name
-	= (m_fp16) ? "__hsail_ftz_f32_f16" : "__hsail_ftz_f32";
+      tree built_in
+	= (m_fp16) ? builtin_decl_explicit (BUILT_IN_HSAIL_FTZ_F32_F16) :
+	builtin_decl_explicit (BUILT_IN_HSAIL_FTZ_F32);
 
-      return call_builtin (NULL, builtin_fn_name, 1, float_type_node,
-			   float_type_node, operand);
+      return call_builtin (built_in, 1, float_type_node, float_type_node,
+			   operand);
     }
   else if (size == 8)
     {
-      static tree builtin_ftz_d;
-      return call_builtin (&builtin_ftz_d, "__hsail_ftz_f64", 1,
+      return call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_FTZ_F64), 1,
 			   double_type_node, double_type_node, operand);
     }
   else
-    error ("unsupported float size %u for FTZ", (unsigned) size);
+    gcc_unreachable ();
   return NULL_TREE;
 }
 

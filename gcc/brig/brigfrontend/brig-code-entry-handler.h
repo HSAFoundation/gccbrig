@@ -110,9 +110,6 @@ protected:
   static builtin_map s_custom_builtins;
 
 private:
-  tree add_custom_builtin (BrigOpcode16_t brig_opcode, BrigType16_t itype,
-			   const char *name, int nargs, tree rettype, ...);
-
   tree get_raw_tree_type (tree original_type);
 };
 

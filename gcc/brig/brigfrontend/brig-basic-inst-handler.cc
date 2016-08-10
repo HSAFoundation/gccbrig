@@ -32,6 +32,7 @@
 #include "langhooks.h"
 #include "stor-layout.h"
 #include "diagnostic-core.h"
+#include "brig-builtins.h"
 
 brig_basic_inst_handler::brig_basic_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -44,26 +45,20 @@ public:
   scalarized_sat_arithmetics (const BrigInstBase &brig_inst)
     : brig_inst_ (brig_inst)
   {
-    std::ostringstream builtin_name;
-    builtin_name << "__hsail_sat_";
-
-    switch (brig_inst.opcode)
-      {
-      case BRIG_OPCODE_ADD:
-	builtin_name << "add";
-	break;
-      case BRIG_OPCODE_SUB:
-	builtin_name << "sub";
-	break;
-      case BRIG_OPCODE_MUL:
-	builtin_name << "mul";
-	break;
-      default:
-	gcc_unreachable ();
-      }
     BrigType16_t element_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
-    builtin_name << "_" << gccbrig_type_name (element_type);
-    builtin_name_ = builtin_name.str ();
+
+#undef DEF_HSAIL_SAT_BUILTIN
+#undef DEF_HSAIL_BUILTIN
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_INTR_BUILTIN
+
+#define DEF_HSAIL_SAT_BUILTIN(ENUM, BRIG_OPCODE, HSAIL_TYPE,		\
+			      NAME, TYPE, ATTRS)			\
+    if (brig_inst.opcode == BRIG_OPCODE && element_type == HSAIL_TYPE)	\
+      builtin = builtin_decl_explicit (ENUM);				\
+    else
+#include "hsail-builtins.def"
+      gcc_unreachable ();
   }
 
   virtual tree
@@ -72,13 +67,12 @@ public:
     /* Implement saturating arithmetics with scalar built-ins for now.
        TO OPTIMIZE: emit GENERIC nodes for the simplest cases or at least
        emit vector built-ins.  */
-    tree builtin = NULL_TREE;
-    return call_builtin (&builtin, builtin_name_.c_str (), 2,
-			 TREE_TYPE (operand0), TREE_TYPE (operand0), operand0,
+    return call_builtin (builtin, 2, TREE_TYPE (operand0),
+			 TREE_TYPE (operand0), operand0,
 			 TREE_TYPE (operand1), operand1);
   }
   const BrigInstBase &brig_inst_;
-  std::string builtin_name_;
+  tree builtin;
 };
 
 bool

@@ -32,7 +32,8 @@
 #include <float.h>
 
 /* HSAIL defines INT_MIN % -1 to be 0 while with C it's undefined,
-	 and causes an overflow exception at least with gcc and C on IA-32.  */
+   and causes an overflow exception at least with gcc and C on IA-32.  */
+
 int32_t
 __hsail_rem_s32 (int32_t dividend, int32_t divisor)
 {
@@ -52,8 +53,9 @@ __hsail_rem_s64 (int64_t dividend, int64_t divisor)
 }
 
 /* HSAIL has defined behavior for min and max when one of the operands is
-	 NaN: in that case the other operand is returned.  In C and with gcc's
-	 MIN_EXPR/MAX_EXPR, the returned operand is undefined.  */
+   NaN: in that case the other operand is returned.  In C and with gcc's
+   MIN_EXPR/MAX_EXPR, the returned operand is undefined.  */
+
 float
 __hsail_min_f32 (float a, float b)
 {
@@ -210,6 +212,7 @@ __hsail_cvt_zeroi_sat_s64_f32 (float a)
 
 /* Flush the operand to zero in case it's a denormalized number.
    Do not cause any exceptions in case of NaNs.  */
+
 float
 __hsail_ftz_f32 (float a)
 {
@@ -234,6 +237,7 @@ __hsail_ftz_f32 (float a)
 /* Flush the single precision operand to zero in case it's considered
    a denormalized number in case it was a f16.  Do not cause any exceptions
    in case of NaNs.  */
+
 float
 __hsail_ftz_f32_f16 (float a)
 {
@@ -352,8 +356,8 @@ __hsail_class_f32 (float a, uint32_t flags)
 }
 
 /* 'class' for a f32-converted f16 which should otherwise be treated like f32
- * except for its limits.
- */
+ except for its limits. */
+
 uint32_t
 __hsail_class_f32_f16 (float a, uint32_t flags)
 {

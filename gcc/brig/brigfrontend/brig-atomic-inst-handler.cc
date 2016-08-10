@@ -118,15 +118,13 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   else
     {
       tree built_in = NULL_TREE;
-      /* The rest of the builtins have the same number of parameters,
-	 generate a big switch..case that finds the correct builtin
+      /* The rest of the builtins have the same number of parameters.
+	 Generate a big if..else that finds the correct builtin
 	 automagically from the .def file.  */
-#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_SAT_BUILTIN
 #undef DEF_HSAIL_BUILTIN
-#define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE,	\
-			  NAME, TYPE, ATTRS)
-
 #undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_INTR_BUILTIN
 #define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE,	\
 				 NAME, TYPE, ATTRS)			\
       if (atomic_opcode == ATOMIC_OPCODE && inst.type == HSAIL_TYPE)	\
