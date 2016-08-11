@@ -1,25 +1,17 @@
 module &module:1:0:$full:$large:$default;
 
-/* Tests for load/store addressing modes. */
+/* Tests for kernarg addressing modes. */
 
 /* { dg-do compile } */
 /* { dg-options "-fdump-tree-original" } */
 
-prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %input_ptr2, kernarg_u64 %output_ptr)
+prog kernel &Kernel(kernarg_u64 %input[4], kernarg_u64 %output_ptr, kernarg_u64 %i)
 {
-	global_u32 %global_array[4];
+	ld_kernarg_u64 $d0, [%i];
+	ld_kernarg_u64 $d0, [%input][$d0 + 1];
 
-	ld_kernarg_u64 $d0, [%input_ptr];
-	ld_kernarg_u64 $d2, [%input_ptr2];
-	ld_global_u32 $s0, [$d0];
-	ld_global_u64 $d1, [$d2 + 4];
-
-	ld_global_u32 $s2, [%global_array][$d1 + 4];
-
-	ld_kernarg_u64 $d0, [%output_ptr];
-	st_global_u32 $s0, [$d0];
-	st_global_u32 $s1, [$d0 + 4];
-	st_global_u32 $s2, [$d0 + 8];
+	ld_kernarg_u64 $d1, [%output_ptr];
+	st_global_u64 $d0, [$d1];
 
 	ret;
 };
