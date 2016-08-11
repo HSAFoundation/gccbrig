@@ -341,6 +341,13 @@ brig_code_entry_handler::build_address_operand
 
 	  if (arg_symbol->type & BRIG_TYPE_ARRAY)
 	    {
+
+	      /* Two different type of array references in case of arguments
+		 depending where they are referred at.  In the caller (argument
+		 segment), the reference is to an array object and
+		 in the callee, the array object has been passed as a pointer
+		 to the array object.  */
+
 	      if (POINTER_TYPE_P (TREE_TYPE (arg_var_decl)))
 		symbol_base = build_reinterpret_cast (ptype, arg_var_decl);
 	      else
