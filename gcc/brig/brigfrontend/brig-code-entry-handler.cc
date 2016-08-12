@@ -260,7 +260,7 @@ brig_code_entry_handler::build_address_operand
 	     kernel argument variable.*/
 	  tree func = m_parent.m_cf->m_func_decl;
 	  /* __args is the first parameter in kernel functions. */
-	  ptr_base = DECL_ARGUMENTS (func);
+	  symbol_base = DECL_ARGUMENTS (func);
 	  uint64_t offset = m_parent.m_cf->kernel_arg_offset (arg_symbol);
 	  if (offset > 0)
 	    ptr_offset = build_int_cst (size_type_node, offset);

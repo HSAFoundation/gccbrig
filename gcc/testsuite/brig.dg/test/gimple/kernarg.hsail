@@ -16,16 +16,10 @@ prog kernel &Kernel(kernarg_u64 %input[4], kernarg_u64 %output_ptr, kernarg_u64 
 	ret;
 };
 
-/* %input_ptr, %input_ptr2 and %output_ptr accesses should generate offsets to the __args array */
-/* { dg-final { scan-tree-dump "\\\(__args\\\);\[\n \]+d0 =" "original"} } */
-/* { dg-final { scan-tree-dump "\\\(__args\\\) \\\+ 8\\\);\[\n \]+d2 =" "original"} } */
-/* { dg-final { scan-tree-dump "\\\(__args\\\) \\\+ 16\\\);\[\n \]+d0 =" "original"} } */
+/* [%i] */
+/* { dg-final { scan-tree-dump " = \\\*VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(__args\\\) \\\+ 40\\\);" "original"} } */
 
-/* ld_global_u32 $s0, [$d0] */
-/* { dg-final { scan-tree-dump "<unsigned char \\\*>\\\(d0\\\)\\\);\[\n \]+s0 =" "original"} } */
+/* [%input][$d0 + 1] */
+/* { dg-final { scan-tree-dump " = \\\*VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(__args\\\) \\\+ VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d0\\\)\\\) \\\+ 1\\\)\\\)\\\);" "original"} } */
 
-/* ld_global_u64 $d1, [$d2 + 4] pointer arithmetics*/
-/* { dg-final { scan-tree-dump "\\\(d2\\\)\\\) \\\+ 4\\\);\[\n \]+d1 = " "original"} } */
 
-/* ld_global_u32 $s2, [%global_array][$d1 + 4]; is the most complex form */
-/* { dg-final { scan-tree-dump "&_Kernel.global_array\\\) \\\+ VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned int \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 4\\\)\\\)\\\);\[\n \]+s2 = " "original" } } */
