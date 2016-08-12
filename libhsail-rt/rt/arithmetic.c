@@ -210,6 +210,103 @@ __hsail_cvt_zeroi_sat_s64_f32 (float a)
   return (int64_t) a;
 }
 
+uint8_t
+__hsail_cvt_zeroi_sat_u8_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT8_MAX)
+    return UINT8_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint8_t) a;
+}
+
+int8_t
+__hsail_cvt_zeroi_sat_s8_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT8_MAX)
+    return INT8_MAX;
+  if (a <= (double) INT8_MIN)
+    return INT8_MIN;
+  return (int8_t) a;
+}
+
+uint16_t
+__hsail_cvt_zeroi_sat_u16_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT16_MAX)
+    return UINT16_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint16_t) a;
+}
+
+int16_t
+__hsail_cvt_zeroi_sat_s16_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT16_MAX)
+    return INT16_MAX;
+  if (a <= (double) INT16_MIN)
+    return INT16_MIN;
+  return (int16_t) a;
+}
+
+uint32_t
+__hsail_cvt_zeroi_sat_u32_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT32_MAX)
+    return UINT32_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint32_t) a;
+}
+
+int32_t
+__hsail_cvt_zeroi_sat_s32_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT32_MAX)
+    return INT32_MAX;
+  if (a <= (double) INT32_MIN)
+    return INT32_MIN;
+  return (int32_t) a;
+}
+
+uint64_t
+__hsail_cvt_zeroi_sat_u64_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT64_MAX)
+    return UINT64_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint64_t) a;
+}
+
+int64_t
+__hsail_cvt_zeroi_sat_s64_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT64_MAX)
+    return INT64_MAX;
+  if (a <= (double) INT64_MIN)
+    return INT64_MIN;
+  return (int64_t) a;
+}
+
+
 /* Flush the operand to zero in case it's a denormalized number.
    Do not cause any exceptions in case of NaNs.  */
 

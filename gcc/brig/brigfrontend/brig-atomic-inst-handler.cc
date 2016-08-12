@@ -125,6 +125,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 #undef DEF_HSAIL_BUILTIN
 #undef DEF_HSAIL_ATOMIC_BUILTIN
 #undef DEF_HSAIL_INTR_BUILTIN
+#undef DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN
+
 #define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE,	\
 				 NAME, TYPE, ATTRS)			\
       if (atomic_opcode == ATOMIC_OPCODE && inst.type == HSAIL_TYPE)	\

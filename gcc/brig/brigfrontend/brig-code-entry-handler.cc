@@ -49,6 +49,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 
   /* Populate the builtin index.  */
 #undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN
 #undef DEF_HSAIL_INTR_BUILTIN
 #undef DEF_HSAIL_SAT_BUILTIN
 #undef DEF_HSAIL_BUILTIN
