@@ -26,12 +26,12 @@ prog kernel &kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
         st_global_u32 $s1, [$d0];
 };
 
-/* { dg-final { scan-tree-dump "s2 = __phsa_builtin_alloca \\\(256, 1, __context\\\);" "gimple" } } */
+/* { dg-final { scan-tree-dump "s2 = __builtin___hsail_alloca \\\(256, 1, __context\\\);" "gimple" } } */
 
-/* { dg-final { scan-tree-dump "s1 = __phsa_builtin_alloca \\\(16, 256, __context\\\);" "gimple" } } */
+/* { dg-final { scan-tree-dump "s1 = __builtin___hsail_alloca \\\(16, 256, __context\\\);" "gimple" } } */
 
 
 /* Both functions should have an alloca frame push and pop. */
-/* { dg-final { scan-tree-dump-times "__phsa_builtin_alloca_push_frame \\\(__context\\\);" 2 "gimple" } } */
+/* { dg-final { scan-tree-dump-times "__builtin___hsail_alloca_push_frame \\\(__context\\\);" 2 "gimple" } } */
 
-/* { dg-final { scan-tree-dump-times "__phsa_builtin_alloca_pop_frame \\\(__context\\\);" 2 "gimple" } } */
+/* { dg-final { scan-tree-dump-times "__builtin___hsail_alloca_pop_frame \\\(__context\\\);" 2 "gimple" } } */

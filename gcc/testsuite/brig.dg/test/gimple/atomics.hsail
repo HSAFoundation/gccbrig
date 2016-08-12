@@ -30,4 +30,4 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* { dg-final { scan-tree-dump "\\\*\\\(atomic unsigned int \\\*\\\) VIEW_CONVERT_EXPR<unsigned int \\\*>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d0\\\)\\\) = s2;" "original"} } */
 
 /* The atomic min is implemented by a custom builtin. */
-/* { dg-final { scan-tree-dump "builtin_out.\[0-9\]+ = __phsa_builtin_atomic_min_u32 \\\(" "original"} } */
+/* { dg-final { scan-tree-dump "builtin_out.\[0-9\]+ = __builtin___hsail_atomic_min_u32 \\\(" "original"} } */
