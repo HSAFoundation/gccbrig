@@ -1199,63 +1199,6 @@ brig_code_entry_handler::add_temp_var (std::string name, tree expr)
   return temp_var;
 }
 
-/* Build a builtin declaration with the given NAME, number of
-   arguments in NARGS, return value type in RETTYPE and
-   argument types in AP.  */
-
-tree
-brig_code_entry_handler::vbuild_builtin (const char *name, int nargs,
-					 tree rettype, va_list ap)
-{
-  tree fnid = get_identifier (name);
-
-  tree *types = new tree[nargs];
-
-  for (int i = 0; i < nargs; ++i)
-    {
-      types[i] = va_arg (ap, tree);
-      if (types[i] == error_mark_node)
-	{
-	  delete[] types;
-	  return error_mark_node;
-	}
-    }
-
-  tree argtypes = NULL_TREE;
-  tree *pp = &argtypes;
-  for (int i = 0; i < nargs; ++i)
-    {
-      *pp = tree_cons (NULL_TREE, types[i], NULL_TREE);
-      pp = &TREE_CHAIN (*pp);
-    }
-  *pp = void_list_node;
-
-  tree fntype = build_function_type (rettype, argtypes);
-
-  tree builtin = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, fnid, fntype);
-
-  TREE_STATIC (builtin) = 0;
-  DECL_EXTERNAL (builtin) = 1;
-  TREE_PUBLIC (builtin) = 1;
-
-  delete[] types;
-
-  return builtin;
-}
-
-/* A variable argument list function for building a builtin function decl.  */
-
-tree
-brig_code_entry_handler::build_builtin (const char *name, int nargs,
-					tree rettype, ...)
-{
-  va_list ap;
-  va_start (ap, rettype);
-  tree builtin = vbuild_builtin (name, nargs, rettype, ap);
-  va_end (ap);
-  return builtin;
-}
-
 /* Creates a FP32 to FP16 conversion call, assuming the source and destination
    are FP32 type variables.  */
 

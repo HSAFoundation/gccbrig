@@ -97,10 +97,6 @@ protected:
   tree apply_to_all_elements (tree_element_unary_visitor &visitor,
 			      tree operand);
 
-  tree build_builtin (const char *name, int nargs, tree rettype, ...);
-
-  tree vbuild_builtin (const char *name, int nargs, tree rettype, va_list ap);
-
   HOST_WIDE_INT int_constant_value (tree node);
 
   tree extend_int (tree input, tree dest_type, tree src_type);
