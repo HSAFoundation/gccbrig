@@ -536,7 +536,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
    a) A single work-item function (that requires fibers for multi-WI):
 
       void Kernel(void* context) {
-	 __phsa_launch_kernel (_Kernel, context);
+	 __launch_launch_kernel (_Kernel, context);
       }
 
       or
@@ -544,14 +544,14 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
     b) a when gccbrig could generate a work-group function:
 
       void Kernel(void* context) {
-         __phsa_launch_wg_function (_Kernel, context);
+         __hsail_launch_wg_function (_Kernel, context);
       }
 */
 
 #ifdef HAVE_PTH
 void
-__phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
-		      void *group_base_ptr)
+__hsail_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
+		       void *group_base_ptr)
 {
   context->kernel = kernel;
   phsa_spawn_work_items (context, group_base_ptr);
@@ -559,8 +559,8 @@ __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
 #endif
 
 void
-__phsa_launch_wg_function (gccbrigKernelFunc kernel,
-			   PHSAKernelLaunchData *context, void *group_base_ptr)
+__hsail_launch_wg_function (gccbrigKernelFunc kernel,
+			    PHSAKernelLaunchData *context, void *group_base_ptr)
 {
   context->kernel = kernel;
   phsa_execute_work_groups (context, group_base_ptr);

@@ -1071,7 +1071,7 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 
       call_operands.resize (4, NULL_TREE);
       operand_types.resize (4, NULL_TREE);
-      return call_builtin (&built_in, operand_count,
+      return call_builtin (built_in, operand_count,
 			   TREE_TYPE (TREE_TYPE (built_in)), operand_types[0],
 			   call_operands[0], operand_types[1], call_operands[1],
 			   operand_types[2], call_operands[2], operand_types[3],
