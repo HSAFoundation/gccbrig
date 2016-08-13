@@ -421,26 +421,8 @@ brig_code_entry_handler::build_address_operand
       const BrigOperandRegister *mem_base_reg
 	= (const BrigOperandRegister *) m_parent.get_brig_operand_entry
 	(addr_operand.reg);
-      /* BRIG offsets are always bytes, therefore always cast the reg
-	 variable to a char* for the pointer arithmetics. */
-      tree ptr_type = build_pointer_type (char_type_node);
       tree base_reg_var = m_parent.m_cf->get_m_var_declfor_reg (mem_base_reg);
-
-      /* Cast the register variable to a pointer.  If the reg
-	 width is smaller than the pointer width, need to extend. */
-
-      if (int_size_in_bytes (ptr_type)
-	  > int_size_in_bytes (TREE_TYPE (base_reg_var)))
-	{
-	  tree conv = convert_to_integer (size_type_node, base_reg_var);
-	  tree tmp = create_tmp_var (ptr_type, NULL);
-	  tree assign = build2 (MODIFY_EXPR, ptr_type, tmp,
-				build_reinterpret_cast (ptr_type, conv));
-	  m_parent.m_cf->append_statement (assign);
-	  ptr_base = tmp;
-	}
-      else
-	ptr_base = build_reinterpret_cast (ptr_type, base_reg_var);
+      ptr_base = convert_to_pointer (ptr_type_node, base_reg_var);
 
       gcc_assert (ptr_base != NULL_TREE);
     }
@@ -454,8 +436,6 @@ brig_code_entry_handler::build_address_operand
 
   gcc_assert (ptype != NULL_TREE);
 
-  tree u64t = uint64_type_node;
-
   /* Sum up the base + offset separately to ensure byte-based ptr
      arithmetics.  In case of symbol + offset or reg + offset,
      this is enough.  Note: the base can be actually a separate
@@ -465,34 +445,21 @@ brig_code_entry_handler::build_address_operand
   if (addr == NULL_TREE)
     addr = symbol_base;
   if (addr != NULL_TREE && ptr_offset != NULL_TREE)
-    {
-      tree base_plus_offset
-	= build2 (PLUS_EXPR, u64t, build_reinterpret_cast (u64t, addr),
-		  build_reinterpret_cast (u64t, ptr_offset));
-      addr = build_reinterpret_cast (ptype, base_plus_offset);
-    }
+    addr = build2 (POINTER_PLUS_EXPR, ptr_type_node, addr, ptr_offset);
 
   if (symbol_base != NULL_TREE && ptr_base != NULL_TREE)
-    {
-      /* The most complex addressing mode: symbol + reg [+ offset]:
-	 Additional pointer arithmetics using the u64 type. */
-      addr
-	= build2 (PLUS_EXPR, u64t, build_reinterpret_cast (u64t, symbol_base),
-		  build_reinterpret_cast (u64t, addr));
-    }
+    /* The most complex addressing mode: symbol + reg [+ offset]. */
+    addr = build2 (POINTER_PLUS_EXPR, ptr_type_node, addr,
+		   convert (size_type_node, symbol_base));
   else if (addr == NULL_TREE && ptr_offset != NULL_TREE)
-    {
-      /* At least direct module-scope global group symbol access with LDA
-	 has only the ptr_offset.  Group base ptr is not added as LDA should
-	 return the segment address, not the flattened one. */
-      addr = ptr_offset;
-    }
+    /* At least direct module-scope global group symbol access with LDA
+       has only the ptr_offset.  Group base ptr is not added as LDA should
+       return the segment address, not the flattened one. */
+    addr = ptr_offset;
   else if (addr == NULL_TREE)
     gcc_unreachable ();
 
-  addr = build_reinterpret_cast (ptype, addr);
-
-  return addr;
+  return convert_to_pointer (ptype, addr);
 }
 
 /* Builds a tree operand with the given OPERAND_INDEX for the given
@@ -1876,8 +1843,7 @@ brig_code_entry_handler::extend_int (tree input, tree dest_type, tree src_type)
   */
 
   /* The converted result is then extended to the target register
-     width, using the same sign as the destination.  FIXME: is this
-     correct, shouldn't it be TREE_TYPE (output)?   */
+     width, using the same sign as the destination. */
   return convert_to_integer (dest_type, conversion_result);
 }
 
