@@ -1431,11 +1431,6 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 		     registers than the data operands.  */
 		  operand = convert (operand_type, operand);
 		}
-	      else
-		/* Always add a view_convert_expr to ensure correct type for
-		   constant operands.  For some reason leads to illegal
-		   optimizations otherwise.  */
-		operand = build1 (VIEW_CONVERT_EXPR, operand_type, operand);
 	    }
 	  else if (brig_inst.opcode == BRIG_OPCODE_SHUFFLE)
 	    {
@@ -1558,14 +1553,6 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 	}
       else
 	{
-	  if (CONVERT_EXPR_P (inst_expr) && POINTER_TYPE_P (inst_expr))
-	    {
-	      /* convert_to_integer crashes when converting a view convert
-		 expr to a pointer.  First cast it to a large enough int
-		 and let the next integer conversion do the clipping.  */
-	      inst_expr = convert_to_integer (size_type_node, inst_expr);
-	    }
-
 	  tree conv_int = convert_to_integer (output_type, inst_expr);
 	  tree assign = build2 (MODIFY_EXPR, output_type, output, conv_int);
 	  m_parent.m_cf->append_statement (assign);
