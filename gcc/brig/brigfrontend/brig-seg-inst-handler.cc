@@ -89,7 +89,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
-	sorry ("unimplemented segment type with FTOS");
+	gcc_unreachable ();
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{
@@ -118,11 +118,24 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
     {
       const BrigInstSegCvt &inst = *(const BrigInstSegCvt *) base;
 
-      std::string builtin_name ("__hsail_segmentp_");
-      builtin_name += gccbrig_segment_name (inst.segment);
+      tree builtin = NULL_TREE;
+      switch (inst.segment)
+	{
+	case BRIG_SEGMENT_GLOBAL:
+	  builtin = builtin_decl_explicit (BUILT_IN_HSAIL_SEGMENTP_GLOBAL);
+	  break;
+	case BRIG_SEGMENT_GROUP:
+	  builtin = builtin_decl_explicit (BUILT_IN_HSAIL_SEGMENTP_GROUP);
+	  break;  
+	case BRIG_SEGMENT_PRIVATE:
+	  builtin = builtin_decl_explicit (BUILT_IN_HSAIL_SEGMENTP_PRIVATE);
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
 
-      expr = call_builtin (NULL, builtin_name.c_str (), 2,
-			   TREE_TYPE (operands[0]), size_type_node, operands[1],
+      expr = call_builtin (builtin, 2,
+			   uint32_type_node, uint64_type_node, operands[1],
 			   ptr_type_node, m_parent.m_cf->m_context_arg);
     }
   else
