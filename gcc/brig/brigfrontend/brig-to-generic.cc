@@ -103,7 +103,7 @@ public:
   size_t
   operator () (const BrigBase *base)
   {
-    sorry ("BrigKind 0x%x", base->kind);
+    gcc_unreachable ();
     return base->byteCount;
   }
 };
@@ -171,17 +171,17 @@ brig_to_generic::parse (const char *brig_blob)
 	}
       else
 	{
-	  sorry ("section %qs", name);
+	  gcc_unreachable ();
 	}
       free (name);
     }
 
   if (m_code == NULL)
-    error ("code section not found");
+    gcc_unreachable ();
   if (m_data == NULL)
-    error ("data section not found");
+    gcc_unreachable ();
   if (m_operand == NULL)
-    error ("operand section not found");
+    gcc_unreachable ();
 
   brig_basic_inst_handler inst_handler (*this);
   brig_branch_inst_handler branch_inst_handler (*this);

@@ -104,7 +104,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	  else if (conv_src_size == 8)
 	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
 	  else
-	    sorry ("unsupported type");
+	    gcc_unreachable ();
 	}
       input = convert_to_integer (unsigned_int_type, input);
     }
@@ -156,7 +156,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	      and_mask = build_int_cst (unsigned_int_type, 0x7FFFFFFFFFFFFFFF);
 	    }
 	  else
-	    sorry ("unsupported type");
+	    gcc_unreachable ();
 	  tree casted_input = build_reinterpret_cast (unsigned_int_type, input);
 	  tree masked_input
 	    = build2 (BIT_AND_EXPR, unsigned_int_type, casted_input, and_mask);

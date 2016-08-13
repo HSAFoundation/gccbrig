@@ -75,7 +75,7 @@ brig_lane_inst_handler::operator () (const BrigBase *base)
       expr = build3 (COND_EXPR, TREE_TYPE (src), cmp, identity, src);
     }
   else
-    sorry ("lane instruction %u", inst.base.opcode);
+    gcc_unreachable ();
 
   build_output_assignment (inst.base, operands[0], expr);
 

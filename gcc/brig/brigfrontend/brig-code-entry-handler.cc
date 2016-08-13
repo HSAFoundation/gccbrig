@@ -748,7 +748,7 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
 	    return void_ptr;
 	  }
 	default:
-	  sorry ("brig type 0x%x", brig_type);
+	  gcc_unreachable ();
 	  break;
 	}
     }

@@ -58,7 +58,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 					   m_parent.m_cf->m_private_base_arg),
 		       convert_to_integer (size_type_node, operands[1]));
       else
-       sorry ("unimplemented segment type with STOF");
+       gcc_unreachable ();
 
       if (!(inst.modifier & BRIG_SEG_CVT_NONULL))
 	{

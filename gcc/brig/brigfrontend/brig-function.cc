@@ -290,7 +290,7 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
     case BRIG_REGISTER_KIND_CONTROL:
       break;
     default:
-      sorry ("reg operand kind %u", reg->regKind);
+      gcc_unreachable ();
       break;
     }
 

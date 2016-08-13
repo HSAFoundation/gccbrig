@@ -48,7 +48,7 @@ brig_directive_variable_handler::build_variable
 	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
-	error ("array variable size cannot be zero");
+	gcc_unreachable ();
       if (var_decltype == PARM_DECL)
 	t = build_pointer_type (element_type);
       else
@@ -145,7 +145,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
-	error ("array variable size cannot be zero");
+	gcc_unreachable ();
       var_type = build_array_type_nelts (element_type, element_count);
       size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
       natural_align = element_size / 8;
@@ -247,7 +247,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	}
     }
   else
-    sorry ("variable segment %x", brigVar->segment);
+    gcc_unreachable ();
 
   return base->byteCount;
 }
