@@ -210,8 +210,6 @@ protected:
 
 tree call_builtin (tree pdecl, int nargs, tree rettype, ...);
 
-tree call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...);
-
 tree build_reinterpret_cast (tree destination_type, tree source);
 
 tree build_stmt (enum tree_code code, ...);

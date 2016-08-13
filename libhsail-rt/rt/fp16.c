@@ -1,4 +1,5 @@
-/* Half-float conversion routines.
+/* Half-float conversion routines. Code mostly borrowed from the ARM's
+   builtin function.
 
    Copyright (C) 2008-2015 Free Software Foundation, Inc.
    Contributed by CodeSourcery.
@@ -96,7 +97,7 @@ __gnu_f2h_internal (unsigned int a, int ieee)
   return sign | (((aexp + 14) << 10) + (mantissa >> 13));
 }
 
-unsigned int
+static unsigned int
 __gnu_h2f_internal (unsigned short a, int ieee)
 {
   unsigned int sign = (unsigned int) (a & 0x8000) << 16;
@@ -122,25 +123,13 @@ __gnu_h2f_internal (unsigned short a, int ieee)
 }
 
 unsigned short
-__gnu_f2h_ieee (unsigned int a)
+__hsail_f32_to_f16 (unsigned int a)
 {
   return __gnu_f2h_internal (a, 1);
 }
 
 unsigned int
-__gnu_h2f_ieee (unsigned short a)
+__hsail_f16_to_f32 (unsigned short a)
 {
   return __gnu_h2f_internal (a, 1);
-}
-
-unsigned short
-__gnu_f2h_alternative (unsigned int x)
-{
-  return __gnu_f2h_internal (x, 0);
-}
-
-unsigned int
-__gnu_h2f_alternative (unsigned short a)
-{
-  return __gnu_h2f_internal (a, 0);
 }

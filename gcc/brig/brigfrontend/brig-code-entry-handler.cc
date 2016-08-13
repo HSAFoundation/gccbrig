@@ -1864,14 +1864,14 @@ flush_to_zero::visit_element (brig_code_entry_handler &, tree operand)
 tree
 float_to_half::visit_element (brig_code_entry_handler &caller, tree operand)
 {
-  static tree gnu_f2h_ieee = NULL_TREE;
+  tree built_in = builtin_decl_explicit (BUILT_IN_HSAIL_F32_TO_F16);
 
   tree casted_operand = build_reinterpret_cast (uint32_type_node, operand);
 
-  tree call = call_builtin (&gnu_f2h_ieee, "__gnu_f2h_ieee", 1,
-			    uint16_type_node, uint32_type_node, casted_operand);
+  tree call = call_builtin (built_in, 1, uint16_type_node, uint32_type_node,
+			    casted_operand);
   tree output
-    = create_tmp_var (TREE_TYPE (TREE_TYPE (gnu_f2h_ieee)), "fp16out");
+    = create_tmp_var (TREE_TYPE (TREE_TYPE (built_in)), "fp16out");
   tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, call);
   caller.append_statement (assign);
   return output;
@@ -1883,12 +1883,12 @@ float_to_half::visit_element (brig_code_entry_handler &caller, tree operand)
 tree
 half_to_float::visit_element (brig_code_entry_handler &caller, tree operand)
 {
-  static tree gnu_h2f_ieee = NULL_TREE;
+  tree built_in = builtin_decl_explicit (BUILT_IN_HSAIL_F16_TO_F32);
   tree truncated_source = convert_to_integer (uint16_type_node, operand);
 
   tree call
-    = call_builtin (&gnu_h2f_ieee, "__gnu_h2f_ieee", 1, uint32_type_node,
-		    uint16_type_node, truncated_source);
+    = call_builtin (built_in, 1, uint32_type_node, uint16_type_node,
+		    truncated_source);
 
   tree const_fp32_type
     = build_type_variant (brig_to_generic::s_fp32_type, 1, 0);

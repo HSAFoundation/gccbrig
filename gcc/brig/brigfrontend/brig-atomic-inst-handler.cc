@@ -112,7 +112,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       tree src1_type = TREE_VALUE
 	(TREE_CHAIN (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in)))));
 
-      instr_expr = call_builtin (&built_in, NULL, 3, instr_type, ptype, ptr,
+      instr_expr = call_builtin (built_in, 3, instr_type, ptype, ptr,
 				 src0_type, src0, src1_type, src1);
     }
   else
@@ -148,7 +148,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	      break;
 	    default:
 	      gcc_unreachable ();
-	    }	  
+	    }
 	  break;
 	case BRIG_ATOMIC_SUB:
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
@@ -162,8 +162,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_8);
 	      break;
 	    default:
-	      gcc_unreachable ();	      
-	    }	  
+	      gcc_unreachable ();
+	    }
 	  break;
 	case BRIG_ATOMIC_AND:
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
@@ -177,8 +177,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_8);
 	      break;
 	    default:
-	      gcc_unreachable ();      
-	    }	  
+	      gcc_unreachable ();
+	    }
 	  break;
 	case BRIG_ATOMIC_XOR:
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
@@ -192,9 +192,9 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_8);
 	      break;
 	    default:
-	      gcc_unreachable ();      
-	    }	  
-	  break;	
+	      gcc_unreachable ();
+	    }
+	  break;
 	case BRIG_ATOMIC_OR:
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
@@ -207,8 +207,8 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_8);
 	      break;
 	    default:
-	      gcc_unreachable ();      
-	    }	  
+	      gcc_unreachable ();
+	    }
 	  break;
 	case BRIG_ATOMIC_EXCH:
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
@@ -222,18 +222,18 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 		builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_8);
 	      break;
 	    default:
-	      gcc_unreachable ();     
-	    }	  
-	  break;  	  
+	      gcc_unreachable ();
+	    }
+	  break;
 	default:
 	  gcc_unreachable ();
 	};
- 
+
       gcc_assert (built_in != NULL_TREE);
       tree arg0_type
 	= TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (built_in))));
 
-      instr_expr = call_builtin (&built_in, NULL, 2, instr_type, ptr_type_node,
+      instr_expr = call_builtin (built_in, 2, instr_type, ptr_type_node,
 				 ptr, arg0_type, src0);
 
       /* We need a temp variable for the result, because otherwise
