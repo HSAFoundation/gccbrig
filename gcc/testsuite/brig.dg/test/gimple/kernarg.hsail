@@ -17,9 +17,9 @@ prog kernel &Kernel(kernarg_u64 %input[4], kernarg_u64 %output_ptr, kernarg_u64 
 };
 
 /* [%i] */
-/* { dg-final { scan-tree-dump " = \\\*VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(__args\\\) \\\+ 40\\\);" "original"} } */
+/* { dg-final { scan-tree-dump " = \\\*\\\(unsigned long \\\*\\\) \\\(__args \\\+ 40\\\);" "original"} } */
 
 /* [%input][$d0 + 1] */
-/* { dg-final { scan-tree-dump " = \\\*VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(__args\\\) \\\+ VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned long \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d0\\\)\\\) \\\+ 1\\\)\\\)\\\);" "original"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(unsigned long \\\*\\\) \\\(\\\(\\\(void \\\*\\\) d0 \\\+ 1\\\) \\\+ \\\(unsigned long\\\) __args\\\);" "original"} } */
 
 
