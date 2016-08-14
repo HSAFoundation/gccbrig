@@ -94,15 +94,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     case BRIG_COMPARE_SEQU:
     case BRIG_COMPARE_EQU:
-      /* For some reason gcc trunk (as of 2016-04-06) doesn't handle
-	 NaNs correctly with UNEQ_EXPR (at least with x86_64), thus
-	 implement via two or'd expressions.  This worked in gcc 4.9.1. */
-      expr = build2 (EQ_EXPR, result_type, operands[1], operands[2]);
-
-      expr = build2 (BIT_IOR_EXPR, TREE_TYPE (expr), 
-		     expr,
-		     build2 (UNORDERED_EXPR, result_type, operands[1],
-			     operands[2]));
+      expr = build2 (UNEQ_EXPR, result_type, operands[1], operands[2]);
       break;
     case BRIG_COMPARE_SNEU:
     case BRIG_COMPARE_NEU:
