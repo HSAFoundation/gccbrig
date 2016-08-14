@@ -325,8 +325,9 @@ brig_code_entry_handler::build_address_operand
 
 	  tree var_offset
 	    = build2 (PLUS_EXPR, uint32_type_node, var_region, pos);
-	  symbol_base = add_temp_var ("priv_var_offset",
-				      convert (uint64_type_node, var_offset));
+	  symbol_base
+	    = add_temp_var ("priv_var_offset",
+			    convert (size_type_node, var_offset));
 	}
       else if (segment == BRIG_SEGMENT_ARG)
 	{
@@ -366,7 +367,6 @@ brig_code_entry_handler::build_address_operand
 	    symbol_base = build1 (ADDR_EXPR, ptype, arg_var_decl);
 	}
       else
-
 	{
 	  tree global_var_decl = m_parent.global_variable (var_name);
 
@@ -407,9 +407,8 @@ brig_code_entry_handler::build_address_operand
       else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
 	{
 	  if (symbol_base != NULL_TREE)
-	    symbol_base = build2 (PLUS_EXPR, uint64_type_node,
-				  convert (uint64_type_node,
-					   m_parent.m_cf->m_private_base_arg),
+	    symbol_base = build2 (POINTER_PLUS_EXPR, ptr_type_node,
+				  m_parent.m_cf->m_private_base_arg,
 				  symbol_base);
 	  else
 	    symbol_base = m_parent.m_cf->m_private_base_arg;
