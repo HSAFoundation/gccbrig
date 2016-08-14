@@ -140,7 +140,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       expr = convert_to_real (brig_to_generic::s_fp32_type, expr);
     }
   else if (VECTOR_TYPE_P (dest_type) && ANY_INTEGRAL_TYPE_P (dest_type)
-	   && !is_boolean_dest 
+	   && !is_boolean_dest
 	   && (inst->sourceType & BRIG_TYPE_BASE_MASK) != BRIG_TYPE_F16)
     {
       /* In later gcc versions, the output of comparison is not
@@ -148,14 +148,13 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 	 an additional VEC_COND_EXPR to produce the all ones 'true' value
 	 required by HSA.
 	 VEC_COND_EXPR <a == b, { -1, -1, -1, -1 }, { 0, 0, 0, 0 }>; */
-      
+
       tree all_ones =
 	build_vector_from_val (dest_type,
 			       build_minus_one_cst (TREE_TYPE (dest_type)));
       tree all_zeroes =
 	build_vector_from_val (dest_type,
 			       build_zero_cst (TREE_TYPE (dest_type)));
-	
       expr = build3 (VEC_COND_EXPR, dest_type, expr, all_ones, all_zeroes);
     }
   else if (INTEGRAL_TYPE_P (dest_type) && !is_boolean_dest)
@@ -165,7 +164,6 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 	 the lower 1. */
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
-      
       size_t element_width = result_width;
 
       tree shift_amount_cst
@@ -173,7 +171,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 
       tree shift_left_result
 	= build2 (LSHIFT_EXPR, signed_type, signed_result, shift_amount_cst);
-      
+
       expr = build2 (RSHIFT_EXPR, signed_type, shift_left_result,
 		     shift_amount_cst);
     }
