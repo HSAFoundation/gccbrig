@@ -1561,20 +1561,20 @@ mark_abi_tags (tree t, bool val)
 
 /* Check that T has all the ABI tags that subobject SUBOB has, or
    warn if not.  If T is a (variable or function) declaration, also
-   add any missing tags.  */
+   return any missing tags, and add them to T if JUST_CHECKING is false.  */
 
-static void
-check_abi_tags (tree t, tree subob)
+static tree
+check_abi_tags (tree t, tree subob, bool just_checking = false)
 {
   bool inherit = DECL_P (t);
 
   if (!inherit && !warn_abi_tag)
-    return;
+    return NULL_TREE;
 
   tree decl = TYPE_P (t) ? TYPE_NAME (t) : t;
   if (!TREE_PUBLIC (decl))
     /* No need to worry about things local to this TU.  */
-    return;
+    return NULL_TREE;
 
   mark_abi_tags (t, true);
 
@@ -1585,7 +1585,15 @@ check_abi_tags (tree t, tree subob)
 
   cp_walk_tree_without_duplicates (&subtype, find_abi_tags_r, &data);
 
-  if (inherit && data.tags)
+  if (!(inherit && data.tags))
+    /* We don't need to do anything with data.tags.  */;
+  else if (just_checking)
+    for (tree t = data.tags; t; t = TREE_CHAIN (t))
+      {
+	tree id = get_identifier (TREE_STRING_POINTER (TREE_VALUE (t)));
+	IDENTIFIER_MARKED (id) = false;
+      }
+  else
     {
       tree attr = lookup_attribute ("abi_tag", DECL_ATTRIBUTES (t));
       if (attr)
@@ -1597,6 +1605,8 @@ check_abi_tags (tree t, tree subob)
     }
 
   mark_abi_tags (t, false);
+
+  return data.tags;
 }
 
 /* Check that DECL has all the ABI tags that are used in parts of its type
@@ -1605,20 +1615,31 @@ check_abi_tags (tree t, tree subob)
 void
 check_abi_tags (tree decl)
 {
-  tree t;
-  if (abi_version_at_least (10)
-      && DECL_LANG_SPECIFIC (decl)
-      && DECL_USE_TEMPLATE (decl)
-      && (t = DECL_TEMPLATE_RESULT (DECL_TI_TEMPLATE (decl)),
-	  t != decl))
-    /* Make sure that our template has the appropriate tags, since
-       write_unqualified_name looks for them there.  */
-    check_abi_tags (t);
   if (VAR_P (decl))
     check_abi_tags (decl, TREE_TYPE (decl));
   else if (TREE_CODE (decl) == FUNCTION_DECL
+	   && !DECL_CONV_FN_P (decl)
 	   && !mangle_return_type_p (decl))
     check_abi_tags (decl, TREE_TYPE (TREE_TYPE (decl)));
+}
+
+/* Return any ABI tags that are used in parts of the type of DECL
+   that are not reflected in its mangled name.  This function is only
+   used in backward-compatible mangling for ABI <11.  */
+
+tree
+missing_abi_tags (tree decl)
+{
+  if (VAR_P (decl))
+    return check_abi_tags (decl, TREE_TYPE (decl), true);
+  else if (TREE_CODE (decl) == FUNCTION_DECL
+	   /* Don't check DECL_CONV_FN_P here like we do in check_abi_tags, so
+	      that we can use this function for setting need_abi_warning
+	      regardless of the current flag_abi_version.  */
+	   && !mangle_return_type_p (decl))
+    return check_abi_tags (decl, TREE_TYPE (TREE_TYPE (decl)), true);
+  else
+    return NULL_TREE;
 }
 
 void
@@ -3077,11 +3098,11 @@ finish_struct_anon_r (tree field, bool complain)
 	 the TYPE_DECL that we create implicitly.  You're
 	 allowed to put one anonymous union inside another,
 	 though, so we explicitly tolerate that.  We use
-	 TYPE_ANONYMOUS_P rather than ANON_AGGR_TYPE_P so that
+	 TYPE_UNNAMED_P rather than ANON_AGGR_TYPE_P so that
 	 we also allow unnamed types used for defining fields.  */
       if (DECL_ARTIFICIAL (elt)
 	  && (!DECL_IMPLICIT_TYPEDEF_P (elt)
-	      || TYPE_ANONYMOUS_P (TREE_TYPE (elt))))
+	      || TYPE_UNNAMED_P (TREE_TYPE (elt))))
 	continue;
 
       if (TREE_CODE (elt) != FIELD_DECL)
@@ -5659,7 +5680,7 @@ finalize_literal_type_property (tree t)
 	  && !DECL_CONSTRUCTOR_P (fn))
 	{
 	  DECL_DECLARED_CONSTEXPR_P (fn) = false;
-	  if (!DECL_GENERATED_P (fn))
+	  if (!DECL_GENERATED_P (fn) && !LAMBDA_TYPE_P (t))
 	    {
 	      error ("enclosing class of constexpr non-static member "
 		     "function %q+#D is not a literal type", fn);
@@ -6718,7 +6739,7 @@ find_flexarrays (tree t, flexmems_t *fmem)
       tree fldtype = TREE_TYPE (fld);
       if (TREE_CODE (fld) != TYPE_DECL
 	  && RECORD_OR_UNION_TYPE_P (fldtype)
-	  && TYPE_ANONYMOUS_P (fldtype))
+	  && TYPE_UNNAMED_P (fldtype))
 	{
 	  /* Members of anonymous structs and unions are treated as if
 	     they were members of the containing class.  Descend into
@@ -6798,7 +6819,7 @@ diagnose_flexarrays (tree t, const flexmems_t *fmem)
 {
   /* Members of anonymous structs and unions are considered to be members
      of the containing struct or union.  */
-  if (TYPE_ANONYMOUS_P (t) || !fmem->array)
+  if (TYPE_UNNAMED_P (t) || !fmem->array)
     return;
 
   const char *msg = 0;
@@ -7392,7 +7413,7 @@ fixed_type_or_null (tree instance, int *nonnull, int *cdtorp)
 	    *nonnull = 1;
 	  return TREE_TYPE (TREE_TYPE (instance));
 	}
-      /* fall through...  */
+      /* fall through.  */
     case TARGET_EXPR:
     case PARM_DECL:
     case RESULT_DECL:

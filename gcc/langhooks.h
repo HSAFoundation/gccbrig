@@ -181,10 +181,15 @@ struct lang_hooks_for_decls
   tree (*getdecls) (void);
 
   /* Returns true if DECL is explicit member function.  */
-  bool (*function_decl_explicit_p) (tree);
+  bool (*function_decl_explicit_p) (const_tree);
 
   /* Returns true if DECL is C++11 deleted special member function.  */
-  bool (*function_decl_deleted_p) (tree);
+  bool (*function_decl_deleted_p) (const_tree);
+
+  /* Returns 0 if DECL is NOT a C++11 defaulted special member
+     function, 1 if it is explicitly defaulted within the class body,
+     or 2 if it is explicitly defaulted outside the class body.  */
+  int (*function_decl_defaulted) (const_tree);
 
   /* Returns True if the parameter is a generic parameter decl
      of a generic type, e.g a template template parameter for the C++ FE.  */
@@ -504,6 +509,9 @@ struct lang_hooks
   /* True if this language requires deep unsharing of tree nodes prior to
      gimplification.  */
   bool deep_unsharing;
+
+  /* Run all lang-specific selftests.  */
+  void (*run_lang_selftests) (void);
 
   /* Whenever you add entries here, make sure you adjust langhooks-def.h
      and langhooks.c accordingly.  */

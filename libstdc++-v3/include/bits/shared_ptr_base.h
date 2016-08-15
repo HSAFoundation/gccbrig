@@ -876,6 +876,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     public:
       typedef _Tp   element_type;
 
+#if __cplusplus > 201402L
+      using weak_type = __weak_ptr<_Tp, _Lp>;
+#endif
+
       constexpr __shared_ptr() noexcept
       : _M_ptr(0), _M_refcount()
       { }
@@ -1506,6 +1510,18 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return __lhs.owner_before(__rhs); }
     };
 
+  template<>
+    struct _Sp_owner_less<void, void>
+    {
+      template<typename _Tp, typename _Up>
+	auto
+	operator()(const _Tp& __lhs, const _Up& __rhs) const
+	-> decltype(__lhs.owner_before(__rhs))
+	{ return __lhs.owner_before(__rhs); }
+
+      using is_transparent = void;
+    };
+
   template<typename _Tp, _Lock_policy _Lp>
     struct owner_less<__shared_ptr<_Tp, _Lp>>
     : public _Sp_owner_less<__shared_ptr<_Tp, _Lp>, __weak_ptr<_Tp, _Lp>>
@@ -1539,6 +1555,16 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __shared_ptr<const _Tp, _Lp>
       shared_from_this() const
       { return __shared_ptr<const _Tp, _Lp>(this->_M_weak_this); }
+
+#if __cplusplus > 201402L || !defined(__STRICT_ANSI__) // c++1z or gnu++11
+      __weak_ptr<_Tp, _Lp>
+      weak_from_this()
+      { return this->_M_weak_this; }
+
+      __weak_ptr<const _Tp, _Lp>
+      weak_from_this() const
+      { return this->_M_weak_this; }
+#endif
 
     private:
       template<typename _Tp1>

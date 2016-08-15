@@ -1,3 +1,150 @@
+2016-08-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c/7652
+	* c-common.c (scalar_to_vector): Adjust fall through comment.
+	* c-opts.c (c_common_handle_option): Likewise.
+	* c-pragma.c (handle_pragma_pack): Add FALLTHRU.
+	* c-pretty-print.c (c_pretty_printer::postfix_expression): Adjust
+	fall through comment.
+	* cilk.c (extract_free_variables): Add FALLTHRU.
+
+2016-08-10  Jason Merrill  <jason@redhat.com>
+
+	* c-cppbuiltin.c (c_cpp_builtins): Define __cpp_if_constexpr.
+
+2016-08-09  Jason Merrill  <jason@redhat.com>
+
+	* c-common.c (c_common_attribute_table): vector_size affects type
+	identity.
+
+2016-08-09  Marek Polacek  <polacek@redhat.com>
+
+	PR c/7652
+	* c-ada-spec.c (dump_generic_ada_node): Add return.
+
+2016-08-09  Jason Merrill  <jason@redhat.com>
+
+	* c-cppbuiltin.c (c_cpp_builtins): Update __cpp_constexpr for
+	C++17 constexpr lambdas.
+
+2016-08-08  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c/64955
+	* c-common.h (selftest::c_format_c_tests): New declaration.
+	(selftest::run_c_tests): New declaration.
+	* c-format.c: Include "selftest.h.
+	(format_warning_va): Add param "corrected_substring" and use
+	it to add a replacement fix-it hint.
+	(format_warning_at_substring): Likewise.
+	(format_warning_at_char): Update for new param of
+	format_warning_va.
+	(argument_parser::check_argument_type): Pass "fki" to
+	check_format_types.
+	(check_format_types): Add param "fki" and pass it to
+	format_type_warning.
+	(deref_n_times): New function.
+	(get_modifier_for_format_len): New function.
+	(selftest::test_get_modifier_for_format_len): New function.
+	(get_format_for_type): New function.
+	(format_type_warning): Add param "fki" and use it to attempt
+	to provide hints for argument types when calling
+	format_warning_at_substring.
+	(selftest::get_info): New function.
+	(selftest::assert_format_for_type_streq): New function.
+	(ASSERT_FORMAT_FOR_TYPE_STREQ): New macro.
+	(selftest::test_get_format_for_type_printf): New function.
+	(selftest::test_get_format_for_type_scanf): New function.
+	(selftest::c_format_c_tests): New function.
+
+2016-08-08  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c/52952
+	* c-format.c: Include "diagnostic.h".
+	(location_column_from_byte_offset): Delete.
+	(location_from_offset): Delete.
+	(format_warning_va): New function.
+	(format_warning_at_substring): New function.
+	(format_warning_at_char): New function.
+	(check_format_arg): Capture location of format_tree and pass to
+	check_format_info_main.
+	(argument_parser): Add fields "start_of_this_format" and
+	"format_string_cst".
+	(flag_chars_t::validate): Add param "format_string_cst".  Convert
+	warning_at call using location_from_offset to call to
+	format_warning_at_char.
+	(argument_parser::argument_parser): Add param "format_string_cst_"
+	and use use it to initialize field "format_string_cst".
+	Initialize new field "start_of_this_format".
+	(argument_parser::read_format_flags): Convert warning_at call
+	using location_from_offset to a call to format_warning_at_char.
+	(argument_parser::read_any_format_left_precision): Likewise.
+	(argument_parser::read_any_format_precision): Likewise.
+	(argument_parser::read_any_other_modifier): Likewise.
+	(argument_parser::find_format_char_info): Likewise, in three places.
+	(argument_parser::parse_any_scan_set): Likewise, in one place.
+	(argument_parser::handle_conversions): Likewise, in two places.
+	(argument_parser::check_argument_type): Add param "fmt_param_loc"
+	and use it to make a substring_loc.  Pass the latter to
+	check_format_types.
+	(check_format_info_main): Add params "fmt_param_loc" and
+	"format_string_cst".  Convert warning_at calls using
+	location_from_offset to calls to format_warning_at_char.  Pass the
+	new params to the arg_parser ctor.  Pass "format_string_cst" to
+	flag_chars.validate.  Pass "fmt_param_loc" to
+	arg_parser.check_argument_type.
+	(check_format_types): Convert first param from a location_t
+	to a const substring_loc & and rename to "fmt_loc".  Attempt
+	to extract the range of the relevant parameter and pass it
+	to format_type_warning.
+	(format_type_warning): Convert first param from a location_t
+	to a const substring_loc & and rename to "fmt_loc".  Add
+	params "param_range" and "type".  Replace calls to warning_at
+	with calls to format_warning_at_substring.
+
+2016-08-08  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-format.c (class flag_chars_t): New class.
+	(struct length_modifier): New struct.
+	(class argument_parser): New class.
+	(flag_chars_t::flag_chars_t): New ctor.
+	(flag_chars_t::has_char_p): New method.
+	(flag_chars_t::add_char): New method.
+	(flag_chars_t::validate): New method.
+	(flag_chars_t::get_alloc_flag): New method.
+	(flag_chars_t::assignment_suppression_p): New method.
+	(argument_parser::argument_parser): New ctor.
+	(argument_parser::read_any_dollar): New method.
+	(argument_parser::read_format_flags): New method.
+	(argument_parser::read_any_format_width): New method.
+	(argument_parser::read_any_format_left_precision): New method.
+	(argument_parser::read_any_format_precision): New method.
+	(argument_parser::handle_alloc_chars): New method.
+	(argument_parser::read_any_length_modifier): New method.
+	(argument_parser::read_any_other_modifier): New method.
+	(argument_parser::find_format_char_info): New method.
+	(argument_parser::validate_flag_pairs): New method.
+	(argument_parser::give_y2k_warnings): New method.
+	(argument_parser::parse_any_scan_set): New method.
+	(argument_parser::handle_conversions): New method.
+	(argument_parser::check_argument_type): New method.
+	(check_format_info_main): Introduce classes argument_parser
+	and flag_chars_t, moving the code within the loop into methods
+	of these classes.  Make various locals "const".
+
+2016-08-05  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-common.c: Include "substring-locations.h".
+	(get_cpp_ttype_from_string_type): New function.
+	(g_string_concat_db): New global.
+	(substring_loc::get_range): New method.
+	* c-common.h (g_string_concat_db): New declaration.
+	(class substring_loc): New class.
+	* c-lex.c (lex_string): When concatenating strings, capture the
+	locations of all tokens using a new obstack, and record the
+	concatenation locations within g_string_concat_db.
+	* c-opts.c (c_common_init_options): Construct g_string_concat_db
+	on the ggc-heap.
+
 2016-07-29  Marek Polacek  <polacek@redhat.com>
 
 	PR c/71926

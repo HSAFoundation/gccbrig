@@ -11126,6 +11126,10 @@ static int
 decl_quals (const_tree decl)
 {
   return ((TREE_READONLY (decl)
+	   /* The C++ front-end correctly marks reference-typed
+	      variables as readonly, but from a language (and debug
+	      info) standpoint they are not const-qualified.  */
+	   && TREE_CODE (TREE_TYPE (decl)) != REFERENCE_TYPE
 	   ? TYPE_QUAL_CONST : TYPE_UNQUALIFIED)
 	  | (TREE_THIS_VOLATILE (decl)
 	     ? TYPE_QUAL_VOLATILE : TYPE_UNQUALIFIED));
@@ -13334,6 +13338,7 @@ mem_loc_descriptor (rtx rtl, machine_mode mode,
       if (!subreg_lowpart_p (rtl))
 	break;
       inner = SUBREG_REG (rtl);
+      /* FALLTHRU */
     case TRUNCATE:
       if (inner == NULL_RTX)
         inner = XEXP (rtl, 0);
@@ -13671,7 +13676,7 @@ mem_loc_descriptor (rtx rtl, machine_mode mode,
 					: -GET_MODE_UNIT_SIZE (mem_mode),
 					mode));
 
-      /* ... fall through ...  */
+      /* fall through */
 
     case PLUS:
     plus:
@@ -15597,7 +15602,7 @@ resolve_args_picking_1 (dw_loc_descr_ref loc, unsigned initial_frame_offset,
 	  if (!resolve_args_picking_1 (l->dw_loc_next, frame_offset_, dpi,
 				       frame_offsets))
 	    return false;
-	  /* Fall through... */
+	  /* Fall through. */
 
 	case DW_OP_skip:
 	  l = l->dw_loc_oprnd1.v.val_loc;
@@ -16142,6 +16147,89 @@ loc_list_from_tree_1 (tree loc, int want_address,
     case COMPLEX_CST:
       if ((ret = cst_pool_loc_descr (loc)))
 	have_address = 1;
+      else if (TREE_CODE (loc) == CONSTRUCTOR)
+	{
+	  tree type = TREE_TYPE (loc);
+	  unsigned HOST_WIDE_INT size = int_size_in_bytes (type);
+	  unsigned HOST_WIDE_INT offset = 0;
+	  unsigned HOST_WIDE_INT cnt;
+	  constructor_elt *ce;
+
+	  if (TREE_CODE (type) == RECORD_TYPE)
+	    {
+	      /* This is very limited, but it's enough to output
+		 pointers to member functions, as long as the
+		 referenced function is defined in the current
+		 translation unit.  */
+	      FOR_EACH_VEC_SAFE_ELT (CONSTRUCTOR_ELTS (loc), cnt, ce)
+		{
+		  tree val = ce->value;
+
+		  tree field = ce->index;
+
+		  if (val)
+		    STRIP_NOPS (val);
+
+		  if (!field || DECL_BIT_FIELD (field))
+		    {
+		      expansion_failed (loc, NULL_RTX,
+					"bitfield in record type constructor");
+		      size = offset = (unsigned HOST_WIDE_INT)-1;
+		      ret = NULL;
+		      break;
+		    }
+
+		  HOST_WIDE_INT fieldsize = tree_to_shwi (DECL_SIZE_UNIT (field));
+		  unsigned HOST_WIDE_INT pos = int_byte_position (field);
+		  gcc_assert (pos + fieldsize <= size);
+		  if (pos < offset)
+		    {
+		      expansion_failed (loc, NULL_RTX,
+					"out-of-order fields in record constructor");
+		      size = offset = (unsigned HOST_WIDE_INT)-1;
+		      ret = NULL;
+		      break;
+		    }
+		  if (pos > offset)
+		    {
+		      ret1 = new_loc_descr (DW_OP_piece, pos - offset, 0);
+		      add_loc_descr (&ret, ret1);
+		      offset = pos;
+		    }
+		  if (val && fieldsize != 0)
+		    {
+		      ret1 = loc_descriptor_from_tree (val, want_address, context);
+		      if (!ret1)
+			{
+			  expansion_failed (loc, NULL_RTX,
+					    "unsupported expression in field");
+			  size = offset = (unsigned HOST_WIDE_INT)-1;
+			  ret = NULL;
+			  break;
+			}
+		      add_loc_descr (&ret, ret1);
+		    }
+		  if (fieldsize)
+		    {
+		      ret1 = new_loc_descr (DW_OP_piece, fieldsize, 0);
+		      add_loc_descr (&ret, ret1);
+		      offset = pos + fieldsize;
+		    }
+		}
+
+	      if (offset != size)
+		{
+		  ret1 = new_loc_descr (DW_OP_piece, size - offset, 0);
+		  add_loc_descr (&ret, ret1);
+		  offset = size;
+		}
+
+	      have_address = !!want_address;
+	    }
+	  else
+	    expansion_failed (loc, NULL_RTX,
+			      "constructor of non-record type");
+	}
       else
       /* We can construct small constants here using int_loc_descriptor.  */
 	expansion_failed (loc, NULL_RTX,
@@ -16350,7 +16438,7 @@ loc_list_from_tree_1 (tree loc, int want_address,
 		      TREE_OPERAND (loc, 1), TREE_OPERAND (loc, 0));
       }
 
-      /* ... fall through ...  */
+      /* fall through */
 
     case COND_EXPR:
       {
@@ -20390,6 +20478,24 @@ gen_subprogram_die (tree decl, dw_die_ref context_die)
 		add_type_attribute (subr_die, TREE_TYPE (TREE_TYPE (decl)),
 				    TYPE_UNQUALIFIED, false, context_die);
 	    }
+
+	  /* When we process the method declaration, we haven't seen
+	     the out-of-class defaulted definition yet, so we have to
+	     recheck now.  */
+	  int defaulted = lang_hooks.decls.function_decl_defaulted (decl);
+	  if (defaulted && (dwarf_version >= 5 || ! dwarf_strict)
+	      && !get_AT (subr_die, DW_AT_defaulted))
+	    switch (defaulted)
+	      {
+	      case 2:
+		add_AT_unsigned (subr_die, DW_AT_defaulted,
+				 DW_DEFAULTED_out_of_class);
+		break;
+
+	      case 1: /* This must have been handled before.  */
+	      default:
+		gcc_unreachable ();
+	      }
 	}
     }
   /* Create a fresh DIE for anything else.  */
@@ -20437,10 +20543,35 @@ gen_subprogram_die (tree decl, dw_die_ref context_die)
 	    add_AT_flag (subr_die, DW_AT_explicit, 1);
 
 	  /* If this is a C++11 deleted special function member then generate
-	     a DW_AT_GNU_deleted attribute.  */
+	     a DW_AT_deleted attribute.  */
 	  if (lang_hooks.decls.function_decl_deleted_p (decl)
-	      && (! dwarf_strict))
-	    add_AT_flag (subr_die, DW_AT_GNU_deleted, 1);
+	      && (dwarf_version >= 5 || ! dwarf_strict))
+	    add_AT_flag (subr_die, DW_AT_deleted, 1);
+
+	  /* If this is a C++11 defaulted special function member then
+	     generate a DW_AT_GNU_defaulted attribute.  */
+	  int defaulted = lang_hooks.decls.function_decl_defaulted (decl);
+	  if (defaulted && (dwarf_version >= 5 || ! dwarf_strict))
+	    switch (defaulted)
+	      {
+	      case 1:
+		add_AT_unsigned (subr_die, DW_AT_defaulted,
+				 DW_DEFAULTED_in_class);
+		break;
+
+		/* It is likely that this will never hit, since we
+		   don't have the out-of-class definition yet when we
+		   process the class definition and the method
+		   declaration.  We recheck elsewhere, but leave it
+		   here just in case.  */
+	      case 2:
+		add_AT_unsigned (subr_die, DW_AT_defaulted,
+				 DW_DEFAULTED_out_of_class);
+		break;
+
+	      default:
+		gcc_unreachable ();
+	      }
 	}
     }
   /* Tag abstract instances with DW_AT_inline.  */
@@ -24177,7 +24308,15 @@ gen_remaining_tmpl_value_param_die_attribute (void)
       FOR_EACH_VEC_ELT (*tmpl_value_parm_die_table, i, e)
 	{
 	  if (!tree_add_const_value_attribute (e->die, e->arg))
-	    (*tmpl_value_parm_die_table)[j++] = *e;
+	    {
+	      dw_loc_descr_ref loc = NULL;
+	      if (dwarf_version >= 5 || !dwarf_strict)
+		loc = loc_descriptor_from_tree (e->arg, 2, NULL);
+	      if (loc)
+		add_AT_loc (e->die, DW_AT_location, loc);
+	      else
+		(*tmpl_value_parm_die_table)[j++] = *e;
+	    }
 	}
       tmpl_value_parm_die_table->truncate (j);
     }

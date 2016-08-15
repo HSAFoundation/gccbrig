@@ -1,3 +1,40 @@
+2016-08-09  Ian Lance Taylor  <iant@google.com>
+
+	* gccgo.texi (Invoking gccgo): Document -fgo-optimize-allocs and
+	-fgo-debug-escae.
+	(Compiler Directives): New chapter.
+	(Function Names): Describe using //go:linkname.  Suggest using
+	-fgo-pkgpath rather than -fgo-prefix.
+
+2016-08-08  Ian Lance Taylor  <iant@google.com>
+
+	PR go/72814
+	* go-gcc.cc (Gcc_backend::function_type): If the return type is
+	zero bytes, treat the function as returning void.
+	(return_statement): If the return type is zero bytes, don't
+	actually return any values.
+
+2016-08-05  Ian Lance Taylor  <iant@google.com>
+
+	PR go/72812
+	* go-gcc.cc (char_needs_encoding): New static function.
+	(needs_encoding, fetch_utf8_char): New static functions.
+	(encode_id): New static function.
+	(Gcc_backend::global_variable): Set asm name if the name is not
+	simple ASCII.
+	(Gcc_backend::implicit_variable): Likewise.
+	(Gcc_backend::implicit_variable_reference): Likewise.
+	(Gcc_backend::immutable_struct): Likewise.
+	(Gcc_backend::immutable_struct_reference): Likewise.
+	(Gcc_backend::function): Likewise.
+
+2016-08-02  Chris Manghane  <cmang@google.com>
+
+	* lang.opt: Add -fgo-debug-escape option.
+	* go-c.h (go_create_gogo): Add debug_escape_level parameter.
+	* go-lang.c (go_langhook_init): Pass go_debug_escape_level to
+	go_create_gogo.
+
 2016-05-06  Chris Manghane  <cmang@google.com>
 
 	* Make-lang.in (GO_OBJS): Add go/escape.o (based on an entirely

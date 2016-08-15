@@ -4493,7 +4493,7 @@ build_unary_op (location_t location,
 	      return error_mark_node;
 	    }
 
-	  /* ... fall through ...  */
+	  /* fall through */
 
 	case ARRAY_REF:
 	  if (TYPE_REVERSE_STORAGE_ORDER (TREE_TYPE (TREE_OPERAND (arg, 0))))
@@ -4695,10 +4695,10 @@ c_mark_addressable (tree exp)
 	    return false;
 	  }
 
-	/* drops in */
+	/* FALLTHRU */
       case FUNCTION_DECL:
 	TREE_ADDRESSABLE (x) = 1;
-	/* drops out */
+	/* FALLTHRU */
       default:
 	return true;
     }
@@ -8558,6 +8558,8 @@ set_nonincremental_init_from_string (tree str,
 
   wchar_bytes = TYPE_PRECISION (TREE_TYPE (TREE_TYPE (str))) / BITS_PER_UNIT;
   charwidth = TYPE_PRECISION (char_type_node);
+  gcc_assert ((size_t) wchar_bytes * charwidth
+	      <= ARRAY_SIZE (val) * HOST_BITS_PER_WIDE_INT);
   type = TREE_TYPE (constructor_type);
   p = TREE_STRING_POINTER (str);
   end = p + TREE_STRING_LENGTH (str);
@@ -8583,7 +8585,7 @@ set_nonincremental_init_from_string (tree str,
 		bitpos = (wchar_bytes - byte - 1) * charwidth;
 	      else
 		bitpos = byte * charwidth;
-	      val[bitpos % HOST_BITS_PER_WIDE_INT]
+	      val[bitpos / HOST_BITS_PER_WIDE_INT]
 		|= ((unsigned HOST_WIDE_INT) ((unsigned char) *p++))
 		   << (bitpos % HOST_BITS_PER_WIDE_INT);
 	    }

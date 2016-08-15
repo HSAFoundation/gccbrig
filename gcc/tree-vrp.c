@@ -59,6 +59,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "target.h"
 #include "case-cfn-macros.h"
 #include "params.h"
+#include "alloc-pool.h"
 
 /* Range of values that can be associated with an SSA_NAME after VRP
    has executed.  */
@@ -87,6 +88,10 @@ struct value_range
 };
 
 #define VR_INITIALIZER { VR_UNDEFINED, NULL_TREE, NULL_TREE, NULL }
+
+/* Allocation pools for tree-vrp allocations.  */
+static object_allocator<value_range> vrp_value_range_pool ("Tree VRP value ranges");
+static bitmap_obstack vrp_equiv_obstack;
 
 /* Set of SSA names found live during the RPO traversal of the function
    for still active basic-blocks.  */
@@ -407,7 +412,7 @@ set_value_range (value_range *vr, enum value_range_type t, tree min,
      bitmaps, only do it if absolutely necessary.  */
   if (vr->equiv == NULL
       && equiv != NULL)
-    vr->equiv = BITMAP_ALLOC (NULL);
+    vr->equiv = BITMAP_ALLOC (&vrp_equiv_obstack);
 
   if (equiv != vr->equiv)
     {
@@ -689,7 +694,8 @@ get_value_range (const_tree var)
     return CONST_CAST (value_range *, &vr_const_varying);
 
   /* Create a default value range.  */
-  vr_value[ver] = vr = XCNEW (value_range);
+  vr_value[ver] = vr = vrp_value_range_pool.allocate ();
+  memset (vr, 0, sizeof (*vr));
 
   /* Defer allocating the equivalence set.  */
   vr->equiv = NULL;
@@ -818,7 +824,7 @@ add_equivalence (bitmap *equiv, const_tree var)
   value_range *vr = vr_value[ver];
 
   if (*equiv == NULL)
-    *equiv = BITMAP_ALLOC (NULL);
+    *equiv = BITMAP_ALLOC (&vrp_equiv_obstack);
   bitmap_set_bit (*equiv, ver);
   if (vr && vr->equiv)
     bitmap_ior_into (*equiv, vr->equiv);
@@ -886,6 +892,9 @@ get_single_symbol (tree t, bool *neg, tree *inv)
 {
   bool neg_;
   tree inv_;
+
+  *inv = NULL_TREE;
+  *neg = false;
 
   if (TREE_CODE (t) == PLUS_EXPR
       || TREE_CODE (t) == POINTER_PLUS_EXPR
@@ -3779,7 +3788,8 @@ extract_range_basic (value_range *vr, gimple *stmt)
 	  arg = gimple_call_arg (stmt, 0);
 	  if (TREE_CODE (arg) == SSA_NAME
 	      && SSA_NAME_IS_DEFAULT_DEF (arg)
-	      && TREE_CODE (SSA_NAME_VAR (arg)) == PARM_DECL)
+	      && TREE_CODE (SSA_NAME_VAR (arg)) == PARM_DECL
+	      && cfun->after_inlining)
 	    {
 	      set_value_range_to_null (vr, type);
 	      return;
@@ -6967,6 +6977,7 @@ vrp_initialize (void)
   num_vr_values = num_ssa_names;
   vr_value = XCNEWVEC (value_range *, num_vr_values);
   vr_phi_edge_counts = XCNEWVEC (int, num_ssa_names);
+  bitmap_obstack_initialize (&vrp_equiv_obstack);
 
   FOR_EACH_BB_FN (bb, cfun)
     {
@@ -8714,6 +8725,7 @@ vrp_visit_phi_node (gphi *phi)
       print_gimple_stmt (dump_file, phi, 0, dump_flags);
     }
 
+  bool may_simulate_again = false;
   edges = 0;
   for (i = 0; i < gimple_phi_num_args (phi); i++)
     {
@@ -8736,6 +8748,12 @@ vrp_visit_phi_node (gphi *phi)
 
 	  if (TREE_CODE (arg) == SSA_NAME)
 	    {
+	      /* See if we are eventually going to change one of the args.  */
+	      gimple *def_stmt = SSA_NAME_DEF_STMT (arg);
+	      if (! gimple_nop_p (def_stmt)
+		  && prop_simulate_again_p (def_stmt))
+		may_simulate_again = true;
+
 	      vr_arg = *(get_value_range (arg));
 	      /* Do not allow equivalences or symbolic ranges to leak in from
 		 backedges.  That creates invalid equivalencies.
@@ -8811,11 +8829,14 @@ vrp_visit_phi_node (gphi *phi)
      previous one.  We don't do this if we have seen a new executable
      edge; this helps us avoid an overflow infinity for conditionals
      which are not in a loop.  If the old value-range was VR_UNDEFINED
-     use the updated range and iterate one more time.  */
+     use the updated range and iterate one more time.  If we will not
+     simulate this PHI again with the same number of edges then iterate
+     one more time.  */
   if (edges > 0
       && gimple_phi_num_args (phi) > 1
       && edges == old_edges
-      && lhs_vr->type != VR_UNDEFINED)
+      && lhs_vr->type != VR_UNDEFINED
+      && may_simulate_again)
     {
       /* Compare old and new ranges, fall back to varying if the
          values are not comparable.  */
@@ -8869,6 +8890,31 @@ vrp_visit_phi_node (gphi *phi)
       goto infinite_check;
     }
 
+  goto update_range;
+
+varying:
+  set_value_range_to_varying (&vr_result);
+
+scev_check:
+  /* If this is a loop PHI node SCEV may known more about its value-range.
+     scev_check can be reached from two paths, one is a fall through from above
+     "varying" label, the other is direct goto from code block which tries to
+     avoid infinite simulation.  */
+  if ((l = loop_containing_stmt (phi))
+      && l->header == gimple_bb (phi))
+    adjust_range_with_scev (&vr_result, l, phi, lhs);
+
+infinite_check:
+  /* If we will end up with a (-INF, +INF) range, set it to
+     VARYING.  Same if the previous max value was invalid for
+     the type and we end up with vr_result.min > vr_result.max.  */
+  if ((vr_result.type == VR_RANGE || vr_result.type == VR_ANTI_RANGE)
+      && !((vrp_val_is_max (vr_result.max) && vrp_val_is_min (vr_result.min))
+	   || compare_values (vr_result.min, vr_result.max) > 0))
+    ;
+  else
+    set_value_range_to_varying (&vr_result);
+
   /* If the new range is different than the previous value, keep
      iterating.  */
 update_range:
@@ -8891,31 +8937,6 @@ update_range:
 
   /* Nothing changed, don't add outgoing edges.  */
   return SSA_PROP_NOT_INTERESTING;
-
-varying:
-  set_value_range_to_varying (&vr_result);
-
-scev_check:
-  /* If this is a loop PHI node SCEV may known more about its value-range.
-     scev_check can be reached from two paths, one is a fall through from above
-     "varying" label, the other is direct goto from code block which tries to
-     avoid infinite simulation.  */
-  if ((l = loop_containing_stmt (phi))
-      && l->header == gimple_bb (phi))
-    adjust_range_with_scev (&vr_result, l, phi, lhs);
-
-infinite_check:
-  /* If we will end up with a (-INF, +INF) range, set it to
-     VARYING.  Same if the previous max value was invalid for
-     the type and we end up with vr_result.min > vr_result.max.  */
-  if ((vr_result.type == VR_RANGE || vr_result.type == VR_ANTI_RANGE)
-      && !((vrp_val_is_max (vr_result.max) && vrp_val_is_min (vr_result.min))
-	   || compare_values (vr_result.min, vr_result.max) > 0))
-    goto update_range;
-
-  /* No match found.  Set the LHS to VARYING.  */
-  set_value_range_to_varying (lhs_vr);
-  return SSA_PROP_VARYING;
 }
 
 /* Simplify boolean operations if the source is known
@@ -9586,7 +9607,7 @@ static bool
 simplify_switch_using_ranges (gswitch *stmt)
 {
   tree op = gimple_switch_index (stmt);
-  value_range *vr;
+  value_range *vr = NULL;
   bool take_default;
   edge e;
   edge_iterator ei;
@@ -9625,6 +9646,89 @@ simplify_switch_using_ranges (gswitch *stmt)
     return false;
 
   n = gimple_switch_num_labels (stmt);
+
+  /* We can truncate the case label ranges that partially overlap with OP's
+     value range.  */
+  size_t min_idx = 1, max_idx = 0;
+  if (vr != NULL)
+    find_case_label_range (stmt, vr->min, vr->max, &min_idx, &max_idx);
+  if (min_idx <= max_idx)
+    {
+      tree min_label = gimple_switch_label (stmt, min_idx);
+      tree max_label = gimple_switch_label (stmt, max_idx);
+
+      /* Avoid changing the type of the case labels when truncating.  */
+      tree case_label_type = TREE_TYPE (CASE_LOW (min_label));
+      tree vr_min = fold_convert (case_label_type, vr->min);
+      tree vr_max = fold_convert (case_label_type, vr->max);
+
+      if (vr->type == VR_RANGE)
+	{
+	  /* If OP's value range is [2,8] and the low label range is
+	     0 ... 3, truncate the label's range to 2 .. 3.  */
+	  if (tree_int_cst_compare (CASE_LOW (min_label), vr_min) < 0
+	      && CASE_HIGH (min_label) != NULL_TREE
+	      && tree_int_cst_compare (CASE_HIGH (min_label), vr_min) >= 0)
+	    CASE_LOW (min_label) = vr_min;
+
+	  /* If OP's value range is [2,8] and the high label range is
+	     7 ... 10, truncate the label's range to 7 .. 8.  */
+	  if (tree_int_cst_compare (CASE_LOW (max_label), vr_max) <= 0
+	      && CASE_HIGH (max_label) != NULL_TREE
+	      && tree_int_cst_compare (CASE_HIGH (max_label), vr_max) > 0)
+	    CASE_HIGH (max_label) = vr_max;
+	}
+      else if (vr->type == VR_ANTI_RANGE)
+	{
+	  tree one_cst = build_one_cst (case_label_type);
+
+	  if (min_label == max_label)
+	    {
+	      /* If OP's value range is ~[7,8] and the label's range is
+		 7 ... 10, truncate the label's range to 9 ... 10.  */
+	      if (tree_int_cst_compare (CASE_LOW (min_label), vr_min) == 0
+		  && CASE_HIGH (min_label) != NULL_TREE
+		  && tree_int_cst_compare (CASE_HIGH (min_label), vr_max) > 0)
+		CASE_LOW (min_label)
+		  = int_const_binop (PLUS_EXPR, vr_max, one_cst);
+
+	      /* If OP's value range is ~[7,8] and the label's range is
+		 5 ... 8, truncate the label's range to 5 ... 6.  */
+	      if (tree_int_cst_compare (CASE_LOW (min_label), vr_min) < 0
+		  && CASE_HIGH (min_label) != NULL_TREE
+		  && tree_int_cst_compare (CASE_HIGH (min_label), vr_max) == 0)
+		CASE_HIGH (min_label)
+		  = int_const_binop (MINUS_EXPR, vr_min, one_cst);
+	    }
+	  else
+	    {
+	      /* If OP's value range is ~[2,8] and the low label range is
+		 0 ... 3, truncate the label's range to 0 ... 1.  */
+	      if (tree_int_cst_compare (CASE_LOW (min_label), vr_min) < 0
+		  && CASE_HIGH (min_label) != NULL_TREE
+		  && tree_int_cst_compare (CASE_HIGH (min_label), vr_min) >= 0)
+		CASE_HIGH (min_label)
+		  = int_const_binop (MINUS_EXPR, vr_min, one_cst);
+
+	      /* If OP's value range is ~[2,8] and the high label range is
+		 7 ... 10, truncate the label's range to 9 ... 10.  */
+	      if (tree_int_cst_compare (CASE_LOW (max_label), vr_max) <= 0
+		  && CASE_HIGH (max_label) != NULL_TREE
+		  && tree_int_cst_compare (CASE_HIGH (max_label), vr_max) > 0)
+		CASE_LOW (max_label)
+		  = int_const_binop (PLUS_EXPR, vr_max, one_cst);
+	    }
+	}
+
+      /* Canonicalize singleton case ranges.  */
+      if (tree_int_cst_equal (CASE_LOW (min_label), CASE_HIGH (min_label)))
+	CASE_HIGH (min_label) = NULL_TREE;
+      if (tree_int_cst_equal (CASE_LOW (max_label), CASE_HIGH (max_label)))
+	CASE_HIGH (max_label) = NULL_TREE;
+    }
+
+  /* We can also eliminate case labels that lie completely outside OP's value
+     range.  */
 
   /* Bail out if this is just all edges taken.  */
   if (i == 1
@@ -10092,6 +10196,67 @@ simplify_stmt_for_jump_threading (gimple *stmt, gimple *within_stmt,
 				     gimple_cond_rhs (cond_stmt),
 				     within_stmt);
 
+  /* We simplify a switch statement by trying to determine which case label
+     will be taken.  If we are successful then we return the corresponding
+     CASE_LABEL_EXPR.  */
+  if (gswitch *switch_stmt = dyn_cast <gswitch *> (stmt))
+    {
+      tree op = gimple_switch_index (switch_stmt);
+      if (TREE_CODE (op) != SSA_NAME)
+	return NULL_TREE;
+
+      value_range *vr = get_value_range (op);
+      if ((vr->type != VR_RANGE && vr->type != VR_ANTI_RANGE)
+	  || symbolic_range_p (vr))
+	return NULL_TREE;
+
+      if (vr->type == VR_RANGE)
+	{
+	  size_t i, j;
+	  /* Get the range of labels that contain a part of the operand's
+	     value range.  */
+	  find_case_label_range (switch_stmt, vr->min, vr->max, &i, &j);
+
+	  /* Is there only one such label?  */
+	  if (i == j)
+	    {
+	      tree label = gimple_switch_label (switch_stmt, i);
+
+	      /* The i'th label will be taken only if the value range of the
+		 operand is entirely within the bounds of this label.  */
+	      if (CASE_HIGH (label) != NULL_TREE
+		  ? (tree_int_cst_compare (CASE_LOW (label), vr->min) <= 0
+		     && tree_int_cst_compare (CASE_HIGH (label), vr->max) >= 0)
+		  : (tree_int_cst_equal (CASE_LOW (label), vr->min)
+		     && tree_int_cst_equal (vr->min, vr->max)))
+		return label;
+	    }
+
+	  /* If there are no such labels then the default label will be
+	     taken.  */
+	  if (i > j)
+	    return gimple_switch_label (switch_stmt, 0);
+	}
+
+      if (vr->type == VR_ANTI_RANGE)
+	{
+	  unsigned n = gimple_switch_num_labels (switch_stmt);
+	  tree min_label = gimple_switch_label (switch_stmt, 1);
+	  tree max_label = gimple_switch_label (switch_stmt, n - 1);
+
+	  /* The default label will be taken only if the anti-range of the
+	     operand is entirely outside the bounds of all the (non-default)
+	     case labels.  */
+	  if (tree_int_cst_compare (vr->min, CASE_LOW (min_label)) <= 0
+	      && (CASE_HIGH (max_label) != NULL_TREE
+		  ? tree_int_cst_compare (vr->max, CASE_HIGH (max_label)) >= 0
+		  : tree_int_cst_compare (vr->max, CASE_LOW (max_label)) >= 0))
+	  return gimple_switch_label (switch_stmt, 0);
+	}
+
+      return NULL_TREE;
+    }
+
   if (gassign *assign_stmt = dyn_cast <gassign *> (stmt))
     {
       value_range new_vr = VR_INITIALIZER;
@@ -10291,15 +10456,10 @@ vrp_finalize (bool warn_array_bounds_p)
   identify_jump_threads ();
 
   /* Free allocated memory.  */
-  for (i = 0; i < num_vr_values; i++)
-    if (vr_value[i])
-      {
-	BITMAP_FREE (vr_value[i]->equiv);
-	free (vr_value[i]);
-      }
-
   free (vr_value);
   free (vr_phi_edge_counts);
+  bitmap_obstack_release (&vrp_equiv_obstack);
+  vrp_value_range_pool.release ();
 
   /* So that we can distinguish between VRP data being available
      and not available.  */

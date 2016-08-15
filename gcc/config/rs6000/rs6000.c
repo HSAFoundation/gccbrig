@@ -4323,6 +4323,10 @@ rs6000_option_override_internal (bool global_init_p)
       rs6000_isa_flags &= ~OPTION_MASK_P9_DFORM_SCALAR;
     }
 
+  /* Enable LRA by default.  */
+  if ((rs6000_isa_flags_explicit & OPTION_MASK_LRA) == 0)
+    rs6000_isa_flags |= OPTION_MASK_LRA;
+
   /* There have been bugs with -mvsx-timode that don't show up with -mlra,
      but do show up with -mno-lra.  Given -mlra will become the default once
      PR 69847 is fixed, turn off the options with problems by default if
@@ -5262,16 +5266,20 @@ rs6000_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
         return 2;
 
       case vec_construct:
-	elements = TYPE_VECTOR_SUBPARTS (vectype);
+	/* This is a rough approximation assuming non-constant elements
+	   constructed into a vector via element insertion.  FIXME:
+	   vec_construct is not granular enough for uniformly good
+	   decisions.  If the initialization is a splat, this is
+	   cheaper than we estimate.  Improve this someday.  */
 	elem_type = TREE_TYPE (vectype);
 	/* 32-bit vectors loaded into registers are stored as double
-	   precision, so we need n/2 converts in addition to the usual
-	   n/2 merges to construct a vector of short floats from them.  */
+	   precision, so we need 2 permutes, 2 converts, and 1 merge
+	   to construct a vector of short floats from them.  */
 	if (SCALAR_FLOAT_TYPE_P (elem_type)
 	    && TYPE_PRECISION (elem_type) == 32)
-	  return elements + 1;
+	  return 5;
 	else
-	  return elements / 2 + 1;
+	  return max (2, TYPE_VECTOR_SUBPARTS (vectype) - 1);
 
       default:
         gcc_unreachable ();
@@ -7713,8 +7721,37 @@ mem_operand_gpr (rtx op, machine_mode mode)
   if (TARGET_POWERPC64 && (offset & 3) != 0)
     return false;
 
-  if (mode_supports_vsx_dform_quad (mode)
-      && !quad_address_offset_p (offset))
+  extra = GET_MODE_SIZE (mode) - UNITS_PER_WORD;
+  if (extra < 0)
+    extra = 0;
+
+  if (GET_CODE (addr) == LO_SUM)
+    /* For lo_sum addresses, we must allow any offset except one that
+       causes a wrap, so test only the low 16 bits.  */
+    offset = ((offset & 0xffff) ^ 0x8000) - 0x8000;
+
+  return offset + 0x8000 < 0x10000u - extra;
+}
+
+/* As above, but for DS-FORM VSX insns.  Unlike mem_operand_gpr,
+   enforce an offset divisible by 4 even for 32-bit.  */
+
+bool
+mem_operand_ds_form (rtx op, machine_mode mode)
+{
+  unsigned HOST_WIDE_INT offset;
+  int extra;
+  rtx addr = XEXP (op, 0);
+
+  if (!offsettable_address_p (false, mode, addr))
+    return false;
+
+  op = address_offset (addr);
+  if (op == NULL_RTX)
+    return true;
+
+  offset = INTVAL (op);
+  if ((offset & 3) != 0)
     return false;
 
   extra = GET_MODE_SIZE (mode) - UNITS_PER_WORD;
@@ -7907,8 +7944,8 @@ constant_pool_expr_p (rtx op)
 static const_rtx tocrel_base, tocrel_offset;
 
 /* Return true if OP is a toc pointer relative address (the output
-   of create_TOC_reference).  If STRICT, do not match high part or
-   non-split -mcmodel=large/medium toc pointer relative addresses.  */
+   of create_TOC_reference).  If STRICT, do not match non-split
+   -mcmodel=large/medium toc pointer relative addresses.  */
 
 bool
 toc_relative_expr_p (const_rtx op, bool strict)
@@ -7918,13 +7955,17 @@ toc_relative_expr_p (const_rtx op, bool strict)
 
   if (TARGET_CMODEL != CMODEL_SMALL)
     {
-      /* Only match the low part.  */
-      if (GET_CODE (op) == LO_SUM
-	  && REG_P (XEXP (op, 0))
-	  && INT_REG_OK_FOR_BASE_P (XEXP (op, 0), strict))
-	op = XEXP (op, 1);
-      else if (strict)
+      /* When strict ensure we have everything tidy.  */
+      if (strict
+	  && !(GET_CODE (op) == LO_SUM
+	       && REG_P (XEXP (op, 0))
+	       && INT_REG_OK_FOR_BASE_P (XEXP (op, 0), strict)))
 	return false;
+
+      /* When not strict, allow non-split TOC addresses and also allow
+	 (lo_sum (high ..)) TOC addresses created during reload.  */
+      if (GET_CODE (op) == LO_SUM)
+	op = XEXP (op, 1);
     }
 
   tocrel_base = op;
@@ -13535,6 +13576,12 @@ rs6000_overloaded_builtin_p (enum rs6000_builtins fncode)
   return (rs6000_builtin_info[(int)fncode].attr & RS6000_BTC_OVERLOADED) != 0;
 }
 
+const char *
+rs6000_overloaded_builtin_name (enum rs6000_builtins fncode)
+{
+  return rs6000_builtin_info[(int)fncode].name;
+}
+
 /* Expand an expression EXP that calls a builtin without arguments.  */
 static rtx
 rs6000_expand_zeroop_builtin (enum insn_code icode, rtx target)
@@ -13751,6 +13798,20 @@ rs6000_expand_binop_builtin (enum insn_code icode, tree exp, rtx target)
 	  || !IN_RANGE (TREE_INT_CST_LOW (arg0), 0, 63))
 	{
 	  error ("argument 1 must be a 6-bit unsigned literal");
+	  return CONST0_RTX (tmode);
+	}
+    }
+  else if (icode == CODE_FOR_xststdcdp
+	   || icode == CODE_FOR_xststdcsp
+	   || icode == CODE_FOR_xvtstdcdp
+	   || icode == CODE_FOR_xvtstdcsp)
+    {
+      /* Only allow 7-bit unsigned literals. */
+      STRIP_NOPS (arg1);
+      if (TREE_CODE (arg1) != INTEGER_CST
+	  || !IN_RANGE (TREE_INT_CST_LOW (arg1), 0, 127))
+	{
+	  error ("argument 2 must be a 7-bit unsigned literal");
 	  return CONST0_RTX (tmode);
 	}
     }
@@ -15864,6 +15925,10 @@ rs6000_invalid_builtin (enum rs6000_builtins fncode)
     error ("Builtin function %s requires the -mhard-dfp option", name);
   else if ((fnmask & RS6000_BTM_P8_VECTOR) != 0)
     error ("Builtin function %s requires the -mpower8-vector option", name);
+  else if ((fnmask & (RS6000_BTM_P9_VECTOR | RS6000_BTM_64BIT))
+	   == (RS6000_BTM_P9_VECTOR | RS6000_BTM_64BIT))
+    error ("Builtin function %s requires the -mcpu=power9 and"
+	   " -m64 options", name);
   else if ((fnmask & RS6000_BTM_P9_VECTOR) != 0)
     error ("Builtin function %s requires the -mcpu=power9 option", name);
   else if ((fnmask & (RS6000_BTM_P9_MISC | RS6000_BTM_64BIT))
@@ -19599,50 +19664,11 @@ rs6000_secondary_reload_direct_move (enum rs6000_reg_type to_type,
   int cost = 0;
   int size = GET_MODE_SIZE (mode);
 
-  if (TARGET_POWERPC64)
-    {
-      if (size == 16)
-	{
-	  /* Handle moving 128-bit values from GPRs to VSX point registers on
-	     ISA 2.07 (power8, power9) when running in 64-bit mode using
-	     XXPERMDI to glue the two 64-bit values back together.  */
-	  if (to_type == VSX_REG_TYPE && from_type == GPR_REG_TYPE)
-	    {
-	      cost = 3;			/* 2 mtvsrd's, 1 xxpermdi.  */
-	      icode = reg_addr[mode].reload_vsx_gpr;
-	    }
-
-	  /* Handle moving 128-bit values from VSX point registers to GPRs on
-	     ISA 2.07 when running in 64-bit mode using XXPERMDI to get access to the
-	     bottom 64-bit value.  */
-	  else if (to_type == GPR_REG_TYPE && from_type == VSX_REG_TYPE)
-	    {
-	      cost = 3;			/* 2 mfvsrd's, 1 xxpermdi.  */
-	      icode = reg_addr[mode].reload_gpr_vsx;
-	    }
-	}
-
-      else if (mode == SFmode)
-	{
-	  if (to_type == GPR_REG_TYPE && from_type == VSX_REG_TYPE)
-	    {
-	      cost = 3;			/* xscvdpspn, mfvsrd, and.  */
-	      icode = reg_addr[mode].reload_gpr_vsx;
-	    }
-
-	  else if (to_type == VSX_REG_TYPE && from_type == GPR_REG_TYPE)
-	    {
-	      cost = 2;			/* mtvsrz, xscvspdpn.  */
-	      icode = reg_addr[mode].reload_vsx_gpr;
-	    }
-	}
-    }
-
   if (TARGET_POWERPC64 && size == 16)
     {
       /* Handle moving 128-bit values from GPRs to VSX point registers on
-	 ISA 2.07 when running in 64-bit mode using XXPERMDI to glue the two
-	 64-bit values back together.  */
+	 ISA 2.07 (power8, power9) when running in 64-bit mode using
+	 XXPERMDI to glue the two 64-bit values back together.  */
       if (to_type == VSX_REG_TYPE && from_type == GPR_REG_TYPE)
 	{
 	  cost = 3;			/* 2 mtvsrd's, 1 xxpermdi.  */
@@ -19656,6 +19682,21 @@ rs6000_secondary_reload_direct_move (enum rs6000_reg_type to_type,
 	{
 	  cost = 3;			/* 2 mfvsrd's, 1 xxpermdi.  */
 	  icode = reg_addr[mode].reload_gpr_vsx;
+	}
+    }
+
+  else if (TARGET_POWERPC64 && mode == SFmode)
+    {
+      if (to_type == GPR_REG_TYPE && from_type == VSX_REG_TYPE)
+	{
+	  cost = 3;			/* xscvdpspn, mfvsrd, and.  */
+	  icode = reg_addr[mode].reload_gpr_vsx;
+	}
+
+      else if (to_type == VSX_REG_TYPE && from_type == GPR_REG_TYPE)
+	{
+	  cost = 2;			/* mtvsrz, xscvspdpn.  */
+	  icode = reg_addr[mode].reload_vsx_gpr;
 	}
     }
 
@@ -20425,25 +20466,6 @@ rs6000_preferred_reload_class (rtx x, enum reg_class rclass)
       if (reg_class_subset_p (BASE_REGS, rclass))
 	return BASE_REGS;
       return NO_REGS;
-    }
-
-  /* If we haven't picked a register class, and the type is a vector or
-     floating point type, prefer to use the VSX, FPR, or Altivec register
-     classes.  */
-  if (rclass == NO_REGS)
-    {
-      if (TARGET_VSX && VECTOR_MEM_VSX_OR_P8_VECTOR_P (mode))
-	return VSX_REGS;
-
-      if (TARGET_ALTIVEC && VECTOR_MEM_ALTIVEC_P (mode))
-	return ALTIVEC_REGS;
-
-      if (DECIMAL_FLOAT_MODE_P (mode))
-	return TARGET_DFP ? FLOAT_REGS : NO_REGS;
-
-      if (TARGET_FPRS && TARGET_HARD_FLOAT && FLOAT_MODE_P (mode)
-	  && (reg_addr[mode].addr_mask[RELOAD_REG_FPR] & RELOAD_REG_VALID) == 0)
-	return FLOAT_REGS;
     }
 
   if (GET_MODE_CLASS (mode) == MODE_INT && rclass == NON_SPECIAL_REGS)
@@ -22931,6 +22953,7 @@ rs6000_emit_vector_compare_inner (enum rtx_code code, rtx op0, rtx op1)
     case GE:
       if (GET_MODE_CLASS (mode) == MODE_VECTOR_INT)
 	return NULL_RTX;
+      /* FALLTHRU */
 
     case EQ:
     case GT:
@@ -30669,6 +30692,7 @@ rs6000_adjust_cost (rtx_insn *insn, int dep_type, rtx_insn *dep_insn, int cost,
             }
         }
       /* Fall through, no cost for output dependency.  */
+      /* FALLTHRU */
 
     case REG_DEP_ANTI:
       /* Anti dependency; DEP_INSN reads a register that INSN writes some
@@ -31815,6 +31839,7 @@ insn_must_be_first_in_group (rtx_insn *insn)
     case PROCESSOR_POWER5:
       if (is_cracked_insn (insn))
         return true;
+      /* FALLTHRU */
     case PROCESSOR_POWER4:
       if (is_microcoded_insn (insn))
         return true;
@@ -34360,11 +34385,16 @@ rs6000_rtx_costs (rtx x, machine_mode mode, int outer_code,
     case CONST:
     case HIGH:
     case SYMBOL_REF:
+      *total = !speed ? COSTS_N_INSNS (1) + 1 : COSTS_N_INSNS (2);
+      return true;
+
     case MEM:
       /* When optimizing for size, MEM should be slightly more expensive
 	 than generating address, e.g., (plus (reg) (const)).
 	 L1 cache latency is about two instructions.  */
       *total = !speed ? COSTS_N_INSNS (1) + 1 : COSTS_N_INSNS (2);
+      if (SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (x)))
+	*total += COSTS_N_INSNS (100);
       return true;
 
     case LABEL_REF:

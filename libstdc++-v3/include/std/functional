@@ -56,6 +56,7 @@
 #include <type_traits>
 #include <bits/functexcept.h>
 #include <bits/functional_hash.h>
+#include <bits/invoke.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -184,82 +185,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : _Weak_result_type_impl<typename remove_cv<_Functor>::type>
     { };
 
-  template<typename _Tp, typename _Up = typename decay<_Tp>::type>
-    struct _Unwrap
-    {
-      using type = _Tp&&;
-
-      // Equivalent to std::forward<_Tp>
-      static constexpr _Tp&&
-      _S_fwd(_Tp& __t) noexcept { return static_cast<_Tp&&>(__t); }
-    };
-
-  template<typename _Tp, typename _Up>
-    struct _Unwrap<_Tp, reference_wrapper<_Up>>
-    {
-      using type = _Up&;
-
-      // Get an lvalue-reference from a reference_wrapper.
-      static _Up&
-      _S_fwd(const _Tp& __t) noexcept { __t.get(); }
-    };
-
-  // Used by __invoke_impl instead of std::forward<_Tp> so that a
-  // reference_wrapper is converted to an lvalue-reference.
-  template<typename _Tp>
-    inline typename _Unwrap<_Tp>::type
-    __invfwd(typename remove_reference<_Tp>::type& __t) noexcept
-    { return _Unwrap<_Tp>::_S_fwd(__t); }
-
-  template<typename _Res, typename _Fn, typename... _Args>
-    inline _Res
-    __invoke_impl(__invoke_other, _Fn&& __f, _Args&&... __args)
-    noexcept(noexcept(std::forward<_Fn>(__f)(std::forward<_Args>(__args)...)))
-    { return std::forward<_Fn>(__f)(std::forward<_Args>(__args)...); }
-
-  template<typename _Res, typename _MemFun, typename _Tp, typename... _Args>
-    inline _Res
-    __invoke_impl(__invoke_memfun_ref, _MemFun&& __f, _Tp&& __t,
-		  _Args&&... __args)
-    noexcept(noexcept(
-	  (__invfwd<_Tp>(__t).*__f)(std::forward<_Args>(__args)...)))
-    { return (__invfwd<_Tp>(__t).*__f)(std::forward<_Args>(__args)...); }
-
-  template<typename _Res, typename _MemFun, typename _Tp, typename... _Args>
-    inline _Res
-    __invoke_impl(__invoke_memfun_deref, _MemFun&& __f, _Tp&& __t,
-		  _Args&&... __args)
-    noexcept(noexcept(
-	  ((*std::forward<_Tp>(__t)).*__f)(std::forward<_Args>(__args)...)))
-    {
-      return ((*std::forward<_Tp>(__t)).*__f)(std::forward<_Args>(__args)...);
-    }
-
-  template<typename _Res, typename _MemFun, typename _Tp, typename... _Args>
-    inline _Res
-    __invoke_impl(__invoke_memobj_ref, _MemFun&& __f, _Tp&& __t)
-    noexcept(noexcept(__invfwd<_Tp>(__t).*__f))
-    { return __invfwd<_Tp>(__t).*__f; }
-
-  template<typename _Res, typename _MemFun, typename _Tp, typename... _Args>
-    inline _Res
-    __invoke_impl(__invoke_memobj_deref, _MemFun&& __f, _Tp&& __t,
-		  _Args&&... __args)
-    noexcept(noexcept((*std::forward<_Tp>(__t)).*__f))
-    { return (*std::forward<_Tp>(__t)).*__f; }
-
-  /// Invoke a callable object.
-  template<typename _Callable, typename... _Args>
-    inline typename result_of<_Callable&&(_Args&&...)>::type
-    __invoke(_Callable&& __fn, _Args&&... __args)
-    {
-      using __result_of = result_of<_Callable&&(_Args&&...)>;
-      using __type = typename __result_of::type;
-      using __tag = typename __result_of::__invoke_type;
-      return std::__invoke_impl<__type>(__tag{}, std::forward<_Callable>(__fn),
-					std::forward<_Args>(__args)...);
-    }
-
 #if __cplusplus > 201402L
 # define __cpp_lib_invoke 201411
 
@@ -267,6 +192,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Callable, typename... _Args>
     inline result_of_t<_Callable&&(_Args&&...)>
     invoke(_Callable&& __fn, _Args&&... __args)
+    noexcept(is_nothrow_callable_v<_Callable(_Args&&...)>)
     {
       return std::__invoke(std::forward<_Callable>(__fn),
 			   std::forward<_Args>(__args)...);
@@ -1509,33 +1435,6 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
     : __is_location_invariant<_Tp>
     { };
 
-  // Converts a reference to a function object into a callable
-  // function object.
-  template<typename _Functor>
-    inline _Functor&
-    __callable_functor(_Functor& __f)
-    { return __f; }
-
-  template<typename _Member, typename _Class>
-    inline _Mem_fn<_Member _Class::*>
-    __callable_functor(_Member _Class::* &__p)
-    { return std::mem_fn(__p); }
-
-  template<typename _Member, typename _Class>
-    inline _Mem_fn<_Member _Class::*>
-    __callable_functor(_Member _Class::* const &__p)
-    { return std::mem_fn(__p); }
-
-  template<typename _Member, typename _Class>
-    inline _Mem_fn<_Member _Class::*>
-    __callable_functor(_Member _Class::* volatile &__p)
-    { return std::mem_fn(__p); }
-
-  template<typename _Member, typename _Class>
-    inline _Mem_fn<_Member _Class::*>
-    __callable_functor(_Member _Class::* const volatile &__p)
-    { return std::mem_fn(__p); }
-
   template<typename _Signature>
     class function;
 
@@ -1573,7 +1472,7 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
 	static void
 	_M_clone(_Any_data& __dest, const _Any_data& __source, true_type)
 	{
-	  new (__dest._M_access()) _Functor(__source._M_access<_Functor>());
+	  ::new (__dest._M_access()) _Functor(__source._M_access<_Functor>());
 	}
 
 	// Clone a function object that is not location-invariant or
@@ -1654,7 +1553,7 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       private:
 	static void
 	_M_init_functor(_Any_data& __functor, _Functor&& __f, true_type)
-	{ new (__functor._M_access()) _Functor(std::move(__f)); }
+	{ ::new (__functor._M_access()) _Functor(std::move(__f)); }
 
 	static void
 	_M_init_functor(_Any_data& __functor, _Functor&& __f, false_type)
@@ -1757,8 +1656,8 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       static _Res
       _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
       {
-	return std::__callable_functor(**_Base::_M_get_pointer(__functor))(
-	      std::forward<_ArgTypes>(__args)...);
+	return std::__invoke(**_Base::_M_get_pointer(__functor),
+			     std::forward<_ArgTypes>(__args)...);
       }
     };
 
@@ -1772,8 +1671,8 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       static void
       _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
       {
-	std::__callable_functor(**_Base::_M_get_pointer(__functor))(
-	    std::forward<_ArgTypes>(__args)...);
+	std::__invoke(**_Base::_M_get_pointer(__functor),
+		      std::forward<_ArgTypes>(__args)...);
       }
     };
 
@@ -1789,8 +1688,8 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       static _Res
       _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
       {
-	return std::mem_fn(_Base::_M_get_pointer(__functor)->__value)(
-	    std::forward<_ArgTypes>(__args)...);
+	return std::__invoke(_Base::_M_get_pointer(__functor)->__value,
+			     std::forward<_ArgTypes>(__args)...);
       }
     };
 
@@ -1829,8 +1728,8 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       static void
       _M_invoke(const _Any_data& __functor, _ArgTypes&&... __args)
       {
-	std::mem_fn(_Base::_M_get_pointer(__functor)->__value)(
-	    std::forward<_ArgTypes>(__args)...);
+	std::__invoke(_Base::_M_get_pointer(__functor)->__value,
+		      std::forward<_ArgTypes>(__args)...);
       }
     };
 
@@ -1852,7 +1751,7 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       typedef _Res _Signature_type(_ArgTypes...);
 
       template<typename _Func,
-	       typename _Res2 = typename result_of<_Func(_ArgTypes...)>::type>
+	       typename _Res2 = typename result_of<_Func&(_ArgTypes...)>::type>
 	struct _Callable : __check_func_return_type<_Res2, _Res> { };
 
       // Used so the return type convertibility checks aren't done when
@@ -1903,8 +1802,6 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
       {
 	__x.swap(*this);
       }
-
-      // TODO: needs allocator_arg_t
 
       /**
        *  @brief Builds a %function that targets a copy of the incoming
@@ -2031,17 +1928,6 @@ _GLIBCXX_MEM_FN_TRAITS(&&, false_type, true_type)
 	std::swap(_M_manager, __x._M_manager);
 	std::swap(_M_invoker, __x._M_invoker);
       }
-
-      // TODO: needs allocator_arg_t
-      /*
-      template<typename _Functor, typename _Alloc>
-	void
-	assign(_Functor&& __f, const _Alloc& __a)
-	{
-	  function(allocator_arg, __a,
-		   std::forward<_Functor>(__f)).swap(*this);
-	}
-      */
 
       // [3.7.2.3] function capacity
 

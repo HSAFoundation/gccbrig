@@ -450,7 +450,7 @@ dump_type (cxx_pretty_printer *pp, tree t, int flags)
 		     ? DECL_ORIGINAL_TYPE (t) : TREE_TYPE (t), flags);
 	  break;
 	}
-      /* Else fall through.  */
+      /* Fall through.  */
 
     case TEMPLATE_DECL:
     case NAMESPACE_DECL:
@@ -679,9 +679,9 @@ dump_aggr_type (cxx_pretty_printer *pp, tree t, int flags)
   if (name == 0 || anon_aggrname_p (name))
     {
       if (flags & TFF_CLASS_KEY_OR_ENUM)
-	pp_string (pp, M_("<anonymous>"));
+	pp_string (pp, M_("<unnamed>"));
       else
-	pp_printf (pp, M_("<anonymous %s>"), variety);
+	pp_printf (pp, M_("<unnamed %s>"), variety);
     }
   else if (LAMBDA_TYPE_P (t))
     {
@@ -1065,7 +1065,7 @@ dump_decl (cxx_pretty_printer *pp, tree t, int flags)
 	  dump_type (pp, DECL_CONTEXT (t), flags);
 	  break;
 	}
-      /* Else fall through.  */
+      /* Fall through.  */
     case FIELD_DECL:
     case PARM_DECL:
       dump_simple_decl (pp, t, TREE_TYPE (t), flags);
@@ -1509,6 +1509,7 @@ dump_function_decl (cxx_pretty_printer *pp, tree t, int flags)
 
   /* Pretty print template instantiations only.  */
   if (DECL_USE_TEMPLATE (t) && DECL_TEMPLATE_INFO (t)
+      && !(flags & TFF_NO_TEMPLATE_BINDINGS)
       && flag_pretty_templates)
     {
       tree tmpl;
@@ -1745,7 +1746,7 @@ dump_function_name (cxx_pretty_printer *pp, tree t, int flags)
     {
       if (LAMBDA_TYPE_P (DECL_CONTEXT (t)))
 	name = get_identifier ("<lambda>");
-      else if (TYPE_ANONYMOUS_P (DECL_CONTEXT (t)))
+      else if (TYPE_UNNAMED_P (DECL_CONTEXT (t)))
 	name = get_identifier ("<constructor>");
       else
 	name = constructor_name (DECL_CONTEXT (t));
@@ -1989,6 +1990,7 @@ dump_expr (cxx_pretty_printer *pp, tree t, int flags)
     case IDENTIFIER_NODE:
       dump_decl (pp, t, ((flags & ~(TFF_DECL_SPECIFIERS|TFF_RETURN_TYPE
                                     |TFF_TEMPLATE_HEADER))
+			 | TFF_NO_TEMPLATE_BINDINGS
                          | TFF_NO_FUNCTION_ARGUMENTS));
       break;
 

@@ -1,3 +1,50 @@
+2016-08-12  Jakub Jelinek  <jakub@redhat.com>
+	    Martin Liska  <mliska@suse.cz>
+
+	PR c/67410
+	* c-typeck.c (set_nonincremental_init_from_string): Use / instead of
+	% to determine val element to change.  Assert that
+	wchar_bytes * charwidth fits into val array.
+
+2016-08-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c/7652
+	* c-parser.c (c_parser_external_declaration): Add FALLTHRU.
+	(c_parser_postfix_expression): Likewise.
+	* c-typeck.c (build_unary_op): Adjust fall through comment.
+	(c_mark_addressable): Likewise.
+
+2016-08-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/72816
+	* c-decl.c (grokdeclarator): When adding TYPE_DOMAIN for flexible
+	array member through typedef, for orig_qual_indirect == 0 clear
+	orig_qual_type.
+
+2016-08-08  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c/64955
+	* c-lang.c (LANG_HOOKS_RUN_LANG_SELFTESTS): If CHECKING_P, wire
+	this up to selftest::run_c_tests.
+	(selftest::run_c_tests): New function.
+
+2016-08-04  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* c-parser.c (struct oacc_routine_data): Add error_seen and
+	fndecl_seen members.
+	(c_finish_oacc_routine): Use these.
+	(c_parser_declaration_or_fndef): Adjust.
+	(c_parser_oacc_routine): Likewise.  Support more C language
+	constructs, and improve diagnostics.  Move pragma context
+	checking...
+	(c_parser_pragma): ... here.
+
+	* c-parser.c (struct oacc_routine_data): New.
+	(c_parser_declaration_or_fndef, c_parser_oacc_routine): Use it.
+	Simplify code.
+	(c_finish_oacc_routine): Likewise.  Don't attach clauses to "omp
+	declare target" attribute.
+
 2016-08-01  Jan Beulich  <jbeulich@suse.com>
 
 	* c-fold.c (c_fully_fold_internal): Also emit shift count

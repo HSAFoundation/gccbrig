@@ -554,7 +554,7 @@ Objective-C and Objective-C++ Dialects}.
 -fprofile-report @gol
 -frandom-seed=@var{string} -fsched-verbose=@var{n} @gol
 -fsel-sched-verbose -fsel-sched-dump-cfg -fsel-sched-pipelining-verbose @gol
--fstats  -fstack-usage  -ftime-report @gol
+-fstats  -fstack-usage  -ftime-report -ftime-report-details @gol
 -fvar-tracking-assignments-toggle -gtoggle @gol
 -print-file-name=@var{library}  -print-libgcc-file-name @gol
 -print-multi-directory  -print-multi-lib  -print-multi-os-directory @gol
@@ -9937,6 +9937,18 @@ the profile feedback data files. See @option{-fprofile-dir}.
 To optimize the program based on the collected profile information, use
 @option{-fprofile-use}.  @xref{Optimize Options}, for more information.
 
+@item -fprofile-update=@var{method}
+@opindex fprofile-update
+
+Alter the update method for an application instrumented for profile
+feedback based optimization.  The @var{method} argument should be one of
+@samp{single} or @samp{atomic}.  The first one is useful for single-threaded
+applications, while the second one prevents profile corruption by emitting
+thread-safe code.
+
+@strong{Warning:} When an application does not properly join all threads
+(or creates an detached thread), a profile file can be still corrupted.
+
 @item -fsanitize=address
 @opindex fsanitize=address
 Enable AddressSanitizer, a fast memory error detector.
@@ -12733,6 +12745,10 @@ print some statistics about each pass when it finishes.
 @opindex ftime-report
 Makes the compiler print some statistics about the time consumed by each
 pass when it finishes.
+
+@item -ftime-report-details
+@opindex ftime-report-details
+Record the time consumed by infrastructure parts separately for each pass.
 
 @item -fira-verbose=@var{n}
 @opindex fira-verbose

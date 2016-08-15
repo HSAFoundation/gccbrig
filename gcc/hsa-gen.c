@@ -4519,7 +4519,7 @@ get_address_from_value (tree val, hsa_bb *hbb)
     case INTEGER_CST:
       if (tree_fits_shwi_p (val))
 	return new hsa_op_address (NULL, NULL, tree_to_shwi (val));
-      /* Otherwise fall-through */
+      /* fall-through */
 
     default:
       HSA_SORRY_ATV (EXPR_LOCATION (val),
@@ -5039,6 +5039,7 @@ gen_hsa_insn_for_internal_fn_call (gcall *stmt, hsa_bb *hbb)
     case IFN_FMIN:
     case IFN_FMAX:
       gen_hsa_insns_for_call_of_internal_fn (stmt, hbb);
+      break;
 
     default:
       HSA_SORRY_ATV (gimple_location (stmt),

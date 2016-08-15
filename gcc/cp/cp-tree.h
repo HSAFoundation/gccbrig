@@ -145,6 +145,7 @@ operator == (const cp_expr &lhs, tree rhs)
       WILDCARD_PACK_P (in WILDCARD_DECL)
       BLOCK_OUTER_CURLY_BRACE_P (in BLOCK)
       FOLD_EXPR_MODOP_P (*_FOLD_EXPR)
+      IF_STMT_CONSTEXPR_P (IF_STMT)
    1: IDENTIFIER_VIRTUAL_P (in IDENTIFIER_NODE)
       TI_PENDING_TEMPLATE_FLAG.
       TEMPLATE_PARMS_FOR_INLINE.
@@ -761,7 +762,7 @@ struct GTY (()) tree_trait_expr {
   enum cp_trait_kind kind;
 };
 
-/* Based off of TYPE_ANONYMOUS_P.  */
+/* Based off of TYPE_UNNAMED_P.  */
 #define LAMBDA_TYPE_P(NODE) \
   (CLASS_TYPE_P (NODE) && CLASSTYPE_LAMBDA_EXPR (NODE))
 
@@ -1553,7 +1554,7 @@ enum languages { lang_c, lang_cplusplus, lang_java };
 #define TYPE_NAME_LENGTH(NODE) (IDENTIFIER_LENGTH (TYPE_IDENTIFIER (NODE)))
 
 /* Nonzero if NODE has no name for linkage purposes.  */
-#define TYPE_ANONYMOUS_P(NODE) \
+#define TYPE_UNNAMED_P(NODE) \
   (OVERLOAD_TYPE_P (NODE) && anon_aggrname_p (TYPE_LINKAGE_IDENTIFIER (NODE)))
 
 /* The _DECL for this _TYPE.  */
@@ -4116,7 +4117,8 @@ more_aggr_init_expr_args_p (const aggr_init_expr_arg_iterator *iter)
 
 /* Define fields and accessors for nodes representing declared names.  */
 
-#define TYPE_WAS_ANONYMOUS(NODE) (LANG_TYPE_CLASS_CHECK (NODE)->was_anonymous)
+/* Nonzero if TYPE is an unnamed class with a typedef for linkage purposes.  */
+#define TYPE_WAS_UNNAMED(NODE) (LANG_TYPE_CLASS_CHECK (NODE)->was_anonymous)
 
 /* C++: all of these are overloaded!  These apply only to TYPE_DECLs.  */
 
@@ -4270,8 +4272,8 @@ more_aggr_init_expr_args_p (const aggr_init_expr_arg_iterator *iter)
    equivalent to `struct S {}; typedef struct S S;' in C.
    DECL_IMPLICIT_TYPEDEF_P will hold for the typedef indicated in this
    example.  In C++, there is a second implicit typedef for each
-   class, in the scope of `S' itself, so that you can say `S::S'.
-   DECL_SELF_REFERENCE_P will hold for that second typedef.  */
+   class, called the injected-class-name, in the scope of `S' itself, so that
+   you can say `S::S'.  DECL_SELF_REFERENCE_P will hold for that typedef.  */
 #define DECL_IMPLICIT_TYPEDEF_P(NODE) \
   (TREE_CODE (NODE) == TYPE_DECL && DECL_LANG_FLAG_2 (NODE))
 #define SET_DECL_IMPLICIT_TYPEDEF_P(NODE) \
@@ -4529,6 +4531,7 @@ more_aggr_init_expr_args_p (const aggr_init_expr_arg_iterator *iter)
 #define THEN_CLAUSE(NODE)	TREE_OPERAND (IF_STMT_CHECK (NODE), 1)
 #define ELSE_CLAUSE(NODE)	TREE_OPERAND (IF_STMT_CHECK (NODE), 2)
 #define IF_SCOPE(NODE)		TREE_OPERAND (IF_STMT_CHECK (NODE), 3)
+#define IF_STMT_CONSTEXPR_P(NODE) TREE_LANG_FLAG_0 (IF_STMT_CHECK (NODE))
 
 /* WHILE_STMT accessors. These give access to the condition of the
    while statement and the body of the while statement, respectively.  */
@@ -5685,6 +5688,7 @@ extern void inherit_targ_abi_tags		(tree);
 extern void defaulted_late_check		(tree);
 extern bool defaultable_fn_check		(tree);
 extern void check_abi_tags			(tree);
+extern tree missing_abi_tags			(tree);
 extern void fixup_type_variants			(tree);
 extern void fixup_attribute_variants		(tree);
 extern tree* decl_cloned_function_p		(const_tree, bool);
@@ -5850,6 +5854,7 @@ extern tree grokfield (const cp_declarator *, cp_decl_specifier_seq *,
 		       tree, bool, tree, tree);
 extern tree grokbitfield (const cp_declarator *, cp_decl_specifier_seq *,
 			  tree, tree);
+extern bool any_dependent_type_attributes_p	(tree);
 extern tree cp_reconstruct_complex_type		(tree, tree);
 extern bool attributes_naming_typedef_ok	(tree);
 extern void cplus_decl_attributes		(tree *, tree, int);
@@ -6300,7 +6305,7 @@ extern void add_decl_expr			(tree);
 extern tree maybe_cleanup_point_expr_void	(tree);
 extern tree finish_expr_stmt			(tree);
 extern tree begin_if_stmt			(void);
-extern void finish_if_stmt_cond			(tree, tree);
+extern tree finish_if_stmt_cond			(tree, tree);
 extern tree finish_then_clause			(tree);
 extern void begin_else_clause			(tree);
 extern void finish_else_clause			(tree);
@@ -6477,6 +6482,7 @@ extern tree current_nonlambda_scope		(void);
 extern bool generic_lambda_fn_p			(tree);
 extern void maybe_add_lambda_conv_op            (tree);
 extern bool is_lambda_ignored_entity            (tree);
+extern bool lambda_static_thunk_p		(tree);
 
 /* in tree.c */
 extern int cp_tree_operand_length		(const_tree);
@@ -6921,6 +6927,7 @@ bool cilkplus_an_triplet_types_ok_p             (location_t, tree, tree, tree,
 extern void fini_constexpr			(void);
 extern bool literal_type_p                      (tree);
 extern tree register_constexpr_fundef           (tree, tree);
+extern bool is_valid_constexpr_fn		(tree, bool);
 extern bool check_constexpr_ctor_body           (tree, tree, bool);
 extern tree ensure_literal_type_for_constexpr_object (tree);
 extern bool potential_constant_expression       (tree);
@@ -6939,6 +6946,7 @@ extern bool is_sub_constant_expr                (tree);
 extern bool reduced_constant_expression_p       (tree);
 extern bool is_instantiation_of_constexpr       (tree);
 extern bool var_in_constexpr_fn                 (tree);
+extern bool var_in_maybe_constexpr_fn           (tree);
 extern void explain_invalid_constexpr_fn        (tree);
 extern vec<tree> cx_error_context               (void);
 extern tree fold_sizeof_expr			(tree);

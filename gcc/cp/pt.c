@@ -3450,6 +3450,7 @@ find_parameter_packs_r (tree *tp, int *walk_subtrees, void* data)
 
     case TEMPLATE_TYPE_PARM:
       t = TYPE_MAIN_VARIANT (t);
+      /* FALLTHRU */
     case TEMPLATE_TEMPLATE_PARM:
       /* If the placeholder appears in the decl-specifier-seq of a function
 	 parameter pack (14.6.3), or the type-specifier-seq of a type-id that
@@ -10334,6 +10335,9 @@ instantiate_class_template_1 (tree type)
       tree decl = lambda_function (type);
       if (decl)
 	{
+	  if (cxx_dialect >= cxx1z)
+	    CLASSTYPE_LITERAL_P (type) = true;
+
 	  if (!DECL_TEMPLATE_INFO (decl)
 	      || DECL_TEMPLATE_RESULT (DECL_TI_TEMPLATE (decl)) != decl)
 	    {
@@ -11160,6 +11164,12 @@ tsubst_pack_expansion (tree t, tree args, tsubst_flags_t complain,
       local_specializations = saved_local_specializations;
     }
   
+  /* If the dependent pack arguments were such that we end up with only a
+     single pack expansion again, there's no need to keep it in a TREE_VEC.  */
+  if (len == 1 && TREE_CODE (result) == TREE_VEC
+      && PACK_EXPANSION_P (TREE_VEC_ELT (result, 0)))
+    return TREE_VEC_ELT (result, 0);
+
   return result;
 }
 
@@ -11457,7 +11467,7 @@ tsubst_aggr_type (tree t,
       if (TYPE_PTRMEMFUNC_P (t))
 	return tsubst (TYPE_PTRMEMFUNC_FN_TYPE (t), args, complain, in_decl);
 
-      /* Else fall through.  */
+      /* Fall through.  */
     case ENUMERAL_TYPE:
     case UNION_TYPE:
       if (TYPE_TEMPLATE_INFO (t) && uses_template_parms (t))
@@ -13826,6 +13836,8 @@ tsubst_qualified_id (tree qualified_id, tree args,
       if (template_args)
 	template_args = tsubst_template_args (template_args, args,
 					      complain, in_decl);
+      if (template_args == error_mark_node)
+	return error_mark_node;
       name = TREE_OPERAND (name, 0);
     }
   else
@@ -15376,12 +15388,18 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl,
 
     case IF_STMT:
       stmt = begin_if_stmt ();
+      IF_STMT_CONSTEXPR_P (stmt) = IF_STMT_CONSTEXPR_P (t);
       tmp = RECUR (IF_COND (t));
-      finish_if_stmt_cond (tmp, stmt);
-      RECUR (THEN_CLAUSE (t));
+      tmp = finish_if_stmt_cond (tmp, stmt);
+      if (IF_STMT_CONSTEXPR_P (t) && integer_zerop (tmp))
+	/* Don't instantiate the THEN_CLAUSE. */;
+      else
+	RECUR (THEN_CLAUSE (t));
       finish_then_clause (stmt);
 
-      if (ELSE_CLAUSE (t))
+      if (IF_STMT_CONSTEXPR_P (t) && integer_nonzerop (tmp))
+	/* Don't instantiate the ELSE_CLAUSE. */;
+      else if (ELSE_CLAUSE (t))
 	{
 	  begin_else_clause (stmt);
 	  RECUR (ELSE_CLAUSE (t));
@@ -16752,12 +16770,19 @@ tsubst_copy_and_build (tree t,
 	    bool op = CALL_EXPR_OPERATOR_SYNTAX (t);
 	    bool ord = CALL_EXPR_ORDERED_ARGS (t);
 	    bool rev = CALL_EXPR_REVERSE_ARGS (t);
-	    if (op || ord || rev)
+	    bool thk = CALL_FROM_THUNK_P (t);
+	    if (op || ord || rev || thk)
 	      {
 		function = extract_call_expr (ret);
 		CALL_EXPR_OPERATOR_SYNTAX (function) = op;
 		CALL_EXPR_ORDERED_ARGS (function) = ord;
 		CALL_EXPR_REVERSE_ARGS (function) = rev;
+		if (thk)
+		  {
+		    CALL_FROM_THUNK_P (function) = true;
+		    /* The thunk location is not interesting.  */
+		    SET_EXPR_LOCATION (function, UNKNOWN_LOCATION);
+		  }
 	      }
 	  }
 
@@ -17340,8 +17365,8 @@ check_instantiated_arg (tree tmpl, tree t, tsubst_flags_t complain)
 	     type deduction to fail.  */
 	  if (complain & tf_error)
 	    {
-	      if (TYPE_ANONYMOUS_P (nt))
-		error ("%qT is/uses anonymous type", t);
+	      if (TYPE_UNNAMED_P (nt))
+		error ("%qT is/uses unnamed type", t);
 	      else
 		error ("template argument for %qD uses local type %qT",
 		       tmpl, t);
@@ -20261,7 +20286,7 @@ unify (tree tparms, tree targs, tree parm, tree arg, int strict,
       /* An unresolved overload is a nondeduced context.  */
       if (is_overloaded_fn (parm) || type_unknown_p (parm))
 	return unify_success (explain_p);
-      gcc_assert (EXPR_P (parm));
+      gcc_assert (EXPR_P (parm) || TREE_CODE (parm) == TRAIT_EXPR);
     expr:
       /* We must be looking at an expression.  This can happen with
 	 something like:
@@ -22655,6 +22680,9 @@ dependent_type_p_r (tree type)
   if (TREE_CODE (type) == TYPE_PACK_EXPANSION)
     return true;
 
+  if (any_dependent_type_attributes_p (TYPE_ATTRIBUTES (type)))
+    return true;
+
   /* The standard does not specifically mention types that are local
      to template functions or local classes, but they should be
      considered dependent too.  For example:
@@ -23206,6 +23234,12 @@ type_dependent_expression_p (tree expression)
     }
 
   gcc_assert (TREE_CODE (expression) != TYPE_DECL);
+
+  /* Dependent type attributes might not have made it from the decl to
+     the type yet.  */
+  if (DECL_P (expression)
+      && any_dependent_type_attributes_p (DECL_ATTRIBUTES (expression)))
+    return true;
 
   return (dependent_type_p (TREE_TYPE (expression)));
 }

@@ -239,6 +239,16 @@ class Gogo
   set_check_divide_overflow(bool b)
   { this->check_divide_overflow_ = b; }
 
+  // Return the level of escape analysis debug information to emit.
+  int
+  debug_escape_level() const
+  { return this->debug_escape_level_; }
+
+  // Set the level of escape analysis debugging from a command line option.
+  void
+  set_debug_escape_level(int level)
+  { this->debug_escape_level_ = level; }
+
   // Return the priority to use for the package we are compiling.
   // This is two more than the largest priority of any package we
   // import.
@@ -418,6 +428,12 @@ class Gogo
   add_file_block_name(const std::string& name, Location location)
   { this->file_block_names_[name] = location; }
 
+  // Add a linkname, from the go:linkname compiler directive.  This
+  // changes the externally visible name of go_name to be ext_name.
+  void
+  add_linkname(const std::string& go_name, bool is_exported,
+	       const std::string& ext_name, Location location);
+
   // Mark all local variables in current bindings as used.  This is
   // used when there is a parse error to avoid useless errors.
   void
@@ -452,6 +468,11 @@ class Gogo
   void
   set_need_init_fn()
   { this->need_init_fn_ = true; }
+
+  // Return whether the current file imported the unsafe package.
+  bool
+  current_file_imported_unsafe() const
+  { return this->current_file_imported_unsafe_; }
 
   // Clear out all names in file scope.  This is called when we start
   // parsing a new file.
@@ -750,6 +771,8 @@ class Gogo
   Imports imports_;
   // Whether the magic unsafe package was imported.
   bool imported_unsafe_;
+  // Whether the magic unsafe package was imported by the current file.
+  bool current_file_imported_unsafe_;
   // Mapping from package names we have seen to packages.  This does
   // not include the package we are compiling.
   Packages packages_;
@@ -786,6 +809,9 @@ class Gogo
   // Whether or not to check for division overflow, from the
   // -fgo-check-divide-overflow option.
   bool check_divide_overflow_;
+  // The level of escape analysis debug information to emit, from the
+  // -fgo-debug-escape option.
+  int debug_escape_level_;
   // A list of types to verify.
   std::vector<Type*> verify_types_;
   // A list of interface types defined while parsing.
@@ -962,23 +988,27 @@ class Function
   results_are_named() const
   { return this->results_are_named_; }
 
+  // Set the assembler name.
+  void
+  set_asm_name(const std::string& asm_name)
+  { this->asm_name_ = asm_name; }
+
+  // Set the pragmas for this function.
+  void
+  set_pragmas(unsigned int pragmas)
+  {
+    this->pragmas_ = pragmas;
+  }
+
   // Whether this method should not be included in the type
   // descriptor.
   bool
-  nointerface() const
-  {
-    go_assert(this->is_method());
-    return this->nointerface_;
-  }
+  nointerface() const;
 
   // Record that this method should not be included in the type
   // descriptor.
   void
-  set_nointerface()
-  {
-    go_assert(this->is_method());
-    this->nointerface_ = true;
-  }
+  set_nointerface();
 
   // Record that this function is a stub method created for an unnamed
   // type.
@@ -1217,6 +1247,9 @@ class Function
   Labels labels_;
   // The number of local types defined in this function.
   unsigned int local_type_count_;
+  // The assembler name: this is the name that will be put in the object file.
+  // Set by the go:linkname compiler directive.  This is normally empty.
+  std::string asm_name_;
   // The function descriptor, if any.
   Expression* descriptor_;
   // The function decl.
@@ -1225,12 +1258,12 @@ class Function
   // distinguish the defer stack for one function from another.  This
   // is NULL unless we actually need a defer stack.
   Temporary_statement* defer_stack_;
+  // Pragmas for this function.  This is a set of GOPRAGMA bits.
+  unsigned int pragmas_;
   // True if this function is sink-named.  No code is generated.
   bool is_sink_ : 1;
   // True if the result variables are named.
   bool results_are_named_ : 1;
-  // True if this method should not be included in the type descriptor.
-  bool nointerface_ : 1;
   // True if this function is a stub method created for an unnamed
   // type.
   bool is_unnamed_type_stub_method_ : 1;
@@ -1292,7 +1325,7 @@ class Function_declaration
  public:
   Function_declaration(Function_type* fntype, Location location)
     : fntype_(fntype), location_(location), asm_name_(), descriptor_(NULL),
-      fndecl_(NULL)
+      fndecl_(NULL), pragmas_(0)
   { }
 
   Function_type*
@@ -1311,6 +1344,13 @@ class Function_declaration
   void
   set_asm_name(const std::string& asm_name)
   { this->asm_name_ = asm_name; }
+
+  // Set the pragmas for this function.
+  void
+  set_pragmas(unsigned int pragmas)
+  {
+    this->pragmas_ = pragmas;
+  }
 
   // Return an expression for the function descriptor, given the named
   // object for this function.  This may only be called for functions
@@ -1354,6 +1394,8 @@ class Function_declaration
   Expression* descriptor_;
   // The function decl if needed.
   Bfunction* fndecl_;
+  // Pragmas for this function.  This is a set of GOPRAGMA bits.
+  unsigned int pragmas_;
 };
 
 // A variable.
@@ -2715,7 +2757,7 @@ class Unnamed_label
 {
  public:
   Unnamed_label(Location location)
-    : location_(location), blabel_(NULL)
+    : location_(location), derived_from_(NULL), blabel_(NULL)
   { }
 
   // Get the location where the label is defined.
@@ -2727,6 +2769,16 @@ class Unnamed_label
   void
   set_location(Location location)
   { this->location_ = location; }
+
+  // Get the top level statement this unnamed label is derived from.
+  Statement*
+  derived_from() const
+  { return this->derived_from_; }
+
+  // Set the top level statement this unnamed label is derived from.
+  void
+  set_derived_from(Statement* s)
+  { this->derived_from_ = s; }
 
   // Return a statement which defines this label.
   Bstatement*
@@ -2743,6 +2795,9 @@ class Unnamed_label
 
   // The location where the label is defined.
   Location location_;
+  // The top-level statement this unnamed label was derived/lowered from.
+  // This is NULL is this label is not the top-level of a lowered statement.
+  Statement* derived_from_;
   // The backend representation of this label.
   Blabel* blabel_;
 };

@@ -218,6 +218,7 @@ struct GTY((for_user)) named_label_entry {
   bool in_catch_scope;
   bool in_omp_scope;
   bool in_transaction_scope;
+  bool in_constexpr_if;
 };
 
 #define named_labels cp_function_chain->x_named_labels
@@ -476,6 +477,16 @@ objc_mark_locals_volatile (void *enclosing_blk)
     }
 }
 
+/* True if B is the level for the condition of a constexpr if.  */
+
+static bool
+level_for_constexpr_if (cp_binding_level *b)
+{
+  return (b->kind == sk_cond && b->this_entity
+	  && TREE_CODE (b->this_entity) == IF_STMT
+	  && IF_STMT_CONSTEXPR_P (b->this_entity));
+}
+
 /* Update data for defined and undefined labels when leaving a scope.  */
 
 int
@@ -511,6 +522,10 @@ poplevel_named_label_1 (named_label_entry **slot, cp_binding_level *bl)
 	  break;
 	case sk_transaction:
 	  ent->in_transaction_scope = true;
+	  break;
+	case sk_block:
+	  if (level_for_constexpr_if (bl->level_chain))
+	    ent->in_constexpr_if = true;
 	  break;
 	default:
 	  break;
@@ -3047,7 +3062,7 @@ check_previous_goto_1 (tree decl, cp_binding_level* level, tree names,
   cp_binding_level *b;
   bool complained = false;
   int identified = 0;
-  bool saw_eh = false, saw_omp = false, saw_tm = false;
+  bool saw_eh = false, saw_omp = false, saw_tm = false, saw_cxif = false;
 
   if (exited_omp)
     {
@@ -3132,6 +3147,20 @@ check_previous_goto_1 (tree decl, cp_binding_level* level, tree names,
 		    "  enters synchronized or atomic statement");
 	  saw_tm = true;
 	}
+      if (!saw_cxif && b->kind == sk_block
+	  && level_for_constexpr_if (b->level_chain))
+	{
+	  if (identified < 2)
+	    {
+	      complained = identify_goto (decl, input_location, locus,
+					  DK_ERROR);
+	      identified = 2;
+	    }
+	  if (complained)
+	    inform (EXPR_LOCATION (b->level_chain->this_entity),
+		    "  enters constexpr if statement");
+	  saw_cxif = true;
+	}
     }
 
   return !identified;
@@ -3200,10 +3229,11 @@ check_goto (tree decl)
     }
 
   if (ent->in_try_scope || ent->in_catch_scope || ent->in_transaction_scope
+      || ent->in_constexpr_if
       || ent->in_omp_scope || !vec_safe_is_empty (ent->bad_decls))
     {
       diagnostic_t diag_kind = DK_PERMERROR;
-      if (ent->in_try_scope || ent->in_catch_scope
+      if (ent->in_try_scope || ent->in_catch_scope || ent->in_constexpr_if
 	  || ent->in_transaction_scope || ent->in_omp_scope)
 	diag_kind = DK_ERROR;
       complained = identify_goto (decl, DECL_SOURCE_LOCATION (decl),
@@ -3248,6 +3278,8 @@ check_goto (tree decl)
 	inform (input_location, "  enters catch block");
       else if (ent->in_transaction_scope)
 	inform (input_location, "  enters synchronized or atomic statement");
+      else if (ent->in_constexpr_if)
+	inform (input_location, "  enters constexpr if statement");
     }
 
   if (ent->in_omp_scope)
@@ -4614,7 +4646,7 @@ check_tag_decl (cp_decl_specifier_seq *declspecs,
     }
   /* Check for an anonymous union.  */
   else if (declared_type && RECORD_OR_UNION_CODE_P (TREE_CODE (declared_type))
-	   && TYPE_ANONYMOUS_P (declared_type))
+	   && TYPE_UNNAMED_P (declared_type))
     {
       /* 7/3 In a simple-declaration, the optional init-declarator-list
 	 can be omitted only when declaring a class (clause 9) or
@@ -6305,7 +6337,7 @@ make_rtl_for_nonlocal_decl (tree decl, tree init, const char* asmspec)
      DECL_EXPR is expanded.  But with constexpr its function might never
      be expanded, so go ahead and tell cgraph about the variable now.  */
   defer_p = ((DECL_FUNCTION_SCOPE_P (decl)
-	      && !DECL_DECLARED_CONSTEXPR_P (DECL_CONTEXT (decl)))
+	      && !var_in_maybe_constexpr_fn (decl))
 	     || DECL_VIRTUAL_P (decl));
 
   /* Defer template instantiations.  */
@@ -10773,7 +10805,7 @@ grokdeclarator (const cp_declarator *declarator,
 	  && unqualified_id
 	  && TYPE_NAME (type)
 	  && TREE_CODE (TYPE_NAME (type)) == TYPE_DECL
-	  && TYPE_ANONYMOUS_P (type)
+	  && TYPE_UNNAMED_P (type)
 	  && declspecs->type_definition_p
 	  && attributes_naming_typedef_ok (*attrlist)
 	  && cp_type_quals (type) == TYPE_UNQUALIFIED)
@@ -10785,7 +10817,7 @@ grokdeclarator (const cp_declarator *declarator,
 	    {
 	      if (anon_aggrname_p (TYPE_IDENTIFIER (t)))
 		/* We do not rename the debug info representing the
-		   anonymous tagged type because the standard says in
+		   unnamed tagged type because the standard says in
 		   [dcl.typedef] that the naming applies only for
 		   linkage purposes.  */
 		/*debug_hooks->set_name (t, decl);*/
@@ -10793,7 +10825,7 @@ grokdeclarator (const cp_declarator *declarator,
   	    }
 
 	  if (TYPE_LANG_SPECIFIC (type))
-	    TYPE_WAS_ANONYMOUS (type) = 1;
+	    TYPE_WAS_UNNAMED (type) = 1;
 
 	  /* If this is a typedef within a template class, the nested
 	     type is a (non-primary) template.  The name for the
@@ -10802,7 +10834,7 @@ grokdeclarator (const cp_declarator *declarator,
 	    DECL_NAME (CLASSTYPE_TI_TEMPLATE (type))
 	      = TYPE_IDENTIFIER (type);
 
-	  /* Adjust linkage now that we aren't anonymous anymore.  */
+	  /* Adjust linkage now that we aren't unnamed anymore.  */
 	  reset_type_linkage (type);
 
 	  /* FIXME remangle member functions; member functions of a
@@ -14747,6 +14779,14 @@ finish_function (int flags)
   // If this is a concept, check that the definition is reasonable.
   if (DECL_DECLARED_CONCEPT_P (fndecl))
     check_function_concept (fndecl);
+
+  /* Lambda closure members are implicitly constexpr if possible.  */
+  if (cxx_dialect >= cxx1z
+      && LAMBDA_TYPE_P (CP_DECL_CONTEXT (fndecl))
+      && (processing_template_decl
+	  || is_valid_constexpr_fn (fndecl, /*complain*/false))
+      && potential_constant_expression (DECL_SAVED_TREE (fndecl)))
+    DECL_DECLARED_CONSTEXPR_P (fndecl) = true;
 
   /* Save constexpr function body before it gets munged by
      the NRV transformation.   */

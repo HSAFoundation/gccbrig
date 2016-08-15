@@ -39,6 +39,7 @@ extern int num_insns_constant (rtx, machine_mode);
 extern int num_insns_constant_wide (HOST_WIDE_INT);
 extern int small_data_operand (rtx, machine_mode);
 extern bool mem_operand_gpr (rtx, machine_mode);
+extern bool mem_operand_ds_form (rtx, machine_mode);
 extern bool toc_relative_expr_p (const_rtx, bool);
 extern bool invalid_e500_subreg (rtx, machine_mode);
 extern void validate_condition_mode (enum rtx_code, machine_mode);
@@ -217,6 +218,7 @@ extern void rs6000_sibcall_aix (rtx, rtx, rtx, rtx);
 extern void rs6000_aix_asm_output_dwarf_table_ref (char *);
 extern void get_ppc476_thunk_name (char name[32]);
 extern bool rs6000_overloaded_builtin_p (enum rs6000_builtins);
+extern const char *rs6000_overloaded_builtin_name (enum rs6000_builtins);
 extern HOST_WIDE_INT rs6000_builtin_mask_calculate (void);
 extern void rs6000_asm_output_dwarf_pcrel (FILE *file, int size,
 					   const char *label);

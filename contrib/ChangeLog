@@ -1,3 +1,12 @@
+2016-08-11  Martin Liska  <mliska@suse.cz>
+
+	* mark_spam.py: Mark attachments as obsolete and rename them.
+
+2016-08-03  Eric Gallager  <egall@gwmail.gwu.edu>
+
+	* download_prerequisites: Explicitly remove existing symlinks
+	before trying to create new ones.
+
 2016-07-28  Martin Liska  <mliska@suse.cz>
 
 	* mark_spam.py: New file.

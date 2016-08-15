@@ -2683,7 +2683,7 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
 	{
 	dependent:
 	  return build_min_nt_loc (UNKNOWN_LOCATION, COMPONENT_REF,
-				   orig_object, name, NULL_TREE);
+				   orig_object, orig_name, NULL_TREE);
 	}
       object = build_non_dependent_expr (object);
     }
@@ -2853,6 +2853,11 @@ finish_class_member_access_expr (cp_expr object, tree name, bool template_p,
 	    }
 	  if (member == error_mark_node)
 	    return error_mark_node;
+	  if (DECL_P (member)
+	      && any_dependent_type_attributes_p (DECL_ATTRIBUTES (member)))
+	    /* Dependent type attributes on the decl mean that the TREE_TYPE is
+	       wrong, so don't use it.  */
+	    goto dependent;
 	  if (TREE_CODE (member) == USING_DECL && DECL_DEPENDENT_P (member))
 	    goto dependent;
 	}
@@ -5626,11 +5631,6 @@ cp_build_addr_expr_1 (tree arg, bool strict_lvalue, tsubst_flags_t complain)
   /* Let &* cancel out to simplify resulting code.  */
   if (INDIRECT_REF_P (arg))
     {
-      /* We don't need to have `current_class_ptr' wrapped in a
-	 NON_LVALUE_EXPR node.  */
-      if (arg == current_class_ref)
-	return current_class_ptr;
-
       arg = TREE_OPERAND (arg, 0);
       if (TREE_CODE (TREE_TYPE (arg)) == REFERENCE_TYPE)
 	{

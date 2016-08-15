@@ -1,3 +1,381 @@
+2016-08-11  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement C++17 make_from_tuple.
+	* include/std/tuple (__make_from_tuple_impl, make_from_tuple): New.
+	* testsuite/20_util/tuple/make_from_tuple/1.cc: Likewise.
+
+2016-08-11  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement LWG 2758.
+	* include/bits/basic_string.h
+	(append(__sv_type, size_type, size_type)): Turn into a template,
+	change parameter type, constrain, add a conversion to __sv_type
+	from the dependent parameter type.
+	(assign(__sv_type, size_type, size_type)): Likewise.
+	(insert(size_type, __sv_type, size_type, size_type)): Likewise.
+	(replace(size_type, size_type, __sv_type, size_type, size_type)):
+	Likewise.
+	(compare(size_type, size_type,__sv_type, size_type, size_type)):
+	Likewise.
+	* testsuite/21_strings/basic_string/lwg2758.cc: New.
+
+2016-08-06  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/status_cxx2017.xml: Update status table.
+	* doc/html/manual/status.html: Regenerate.
+
+	* testsuite/lib/libstdc++.exp: Fix typo in comment.
+
+	PR libstdc++/72820
+	* include/std/functional (_Function_base::_Base_manager::_M_clone):
+	Qualify new operator.
+	* testsuite/20_util/function/cons/72820.cc: New test.
+
+	* doc/xml/manual/status_cxx2017.xml: Add missing LFTSv2 features.
+	* doc/html/manual/status.html: Regenerate.
+	* include/Makefile.am: Add new header.
+	* include/Makefile.in: Regenerate.
+	* include/bits/invoke.h: New header.
+	(__invoke): Make constexpr. Add && to types in exception specification.
+	* include/experimental/tuple (apply, __apply_impl): Fix non-reserved
+	names. Include <bits/invoke.h> and use std::__invoke.
+	* include/std/functional (__invfwd, __invoke_impl, __invoke): Move to
+	new header.
+	(invoke): Add && to types in exception specification.
+	* include/std/tuple (apply, __apply_impl): Define for C++17.
+	* testsuite/20_util/tuple/apply/1.cc: New test.
+	* testsuite/20_util/tuple/element_access/get_neg.cc: Adjust dg-error
+	lineno.
+
+2016-08-05  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/status_cxx2017.xml: Correct shared_from_this status.
+	* doc/html/manual/status.html: Regenerate.
+
+	* include/std/chrono (floor, ceil, round, abs): New for C++17.
+	* testsuite/20_util/duration_cast/rounding.cc: New test.
+	* testsuite/20_util/time_point_cast/rounding.cc: New test.
+	* doc/xml/manual/status_cxx2017.xml: Update status table.
+	* doc/html/manual/status.html: Regenerate.
+	* testsuite/20_util/duration/requirements/typedefs_neg1.cc: Adjust
+	dg-error lineno.
+	* testsuite/20_util/duration/requirements/typedefs_neg2.cc: Likewise.
+	* testsuite/20_util/duration/requirements/typedefs_neg3.cc: Likewise.
+	* testsuite/20_util/duration/literals/range.cc: Likewise.
+
+	* include/std/functional (__callable_functor): Remove.
+	(_Function_handler::_M_invoke): Use __invoke instead of
+	__callable_functor or mem_fn.
+	(function::_Callable): Use lvalue in result_of expression.
+	(function): Remove TODO comments about allocators.
+	* testsuite/20_util/function/cons/refqual.cc: New test.
+
+2016-08-04  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/status_cxx2017.xml: Update status table.
+	* include/std/functional (__inv_unwrap): Move to <type_traits>.
+	(__invoke_impl): Remove exception specifications.
+	(__invoke, invoke): Add exception specifications using
+	__is_nothrow_callable.
+	* include/std/type_traits (__inv_unwrap): Move from <functional>.
+	(__is_callable_impl, __call_is_nt, __call_is_nothrow): New helpers.
+	(__is_callable, __is_nothrow_callable): New traits.
+	(is_callable, is_callable_v): New C++17 traits.
+	(is_nothrow_callable, is_nothrow_callable_v): Likewise.
+	* testsuite/20_util/is_callable/requirements/
+	explicit_instantiation.cc: New test.
+	* testsuite/20_util/is_callable/requirements/
+	explicit_instantiation_ext.cc: New test.
+	* testsuite/20_util/is_callable/requirements/typedefs.cc: New test.
+	* testsuite/20_util/is_callable/requirements/typedefs_ext.cc: New
+	test.
+	* testsuite/20_util/is_callable/value.cc: New test.
+	* testsuite/20_util/is_callable/value_ext.cc: New test.
+	* testsuite/20_util/is_nothrow_callable/requirements/
+	explicit_instantiation.cc: New test.
+	* testsuite/20_util/is_nothrow_callable/requirements/
+	explicit_instantiation_ext.cc: New test.
+	* testsuite/20_util/is_nothrow_callable/requirements/typedefs.cc:
+	New test.
+	* testsuite/20_util/is_nothrow_callable/requirements/typedefs_ext.cc:
+	New test.
+	* testsuite/20_util/is_nothrow_callable/value.cc: New test.
+	* testsuite/20_util/is_nothrow_callable/value_ext.cc: New test.
+
+	* doc/xml/manual/status_cxx2017.xml: Update C++17 status table.
+	* doc/html/manual/status.html: Regenerate.
+
+	* testsuite/20_util/enable_shared_from_this/members/reinit.cc: Use
+	effective target not dg-options. Move check for feature-test macro to:
+	* testsuite/20_util/enable_shared_from_this/members/weak_from_this.cc:
+	New test.
+
+	* include/std/functional (_Unwrap): Rename to __inv_unwrap.
+	(__invfwd): Adjust.
+	(__invoke_impl): Remove unused template parameters.
+	* testsuite/20_util/function_objects/invoke/59768.cc: Remove unused
+	parameter.
+	* testsuite/20_util/function_objects/invoke/ref_ext.cc: Copy 59768.cc
+	and test __invoke extension for C++11.
+
+2016-08-03  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/shared_ptr_base.h (__cpp_lib_enable_shared_from_this):
+	Define feature-test macro.
+	* testsuite/20_util/enable_shared_from_this/members/reinit.cc: Test
+	for the macro.
+
+	* include/bits/shared_ptr.h (shared_ptr::weak_type): Define.
+	* include/bits/shared_ptr_base.h (__shared_ptr::weak_type): Define.
+	* testsuite/20_util/shared_ptr/cons/43820_neg.cc: Adjust dg-error.
+	* testsuite/20_util/shared_ptr/requirements/weak_type.cc: New test.
+	* testsuite/20_util/shared_ptr/cons/void_neg.cc: Likewise.
+
+	* include/std/utility (as_const): Define.
+	* testsuite/20_util/as_const/1.cc: New test.
+	* testsuite/20_util/as_const/rvalue_neg.cc: New test.
+
+	* include/bits/shared_ptr.h (owner_less): Add default template
+	argument.
+	* include/bits/shared_ptr_base.h (_Sp_owner_less<void, void>): Define
+	specialization.
+	(owner_less<void>): Define specialization.
+	* include/bits/stl_function.h (__cpp_lib_transparent_operators):
+	Update value.
+	* testsuite/20_util/owner_less/void.cc: New test.
+	* testsuite/experimental/feat-cxx14.cc: Update macro value tested.
+
+	* include/bits/allocator.h (__cpp_lib_incomplete_container_elements):
+	Define feature-test macro.
+	* include/bits/range_access.h (__cpp_lib_array_constexpr): Likewise.
+	* include/std/shared_mutex (__cpp_lib_shared_mutex): Uncomment.
+	* include/std/type_traits (__cpp_lib_logical_traits): Fix value.
+	(__cpp_lib_type_trait_variable_templates): Define.
+
+	* include/bits/stl_function.h: Remove commented-out macro.
+	* include/bits/stl_tree.h (__cpp_lib_generic_associative_lookup):
+	Define feature-test macro.
+	* testsuite/experimental/feat-cxx14.cc: Add tests for more macros.
+
+	* include/bits/c++config (_GLIBCXX_USE_STD_SPEC_FUNCS): Define for
+	C++17, or for C++11/C++14 when __STDCPP_WANT_MATH_SPEC_FUNCS__ is
+	true.
+	* include/bits/specfun.h [!__STDCPP_WANT_MATH_SPEC_FUNCS__]: Don't
+	do #error for C++17.
+	* include/c_global/cmath: Check _GLIBCXX_USE_STD_SPEC_FUNCS instead
+	of __STDCPP_WANT_MATH_SPEC_FUNCS__.
+	* include/tr1/bessel_function.tcc: Likewise.
+	* include/tr1/beta_function.tcc: Likewise.
+	* include/tr1/cmath: Likewise.
+	* include/tr1/ell_integral.tcc: Likewise.
+	* include/tr1/exp_integral.tcc: Likewise.
+	* include/tr1/gamma.tcc: Likewise.
+	* include/tr1/hypergeometric.tcc: Likewise.
+	* include/tr1/legendre_function.tcc: Likewise.
+	* include/tr1/modified_bessel_func.tcc: Likewise.
+	* include/tr1/poly_hermite.tcc: Likewise.
+	* include/tr1/poly_laguerre.tcc: Likewise.
+	* include/tr1/riemann_zeta.tcc: Likewise.
+	* include/tr1/special_function_util.h: Likewise.
+	* testsuite/26_numerics/headers/cmath/functions_std_c++17.cc: New.
+
+	* include/std/type_traits (has_trivial_default_constructor): Remove.
+	(has_trivial_copy_constructor, has_trivial_copy_assign): Likewise.
+	* testsuite/20_util/has_trivial_copy_assign/requirements/
+	explicit_instantiation.cc: Remove test.
+	* testsuite/20_util/declval/requirements/1_neg.cc: Adjust dg-error
+	line number.
+	* testsuite/20_util/has_trivial_copy_assign/requirements/typedefs.cc:
+	Likewise.
+	* testsuite/20_util/has_trivial_copy_assign/value.cc: Likewise.
+	* testsuite/20_util/has_trivial_copy_constructor/requirements/
+	explicit_instantiation.cc: Likewise.
+	* testsuite/20_util/has_trivial_copy_constructor/requirements/
+	typedefs.cc: Likewise.
+	* testsuite/20_util/has_trivial_copy_constructor/value.cc: Likewise.
+	* testsuite/20_util/has_trivial_default_constructor/requirements/
+	explicit_instantiation.cc: Likewise.
+	* testsuite/20_util/has_trivial_default_constructor/requirements/
+	typedefs.cc: Likewise.
+	* testsuite/20_util/has_trivial_default_constructor/value.cc:
+	Likewise.
+	* testsuite/20_util/headers/type_traits/types_std_c++0x_neg.cc:
+	Check has_trivial_default_constructor, has_trivial_copy_constructor,
+	and has_trivial_copy_assign are not defined.
+	* testsuite/20_util/pair/requirements/dr801.cc: Remove commented out
+	tests.
+	* testsuite/20_util/tuple/requirements/dr801.cc: Likewise.
+	* testsuite/20_util/make_signed/requirements/typedefs_neg.cc: Adjust
+	dg-error line number.
+	* testsuite/20_util/make_unsigned/requirements/typedefs_neg.cc:
+	Likewise.
+
+2016-08-02  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/21_strings/basic_string/allocator/wchar_t/copy.cc:
+	Remove reundant check for _GLIBCXX_USE_WCHAR_T and fix char type.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/copy_assign.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/minimal.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/move.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/move_assign.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/noexcept.cc:
+	Likewise.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/swap.cc:
+	Likewise.
+
+	* testsuite/lib/libstdc++.exp (check_v3_target_filesystem_ts): Improve
+	comments.
+
+	* testsuite/19_diagnostics/error_code/operators/bool_neg.cc: Move
+	dg-error to relevant line.
+	* testsuite/19_diagnostics/error_condition/operators/bool_neg.cc:
+	Likewise.
+	* testsuite/20_util/ratio/cons/cons_overflow_neg.cc: Likewise.
+
+	* scripts/testsuite_flags.in: Add -fno-show-column to cxxflags.
+
+	* testsuite/18_support/bad_exception/23591_thread-1.c: Skip test if
+	options are present that aren't valid for C.
+	* testsuite/abi/header_cxxabi.c: Likewise.
+
+	* testsuite/tr1/5_numerical_facilities/special_functions/16_hermite/
+	check_value.cc: Do not add special functions to namespace std in TR1
+	test.
+
+	* testsuite/ext/special_functions/conf_hyperg/check_nan.cc: Only
+	run for C++11 and later.
+	* testsuite/ext/special_functions/conf_hyperg/check_value.cc:
+	Likewise.
+	* testsuite/ext/special_functions/conf_hyperg/compile.cc: Likewise.
+	* testsuite/ext/special_functions/hyperg/check_nan.cc: Likewise.
+	* testsuite/ext/special_functions/hyperg/check_value.cc: Likewise.
+	* testsuite/ext/special_functions/hyperg/compile.cc: Likewise.
+	* testsuite/special_functions/01_assoc_laguerre/check_nan.cc:
+	Likewise.
+	* testsuite/special_functions/01_assoc_laguerre/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/01_assoc_laguerre/compile.cc: Likewise.
+	* testsuite/special_functions/01_assoc_laguerre/compile_2.cc:
+	Likewise.
+	* testsuite/special_functions/02_assoc_legendre/check_nan.cc:
+	Likewise.
+	* testsuite/special_functions/02_assoc_legendre/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/02_assoc_legendre/compile.cc: Likewise.
+	* testsuite/special_functions/02_assoc_legendre/compile_2.cc:
+	* testsuite/special_functions/03_beta/check_nan.cc: Likewise.
+	* testsuite/special_functions/03_beta/check_value.cc: Likewise.
+	* testsuite/special_functions/03_beta/compile.cc: Likewise.
+	* testsuite/special_functions/03_beta/compile_2.cc: Likewise.
+	* testsuite/special_functions/04_comp_ellint_1/check_nan.cc: Likewise.
+	* testsuite/special_functions/04_comp_ellint_1/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/04_comp_ellint_1/compile.cc: Likewise.
+	* testsuite/special_functions/04_comp_ellint_1/compile_2.cc: Likewise.
+	* testsuite/special_functions/05_comp_ellint_2/check_nan.cc: Likewise.
+	* testsuite/special_functions/05_comp_ellint_2/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/05_comp_ellint_2/compile.cc: Likewise.
+	* testsuite/special_functions/05_comp_ellint_2/compile_2.cc: Likewise.
+	* testsuite/special_functions/06_comp_ellint_3/check_nan.cc: Likewise.
+	* testsuite/special_functions/06_comp_ellint_3/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/06_comp_ellint_3/compile.cc: Likewise.
+	* testsuite/special_functions/06_comp_ellint_3/compile_2.cc: Likewise.
+	* testsuite/special_functions/07_cyl_bessel_i/check_nan.cc: Likewise.
+	* testsuite/special_functions/07_cyl_bessel_i/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/07_cyl_bessel_i/compile.cc: Likewise.
+	* testsuite/special_functions/07_cyl_bessel_i/compile_2.cc: Likewise.
+	* testsuite/special_functions/07_cyl_bessel_i/pr56216.cc: Likewise.
+	* testsuite/special_functions/08_cyl_bessel_j/check_nan.cc: Likewise.
+	* testsuite/special_functions/08_cyl_bessel_j/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/08_cyl_bessel_j/compile.cc: Likewise.
+	* testsuite/special_functions/08_cyl_bessel_j/compile_2.cc: Likewise.
+	* testsuite/special_functions/09_cyl_bessel_k/check_nan.cc: Likewise.
+	* testsuite/special_functions/09_cyl_bessel_k/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/09_cyl_bessel_k/compile.cc: Likewise.
+	* testsuite/special_functions/09_cyl_bessel_k/compile_2.cc: Likewise.
+	* testsuite/special_functions/10_cyl_neumann/check_nan.cc: Likewise.
+	* testsuite/special_functions/10_cyl_neumann/check_value.cc: Likewise.
+	* testsuite/special_functions/10_cyl_neumann/compile.cc: Likewise.
+	* testsuite/special_functions/10_cyl_neumann/compile_2.cc: Likewise.
+	* testsuite/special_functions/11_ellint_1/check_nan.cc: Likewise.
+	* testsuite/special_functions/11_ellint_1/check_value.cc: Likewise.
+	* testsuite/special_functions/11_ellint_1/compile.cc: Likewise.
+	* testsuite/special_functions/11_ellint_1/compile_2.cc: Likewise.
+	* testsuite/special_functions/12_ellint_2/check_nan.cc: Likewise.
+	* testsuite/special_functions/12_ellint_2/check_value.cc: Likewise.
+	* testsuite/special_functions/12_ellint_2/compile.cc: Likewise.
+	* testsuite/special_functions/12_ellint_2/compile_2.cc: Likewise.
+	* testsuite/special_functions/13_ellint_3/check_nan.cc: Likewise.
+	* testsuite/special_functions/13_ellint_3/check_value.cc: Likewise.
+	* testsuite/special_functions/13_ellint_3/compile.cc: Likewise.
+	* testsuite/special_functions/13_ellint_3/compile_2.cc: Likewise.
+	* testsuite/special_functions/14_expint/check_nan.cc: Likewise.
+	* testsuite/special_functions/14_expint/check_value.cc: Likewise.
+	* testsuite/special_functions/14_expint/compile.cc: Likewise.
+	* testsuite/special_functions/14_expint/compile_2.cc: Likewise.
+	* testsuite/special_functions/15_hermite/check_nan.cc: Likewise.
+	* testsuite/special_functions/15_hermite/check_value.cc: Likewise.
+	* testsuite/special_functions/15_hermite/compile.cc: Likewise.
+	* testsuite/special_functions/15_hermite/compile_2.cc: Likewise.
+	* testsuite/special_functions/16_laguerre/check_nan.cc: Likewise.
+	* testsuite/special_functions/16_laguerre/check_value.cc: Likewise.
+	* testsuite/special_functions/16_laguerre/compile.cc: Likewise.
+	* testsuite/special_functions/16_laguerre/compile_2.cc: Likewise.
+	* testsuite/special_functions/17_legendre/check_nan.cc: Likewise.
+	* testsuite/special_functions/17_legendre/check_value.cc: Likewise.
+	* testsuite/special_functions/17_legendre/compile.cc: Likewise.
+	* testsuite/special_functions/17_legendre/compile_2.cc: Likewise.
+	* testsuite/special_functions/18_riemann_zeta/check_nan.cc: Likewise.
+	* testsuite/special_functions/18_riemann_zeta/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/18_riemann_zeta/compile.cc: Likewise.
+	* testsuite/special_functions/18_riemann_zeta/compile_2.cc: Likewise.
+	* testsuite/special_functions/19_sph_bessel/check_nan.cc: Likewise.
+	* testsuite/special_functions/19_sph_bessel/check_value.cc: Likewise.
+	* testsuite/special_functions/19_sph_bessel/compile.cc: Likewise.
+	* testsuite/special_functions/19_sph_bessel/compile_2.cc: Likewise.
+	* testsuite/special_functions/20_sph_legendre/check_nan.cc: Likewise.
+	* testsuite/special_functions/20_sph_legendre/check_value.cc:
+	Likewise.
+	* testsuite/special_functions/20_sph_legendre/compile.cc: Likewise.
+	* testsuite/special_functions/20_sph_legendre/compile_2.cc: Likewise.
+	* testsuite/special_functions/21_sph_neumann/check_nan.cc: Likewise.
+	* testsuite/special_functions/21_sph_neumann/check_value.cc: Likewise.
+	* testsuite/special_functions/21_sph_neumann/compile.cc: Likewise.
+	* testsuite/special_functions/21_sph_neumann/compile_2.cc: Likewise.
+
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	08_cyl_bessel_i/check_value.cc: Use __attribute__((unused)) instead
+	of [[gnu::unused]].
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	09_cyl_bessel_j/check_value.cc: Likewise.
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	10_cyl_bessel_k/check_value.cc: Likewise.
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	11_cyl_neumann/check_value.cc: Likewise.
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	21_sph_bessel/check_value.cc: Likewise.
+	* testsuite/tr1/5_numerical_facilities/special_functions/
+	23_sph_neumann/check_value.cc: Likewise.
+
+2016-08-02  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* config/abi/post/solaris2.10/baseline_symbols.txt: Regenerate.
+	* config/abi/post/solaris2.10/amd64/baseline_symbols.txt: Likewise.
+	* config/abi/post/solaris2.10/sparcv9/baseline_symbols.txt: Likewise.
+	* config/abi/post/solaris2.11/baseline_symbols.txt: Likewise.
+	* config/abi/post/solaris2.11/amd64/baseline_symbols.txt: Likewise.
+	* config/abi/post/solaris2.11/sparcv9/baseline_symbols.txt: Likewise.
+
 2016-08-02  Jonathan Wakely  <jwakely@redhat.com>
 
 	* testsuite/29_atomics/atomic_flag/test_and_set/explicit-hle.cc: Skip

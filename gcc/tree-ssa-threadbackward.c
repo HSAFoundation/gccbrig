@@ -35,6 +35,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "gimple-ssa.h"
 #include "tree-phinodes.h"
+#include "tree-inline.h"
 
 static int max_threaded_paths;
 
@@ -206,8 +207,9 @@ profitable_jump_thread_path (vec<basic_block, va_gc> *&path,
 		  /* Note that if both NAME and DST are anonymous
 		     SSA_NAMEs, then we do not have enough information
 		     to consider them associated.  */
-		  if ((SSA_NAME_VAR (dst) != SSA_NAME_VAR (name)
-		       || !SSA_NAME_VAR (dst))
+		  if (dst != name
+		      && (SSA_NAME_VAR (dst) != SSA_NAME_VAR (name)
+			  || !SSA_NAME_VAR (dst))
 		      && !virtual_operand_p (dst))
 		    ++n_insns;
 		}
@@ -223,7 +225,7 @@ profitable_jump_thread_path (vec<basic_block, va_gc> *&path,
 		  && !(gimple_code (stmt) == GIMPLE_ASSIGN
 		       && gimple_assign_rhs_code (stmt) == ASSERT_EXPR)
 		  && !is_gimple_debug (stmt))
-		++n_insns;
+	        n_insns += estimate_num_insns (stmt, &eni_size_weights);
 	    }
 
 	  /* We do not look at the block with the threaded branch
@@ -251,13 +253,15 @@ profitable_jump_thread_path (vec<basic_block, va_gc> *&path,
 	threaded_through_latch = true;
     }
 
+  gimple *stmt = get_gimple_control_stmt ((*path)[0]);
+  gcc_assert (stmt);
+
   /* We are going to remove the control statement at the end of the
      last block in the threading path.  So don't count it against our
      statement count.  */
-  n_insns--;
 
-  gimple *stmt = get_gimple_control_stmt ((*path)[0]);
-  gcc_assert (stmt);
+  n_insns-= estimate_num_insns (stmt, &eni_size_weights);
+
   /* We have found a constant value for ARG.  For GIMPLE_SWITCH
      and GIMPLE_GOTO, we use it as-is.  However, for a GIMPLE_COND
      we need to substitute, fold and simplify so we can determine
@@ -303,12 +307,24 @@ profitable_jump_thread_path (vec<basic_block, va_gc> *&path,
       return NULL;
     }
 
-  if (n_insns >= PARAM_VALUE (PARAM_MAX_FSM_THREAD_PATH_INSNS))
+  if (optimize_edge_for_speed_p (taken_edge))
+    {
+      if (n_insns >= PARAM_VALUE (PARAM_MAX_FSM_THREAD_PATH_INSNS))
+	{
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file, "FSM jump-thread path not considered: "
+		     "the number of instructions on the path "
+		     "exceeds PARAM_MAX_FSM_THREAD_PATH_INSNS.\n");
+	  path->pop ();
+	  return NULL;
+	}
+    }
+  else if (n_insns > 1)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
 	fprintf (dump_file, "FSM jump-thread path not considered: "
-		 "the number of instructions on the path "
-		 "exceeds PARAM_MAX_FSM_THREAD_PATH_INSNS.\n");
+		 "duplication of %i insns is needed and optimizing for size.\n",
+		 n_insns);
       path->pop ();
       return NULL;
     }
@@ -612,10 +628,6 @@ fsm_find_control_statement_thread_paths (tree name,
 void  
 find_jump_threads_backwards (basic_block bb)
 {     
-  if (!flag_expensive_optimizations
-      || optimize_function_for_size_p (cfun))
-    return;
-
   gimple *stmt = get_gimple_control_stmt (bb);
   if (!stmt)
     return;
@@ -662,7 +674,7 @@ const pass_data pass_data_thread_jumps =
   0,
   0,
   0,
-  ( TODO_cleanup_cfg | TODO_update_ssa ),
+  TODO_update_ssa,
 };
 
 class pass_thread_jumps : public gimple_opt_pass
@@ -680,14 +692,15 @@ public:
 bool
 pass_thread_jumps::gate (function *fun ATTRIBUTE_UNUSED)
 {
-  return (flag_expensive_optimizations
-	  && ! optimize_function_for_size_p (cfun));
+  return flag_expensive_optimizations;
 }
 
 
 unsigned int
 pass_thread_jumps::execute (function *fun)
 {
+  loop_optimizer_init (LOOPS_HAVE_PREHEADERS | LOOPS_HAVE_SIMPLE_LATCHES);
+
   /* Try to thread each block with more than one successor.  */
   basic_block bb;
   FOR_EACH_BB_FN (bb, fun)
@@ -695,8 +708,10 @@ pass_thread_jumps::execute (function *fun)
       if (EDGE_COUNT (bb->succs) > 1)
 	find_jump_threads_backwards (bb);
     }
-  thread_through_all_blocks (true);
-  return 0;
+  bool changed = thread_through_all_blocks (true);
+
+  loop_optimizer_finalize ();
+  return changed ? TODO_cleanup_cfg : 0;
 }
 
 }

@@ -141,11 +141,13 @@ lvalue_kind (const_tree ref)
 	 lvalues.  */
       if (! TREE_STATIC (ref))
 	return clk_none;
+      /* FALLTHRU */
     case VAR_DECL:
       if (TREE_READONLY (ref) && ! TREE_STATIC (ref)
 	  && DECL_LANG_SPECIFIC (ref)
 	  && DECL_IN_AGGR_P (ref))
 	return clk_none;
+      /* FALLTHRU */
     case INDIRECT_REF:
     case ARROW_EXPR:
     case ARRAY_REF:
@@ -2353,9 +2355,9 @@ no_linkage_check (tree t, bool relaxed_p)
 	return NULL_TREE;
       /* Fall through.  */
     case ENUMERAL_TYPE:
-      /* Only treat anonymous types as having no linkage if they're at
+      /* Only treat unnamed types as having no linkage if they're at
 	 namespace scope.  This is core issue 966.  */
-      if (TYPE_ANONYMOUS_P (t) && TYPE_NAMESPACE_SCOPE_P (t))
+      if (TYPE_UNNAMED_P (t) && TYPE_NAMESPACE_SCOPE_P (t))
 	return t;
 
       for (r = CP_TYPE_CONTEXT (t); ; )

@@ -147,6 +147,11 @@
   (and (match_code "const_int")
        (match_test "INTVAL (op) >= 0 && INTVAL (op) <= 63")))
 
+;; Return 1 if op is an unsigned 7-bit constant integer.
+(define_predicate "u7bit_cint_operand"
+  (and (match_code "const_int")
+       (match_test "IN_RANGE (INTVAL (op), 0, 127)")))
+
 ;; Return 1 if op is a signed 8-bit constant integer.
 ;; Integer multiplication complete more quickly
 (define_predicate "s8bit_cint_operand"
@@ -733,15 +738,6 @@
 (define_predicate "offsettable_mem_operand"
   (and (match_operand 0 "memory_operand")
        (match_test "offsettable_nonstrict_memref_p (op)")))
-
-;; Return 1 if the operand is an offsettable memory operand for ISA 3.0
-;; scalar LXSD/STXSD that must have the bottom 2 bits 0 and no update
-;; form
-(define_predicate "offsettable_mem_14bit_operand"
-  (and (match_operand 0 "memory_operand")
-       (match_test "offsettable_nonstrict_memref_p (op)")
-       (match_test "mem_operand_gpr (op, mode)")
-       (not (match_test "update_address_mem  (op, mode)"))))
 
 ;; Return 1 if the operand is suitable for load/store quad memory.
 ;; This predicate only checks for non-atomic loads/stores (not lqarx/stqcx).

@@ -32,6 +32,7 @@ Gogo::Gogo(Backend* backend, Linemap* linemap, int, int pointer_size)
     file_block_names_(),
     imports_(),
     imported_unsafe_(false),
+    current_file_imported_unsafe_(false),
     packages_(),
     init_functions_(),
     var_deps_(),
@@ -449,6 +450,7 @@ Gogo::import_package(const std::string& filename,
   if (filename == "unsafe")
     {
       this->import_unsafe(local_name, is_local_name_exported, location);
+      this->current_file_imported_unsafe_ = true;
       return;
     }
 
@@ -2000,6 +2002,29 @@ Gogo::add_dot_import_object(Named_object* no)
   this->current_bindings()->add_named_object(no);
 }
 
+// Add a linkname.  This implements the go:linkname compiler directive.
+// We only support this for functions and function declarations.
+
+void
+Gogo::add_linkname(const std::string& go_name, bool is_exported,
+		   const std::string& ext_name, Location loc)
+{
+  Named_object* no =
+    this->package_->bindings()->lookup(this->pack_hidden_name(go_name,
+							      is_exported));
+  if (no == NULL)
+    error_at(loc, "%s is not defined", go_name.c_str());
+  else if (no->is_function())
+    no->func_value()->set_asm_name(ext_name);
+  else if (no->is_function_declaration())
+    no->func_declaration_value()->set_asm_name(ext_name);
+  else
+    error_at(loc,
+	     ("%s is not a function; "
+	      "//go:linkname is only supported for functions"),
+	     go_name.c_str());
+}
+
 // Mark all local variables used.  This is used when some types of
 // parse error occur.
 
@@ -2183,6 +2208,8 @@ Gogo::clear_file_scope()
         }
       package->clear_used();
     }
+
+  this->current_file_imported_unsafe_ = false;
 }
 
 // Queue up a type specific function for later writing.  These are
@@ -4439,7 +4466,7 @@ Function::Function(Function_type* type, Named_object* enclosing, Block* block,
   : type_(type), enclosing_(enclosing), results_(NULL),
     closure_var_(NULL), block_(block), location_(location), labels_(),
     local_type_count_(0), descriptor_(NULL), fndecl_(NULL), defer_stack_(NULL),
-    is_sink_(false), results_are_named_(false), nointerface_(false),
+    pragmas_(0), is_sink_(false), results_are_named_(false),
     is_unnamed_type_stub_method_(false), calls_recover_(false),
     is_recover_thunk_(false), has_recover_thunk_(false),
     calls_defer_retaddr_(false), is_type_specific_function_(false),
@@ -4509,6 +4536,24 @@ Function::update_result_variables()
        p != this->results_->end();
        ++p)
     (*p)->result_var_value()->set_function(this);
+}
+
+// Whether this method should not be included in the type descriptor.
+
+bool
+Function::nointerface() const
+{
+  go_assert(this->is_method());
+  return (this->pragmas_ & GOPRAGMA_NOINTERFACE) != 0;
+}
+
+// Record that this method should not be included in the type
+// descriptor.
+
+void
+Function::set_nointerface()
+{
+  this->pragmas_ |= GOPRAGMA_NOINTERFACE;
 }
 
 // Return the closure variable, creating it if necessary.
@@ -5016,6 +5061,12 @@ Function::get_or_make_decl(Gogo* gogo, Named_object* no)
             }
         }
 
+      if (!this->asm_name_.empty())
+	{
+	  asm_name = this->asm_name_;
+	  is_visible = true;
+	}
+
       // If a function calls the predeclared recover function, we
       // can't inline it, because recover behaves differently in a
       // function passed directly to defer.  If this is a recover
@@ -5032,17 +5083,26 @@ Function::get_or_make_decl(Gogo* gogo, Named_object* no)
       if (this->calls_defer_retaddr_)
 	is_inlinable = false;
 
+      // Check the //go:noinline compiler directive.
+      if ((this->pragmas_ & GOPRAGMA_NOINLINE) != 0)
+	is_inlinable = false;
+
       // If this is a thunk created to call a function which calls
       // the predeclared recover function, we need to disable
       // stack splitting for the thunk.
       bool disable_split_stack = this->is_recover_thunk_;
+
+      // Check the //go:nosplit compiler directive.
+      if ((this->pragmas_ & GOPRAGMA_NOSPLIT) != 0)
+	disable_split_stack = true;
 
       // This should go into a unique section if that has been
       // requested elsewhere, or if this is a nointerface function.
       // We want to put a nointerface function into a unique section
       // because there is a good chance that the linker garbage
       // collection can discard it.
-      bool in_unique_section = this->in_unique_section_ || this->nointerface_;
+      bool in_unique_section = (this->in_unique_section_
+				|| (this->is_method() && this->nointerface()));
 
       Btype* functype = this->type_->get_backend_fntype(gogo);
       this->fndecl_ =

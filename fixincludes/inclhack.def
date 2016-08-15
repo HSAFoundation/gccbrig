@@ -1395,6 +1395,21 @@ fix = {
 };
 
 /*
+ *  Before Mac OS X 10.8 <i386/setjmp.h> doesn't mark longjump noreturn.
+ */
+fix = {
+    hackname  = darwin_longjmp_noreturn;
+    mach      = "*-*-darwin*";
+    files     = "i386/setjmp.h";
+    bypass    = "__dead2";
+    select    = "(.*longjmp\\(.*jmp_buf.*[^)]+\\));";
+    c_fix     = format;
+    c_fix_arg = "%1 __attribute__ ((__noreturn__));";
+
+    test_text = "void siglongjmp(sigjmp_buf, int);";
+};
+
+/*
  *  __private_extern__ doesn't exist in FSF GCC.  Even if it did,
  *  why would you ever put it in a system header file?
  */
@@ -2624,6 +2639,21 @@ fix = {
     test-text = "#  define       UINT_FAST64_MAX        ULLONG_MAX\n"
 		"#  define       UINT_LEAST64_MAX        ULLONG_MAX\n";
 	_EOFix_;
+};
+
+/*
+ *  Add noreturn attribute to longjmp declarations in hpux <setjmp.h>
+ */
+fix = {
+    hackname = hpux_longjmp;
+    mach     = "*-hp-hpux*";
+    files    = setjmp.h;
+    select   = "^[ \t]*extern[ \t]+void.*longjmp[ \t]+__\\(\\(.*int\\)\\)";
+
+    c_fix     = format;
+    c_fix_arg = "%0 __attribute__ ((__noreturn__))";
+
+    test_text = 'extern void	longjmp __((jmp_buf, int));';
 };
 
 /*

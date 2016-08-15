@@ -731,7 +731,7 @@ print_to_asm_out_file (print_switch_type type, const char * text)
     case SWITCH_TYPE_DESCRIPTIVE:
       if (ASM_COMMENT_START[0] == 0)
 	prepend_sep = false;
-      /* Drop through.  */
+      /* FALLTHRU */
     case SWITCH_TYPE_PASSED:
     case SWITCH_TYPE_ENABLED:
       if (prepend_sep)
@@ -761,7 +761,7 @@ print_to_stderr (print_switch_type type, const char * text)
     case SWITCH_TYPE_PASSED:
     case SWITCH_TYPE_ENABLED:
       fputc (' ', stderr);
-      /* Drop through.  */
+      /* FALLTHRU */
 
     case SWITCH_TYPE_DESCRIPTIVE:
       fputs (text, stderr);
@@ -1894,6 +1894,7 @@ finalize (bool no_backend)
   if (flag_gen_aux_info)
     {
       fclose (aux_info_file);
+      aux_info_file = NULL;
       if (seen_error ())
 	unlink (aux_info_file_name);
     }
@@ -1908,10 +1909,14 @@ finalize (bool no_backend)
 	fatal_error (input_location, "error writing to %s: %m", asm_file_name);
       if (fclose (asm_out_file) != 0)
 	fatal_error (input_location, "error closing %s: %m", asm_file_name);
+      asm_out_file = NULL;
     }
 
   if (stack_usage_file)
-    fclose (stack_usage_file);
+    {
+      fclose (stack_usage_file);
+      stack_usage_file = NULL;
+    }
 
   if (!no_backend)
     {
