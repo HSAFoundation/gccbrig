@@ -32,6 +32,7 @@
 #include "langhooks.h"
 #include "stor-layout.h"
 #include "diagnostic-core.h"
+#include "brig-builtins.h"
 
 brig_basic_inst_handler::brig_basic_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -44,26 +45,21 @@ public:
   scalarized_sat_arithmetics (const BrigInstBase &brig_inst)
     : brig_inst_ (brig_inst)
   {
-    std::ostringstream builtin_name;
-    builtin_name << "__hsail_sat_";
+    BrigType16_t element_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
 
-    switch (brig_inst.opcode)
-      {
-      case BRIG_OPCODE_ADD:
-	builtin_name << "add";
-	break;
-      case BRIG_OPCODE_SUB:
-	builtin_name << "sub";
-	break;
-      case BRIG_OPCODE_MUL:
-	builtin_name << "mul";
-	break;
-      default:
-	gcc_unreachable ();
-      }
-    BrigType16_t element_type = brig_inst.type & 0x01F;
-    builtin_name << "_" << gccbrig_type_name (element_type);
-    builtin_name_ = builtin_name.str ();
+#undef DEF_HSAIL_SAT_BUILTIN
+#undef DEF_HSAIL_BUILTIN
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_INTR_BUILTIN
+#undef DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN
+
+#define DEF_HSAIL_SAT_BUILTIN(ENUM, BRIG_OPCODE, HSAIL_TYPE,		\
+			      NAME, TYPE, ATTRS)			\
+    if (brig_inst.opcode == BRIG_OPCODE && element_type == HSAIL_TYPE)	\
+      builtin = builtin_decl_explicit (ENUM);				\
+    else
+#include "hsail-builtins.def"
+      gcc_unreachable ();
   }
 
   virtual tree
@@ -72,13 +68,12 @@ public:
     /* Implement saturating arithmetics with scalar built-ins for now.
        TO OPTIMIZE: emit GENERIC nodes for the simplest cases or at least
        emit vector built-ins.  */
-    tree builtin = NULL_TREE;
-    return call_builtin (&builtin, builtin_name_.c_str (), 2,
-			 TREE_TYPE (operand0), TREE_TYPE (operand0), operand0,
+    return call_builtin (builtin, 2, TREE_TYPE (operand0),
+			 TREE_TYPE (operand0), operand0,
 			 TREE_TYPE (operand1), operand1);
   }
   const BrigInstBase &brig_inst_;
-  std::string builtin_name_;
+  tree builtin;
 };
 
 bool
@@ -97,7 +92,7 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
      not to be reliable enough. */
 
   size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
-  BrigType16_t element_type = brig_inst->type & 0x01F;
+  BrigType16_t element_type = brig_inst->type & BRIG_TYPE_BASE_MASK;
   if (elements < 16
       && (element_type == BRIG_TYPE_S8 || element_type == BRIG_TYPE_U8
 	  || element_type == BRIG_TYPE_S16 || element_type == BRIG_TYPE_U16))
@@ -356,7 +351,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
   size_t input_count = operands.size ();
   size_t output_count = first_input;
 
-  BrigType16_t inner_type = brig_type & 0x01f;
+  BrigType16_t inner_type = brig_type & BRIG_TYPE_BASE_MASK;
 
   tree instr_inner_type
     = VECTOR_TYPE_P (arith_type) ? TREE_TYPE (arith_type) : arith_type;
@@ -446,7 +441,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	  return build_zero_cst (arith_type);
 	}
       else
-	sorry ("unsupported opcode %d", brig_opcode);
+	gcc_unreachable ();
     }
   else if (opcode == CALL_EXPR)
     return expand_or_call_builtin (brig_opcode, brig_type, arith_type,
@@ -500,19 +495,15 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   BrigType16_t brig_inst_type = brig_inst->type;
 
   if (brig_inst->opcode == BRIG_OPCODE_NOP)
-    {
-      return base->byteCount;
-    }
+    return base->byteCount;
   else if (brig_inst->opcode == BRIG_OPCODE_FIRSTBIT
 	   || brig_inst->opcode == BRIG_OPCODE_LASTBIT
 	   || brig_inst->opcode == BRIG_OPCODE_SAD)
-    {
-      /* These instructions are reported to be always 32b in HSAIL, but we want
-	 to treat them according to their input argument's type to select the
-	 correct instruction/builtin. */
-      brig_inst_type
-	= gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
-    }
+    /* These instructions are reported to be always 32b in HSAIL, but we want
+       to treat them according to their input argument's type to select the
+       correct instruction/builtin. */
+    brig_inst_type
+      = gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst_type);
 
@@ -525,8 +516,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   tree_code opcode
     = get_tree_code_for_hsa_opcode (brig_inst->opcode, brig_inst_type);
 
-  bool is_fp16_operation = (brig_inst_type & 0x01F) == BRIG_TYPE_F16
-			   && !gccbrig_is_raw_operation (brig_inst->opcode);
+  bool is_fp16_operation
+    = (brig_inst_type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
+    && !gccbrig_is_raw_operation (brig_inst->opcode);
 
   bool is_vec_instr = brig_inst_type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64
 					| BRIG_TYPE_PACK_128);
@@ -537,7 +529,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   size_t element_size_bits;
   if (is_vec_instr)
     {
-      BrigType16_t brig_element_type = brig_inst_type & 0x01F;
+      BrigType16_t brig_element_type = brig_inst_type & BRIG_TYPE_BASE_MASK;
       element_size_bits = gccbrig_hsa_type_bit_size (brig_element_type);
       element_count = gccbrig_hsa_type_bit_size (brig_inst_type)
 		      / gccbrig_hsa_type_bit_size (brig_element_type);
@@ -616,7 +608,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       tree_stl_vec result_elements;
 
       tree scalar_type = TREE_TYPE (arith_type);
-      BrigType16_t element_type = brig_inst_type & 0x01F;
+      BrigType16_t element_type = brig_inst_type & BRIG_TYPE_BASE_MASK;
       tree promoted_type = short_integer_type_node;
       switch (element_type)
 	{
@@ -767,7 +759,7 @@ tree_code
 brig_basic_inst_handler::get_tree_code_for_hsa_opcode
   (BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
 {
-  BrigType16_t brig_inner_type = brig_type & 0x01F;
+  BrigType16_t brig_inner_type = brig_type & BRIG_TYPE_BASE_MASK;
   switch (brig_opcode)
     {
     case BRIG_OPCODE_NOP:
@@ -857,9 +849,25 @@ brig_basic_inst_handler::get_tree_code_for_hsa_opcode
 	 the below builtin map search cannot find it. */
     case BRIG_OPCODE_CLASS:
     case BRIG_OPCODE_WORKITEMABSID:
-      /* Model the ID etc. special instructions as (builtin) calls. */
       return CALL_EXPR;
     default:
+
+      /* Some BRIG opcodes can use the same builtins for unsigned and
+	 signed types.  Force these cases to unsigned types.  
+      */
+
+      if (brig_opcode == BRIG_OPCODE_BORROW
+	  || brig_opcode == BRIG_OPCODE_CARRY
+	  || brig_opcode == BRIG_OPCODE_LASTBIT
+	  || brig_opcode == BRIG_OPCODE_BITINSERT)
+	{
+	  if (brig_type == BRIG_TYPE_S32)
+	    brig_type = BRIG_TYPE_U32;
+	  else if (brig_type == BRIG_TYPE_S64)
+	    brig_type = BRIG_TYPE_U64;
+	}
+
+
       builtin_map::const_iterator i
 	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
       if (i != s_custom_builtins.end ())

@@ -97,10 +97,6 @@ protected:
   tree apply_to_all_elements (tree_element_unary_visitor &visitor,
 			      tree operand);
 
-  tree build_builtin (const char *name, int nargs, tree rettype, ...);
-
-  tree vbuild_builtin (const char *name, int nargs, tree rettype, va_list ap);
-
   HOST_WIDE_INT int_constant_value (tree node);
 
   tree extend_int (tree input, tree dest_type, tree src_type);
@@ -110,9 +106,6 @@ protected:
   static builtin_map s_custom_builtins;
 
 private:
-  tree add_custom_builtin (BrigOpcode16_t brig_opcode, BrigType16_t itype,
-			   const char *name, int nargs, tree rettype, ...);
-
   tree get_raw_tree_type (tree original_type);
 };
 
@@ -367,12 +360,6 @@ public:
 protected:
   size_t generate_tree (const BrigInstBase &inst,
 			BrigAtomicOperation8_t atomic_opcode);
-
-private:
-  void add_custom_atomic_builtin (const char *name, int nargs, tree rettype,
-				  ...);
-  /* __sync*() builtin func declarations.  */
-  static atomic_builtins_map s_atomic_builtins;
 };
 
 class brig_signal_inst_handler : public brig_atomic_inst_handler

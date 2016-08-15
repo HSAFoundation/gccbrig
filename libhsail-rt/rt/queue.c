@@ -24,31 +24,31 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include "phsa_queue_interface.h"
+#include "phsa-queue-interface.h"
 
 uint64_t
-__phsa_builtin_ldqueuereadindex (uint64_t queue_addr)
+__hsail_ldqueuereadindex (uint64_t queue_addr)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
   return queue->read_index;
 }
 
 uint64_t
-__phsa_builtin_ldqueuewriteindex (uint64_t queue_addr)
+__hsail_ldqueuewriteindex (uint64_t queue_addr)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
   return queue->write_index;
 }
 
 uint64_t
-__phsa_builtin_addqueuewriteindex (uint64_t queue_addr, uint64_t value)
+__hsail_addqueuewriteindex (uint64_t queue_addr, uint64_t value)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
   return __sync_fetch_and_add (&queue->write_index, value);
 }
 
 uint64_t
-__phsa_builtin_casqueuewriteindex (uint64_t queue_addr, uint64_t cmp_value,
+__hsail_casqueuewriteindex (uint64_t queue_addr, uint64_t cmp_value,
 				   uint64_t new_value)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
@@ -57,14 +57,14 @@ __phsa_builtin_casqueuewriteindex (uint64_t queue_addr, uint64_t cmp_value,
 }
 
 void
-__phsa_builtin_stqueuereadindex (uint64_t queue_addr, uint64_t value)
+__hsail_stqueuereadindex (uint64_t queue_addr, uint64_t value)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
   queue->read_index = value;
 }
 
 void
-__phsa_builtin_stqueuewriteindex (uint64_t queue_addr, uint64_t value)
+__hsail_stqueuewriteindex (uint64_t queue_addr, uint64_t value)
 {
   phsa_queue_t *queue = (phsa_queue_t *) queue_addr;
   queue->write_index = value;

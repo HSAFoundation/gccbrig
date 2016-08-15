@@ -47,8 +47,6 @@
 #include "workitems.h"
 #include "phsa-rt.h"
 
-//#define BENCHMARK_PHSA_RT
-
 #ifdef BENCHMARK_PHSA_RT
 #include <stdio.h>
 #include <time.h>
@@ -62,15 +60,14 @@ static clock_t start_time;
 
 #include <stdio.h>
 
-//#define DEBUG_PHSA_RT
 #ifdef DEBUG_PHSA_RT
 #include <stdio.h>
 #endif
 
-// HSA requires WGs to be executed in flat work-group id order.  Enabling
-// the following macro can reveal test cases that rely on the ordering,
-// but is not useful for much else.
-// #define EXECUTE_WGS_BACKWARDS
+/* HSA requires WGs to be executed in flat work-group id order.  Enabling
+   the following macro can reveal test cases that rely on the ordering,
+   but is not useful for much else.  
+   #define EXECUTE_WGS_BACKWARDS  */
 
 uint32_t __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context);
 
@@ -89,7 +86,9 @@ phsa_fatal_error (int code)
 }
 
 #ifdef HAVE_PTH
-// Pth-based work-item thread implementation.
+/* Pth-based work-item thread implementation.  Run all work-items in 
+   separate fibers.  */
+
 static void *
 phsa_work_item_thread (void *arg)
 {
@@ -537,7 +536,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
    a) A single work-item function (that requires fibers for multi-WI):
 
       void Kernel(void* context) {
-	 __phsa_launch_kernel (_Kernel, context);
+	 __launch_launch_kernel (_Kernel, context);
       }
 
       or
@@ -545,14 +544,14 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
     b) a when gccbrig could generate a work-group function:
 
       void Kernel(void* context) {
-         __phsa_launch_wg_function (_Kernel, context);
+         __hsail_launch_wg_function (_Kernel, context);
       }
 */
 
 #ifdef HAVE_PTH
 void
-__phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
-		      void *group_base_ptr)
+__hsail_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
+		       void *group_base_ptr)
 {
   context->kernel = kernel;
   phsa_spawn_work_items (context, group_base_ptr);
@@ -560,8 +559,8 @@ __phsa_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
 #endif
 
 void
-__phsa_launch_wg_function (gccbrigKernelFunc kernel,
-			   PHSAKernelLaunchData *context, void *group_base_ptr)
+__hsail_launch_wg_function (gccbrigKernelFunc kernel,
+			    PHSAKernelLaunchData *context, void *group_base_ptr)
 {
   context->kernel = kernel;
   phsa_execute_work_groups (context, group_base_ptr);
@@ -577,7 +576,7 @@ __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context)
     {
     default:
     case 0:
-      // Overflow semantics in the case of WG dim > grid dim.
+      /* Overflow semantics in the case of WG dim > grid dim.  */
       id = ((uint64_t) context->wg->x * dp->workgroup_size_x + context->x)
 	   % dp->grid_size_x;
       break;
@@ -599,7 +598,7 @@ __hsail_workitemid (uint32_t dim, PHSAWorkItem *context)
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
-  // The number of dimensions is in the two least significant bits.
+  /* The number of dimensions is in the two least significant bits.  */
   int dims = dp->setup & 0x3;
 
   uint32_t id;
@@ -687,7 +686,7 @@ __hsail_workitemflatabsid_u64 (PHSAWorkItem *context)
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
-  // work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1
+  /* Work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1  */
   uint64_t id0 = __hsail_workitemabsid (0, context);
   uint64_t id1 = __hsail_workitemabsid (1, context);
   uint64_t id2 = __hsail_workitemabsid (2, context);
@@ -705,7 +704,7 @@ __hsail_workitemflatabsid_u32 (PHSAWorkItem *context)
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
-  // work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1
+  /* work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1  */
   uint64_t id0 = __hsail_workitemabsid (0, context);
   uint64_t id1 = __hsail_workitemabsid (1, context);
   uint64_t id2 = __hsail_workitemabsid (2, context);
@@ -826,37 +825,36 @@ __hsail_barrier (PHSAWorkItem *wi)
 }
 #endif
 
-//#define DEBUG_ALLOCA
-/**
- * Return a 32b private segment address that points to a dynamically
- * allocated chunk of 'size' with 'align'.
- *
- * Allocates the space from the end of the private segment allocated
- * for the whole work group.  In implementations with separate private
- * memories per WI, we will need to have a stack pointer per WI.  But in
- * the current implementation, the segment is shared, so we possibly
- * save some space in case all WIs do not call the alloca.
- *
- * The "alloca frames" are organized as follows:
- *
- * wg->alloca_stack_p points to the last allocated data (initially
- * outside the private segment)
- * wg->alloca_frame_p points to the first address _outside_ the current
- * function's allocations (initially to the same as alloca_stack_p)
- *
- * The data is allocated downwards from the end of the private segment.
- *
- * In the beginning of a new function which has allocas, a new alloca
- * frame is pushed which adds the current alloca_frame_p (the current
- * function's frame starting point) to the top of the alloca stack and
- * alloca_frame_p is set to the current stack position.
- *
- * At the exit points of a function with allocas, the alloca frame
- * is popped before returning.  This involves popping the alloca_frame_p
- * to the one of the previous function in the call stack, and alloca_stack_p
- * similarly, to the position of the last word alloca'd by the previous
- * function.
+/* Return a 32b private segment address that points to a dynamically
+   allocated chunk of 'size' with 'align'.
+
+   Allocates the space from the end of the private segment allocated
+   for the whole work group.  In implementations with separate private
+   memories per WI, we will need to have a stack pointer per WI.  But in
+   the current implementation, the segment is shared, so we possibly
+   save some space in case all WIs do not call the alloca.
+
+   The "alloca frames" are organized as follows:
+
+   wg->alloca_stack_p points to the last allocated data (initially
+   outside the private segment)
+   wg->alloca_frame_p points to the first address _outside_ the current
+   function's allocations (initially to the same as alloca_stack_p)
+
+   The data is allocated downwards from the end of the private segment.
+
+   In the beginning of a new function which has allocas, a new alloca
+   frame is pushed which adds the current alloca_frame_p (the current
+   function's frame starting point) to the top of the alloca stack and
+   alloca_frame_p is set to the current stack position.
+
+   At the exit points of a function with allocas, the alloca frame
+   is popped before returning.  This involves popping the alloca_frame_p
+   to the one of the previous function in the call stack, and alloca_stack_p
+   similarly, to the position of the last word alloca'd by the previous
+   function.
  */
+
 uint32_t
 __hsail_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
 {
@@ -873,19 +871,18 @@ __hsail_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
   return new_pos;
 }
 
-/**
- * Initializes a new "alloca frame" in the private segment.
- *
- * This should be called at all the function entry points in case
- * the function contains at least one call to alloca.
- */
+/* Initializes a new "alloca frame" in the private segment.   
+   This should be called at all the function entry points in case
+   the function contains at least one call to alloca.  */
+
 void
 __hsail_alloca_push_frame (PHSAWorkItem *wi)
 {
   volatile PHSAWorkGroup *wg = wi->wg;
-/* Store the alloca_frame_p without any alignment padding so
-   we know exactly where the previous frame ended after popping
-   it.  */
+
+  /* Store the alloca_frame_p without any alignment padding so
+     we know exactly where the previous frame ended after popping
+     it.  */
 #ifdef DEBUG_ALLOCA
   printf ("--- push frame ");
 #endif
@@ -899,15 +896,12 @@ __hsail_alloca_push_frame (PHSAWorkItem *wi)
 #endif
 }
 
-/**
- * Frees the current "alloca frame" and restores the frame
- * pointer.
- *
- * This should be called at all the function return points in case
- * the function contains at least one call to alloca.  Restores the
- * alloca stack to the condition it was before pushing the frame
- * the last time.
- */
+/* Frees the current "alloca frame" and restores the frame
+   pointer.
+   This should be called at all the function return points in case
+   the function contains at least one call to alloca.  Restores the
+   alloca stack to the condition it was before pushing the frame
+   the last time. */
 void
 __hsail_alloca_pop_frame (PHSAWorkItem *wi)
 {

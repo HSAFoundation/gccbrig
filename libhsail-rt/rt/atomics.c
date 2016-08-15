@@ -41,74 +41,74 @@
   return old_value
 
 int32_t
-__phsa_builtin_atomic_min_s32 (int32_t *ptr, int32_t a)
+__hsail_atomic_min_s32 (int32_t *ptr, int32_t a)
 {
   DO_ATOMICALLY (int32_t, (old_value < a) ? old_value : a);
 }
 
 int64_t
-__phsa_builtin_atomic_min_s64 (int64_t *ptr, int64_t a)
+__hsail_atomic_min_s64 (int64_t *ptr, int64_t a)
 {
   DO_ATOMICALLY (int64_t, (old_value < a) ? old_value : a);
 }
 
 uint32_t
-__phsa_builtin_atomic_min_u32 (uint32_t *ptr, uint32_t a)
+__hsail_atomic_min_u32 (uint32_t *ptr, uint32_t a)
 {
   DO_ATOMICALLY (uint32_t, (old_value < a) ? old_value : a);
 }
 
 uint64_t
-__phsa_builtin_atomic_min_u64 (uint64_t *ptr, uint64_t a)
+__hsail_atomic_min_u64 (uint64_t *ptr, uint64_t a)
 {
   DO_ATOMICALLY (uint64_t, (old_value < a) ? old_value : a);
 }
 
 uint32_t
-__phsa_builtin_atomic_max_u32 (uint32_t *ptr, uint32_t a)
+__hsail_atomic_max_u32 (uint32_t *ptr, uint32_t a)
 {
   DO_ATOMICALLY (uint32_t, (old_value > a) ? old_value : a);
 }
 
 int32_t
-__phsa_builtin_atomic_max_s32 (int32_t *ptr, int32_t a)
+__hsail_atomic_max_s32 (int32_t *ptr, int32_t a)
 {
   DO_ATOMICALLY (int32_t, (old_value > a) ? old_value : a);
 }
 
 uint64_t
-__phsa_builtin_atomic_max_u64 (uint64_t *ptr, uint64_t a)
+__hsail_atomic_max_u64 (uint64_t *ptr, uint64_t a)
 {
   DO_ATOMICALLY (uint64_t, (old_value > a) ? old_value : a);
 }
 
 int64_t
-__phsa_builtin_atomic_max_s64 (int64_t *ptr, int64_t a)
+__hsail_atomic_max_s64 (int64_t *ptr, int64_t a)
 {
   DO_ATOMICALLY (int64_t, (old_value > a) ? old_value : a);
 }
 
 uint32_t
-__phsa_builtin_atomic_wrapinc_u32 (uint32_t *ptr, uint32_t a)
+__hsail_atomic_wrapinc_u32 (uint32_t *ptr, uint32_t a)
 {
   DO_ATOMICALLY (uint32_t, (old_value >= a) ? 0 : (old_value + 1));
 }
 
 uint64_t
-__phsa_builtin_atomic_wrapinc_u64 (uint64_t *ptr, uint64_t a)
+__hsail_atomic_wrapinc_u64 (uint64_t *ptr, uint64_t a)
 {
   DO_ATOMICALLY (uint64_t, (old_value >= a) ? 0 : (old_value + 1));
 }
 
 uint32_t
-__phsa_builtin_atomic_wrapdec_u32 (uint32_t *ptr, uint32_t a)
+__hsail_atomic_wrapdec_u32 (uint32_t *ptr, uint32_t a)
 {
   DO_ATOMICALLY (uint32_t,
 		 ((old_value == 0) || (old_value > a)) ? a : (old_value - 1));
 }
 
 uint64_t
-__phsa_builtin_atomic_wrapdec_u64 (uint64_t *ptr, uint64_t a)
+__hsail_atomic_wrapdec_u64 (uint64_t *ptr, uint64_t a)
 {
   DO_ATOMICALLY (uint64_t,
 		 ((old_value == 0) || (old_value > a)) ? a : (old_value - 1));

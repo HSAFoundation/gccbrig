@@ -103,7 +103,7 @@ public:
   size_t
   operator () (const BrigBase *base)
   {
-    sorry ("BrigKind 0x%x", base->kind);
+    gcc_unreachable ();
     return base->byteCount;
   }
 };
@@ -171,17 +171,17 @@ brig_to_generic::parse (const char *brig_blob)
 	}
       else
 	{
-	  sorry ("section %qs", name);
+	  gcc_unreachable ();
 	}
       free (name);
     }
 
   if (m_code == NULL)
-    error ("code section not found");
+    gcc_unreachable ();
   if (m_data == NULL)
-    error ("data section not found");
+    gcc_unreachable ();
   if (m_operand == NULL)
-    error ("operand section not found");
+    gcc_unreachable ();
 
   brig_basic_inst_handler inst_handler (*this);
   brig_branch_inst_handler branch_inst_handler (*this);
@@ -534,6 +534,12 @@ brig_to_generic::finish_function ()
       return;
     }
 
+#if 0
+  /* Enable to get dumps of the finished functions.  */
+  debug_function (m_cf->m_func_decl,
+		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+#endif
+
   if (!m_cf->m_is_kernel)
     {
       m_cf->finish ();
@@ -653,13 +659,12 @@ typedef std::map<std::string, tree> builtin_index;
 builtin_index builtin_cache_;
 
 /* Build a call to a builtin function.  PDECL is the builtin function to
-   call or NULL.  In case it's NULL, NAME should be set to the builtin
-   function's name using which it can be found from the builtin index.
-   NARGS is the number of input arguments, RETTYPE the built-in functions
-   return value type, and ... is the set of arguments passed to the call.  */
+   call. NARGS is the number of input arguments, RETTYPE the built-in functions
+   return value type, and ... is the list of arguments passed to the call
+   with type first, then the value. */
 
 tree
-call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
+call_builtin (tree pdecl, int nargs, tree rettype, ...)
 {
   if (rettype == error_mark_node)
     return error_mark_node;
@@ -683,51 +688,16 @@ call_builtin (tree *pdecl, const char *name, int nargs, tree rettype, ...)
     }
   va_end (ap);
 
-  tree decl = NULL_TREE;
-  if (pdecl == NULL || *pdecl == NULL_TREE)
-    {
-      builtin_index::const_iterator i = builtin_cache_.find (name);
-      if (i != builtin_cache_.end ())
-	decl = (*i).second;
-    }
-  else
-    decl = *pdecl;
-
-  if (decl == NULL_TREE)
-    {
-      tree fnid = get_identifier (name);
-      tree argtypes = NULL_TREE;
-      tree *pp = &argtypes;
-      for (int i = 0; i < nargs; ++i)
-	{
-	  *pp = tree_cons (NULL_TREE, types[i], NULL_TREE);
-	  pp = &TREE_CHAIN (*pp);
-	}
-      *pp = void_list_node;
-
-      tree fntype = build_function_type (rettype, argtypes);
-
-      decl = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, fnid, fntype);
-
-      TREE_STATIC (decl) = 0;
-      DECL_EXTERNAL (decl) = 1;
-      TREE_PUBLIC (decl) = 1;
-    }
-
-  tree fnptr = build_fold_addr_expr (decl);
+  tree fnptr = build_fold_addr_expr (pdecl);
 
   tree ret = build_call_array (rettype, fnptr, nargs, args);
-
-  if (name != NULL)
-    builtin_cache_[name] = decl;
-  if (pdecl != NULL)
-    *pdecl = decl;
 
   delete[] types;
   delete[] args;
 
   return ret;
 }
+
 
 void
 brig_to_generic::dump_function (brig_function *f)

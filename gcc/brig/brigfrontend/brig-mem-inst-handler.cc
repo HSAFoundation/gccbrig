@@ -38,7 +38,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
 
   if (!is_load && !is_store)
     {
-      sorry ("mem inst opcode %u not implemented", brig_inst->opcode);
+      gcc_unreachable ();
     }
 
   tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);

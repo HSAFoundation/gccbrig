@@ -104,7 +104,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	  else if (conv_src_size == 8)
 	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
 	  else
-	    sorry ("unsupported type");
+	    gcc_unreachable ();
 	}
       input = convert_to_integer (unsigned_int_type, input);
     }
@@ -156,7 +156,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	      and_mask = build_int_cst (unsigned_int_type, 0x7FFFFFFFFFFFFFFF);
 	    }
 	  else
-	    sorry ("unsupported type");
+	    gcc_unreachable ();
 	  tree casted_input = build_reinterpret_cast (unsigned_int_type, input);
 	  tree masked_input
 	    = build2 (BIT_AND_EXPR, unsigned_int_type, casted_input, and_mask);
@@ -192,20 +192,30 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
       if (cvt_inst->round == BRIG_ROUND_INTEGER_ZERO_SAT)
 	{
-	  tree casted_input = build_reinterpret_cast (src_type, input);
 
 	  /* Use builtins for the saturating conversions.  */
-	  std::ostringstream strstr;
-	  strstr << "__hsail_cvt_zeroi_sat_";
-	  if (TYPE_UNSIGNED (dest_type))
-	    strstr << "u";
-	  else
-	    strstr << "s";
-	  strstr << conv_dst_size * 8 << "_f";
-	  strstr << conv_src_size * 8;
+#undef DEF_HSAIL_SAT_BUILTIN
+#undef DEF_HSAIL_BUILTIN
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#undef DEF_HSAIL_INTR_BUILTIN
+#undef DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN
+
 	  tree builtin = NULL_TREE;
-	  conversion_result = call_builtin (&builtin, strstr.str ().c_str (), 1,
-					    dest_type, src_type, casted_input);
+	  BrigType16_t src_arith_type
+	    = src_is_fp16 ?
+	    (BrigType16_t) BRIG_TYPE_F32 : cvt_inst->sourceType;
+#define DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN(ENUM, HSAIL_DST_TYPE, HSAIL_SRC_TYPE, \
+					NAME, TYPE, ATTRS)		\
+	  if (brig_inst->type == HSAIL_DST_TYPE				\
+	      && src_arith_type == HSAIL_SRC_TYPE)		\
+	    builtin = builtin_decl_explicit (ENUM);			\
+	  else
+#include "hsail-builtins.def"
+	    gcc_unreachable ();
+	  
+	  tree casted_input = build_reinterpret_cast (src_type, input);
+	  conversion_result
+	    = call_builtin (builtin, 1, dest_type, src_type, casted_input);
 	}
       else
 	{

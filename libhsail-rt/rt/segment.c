@@ -27,7 +27,7 @@
 #include "workitems.h"
 
 uint32_t
-__phsa_builtin_segmentp_private (uint64_t flat_addr, PHSAWorkItem *wi)
+__hsail_segmentp_private (uint64_t flat_addr, PHSAWorkItem *wi)
 {
   if (flat_addr == 0)
     return 1;
@@ -38,7 +38,7 @@ __phsa_builtin_segmentp_private (uint64_t flat_addr, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_segmentp_group (uint64_t flat_addr, PHSAWorkItem *wi)
+__hsail_segmentp_group (uint64_t flat_addr, PHSAWorkItem *wi)
 {
   if (flat_addr == 0)
     return 1;
@@ -49,9 +49,9 @@ __phsa_builtin_segmentp_group (uint64_t flat_addr, PHSAWorkItem *wi)
 }
 
 uint32_t
-__phsa_builtin_segmentp_global (uint64_t flat_addr, PHSAWorkItem *wi)
+__hsail_segmentp_global (uint64_t flat_addr, PHSAWorkItem *wi)
 {
   return (flat_addr == 0
-	  || (!__phsa_builtin_segmentp_private (flat_addr, wi)
-	      && !__phsa_builtin_segmentp_group (flat_addr, wi)));
+	  || (!__hsail_segmentp_private (flat_addr, wi)
+	      && !__hsail_segmentp_group (flat_addr, wi)));
 }

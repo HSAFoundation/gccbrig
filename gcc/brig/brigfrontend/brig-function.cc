@@ -42,6 +42,7 @@
 #include "errors.h"
 #include "function.h"
 #include "brig-to-generic.h"
+#include "brig-builtins.h"
 
 brig_function::brig_function (const BrigDirectiveExecutable *exec,
 			      brig_to_generic *parent)
@@ -156,11 +157,6 @@ brig_function::add_id_variables ()
   tree stmts = BIND_EXPR_BODY (bind_expr);
 
   /* Initialize the WG limits and local ids.  */
-  static tree workitemid_builtin;
-  static tree currentworkgroupsize_builtin;
-  static tree workgroupsize_builtin;
-  static tree workgroupid_builtin;
-  static tree gridsize_builtin;
 
   tree_stmt_iterator entry = tsi_start (stmts);
 
@@ -175,7 +171,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree workitemid_call
-	= call_builtin (&workitemid_builtin, "__hsail_workitemid", 2,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKITEMID), 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -189,11 +185,11 @@ brig_function::add_id_variables ()
 	= add_local_variable (std::string ("__cur_wg_size_") + dim_char,
 			      uint32_type_node);
 
-      tree cwgz_call = call_builtin (&currentworkgroupsize_builtin,
-				     "__hsail_currentworkgroupsize", 2,
-				     uint32_type_node, uint32_type_node,
-				     build_int_cst (uint32_type_node, i),
-				     ptr_type_node, m_context_arg);
+      tree cwgz_call
+	= call_builtin
+	(builtin_decl_explicit (BUILT_IN_HSAIL_CURRENTWORKGROUPSIZE),
+	 2, uint32_type_node, uint32_type_node,
+	 build_int_cst (uint32_type_node, i), ptr_type_node, m_context_arg);
 
       tree limit_init = build2 (MODIFY_EXPR, TREE_TYPE (m_cur_wg_size_vars[i]),
 				m_cur_wg_size_vars[i], cwgz_call);
@@ -205,8 +201,8 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgid_call
-	= call_builtin (&workgroupid_builtin, "__hsail_workgroupid", 2,
-			uint32_type_node, uint32_type_node,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKGROUPID),
+			2, uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
 
@@ -220,7 +216,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgsize_call
-	= call_builtin (&workgroupsize_builtin, "__hsail_workgroupsize",
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKGROUPSIZE),
 			2, uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -235,7 +231,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree gridsize_call
-	= call_builtin (&gridsize_builtin, "__hsail_gridsize", 2,
+	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_GRIDSIZE), 2,
 			uint32_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, i), ptr_type_node,
 			m_context_arg);
@@ -294,7 +290,7 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
     case BRIG_REGISTER_KIND_CONTROL:
       break;
     default:
-      sorry ("reg operand kind %u", reg->regKind);
+      gcc_unreachable ();
       break;
     }
 
@@ -341,7 +337,7 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   /* TODO: Initialize the iteration variable.   Assume always starting
      from 0.  */
-     
+
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
@@ -354,11 +350,12 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   if (m_has_unexpanded_dp_builtins)
     {
-      static tree id_set_builtin;
+      tree id_set_builtin
+	= builtin_decl_explicit (BUILT_IN_HSAIL_SETWORKITEMID);
       /* Set the local ID to the current wi-loop iteration variable value to
 	 ensure the builtins see the correct values.  */
       tree id_set_call
-	= call_builtin (&id_set_builtin, "__hsail_setworkitemid", 3,
+	= call_builtin (id_set_builtin, 3,
 			void_type_node, uint32_type_node,
 			build_int_cst (uint32_type_node, dim), uint32_type_node,
 			ivar, ptr_type_node, m_context_arg);
@@ -458,14 +455,14 @@ brig_function::convert_to_wg_function ()
 
    void KernelName (void* context, void* group_base_addr)
    {
-     __phsa_launch_kernel (_KernelName, context, group_base_addr);
+     __hsail_launch_kernel (_KernelName, context, group_base_addr);
    }
 
    or, in case of a successful conversion to a work-group function:
 
    void KernelName (void* context, void* group_base_addr)
    {
-     __phsa_launch_wg_function (_KernelName, context, group_base_addr);
+     __hsail_launch_wg_function (_KernelName, context, group_base_addr);
    }
 
    The user/host sees this function as the kernel to call from the
@@ -540,12 +537,14 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
 
   if (m_is_wg_function)
     phsail_launch_kernel_call
-      = call_builtin (NULL, "__phsa_launch_wg_function", 3, void_type_node,
+      = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_LAUNCH_WG_FUNC),
+		      3, void_type_node,
 		      ptr_type_node, kernel_func_ptr, ptr_type_node,
 		      context_arg, ptr_type_node, group_base_addr_arg);
   else
     phsail_launch_kernel_call
-      = call_builtin (NULL, "__phsa_launch_kernel", 3, void_type_node,
+      = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_LAUNCH_KERNEL),
+		      3, void_type_node,
 		      ptr_type_node, kernel_func_ptr, ptr_type_node,
 		      context_arg, ptr_type_node, group_base_addr_arg);
 
@@ -610,12 +609,13 @@ brig_function::append_statement (tree stmt)
 /* Creates a new "alloca frame" for the current function by
    injecting an alloca frame push in the beginning of the function
    and an alloca frame pop before all function exit points.  */
+
 void
 brig_function::create_alloca_frame ()
 {
   tree_stmt_iterator entry;
 
-  /* Adds the allocal push only after the ids have been initialized,
+  /* Adds the alloca push only after the ids have been initialized
      in case of a kernel function.  */
   if (m_is_kernel)
     entry = m_kernel_entry;
@@ -626,14 +626,14 @@ brig_function::create_alloca_frame ()
       entry = tsi_start (stmts);
     }
 
-  static tree push_frame_builtin = NULL_TREE;
+  tree push_frame_builtin = builtin_decl_explicit (BUILT_IN_HSAIL_PUSH_FRAME);
   tree push_frame_call
-    = call_builtin (&push_frame_builtin, "__hsail_alloca_push_frame", 1,
-		    void_type_node, ptr_type_node, m_context_arg);
+    = call_builtin (push_frame_builtin, 1, void_type_node, ptr_type_node,
+		    m_context_arg);
 
   tsi_link_before (&entry, push_frame_call, TSI_NEW_STMT);
 
-  static tree pop_frame_builtin = NULL_TREE;
+  tree pop_frame_builtin = builtin_decl_explicit (BUILT_IN_HSAIL_POP_FRAME);
 
   do
     {
@@ -641,9 +641,8 @@ brig_function::create_alloca_frame ()
       if (TREE_CODE (stmt) == RETURN_EXPR)
 	{
 	  tree pop_frame_call
-	    = call_builtin (&pop_frame_builtin,
-			    "__hsail_alloca_pop_frame", 1,
-			    void_type_node, ptr_type_node, m_context_arg);
+	    = call_builtin (pop_frame_builtin, 1, void_type_node,
+			    ptr_type_node, m_context_arg);
 
 	  tsi_link_before (&entry, pop_frame_call, TSI_SAME_STMT);
 	}

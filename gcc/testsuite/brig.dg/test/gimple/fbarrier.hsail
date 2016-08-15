@@ -63,12 +63,12 @@ prog kernel &kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* fbarriers are allocated from the group memory in the order of 
    appearance. The current implementation allocates 32B per fbarrier. */
 
-/* { dg-final { scan-tree-dump "__phsa_builtin_waitfbar \\\(0, __context\\\);" "gimple"} } */
-/* { dg-final { scan-tree-dump "__phsa_builtin_initfbar \\\(0, __context\\\);" "gimple"} } */
-/* { dg-final { scan-tree-dump "__phsa_builtin_initfbar \\\(32, __context\\\);" "gimple"} } */
-/* { dg-final { scan-tree-dump "__phsa_builtin_joinfbar \\\(0, __context\\\);" "gimple"} } */
-/* { dg-final { scan-tree-dump "@skip_init:\[\n ]+__phsa_builtin_barrier \\\(__context\\\);\[\n ]+__phsa_builtin_joinfbar \\\(32, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_waitfbar \\\(0, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_initfbar \\\(0, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_initfbar \\\(32, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_joinfbar \\\(0, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "@skip_init:\[\n ]+__builtin___hsail_barrier \\\(__context\\\);\[\n ]+__builtin___hsail_joinfbar \\\(32, __context\\\);" "gimple"} } */
 
-/* { dg-final { scan-tree-dump "__phsa_builtin_arrivefbar \\\(32, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_arrivefbar \\\(32, __context\\\);" "gimple"} } */
 
-/* { dg-final { scan-tree-dump "__phsa_builtin_releasefbar \\\(0, __context\\\);\[\n ]+__phsa_builtin_releasefbar \\\(32, __context\\\);" "gimple"} } */
+/* { dg-final { scan-tree-dump "__hsail_releasefbar \\\(0, __context\\\);\[\n ]+__builtin___hsail_releasefbar \\\(32, __context\\\);" "gimple"} } */

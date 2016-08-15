@@ -29,9 +29,10 @@
 
 #include "workitems.h"
 
-// Return the monotonic clock as nanoseconds.
+/* Return the monotonic clock as nanoseconds.  */
+
 uint64_t
-__phsa_builtin_clock ()
+__hsail_clock ()
 {
   struct timespec t;
   clock_gettime (CLOCK_MONOTONIC, &t);
@@ -39,48 +40,50 @@ __phsa_builtin_clock ()
 }
 
 uint32_t
-__phsa_builtin_cuid (PHSAWorkItem *wi)
+__hsail_cuid (PHSAWorkItem *wi)
 {
-  // All WIs are executed with a single compute unit (core/thread)
-  // for now.
+  /* All WIs are executed with a single compute unit (core/thread)
+     for now.  */
   return 0;
 }
 
 uint32_t
-__phsa_builtin_maxcuid (PHSAWorkItem *wi)
+__hsail_maxcuid (PHSAWorkItem *wi)
 {
-  // All WIs are executed with a single compute unit (core/thread)
-  // for now.
+  /* All WIs are executed with a single compute unit (core/thread)
+     for now.  */
   return 0;
 }
 
 void
-__phsa_builtin_debugtrap (uint32_t src, PHSAWorkItem *wi)
+__hsail_debugtrap (uint32_t src, PHSAWorkItem *wi)
 {
-  // Could we produce a SIGTRAP signal here to drop to gdb
-  // console, or similar?
+  /* Could we produce a SIGTRAP signal here to drop to gdb
+     console, or similar?  In any case, the execution of the
+     kernel should halt.
+  */
   return;
 }
 
 uint32_t
-__phsa_builtin_groupbaseptr (PHSAWorkItem *wi)
+__hsail_groupbaseptr (PHSAWorkItem *wi)
 {
   return (uint32_t) (uint64_t) (wi->wg->group_base_ptr
 				- wi->launch_data->group_segment_start_addr);
 }
 
 uint64_t
-__phsa_builtin_kernargbaseptr_u64 (PHSAWorkItem *wi)
+__hsail_kernargbaseptr_u64 (PHSAWorkItem *wi)
 {
-  // For now assume only a single kernarg allocation at a time.
-  // Proper kernarg memory management to do.
+  /* For now assume only a single kernarg allocation at a time.
+     Proper kernarg memory management to do.  */
   return (uint64_t) wi->launch_data->kernarg_addr;
 }
 
 uint32_t
-__phsa_builtin_kernargbaseptr_u32 (PHSAWorkItem *wi)
+__hsail_kernargbaseptr_u32 (PHSAWorkItem *wi)
 {
-  // For now assume only a single kernarg allocation at a time.
-  // Proper kernarg memory management to do.
+  /* For now assume only a single kernarg allocation at a time.
+     Proper kernarg memory management to do.  */
   return 0;
 }

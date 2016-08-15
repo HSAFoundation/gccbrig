@@ -32,9 +32,10 @@
 #include <float.h>
 
 /* HSAIL defines INT_MIN % -1 to be 0 while with C it's undefined,
-	 and causes an overflow exception at least with gcc and C on IA-32.  */
+   and causes an overflow exception at least with gcc and C on IA-32.  */
+
 int32_t
-__phsa_builtin_rem_s32 (int32_t dividend, int32_t divisor)
+__hsail_rem_s32 (int32_t dividend, int32_t divisor)
 {
   if (dividend == INT_MIN && divisor == -1)
     return 0;
@@ -43,7 +44,7 @@ __phsa_builtin_rem_s32 (int32_t dividend, int32_t divisor)
 }
 
 int64_t
-__phsa_builtin_rem_s64 (int64_t dividend, int64_t divisor)
+__hsail_rem_s64 (int64_t dividend, int64_t divisor)
 {
   if (dividend == INT64_MIN && divisor == -1)
     return 0;
@@ -52,10 +53,11 @@ __phsa_builtin_rem_s64 (int64_t dividend, int64_t divisor)
 }
 
 /* HSAIL has defined behavior for min and max when one of the operands is
-	 NaN: in that case the other operand is returned.  In C and with gcc's
-	 MIN_EXPR/MAX_EXPR, the returned operand is undefined.  */
+   NaN: in that case the other operand is returned.  In C and with gcc's
+   MIN_EXPR/MAX_EXPR, the returned operand is undefined.  */
+
 float
-__phsa_builtin_min_f32 (float a, float b)
+__hsail_min_f32 (float a, float b)
 {
   if (isnan (a))
     return b;
@@ -70,7 +72,7 @@ __phsa_builtin_min_f32 (float a, float b)
 }
 
 double
-__phsa_builtin_min_f64 (double a, double b)
+__hsail_min_f64 (double a, double b)
 {
   if (isnan (a))
     return b;
@@ -83,7 +85,7 @@ __phsa_builtin_min_f64 (double a, double b)
 }
 
 float
-__phsa_builtin_max_f32 (float a, float b)
+__hsail_max_f32 (float a, float b)
 {
   if (isnan (a))
     return b;
@@ -98,7 +100,7 @@ __phsa_builtin_max_f32 (float a, float b)
 }
 
 double
-__phsa_builtin_max_f64 (double a, double b)
+__hsail_max_f64 (double a, double b)
 {
   if (isnan (a))
     return b;
@@ -113,7 +115,7 @@ __phsa_builtin_max_f64 (double a, double b)
 }
 
 uint8_t
-__phsa_builtin_cvt_zeroi_sat_u8_f32 (float a)
+__hsail_cvt_zeroi_sat_u8_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -125,7 +127,7 @@ __phsa_builtin_cvt_zeroi_sat_u8_f32 (float a)
 }
 
 int8_t
-__phsa_builtin_cvt_zeroi_sat_s8_f32 (float a)
+__hsail_cvt_zeroi_sat_s8_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -137,7 +139,7 @@ __phsa_builtin_cvt_zeroi_sat_s8_f32 (float a)
 }
 
 uint16_t
-__phsa_builtin_cvt_zeroi_sat_u16_f32 (float a)
+__hsail_cvt_zeroi_sat_u16_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -149,7 +151,7 @@ __phsa_builtin_cvt_zeroi_sat_u16_f32 (float a)
 }
 
 int16_t
-__phsa_builtin_cvt_zeroi_sat_s16_f32 (float a)
+__hsail_cvt_zeroi_sat_s16_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -161,7 +163,7 @@ __phsa_builtin_cvt_zeroi_sat_s16_f32 (float a)
 }
 
 uint32_t
-__phsa_builtin_cvt_zeroi_sat_u32_f32 (float a)
+__hsail_cvt_zeroi_sat_u32_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -173,7 +175,7 @@ __phsa_builtin_cvt_zeroi_sat_u32_f32 (float a)
 }
 
 int32_t
-__phsa_builtin_cvt_zeroi_sat_s32_f32 (float a)
+__hsail_cvt_zeroi_sat_s32_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -185,7 +187,7 @@ __phsa_builtin_cvt_zeroi_sat_s32_f32 (float a)
 }
 
 uint64_t
-__phsa_builtin_cvt_zeroi_sat_u64_f32 (float a)
+__hsail_cvt_zeroi_sat_u64_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -197,7 +199,7 @@ __phsa_builtin_cvt_zeroi_sat_u64_f32 (float a)
 }
 
 int64_t
-__phsa_builtin_cvt_zeroi_sat_s64_f32 (float a)
+__hsail_cvt_zeroi_sat_s64_f32 (float a)
 {
   if (isnan (a))
     return 0;
@@ -208,10 +210,108 @@ __phsa_builtin_cvt_zeroi_sat_s64_f32 (float a)
   return (int64_t) a;
 }
 
+uint8_t
+__hsail_cvt_zeroi_sat_u8_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT8_MAX)
+    return UINT8_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint8_t) a;
+}
+
+int8_t
+__hsail_cvt_zeroi_sat_s8_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT8_MAX)
+    return INT8_MAX;
+  if (a <= (double) INT8_MIN)
+    return INT8_MIN;
+  return (int8_t) a;
+}
+
+uint16_t
+__hsail_cvt_zeroi_sat_u16_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT16_MAX)
+    return UINT16_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint16_t) a;
+}
+
+int16_t
+__hsail_cvt_zeroi_sat_s16_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT16_MAX)
+    return INT16_MAX;
+  if (a <= (double) INT16_MIN)
+    return INT16_MIN;
+  return (int16_t) a;
+}
+
+uint32_t
+__hsail_cvt_zeroi_sat_u32_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT32_MAX)
+    return UINT32_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint32_t) a;
+}
+
+int32_t
+__hsail_cvt_zeroi_sat_s32_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT32_MAX)
+    return INT32_MAX;
+  if (a <= (double) INT32_MIN)
+    return INT32_MIN;
+  return (int32_t) a;
+}
+
+uint64_t
+__hsail_cvt_zeroi_sat_u64_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) UINT64_MAX)
+    return UINT64_MAX;
+  else if (a <= 0.0f)
+    return 0;
+  return (uint64_t) a;
+}
+
+int64_t
+__hsail_cvt_zeroi_sat_s64_f64 (double a)
+{
+  if (isnan (a))
+    return 0;
+  if (a >= (double) INT64_MAX)
+    return INT64_MAX;
+  if (a <= (double) INT64_MIN)
+    return INT64_MIN;
+  return (int64_t) a;
+}
+
+
 /* Flush the operand to zero in case it's a denormalized number.
    Do not cause any exceptions in case of NaNs.  */
+
 float
-__phsa_builtin_ftz_f32 (float a)
+__hsail_ftz_f32 (float a)
 {
   if (isnan (a) || isinf (a) || a == 0.0f)
     return a;
@@ -234,8 +334,9 @@ __phsa_builtin_ftz_f32 (float a)
 /* Flush the single precision operand to zero in case it's considered
    a denormalized number in case it was a f16.  Do not cause any exceptions
    in case of NaNs.  */
+
 float
-__phsa_builtin_ftz_f32_f16 (float a)
+__hsail_ftz_f32_f16 (float a)
 {
   if (isnan (a) || isinf (a) || a == 0.0f)
     return a;
@@ -254,7 +355,7 @@ __phsa_builtin_ftz_f32_f16 (float a)
 }
 
 double
-__phsa_builtin_ftz_f64 (double a)
+__hsail_ftz_f64 (double a)
 {
   if (isnan (a) || isinf (a) || a == 0.0d)
     return a;
@@ -273,7 +374,7 @@ __phsa_builtin_ftz_f64 (double a)
 }
 
 uint32_t
-__phsa_builtin_borrow_u32 (uint32_t a, uint32_t b)
+__hsail_borrow_u32 (uint32_t a, uint32_t b)
 {
   uint64_t c = (uint64_t) a - (uint64_t) b;
   if (c > UINT32_MAX)
@@ -283,7 +384,7 @@ __phsa_builtin_borrow_u32 (uint32_t a, uint32_t b)
 }
 
 uint64_t
-__phsa_builtin_borrow_u64 (uint64_t a, uint64_t b)
+__hsail_borrow_u64 (uint64_t a, uint64_t b)
 {
   __uint128_t c = (__uint128_t) a - (__uint128_t) b;
   if (c > UINT64_MAX)
@@ -293,7 +394,7 @@ __phsa_builtin_borrow_u64 (uint64_t a, uint64_t b)
 }
 
 uint32_t
-__phsa_builtin_carry_u32 (uint32_t a, uint32_t b)
+__hsail_carry_u32 (uint32_t a, uint32_t b)
 {
   uint64_t c = (uint64_t) a + (uint64_t) b;
   if (c > UINT32_MAX)
@@ -303,7 +404,7 @@ __phsa_builtin_carry_u32 (uint32_t a, uint32_t b)
 }
 
 uint64_t
-__phsa_builtin_carry_u64 (uint64_t a, uint64_t b)
+__hsail_carry_u64 (uint64_t a, uint64_t b)
 {
   __uint128_t c = (__uint128_t) a + (__uint128_t) b;
   if (c > UINT64_MAX)
@@ -313,7 +414,7 @@ __phsa_builtin_carry_u64 (uint64_t a, uint64_t b)
 }
 
 float
-__phsa_builtin_fract_f32 (float a)
+__hsail_fract_f32 (float a)
 {
   int exp;
   if (isinf (a))
@@ -325,7 +426,7 @@ __phsa_builtin_fract_f32 (float a)
 }
 
 double
-__phsa_builtin_fract_f64 (double a)
+__hsail_fract_f64 (double a)
 {
   int exp;
   if (isinf (a))
@@ -337,7 +438,7 @@ __phsa_builtin_fract_f64 (double a)
 }
 
 uint32_t
-__phsa_builtin_class_f32 (float a, uint32_t flags)
+__hsail_class_f32 (float a, uint32_t flags)
 {
   return (flags & 0x0001 && isnan (a) && !(*(uint32_t *) &a & 0x40000000))
 	 || (flags & 0x0002 && isnan (a) && (*(uint32_t *) &a & 0x40000000))
@@ -352,10 +453,10 @@ __phsa_builtin_class_f32 (float a, uint32_t flags)
 }
 
 /* 'class' for a f32-converted f16 which should otherwise be treated like f32
- * except for its limits.
- */
+ except for its limits. */
+
 uint32_t
-__phsa_builtin_class_f32_f16 (float a, uint32_t flags)
+__hsail_class_f32_f16 (float a, uint32_t flags)
 {
   return (flags & 0x0001 && isnan (a) && !(*(uint32_t *) &a & 0x40000000))
 	 || (flags & 0x0002 && isnan (a) && (*(uint32_t *) &a & 0x40000000))

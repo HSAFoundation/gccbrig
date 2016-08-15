@@ -1,5 +1,5 @@
 /* brig-queue-inst-handler.cc -- brig user mode queue related instruction
-handling
+   handling
    Copyright (C) 2016 Free Software Foundation, Inc.
    Contributed by Pekka Jaaskelainen <pekka.jaaskelainen@parmance.com>
    for General Processor Tech.
@@ -28,6 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pretty-print.h"
 #include "errors.h"
 #include "diagnostic-core.h"
+#include "brig-builtins.h"
 
 brig_queue_inst_handler::brig_queue_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -44,49 +45,49 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
   if (inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX
       || inst_base.opcode == BRIG_OPCODE_LDQUEUEREADINDEX)
     {
-      std::string builtin_name
+      tree builtin
 	= inst_base.opcode == BRIG_OPCODE_LDQUEUEWRITEINDEX
-	    ? "__hsail_ldqueuewriteindex"
-	    : "__hsail_ldqueuereadindex";
+	? builtin_decl_explicit (BUILT_IN_HSAIL_LDQUEUEWRITEINDEX)
+	: builtin_decl_explicit (BUILT_IN_HSAIL_LDQUEUEREADINDEX);
 
       tree expr
-	= call_builtin (NULL, builtin_name.c_str (), 1, uint64_type_node,
+	= call_builtin (builtin, 1, uint64_type_node,
 			uint64_type_node, operands[1]);
       build_output_assignment (inst_base, operands[0], expr);
     }
   else if (inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX
 	   || inst_base.opcode == BRIG_OPCODE_STQUEUEREADINDEX)
     {
-      std::string builtin_name
+      tree builtin
 	= inst_base.opcode == BRIG_OPCODE_STQUEUEWRITEINDEX
-	    ? "__hsail_stqueuewriteindex"
-	    : "__hsail_stqueuereadindex";
+	? builtin_decl_explicit (BUILT_IN_HSAIL_STQUEUEWRITEINDEX)
+	: builtin_decl_explicit (BUILT_IN_HSAIL_STQUEUEREADINDEX);
 
-      call_builtin (NULL, builtin_name.c_str (), 2, void_type_node,
+      call_builtin (builtin, 2, void_type_node,
 		    uint64_type_node, operands[0], uint64_type_node,
 		    operands[1]);
     }
   else if (inst_base.opcode == BRIG_OPCODE_ADDQUEUEWRITEINDEX)
     {
-      std::string builtin_name = "__hsail_addqueuewriteindex";
+      tree builtin = builtin_decl_explicit (BUILT_IN_HSAIL_ADDQUEUEWRITEINDEX);
 
-      tree expr = call_builtin (NULL, builtin_name.c_str (), 2,
+      tree expr = call_builtin (builtin, 2,
 				uint64_type_node, uint64_type_node, operands[1],
 				uint64_type_node, operands[2]);
       build_output_assignment (inst_base, operands[0], expr);
     }
   else if (inst_base.opcode == BRIG_OPCODE_CASQUEUEWRITEINDEX)
     {
-      std::string builtin_name = "__hsail_casqueuewriteindex";
-
+      tree builtin = builtin_decl_explicit (BUILT_IN_HSAIL_CASQUEUEWRITEINDEX);
+      
       tree expr
-	= call_builtin (NULL, builtin_name.c_str (), 3, uint64_type_node,
+	= call_builtin (builtin, 3, uint64_type_node,
 			uint64_type_node, operands[1], uint64_type_node,
 			operands[2], uint64_type_node, operands[3]);
       build_output_assignment (inst_base, operands[0], expr);
     }
   else
-    sorry ("unimplemented queue related instruction %u", inst_base.opcode);
+    gcc_unreachable ();
 
   return base->byteCount;
 }

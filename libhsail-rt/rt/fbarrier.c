@@ -45,7 +45,7 @@ typedef struct
 } fbarrier;
 
 void
-__phsa_builtin_initfbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_initfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   fbar->member_count = 0;
@@ -54,7 +54,7 @@ __phsa_builtin_initfbar (uint32_t addr, PHSAWorkItem *wi)
 }
 
 void
-__phsa_builtin_releasefbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_releasefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   fbar->member_count = 0;
@@ -63,14 +63,14 @@ __phsa_builtin_releasefbar (uint32_t addr, PHSAWorkItem *wi)
 }
 
 void
-__phsa_builtin_joinfbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_joinfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   ++fbar->member_count;
 }
 
 void
-__phsa_builtin_leavefbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_leavefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   --fbar->member_count;
@@ -78,7 +78,7 @@ __phsa_builtin_leavefbar (uint32_t addr, PHSAWorkItem *wi)
 
 #ifdef HAVE_PTH
 void
-__phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   ++fbar->arrive_count;
@@ -93,7 +93,7 @@ __phsa_builtin_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 #endif
 
 void
-__phsa_builtin_arrivefbar (uint32_t addr, PHSAWorkItem *wi)
+__hsail_arrivefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   ++fbar->arrive_count;

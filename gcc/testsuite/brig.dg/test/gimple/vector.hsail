@@ -46,12 +46,12 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* { dg-final { scan-tree-dump "s3 = BIT_FIELD_REF <d4, 32, 32>;" "original"} } */
 
 /* The v1 store is done via casting to a vector datatype ptr and constructing a vector from the inputs. */
-/* { dg-final { scan-tree-dump "MEM\\\[\\\(vector\\\(2\\\) <float:32> \\\*\\\)VIEW_CONVERT_EXPR<<float:32> \\\*>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\)\\\] = " "original"} } */
+/* { dg-final { scan-tree-dump "MEM\\\[\\\(vector\\\(2\\\) <float:32> \\\*\\\)\\\(<float:32> \\\*\\\) d1\\\] = " "original"} } */
 
 /* The v3 store is scalarized (at the moment) due to gcc requiring 2's exponent wide vectors. */
-/* { dg-final { scan-tree-dump "\\\*VIEW_CONVERT_EXPR<<float:32> \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 8\\\) \\\+ 0 = VIEW_CONVERT_EXPR<<float:32>>\\\(s2\\\);" "original"} } */
-/* { dg-final { scan-tree-dump "\\\*VIEW_CONVERT_EXPR<<float:32> \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 8\\\) \\\+ 4 = VIEW_CONVERT_EXPR<<float:32>>\\\(s3\\\);" "original"} } */
-/* { dg-final { scan-tree-dump "\\\*VIEW_CONVERT_EXPR<<float:32> \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 8\\\) \\\+ 8 = VIEW_CONVERT_EXPR<<float:32>>\\\(s4\\\);" "original"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(<float:32> \\\*\\\) \\\(\\\(sizetype\\\) d1 \\\+ 8\\\) \\\+ 0 = VIEW_CONVERT_EXPR<<float:32>>\\\(s2\\\);" "original"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(<float:32> \\\*\\\) \\\(\\\(sizetype\\\) d1 \\\+ 8\\\) \\\+ 4 = VIEW_CONVERT_EXPR<<float:32>>\\\(s3\\\);" "original"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(<float:32> \\\*\\\) \\\(\\\(sizetype\\\) d1 \\\+ 8\\\) \\\+ 8 = VIEW_CONVERT_EXPR<<float:32>>\\\(s4\\\);" "original"} } */
 
 /* The v4 store is done via casting to a vector datatype and constructing a vector from the inputs. */
-/* { dg-final { scan-tree-dump "MEM\\\[\\\(vector\\\(4\\\) <float:32> \\\*\\\)VIEW_CONVERT_EXPR<<float:32> \\\*>\\\(VIEW_CONVERT_EXPR<unsigned long>\\\(VIEW_CONVERT_EXPR<unsigned char \\\*>\\\(d1\\\)\\\) \\\+ 20\\\)\\\] = {VIEW_CONVERT_EXPR<<float:32>>\\\(s5\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s6\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s7\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s8\\\)};" "original"} } */
+/* { dg-final { scan-tree-dump "MEM\\\[\\\(vector\\\(4\\\) <float:32> \\\*\\\)\\\(<float:32> \\\*\\\) \\\(\\\(sizetype\\\) d1 \\\+ 20\\\)\\\] = {VIEW_CONVERT_EXPR<<float:32>>\\\(s5\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s6\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s7\\\), VIEW_CONVERT_EXPR<<float:32>>\\\(s8\\\)};" "original"} } */

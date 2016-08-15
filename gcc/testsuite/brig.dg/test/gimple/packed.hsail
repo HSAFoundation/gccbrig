@@ -72,7 +72,7 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* { dg-final { scan-tree-dump "q4 = VIEW_CONVERT_EXPR<uint128_t>\\\(s_output.\[0-9\]+_\[0-9\]+\\\);" "gimple" } } */
 
 /* The saturating arithmetics are (curently) implemented using scalar builtin calls. */
-/* { dg-final { scan-tree-dump-times "= __phsa_builtin_sat_add_u8" 64 "gimple" } } */
+/* { dg-final { scan-tree-dump-times "= __builtin___hsail_sat_add_u8" 64 "gimple" } } */
 
 /* A single operand vector instr (neg.) */
 /* { dg-final { scan-tree-dump " = VIEW_CONVERT_EXPR<vector\\\(8\\\) signed short>\\\(q8\\\);\[\n \]+_\[0-9\]+ = -_\[0-9\]+;\[\n \]+" "gimple" } } */
