@@ -45,7 +45,7 @@ brig_code_entry_handler::builtin_map brig_code_entry_handler::s_custom_builtins;
 brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
   : brig_entry_handler (parent)
 {
-  if (s_custom_builtins.size() > 1) return;
+  if (s_custom_builtins.size() > 0) return;
 
   /* Populate the builtin index.  */
 #undef DEF_HSAIL_ATOMIC_BUILTIN
@@ -54,9 +54,8 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
 #undef DEF_HSAIL_SAT_BUILTIN
 #undef DEF_HSAIL_BUILTIN
 #define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE, NAME, TYPE, ATTRS) \
- s_custom_builtins[std::make_pair (HSAIL_OPCODE, HSAIL_TYPE)]		\
-   = builtin_decl_explicit (ENUM);
-
+  s_custom_builtins[std::make_pair (HSAIL_OPCODE, HSAIL_TYPE)]		\
+    = builtin_decl_explicit (ENUM);
 
 #include "hsail-builtins.def"  
 }
