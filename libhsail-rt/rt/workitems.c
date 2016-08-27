@@ -592,6 +592,33 @@ __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context)
   return id;
 }
 
+uint64_t
+__hsail_workitemabsid_u64 (uint32_t dim, PHSAWorkItem *context)
+{
+  hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
+
+  uint64_t id;
+  switch (dim)
+    {
+    default:
+    case 0:
+      /* Overflow semantics in the case of WG dim > grid dim.  */
+      id = ((uint64_t) context->wg->x * dp->workgroup_size_x + context->x)
+	   % dp->grid_size_x;
+      break;
+    case 1:
+      id = ((uint64_t) context->wg->y * dp->workgroup_size_y + context->y)
+	   % dp->grid_size_y;
+      break;
+    case 2:
+      id = ((uint64_t) context->wg->z * dp->workgroup_size_z + context->z)
+	   % dp->grid_size_z;
+      break;
+    }
+  return id;
+}
+
+
 uint32_t
 __hsail_workitemid (uint32_t dim, PHSAWorkItem *context)
 {
