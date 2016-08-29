@@ -24,77 +24,63 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#ifdef HAVE_PTH
-#include <pth.h>
-#endif
-
 #include <stdlib.h>
 #include <signal.h>
 
 #include "workitems.h"
 #include "phsa-rt.h"
 
-typedef struct
-{
-  volatile uint32_t member_count;
-  volatile uint32_t arrive_count;
-  volatile uint32_t wait_count;
-  /* No need for a mutex here as there's no real parallel
-     execution between work-items in the simple fiber-based
-     implementation.  */
-} fbarrier;
+#ifdef HAVE_FIBERS
+#include "fibers.h"
+
+typedef fiber_barrier_t fbarrier;
 
 void
 __hsail_initfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  fbar->member_count = 0;
-  fbar->arrive_count = 0;
-  fbar->wait_count = 0;
+  fbar->threshold = 0;
+  fbar->reached = 0;
+  fbar->waiting_count = 0;
 }
 
 void
 __hsail_releasefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  fbar->member_count = 0;
-  fbar->arrive_count = 0;
-  fbar->wait_count = 0;
+  fbar->threshold = 0;
+  fbar->reached = 0;
+  fbar->waiting_count = 0;
 }
 
 void
 __hsail_joinfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  ++fbar->member_count;
+  ++fbar->threshold;
 }
 
 void
 __hsail_leavefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  --fbar->member_count;
+  --fbar->threshold;
 }
 
-#ifdef HAVE_PTH
 void
 __hsail_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  ++fbar->arrive_count;
-  ++fbar->wait_count;
-  while (fbar->arrive_count < fbar->member_count)
-    pth_yield (NULL);
-  --fbar->wait_count;
-  while (fbar->wait_count > 0)
-    pth_yield (NULL);
-  fbar->arrive_count = 0;
+  fiber_barrier_reach (fbar);
+
 }
-#endif
 
 void
 __hsail_arrivefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
-  ++fbar->arrive_count;
+  ++fbar->reached;
 }
+
+#endif
+

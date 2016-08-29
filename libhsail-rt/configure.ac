@@ -3,12 +3,12 @@
 #  @copyright
 #  Copyright (C) 2011-2013, Intel Corporation
 #  All rights reserved.
-#  
+#
 #  @copyright
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions
 #  are met:
-#  
+#
 #    * Redistributions of source code must retain the above copyright
 #      notice, this list of conditions and the following disclaimer.
 #    * Redistributions in binary form must reproduce the above copyright
@@ -18,7 +18,7 @@
 #    * Neither the name of Intel Corporation nor the names of its
 #      contributors may be used to endorse or promote products derived
 #      from this software without specific prior written permission.
-#  
+#
 #  @copyright
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 #  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -142,9 +142,10 @@ AM_PROG_LIBTOOL
 AC_SUBST(toolexecdir)
 AC_SUBST(toolexeclibdir)
 
-AC_CHECK_PTH(1.2.0,yes,yes,yes,PTH_CFLAGS="$PTH_CFLAGS -DHAVE_PTH", PTH_CFLAGS="$PTH_CFLAGS -UHAVE_PTH")
+AC_CONFIG_HEADER(target-config.h)
 
-AC_SUBST(PTH_CFLAGS)
+AC_CHECK_SIZEOF([int])
+AC_CHECK_SIZEOF([void*])
 
 # Must be last
 AC_OUTPUT

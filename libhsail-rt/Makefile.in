@@ -99,10 +99,10 @@ target_triplet = @target@
 subdir = .
 DIST_COMMON = README $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
-	$(srcdir)/../mkinstalldirs $(srcdir)/../depcomp
+	$(srcdir)/target-config.h.in $(srcdir)/../mkinstalldirs \
+	$(srcdir)/../depcomp
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/pth.m4 \
-	$(top_srcdir)/../config/depstand.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/../config/depstand.m4 \
 	$(top_srcdir)/../config/lead-dot.m4 \
 	$(top_srcdir)/../config/multi.m4 $(top_srcdir)/../libtool.m4 \
 	$(top_srcdir)/../ltoptions.m4 $(top_srcdir)/../ltsugar.m4 \
@@ -112,6 +112,7 @@ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
+CONFIG_HEADER = target-config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
@@ -147,7 +148,8 @@ libhsail_rt_la_LIBADD =
 am__dirstamp = $(am__leading_dot)dirstamp
 am__objects_1 = rt/arithmetic.lo rt/atomics.lo rt/bitstring.lo \
 	rt/fbarrier.lo rt/fp16.lo rt/misc.lo rt/multimedia.lo \
-	rt/queue.lo rt/sat_arithmetic.lo rt/segment.lo rt/workitems.lo
+	rt/queue.lo rt/sat_arithmetic.lo rt/segment.lo rt/workitems.lo \
+	rt/fibers.lo
 am_libhsail_rt_la_OBJECTS = $(am__objects_1)
 libhsail_rt_la_OBJECTS = $(am_libhsail_rt_la_OBJECTS)
 libhsail_rt_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -232,10 +234,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
-PTH_CFLAGS = @PTH_CFLAGS@
-PTH_CPPFLAGS = @PTH_CPPFLAGS@
-PTH_LDFLAGS = @PTH_LDFLAGS@
-PTH_LIBS = @PTH_LIBS@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
@@ -327,7 +325,8 @@ runtime_files = \
 	rt/queue.c \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
-	rt/workitems.c
+	rt/workitems.c \
+	rt/fibers.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
 libhsail_rt_la_LDFLAGS = -rpath '$(libdir)'
@@ -371,7 +370,8 @@ AM_MAKEFLAGS = \
        "DESTDIR=$(DESTDIR)"
 
 MAKEOVERRIDES = 
-all: all-am
+all: target-config.h
+	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
@@ -409,6 +409,21 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	$(am__cd) $(srcdir) && $(ACLOCAL) $(ACLOCAL_AMFLAGS)
 $(am__aclocal_m4_deps):
+
+target-config.h: stamp-h1
+	@if test ! -f $@; then rm -f stamp-h1; else :; fi
+	@if test ! -f $@; then $(MAKE) $(AM_MAKEFLAGS) stamp-h1; else :; fi
+
+stamp-h1: $(srcdir)/target-config.h.in $(top_builddir)/config.status
+	@rm -f stamp-h1
+	cd $(top_builddir) && $(SHELL) ./config.status target-config.h
+$(srcdir)/target-config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps) 
+	($(am__cd) $(top_srcdir) && $(AUTOHEADER))
+	rm -f stamp-h1
+	touch $@
+
+distclean-hdr:
+	-rm -f target-config.h stamp-h1
 install-toolexeclibLTLIBRARIES: $(toolexeclib_LTLIBRARIES)
 	@$(NORMAL_INSTALL)
 	@list='$(toolexeclib_LTLIBRARIES)'; test -n "$(toolexeclibdir)" || list=; \
@@ -458,6 +473,7 @@ rt/queue.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/sat_arithmetic.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/segment.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/workitems.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
+rt/fibers.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 libhsail-rt.la: $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_DEPENDENCIES) $(EXTRA_libhsail_rt_la_DEPENDENCIES) 
 	$(libhsail_rt_la_LINK) -rpath $(toolexeclibdir) $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_LIBADD) $(LIBS)
 
@@ -471,6 +487,8 @@ mostlyclean-compile:
 	-rm -f rt/bitstring.lo
 	-rm -f rt/fbarrier.$(OBJEXT)
 	-rm -f rt/fbarrier.lo
+	-rm -f rt/fibers.$(OBJEXT)
+	-rm -f rt/fibers.lo
 	-rm -f rt/fp16.$(OBJEXT)
 	-rm -f rt/fp16.lo
 	-rm -f rt/misc.$(OBJEXT)
@@ -493,6 +511,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/atomics.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/bitstring.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fbarrier.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fibers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fp16.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/misc.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/multimedia.Plo@am__quote@
@@ -545,11 +564,11 @@ ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	mkid -fID $$unique
 tags: TAGS
 
-TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+TAGS:  $(HEADERS) $(SOURCES) target-config.h.in $(TAGS_DEPENDENCIES) \
 		$(TAGS_FILES) $(LISP)
 	set x; \
 	here=`pwd`; \
-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
+	list='$(SOURCES) $(HEADERS) target-config.h.in $(LISP) $(TAGS_FILES)'; \
 	unique=`for i in $$list; do \
 	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
 	  done | \
@@ -567,9 +586,9 @@ TAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
 	  fi; \
 	fi
 ctags: CTAGS
-CTAGS:  $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) \
+CTAGS:  $(HEADERS) $(SOURCES) target-config.h.in $(TAGS_DEPENDENCIES) \
 		$(TAGS_FILES) $(LISP)
-	list='$(SOURCES) $(HEADERS)  $(LISP) $(TAGS_FILES)'; \
+	list='$(SOURCES) $(HEADERS) target-config.h.in $(LISP) $(TAGS_FILES)'; \
 	unique=`for i in $$list; do \
 	    if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
 	  done | \
@@ -588,7 +607,7 @@ distclean-tags:
 	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
 check-am: all-am
 check: check-am
-all-am: Makefile $(LTLIBRARIES)
+all-am: Makefile $(LTLIBRARIES) target-config.h
 installdirs:
 	for dir in "$(DESTDIR)$(toolexeclibdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
@@ -635,7 +654,7 @@ distclean: distclean-am
 	-rm -rf rt/$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
-	distclean-libtool distclean-tags
+	distclean-hdr distclean-libtool distclean-tags
 
 dvi: dvi-am
 
@@ -699,11 +718,11 @@ ps-am:
 
 uninstall-am: uninstall-toolexeclibLTLIBRARIES
 
-.MAKE: install-am install-strip
+.MAKE: all install-am install-strip
 
 .PHONY: CTAGS GTAGS all all-am am--refresh check check-am clean \
 	clean-generic clean-libtool clean-toolexeclibLTLIBRARIES ctags \
-	distclean distclean-compile distclean-generic \
+	distclean distclean-compile distclean-generic distclean-hdr \
 	distclean-libtool distclean-tags dvi dvi-am html html-am info \
 	info-am install install-am install-data install-data-am \
 	install-dvi install-dvi-am install-exec install-exec-am \

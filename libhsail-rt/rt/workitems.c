@@ -27,8 +27,8 @@
 */
 
 /**
- * The fiber based multiple work-item work-group execution uses the Pth
- * library for user mode threading.  However, if gccbrig is able to optimize the
+ * The fiber based multiple work-item work-group execution uses ucontext
+ * based user mode threading.  However, if gccbrig is able to optimize the
  * kernel to a much faster work-group function that implements the multiple
  * WI execution using loops instead of fibers requiring slow context switches,
  * the fiber-based implementation won't be called.
@@ -36,16 +36,16 @@
  * @author pekka.jaaskelainen@parmance.com for General Processor Tech.
  */
 
-#ifdef HAVE_PTH
-#include <pth.h>
-#endif
-
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
 
 #include "workitems.h"
 #include "phsa-rt.h"
+
+#ifdef HAVE_FIBERS
+#include "fibers.h"
+#endif
 
 #ifdef BENCHMARK_PHSA_RT
 #include <stdio.h>
@@ -58,15 +58,17 @@ static clock_t start_time;
 
 #endif
 
-#include <stdio.h>
-
 #ifdef DEBUG_PHSA_RT
 #include <stdio.h>
 #endif
 
+#define PRIVATE_SEGMENT_ALIGN 256
+#define FIBER_STACK_SIZE (64*1024)
+#define GROUP_SEGMENT_ALIGN 256
+
 /* HSA requires WGs to be executed in flat work-group id order.  Enabling
    the following macro can reveal test cases that rely on the ordering,
-   but is not useful for much else.  
+   but is not useful for much else.
    #define EXECUTE_WGS_BACKWARDS  */
 
 uint32_t __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context);
@@ -79,19 +81,21 @@ uint32_t __hsail_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi);
 
 uint32_t __hsail_workgroupsize (uint32_t dim, PHSAWorkItem *wi);
 
-static void
+void
 phsa_fatal_error (int code)
 {
   exit (code);
 }
 
-#ifdef HAVE_PTH
-/* Pth-based work-item thread implementation.  Run all work-items in 
+#ifdef HAVE_FIBERS
+/* ucontext-based work-item thread implementation.  Runs all work-items in
    separate fibers.  */
 
-static void *
-phsa_work_item_thread (void *arg)
+static void
+phsa_work_item_thread (int arg0, int arg1)
 {
+  void *arg = fiber_int_args_to_ptr (arg0, arg1);
+
   PHSAWorkItem *wi = (PHSAWorkItem *) arg;
   volatile PHSAWorkGroup *wg = wi->wg;
   PHSAKernelLaunchData *l_data = wi->launch_data;
@@ -99,9 +103,7 @@ phsa_work_item_thread (void *arg)
   do
     {
       int retcode
-	= pth_barrier_reach ((pth_barrier_t *) l_data->wg_start_barrier);
-      if (retcode == FALSE)
-	phsa_fatal_error (1);
+	= fiber_barrier_reach ((fiber_barrier_t *) l_data->wg_start_barrier);
 
       /* At this point the threads can assume that either more_wgs is 0 or
 	 the current_work_group_* is set to point to the WG executed next.  */
@@ -138,15 +140,12 @@ phsa_work_item_thread (void *arg)
 	}
 
       retcode
-	= pth_barrier_reach ((pth_barrier_t *) l_data->wg_completion_barrier);
-      if (retcode == FALSE)
-	phsa_fatal_error (2);
+	= fiber_barrier_reach ((fiber_barrier_t *) l_data->wg_completion_barrier);
 
-      /* If there's only one work-item, it returns PTH_BARRIER_TAILLIGHT,
-	 not _HEADLIGHT.  */
-      if (retcode == PTH_BARRIER_TAILLIGHT)
+      /* The first thread updates the WG to execute next etc.  */
+
+      if (retcode == 0)
 	{
-/* The last thread updates the WG to execute next.  */
 #ifdef EXECUTE_WGS_BACKWARDS
 	  if (wg->x == l_data->wg_min_x)
 	    {
@@ -193,8 +192,9 @@ phsa_work_item_thread (void *arg)
 #ifdef DEBUG_PHSA_RT
 	  printf ("Reinitializing the WG barrier to %lu.\n", wg_size);
 #endif
-	  pth_barrier_init ((pth_barrier_t *) wi->launch_data->wg_sync_barrier,
-			    wg_size);
+	  fiber_barrier_init ((fiber_barrier_t *)
+			      wi->launch_data->wg_sync_barrier,
+			      wg_size);
 
 #ifdef BENCHMARK_PHSA_RT
 	  if (wi_count % 1000 == 0)
@@ -215,26 +215,27 @@ phsa_work_item_thread (void *arg)
     }
   while (1);
 
-  pth_exit (NULL);
+  fiber_exit ();
 }
 #endif
 
 #define MIN(a, b) ((a < b) ? a : b)
 #define MAX(a, b) ((a > b) ? a : b)
 
-#ifdef HAVE_PTH
+#ifdef HAVE_FIBERS
 /* Spawns a given number of work-items to execute a set of work-groups,
  * blocks until their completion.  */
+
 static void
 phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 		      size_t wg_size_x, size_t wg_size_y, size_t wg_size_z)
 {
-  PHSAWorkItem wi_threads[PHSA_MAX_WG_SIZE];
+  PHSAWorkItem *wi_threads = NULL;
   PHSAWorkGroup wg;
   size_t flat_wi_id = 0, x, y, z, max_x, max_y, max_z;
-  pth_barrier_t wg_start_barrier;
-  pth_barrier_t wg_completion_barrier;
-  pth_barrier_t wg_sync_barrier;
+  fiber_barrier_t wg_start_barrier;
+  fiber_barrier_t wg_completion_barrier;
+  fiber_barrier_t wg_sync_barrier;
 
   max_x = wg_size_x == 0 ? 1 : wg_size_x;
   max_y = wg_size_y == 0 ? 1 : wg_size_y;
@@ -246,7 +247,7 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 
   wg.private_segment_total_size = context->dp->private_segment_size * wg_size;
   if (wg.private_segment_total_size > 0
-      && posix_memalign (&wg.private_base_ptr, 256,
+      && posix_memalign (&wg.private_base_ptr, PRIVATE_SEGMENT_ALIGN,
 			 wg.private_segment_total_size)
 	   != 0)
     phsa_fatal_error (3);
@@ -264,9 +265,9 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
   wg.z = context->wg_min_z;
 #endif
 
-  pth_barrier_init (&wg_sync_barrier, wg_size);
-  pth_barrier_init (&wg_start_barrier, wg_size);
-  pth_barrier_init (&wg_completion_barrier, wg_size);
+  fiber_barrier_init (&wg_sync_barrier, wg_size);
+  fiber_barrier_init (&wg_start_barrier, wg_size);
+  fiber_barrier_init (&wg_completion_barrier, wg_size);
 
   context->wg_start_barrier = &wg_start_barrier;
   context->wg_sync_barrier = &wg_sync_barrier;
@@ -280,6 +281,7 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
   wis_skipped = 0;
   start_time = clock ();
 #endif
+  wi_threads = malloc (sizeof (PHSAWorkItem) * max_x * max_y * max_z);
   for (x = 0; x < max_x; ++x)
     for (y = 0; y < max_y; ++y)
       for (z = 0; z < max_z; ++z)
@@ -291,27 +293,32 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 	  wi->y = y;
 	  wi->z = z;
 
-	  /* TODO: set PTH_ATTR_STACK_SIZE according to the private
+	  /* TODO: set the stack size according to the private
 		   segment size.  Too big stack consumes huge amount of
 		   memory in case of huge number of WIs and a too small stack
 		   will fail in mysterious and potentially dangerous ways.  */
-	  wi->wi_thread_handle = pth_spawn (NULL, phsa_work_item_thread, wi);
+
+	  fiber_init (&wi->fiber, phsa_work_item_thread, wi,
+		      FIBER_STACK_SIZE, PRIVATE_SEGMENT_ALIGN);
 	  ++flat_wi_id;
 	}
 
   do
     {
       --flat_wi_id;
-      pth_join (wi_threads[flat_wi_id].wi_thread_handle, NULL);
+      fiber_join (&wi_threads[flat_wi_id].fiber);
     }
   while (flat_wi_id > 0);
 
   if (wg.private_segment_total_size > 0)
     free (wg.private_base_ptr);
+
+  free (wi_threads);
 }
 
 /* Spawn the work-item threads to execute work-groups and let
  * them execute all the WGs, including a potential partial WG.  */
+
 static void
 phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 {
@@ -322,12 +329,11 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
      memory.  Agents in general are less likely to support efficient dynamic mem
      allocation.  */
   if (dp->group_segment_size > 0
-      && posix_memalign (&group_base_ptr, 256, dp->group_segment_size) != 0)
+      && posix_memalign (&group_base_ptr, PRIVATE_SEGMENT_ALIGN,
+			 dp->group_segment_size) != 0)
     phsa_fatal_error (3);
 
   context->group_segment_start_addr = (size_t) group_base_ptr;
-
-  pth_init ();
 
   /* HSA seems to allow the WG size to be larger than the grid size.  We need to
      saturate the effective WG size to the grid size to prevent the extra WIs
@@ -375,8 +381,6 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 
   if (dp->group_segment_size > 0)
     free (group_base_ptr);
-
-  pth_kill ();
 }
 #endif
 
@@ -399,7 +403,8 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
      memory.  Agents in general are less likely to support efficient dynamic mem
      allocation.  */
   if (dp->group_segment_size > 0
-      && posix_memalign (&group_base_ptr, 256, dp->group_segment_size) != 0)
+      && posix_memalign (&group_base_ptr, GROUP_SEGMENT_ALIGN,
+			 dp->group_segment_size) != 0)
     phsa_fatal_error (3);
 
   context->group_segment_start_addr = (size_t) group_base_ptr;
@@ -460,7 +465,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
 
   void *private_base_ptr = NULL;
   if (dp->private_segment_size > 0
-      && posix_memalign (&private_base_ptr, 256,
+      && posix_memalign (&private_base_ptr, PRIVATE_SEGMENT_ALIGN,
 			 dp->private_segment_size * wg_size)
 	   != 0)
     phsa_fatal_error (3);
@@ -548,7 +553,8 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
       }
 */
 
-#ifdef HAVE_PTH
+#ifdef HAVE_FIBERS
+
 void
 __hsail_launch_kernel (gccbrigKernelFunc kernel, PHSAKernelLaunchData *context,
 		       void *group_base_ptr)
@@ -844,11 +850,11 @@ __hsail_packetcompletionsig_sig64 (PHSAWorkItem *wi)
   return (uint64_t) (wi->launch_data->dp->completion_signal.handle);
 }
 
-#ifdef HAVE_PTH
+#ifdef HAVE_FIBERS
 void
 __hsail_barrier (PHSAWorkItem *wi)
 {
-  pth_barrier_reach ((pth_barrier_t *) wi->launch_data->wg_sync_barrier);
+  fiber_barrier_reach ((fiber_barrier_t *) wi->launch_data->wg_sync_barrier);
 }
 #endif
 

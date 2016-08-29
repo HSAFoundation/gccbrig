@@ -75,7 +75,8 @@ runtime_files = \
 	rt/queue.c \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
-	rt/workitems.c
+	rt/workitems.c \
+	rt/fibers.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
 libhsail_rt_la_LDFLAGS  = -rpath '$(libdir)'

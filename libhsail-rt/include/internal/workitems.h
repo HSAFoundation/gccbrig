@@ -28,16 +28,21 @@
 #ifndef PHSA_RT_WORKITEMS_H
 #define PHSA_RT_WORKITEMS_H
 
-#ifdef HAVE_PTH
-#include <pth.h>
+/* As the simple fibers implementation relies only on ucontext, we can
+   assume is found by default as it is part of glibc.  However, for partial
+   HSAIL support on platforms without having it available, the following define
+   can be undefined.  */
+#define HAVE_FIBERS
+
+#ifdef HAVE_FIBERS
+#include "fibers.h"
 #endif
 
 #include <stdint.h>
 #include "phsa-rt.h"
 
-/**
- * Data identifying a single work-group instance.
- */
+/* Data identifying a single work-group instance.  */
+
 typedef struct
 {
   /* The group id of the currently executed WG. */
@@ -81,23 +86,22 @@ typedef struct
 
 } PHSAWorkGroup;
 
-/**
- * Data identifying a single work-item, passed to the work-item thread
- * in case of fiber based work-group execution.
- */
+/* Data identifying a single work-item, passed to the work-item thread in case
+   of a fiber based work-group execution. */
+
 typedef struct
 {
   PHSAKernelLaunchData *launch_data;
-  /* Identifies and keeps book of the currently executed WG
-	   of the WI swarm. */
+  /* Identifies and keeps book of the currently executed WG of the WI swarm. */
   volatile PHSAWorkGroup *wg;
   /* The local id of the current WI. */
   size_t x;
   size_t y;
   size_t z;
-#ifdef HAVE_PTH
-  pth_t wi_thread_handle;
+#ifdef HAVE_FIBERS
+  fiber_t fiber;
 #endif
 } PHSAWorkItem;
+
 
 #endif
