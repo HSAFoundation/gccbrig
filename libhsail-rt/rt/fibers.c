@@ -32,8 +32,11 @@ phsa_fatal_error (int code);
 
 ucontext_t main_context;
 
-static fiber_t *previously_started_fiber = NULL;
-static fiber_t *first_fiber = NULL;
+/* The last fiber in the linked list.  */
+static fiber_t *tail_fiber = NULL;
+/* The first fiber in the linked list.  */
+static fiber_t *head_fiber = NULL;
+/* The fiber currently being executed.  */
 static fiber_t *current_fiber = NULL;
 
 /* Makecontext accepts only integer arguments.  We need to split the
@@ -84,14 +87,22 @@ fiber_init (fiber_t *fiber, fiber_function_t start_function, void *arg,
   makecontext (&fiber->context, (void*)start_function, 2, arg0, arg1);
 
   fiber->status = FIBER_STATUS_READY;
-
-  /* Create a linked list of the created fibers.  */
   fiber->next = NULL;
-  if (previously_started_fiber != NULL)
-    previously_started_fiber->next = fiber;
+  fiber->prev = NULL;
+
+  /* Create a linked list of the created fibers.  Append the new one at
+     the end.  */
+  if (tail_fiber == NULL)
+    tail_fiber = fiber;
   else
-    first_fiber = fiber;
-  previously_started_fiber = fiber;
+    {
+      tail_fiber->next = fiber;
+      fiber->prev = tail_fiber;
+      tail_fiber = fiber;
+    }
+
+  if (head_fiber == NULL)
+    head_fiber = fiber;
 }
 
 void
@@ -114,12 +125,29 @@ fiber_exit ()
 void
 fiber_join (fiber_t *fiber)
 {
+  fiber_t *next_ready_fiber = NULL;
   current_fiber = fiber;
-  if (fiber->status == FIBER_STATUS_EXITED)
-    return;
-  fiber->status = FIBER_STATUS_JOINED;
-  while (fiber->status != FIBER_STATUS_EXITED)
-    swapcontext (&main_context, &fiber->context);
+  if (fiber->status != FIBER_STATUS_EXITED)
+    {
+      fiber->status = FIBER_STATUS_JOINED;
+      while (fiber->status != FIBER_STATUS_EXITED)
+	swapcontext (&main_context, &fiber->context);
+    }
+
+  /* Remove the successfully joined fiber from the linked list so we won't
+     access it later (the fiber itself might be freed after the join). */
+  if (fiber->prev != NULL)
+    fiber->prev->next = fiber->next;
+
+  if (fiber->next != NULL)
+    fiber->next->prev = fiber->prev;
+
+  if (head_fiber == fiber)
+    head_fiber = fiber->next;
+
+  if (tail_fiber == fiber)
+    tail_fiber = fiber->prev;
+
   free (fiber->context.uc_stack.ss_sp);
 }
 
@@ -127,27 +155,27 @@ void
 fiber_yield ()
 {
   fiber_t *next_ready_fiber = current_fiber;
+
+  if (current_fiber == head_fiber &&
+      current_fiber == tail_fiber)
+    {
+      /* If the last fiber exits independently, there is no
+	 fiber to switch to.  Switch to the main context in that
+	 case.  */
+      if (current_fiber->status == FIBER_STATUS_EXITED)
+	{
+#ifdef DEBUG_PHSA_FIBERS
+	  printf ("%p is last, switching back to main\n", current_fiber);
+#endif
+	  swapcontext (&current_fiber->context, &main_context);
+	}
+    }
+
   do {
     next_ready_fiber = next_ready_fiber->next != NULL ?
-      next_ready_fiber->next : first_fiber;
+      next_ready_fiber->next : head_fiber;
   } while (next_ready_fiber != current_fiber &&
 	   next_ready_fiber->status == FIBER_STATUS_EXITED);
-
-  /* If the last fiber exits independently, there is no
-     fiber to switch to.  Switch to the main context in that
-     case.  */
-  if (next_ready_fiber == current_fiber &&
-      next_ready_fiber->status == FIBER_STATUS_EXITED)
-    {
-#ifdef DEBUG_PHSA_FIBERS
-      printf ("%p is last, switching back to main\n", current_fiber);
-#endif
-      swapcontext (&current_fiber->context, &main_context);
-    }
-#ifdef DEBUG_PHSA_FIBERS
-  else
-    printf ("%p switching to %p\n", current_fiber, next_ready_fiber);
-#endif
 
   fiber_t *old_current_fiber = current_fiber;
   current_fiber = next_ready_fiber;
@@ -164,6 +192,11 @@ fiber_barrier_reach (fiber_barrier_t *barrier)
   fiber_yield ();
 
   barrier->reached++;
+#ifdef DEBUG_PHSA_FIBERS
+  printf ("reached %p %d of %d\n", barrier, barrier->reached,
+	  barrier->threshold);
+#endif
+
   ++barrier->waiting_count;
   while (barrier->reached < barrier->threshold)
     fiber_yield ();

@@ -72,7 +72,6 @@ __hsail_waitfbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   fiber_barrier_reach (fbar);
-
 }
 
 void
@@ -80,6 +79,8 @@ __hsail_arrivefbar (uint32_t addr, PHSAWorkItem *wi)
 {
   fbarrier *fbar = (fbarrier *) (wi->wg->group_base_ptr + addr);
   ++fbar->reached;
+  if (fbar->reached == fbar->threshold)
+    fbar->reached = 0;
 }
 
 #endif

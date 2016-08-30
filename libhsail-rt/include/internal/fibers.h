@@ -40,6 +40,7 @@ struct fiber_s
   ucontext_t context;
   volatile fiber_status_t status;
   struct fiber_s *next;
+  struct fiber_s *prev;
 };
 
 typedef struct fiber_s fiber_t;
@@ -58,7 +59,7 @@ void
 fiber_exit ();
 
 /* Blocks until the given fiber returns.  Frees the resources allocated
-   for the fiber.  */
+   for the fiber.  After join returns, the fiber itself can be deleted. */
 void
 fiber_join (fiber_t *fiber);
 
