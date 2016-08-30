@@ -27,14 +27,14 @@
 #include <stdint.h>
 #include <limits.h>
 
-#define BITEXTRACT(DEST_TYPE, SRC0, SRC1, SRC2)                                \
-  uint32_t offset = SRC1 & (sizeof (DEST_TYPE) * 8 - 1);                       \
-  uint32_t width = SRC2 & (sizeof (DEST_TYPE) * 8 - 1);                        \
-  if (width == 0)                                                              \
-    return 0;                                                                  \
-  else                                                                         \
-  return (SRC0 << (sizeof (DEST_TYPE) * 8 - width - offset))                   \
-	 >> (sizeof (DEST_TYPE) * 8 - width)
+#define BITEXTRACT(DEST_TYPE, SRC0, SRC1, SRC2)				\
+  uint32_t offset = SRC1 & (sizeof (DEST_TYPE) * 8 - 1);		\
+  uint32_t width = SRC2 & (sizeof (DEST_TYPE) * 8 - 1);			\
+  if (width == 0)							\
+    return 0;								\
+  else									\
+    return (SRC0 << (sizeof (DEST_TYPE) * 8 - width - offset))		\
+      >> (sizeof (DEST_TYPE) * 8 - width)
 
 uint32_t
 __hsail_bitextract_u32 (uint32_t src0, uint32_t src1, uint32_t src2)
@@ -60,10 +60,10 @@ __hsail_bitextract_s64 (int64_t src0, uint32_t src1, uint32_t src2)
   BITEXTRACT (int64_t, src0, src1, src2);
 }
 
-#define BITINSERT(DEST_TYPE, SRC0, SRC1, SRC2, SRC3)                           \
-  uint32_t offset = SRC2 & (sizeof (DEST_TYPE) * 8 - 1);                       \
-  uint32_t width = SRC3 & (sizeof (DEST_TYPE) * 8 - 1);                        \
-  DEST_TYPE mask = ((DEST_TYPE) 1 << width) - 1;                               \
+#define BITINSERT(DEST_TYPE, SRC0, SRC1, SRC2, SRC3)			\
+  uint32_t offset = SRC2 & (sizeof (DEST_TYPE) * 8 - 1);		\
+  uint32_t width = SRC3 & (sizeof (DEST_TYPE) * 8 - 1);			\
+  DEST_TYPE mask = ((DEST_TYPE) 1 << width) - 1;			\
   return (SRC0 & ~(mask << offset)) | ((SRC1 & mask) << offset)
 
 uint32_t
@@ -80,10 +80,10 @@ __hsail_bitinsert_u64 (uint64_t src0, uint64_t src1, uint32_t src2,
   BITINSERT (uint64_t, src0, src1, src2, src3);
 }
 
-#define BITMASK(DEST_TYPE, SRC0, SRC1)                                         \
-  uint32_t offset = SRC0 & (sizeof (DEST_TYPE) * 8 - 1);                       \
-  uint32_t width = SRC1 & (sizeof (DEST_TYPE) * 8 - 1);                        \
-  DEST_TYPE mask = ((DEST_TYPE) 1 << width) - 1;                               \
+#define BITMASK(DEST_TYPE, SRC0, SRC1)					\
+  uint32_t offset = SRC0 & (sizeof (DEST_TYPE) * 8 - 1);		\
+  uint32_t width = SRC1 & (sizeof (DEST_TYPE) * 8 - 1);			\
+  DEST_TYPE mask = ((DEST_TYPE) 1 << width) - 1;			\
   return mask << offset
 
 uint32_t
@@ -102,17 +102,17 @@ __hsail_bitmask_u64 (uint32_t src0, uint32_t src1)
    http://graphics.stanford.edu/~seander/bithacks.html#BitReverseObvious
    This (also) often maps to a single instruction in DSPs.  */
 
-#define BITREV(DEST_TYPE, SRC)                                                 \
-  DEST_TYPE v = SRC;                                                           \
-  DEST_TYPE r = v;                                                             \
-  int s = sizeof (SRC) * CHAR_BIT - 1;                                         \
-                                                                               \
-  for (v >>= 1; v; v >>= 1)                                                    \
-    {                                                                          \
-      r <<= 1;                                                                 \
-      r |= v & 1;                                                              \
-      s--;                                                                     \
-    }                                                                          \
+#define BITREV(DEST_TYPE, SRC)						\
+  DEST_TYPE v = SRC;							\
+  DEST_TYPE r = v;							\
+  int s = sizeof (SRC) * CHAR_BIT - 1;					\
+  									\
+  for (v >>= 1; v; v >>= 1)						\
+    {									\
+      r <<= 1;								\
+      r |= v & 1;							\
+      s--;								\
+    }									\
   return r << s
 
 uint32_t
@@ -140,7 +140,7 @@ __hsail_bitselect_u64 (uint64_t src0, uint64_t src1, uint64_t src2)
 }
 
 /* Due to the defined behavior with 0, we cannot use the gcc builtin
-   __builtin_clz*() directly. __builtin_ffs() has defined behavior, but
+   __builtin_clz* () directly. __builtin_ffs () has defined behavior, but
    returns 0 while HSAIL requires to return -1.  */
 
 uint32_t

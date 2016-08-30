@@ -59,7 +59,7 @@ void
 fiber_exit ();
 
 /* Blocks until the given fiber returns.  Frees the resources allocated
-   for the fiber.  After join returns, the fiber itself can be deleted. */
+   for the fiber.  After join returns, the fiber itself can be deleted.  */
 void
 fiber_join (fiber_t *fiber);
 

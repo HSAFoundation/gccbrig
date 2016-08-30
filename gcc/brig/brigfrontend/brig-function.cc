@@ -335,7 +335,7 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
      is, declare temporaries for new definitions inside the loop body, not at
      function scope.  */
 
-  /* TODO: Initialize the iteration variable.   Assume always starting
+  /* TODO: Initialize the iteration variable.  Assume always starting
      from 0.  */
 
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
@@ -448,8 +448,8 @@ brig_function::convert_to_wg_function ()
 }
 
 /* Builds the kernel launcher function and the kernel descriptor
-   for the kernel.  
-  
+   for the kernel.
+
    The launcher function calls the device-side runtime
    that runs the kernel for all work-items.  In C:
 

@@ -202,8 +202,8 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
 	  tree builtin = NULL_TREE;
 	  BrigType16_t src_arith_type
-	    = src_is_fp16 ?
-	    (BrigType16_t) BRIG_TYPE_F32 : cvt_inst->sourceType;
+	    = src_is_fp16
+	    ? (BrigType16_t) BRIG_TYPE_F32 : cvt_inst->sourceType;
 #define DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN(ENUM, HSAIL_DST_TYPE, HSAIL_SRC_TYPE, \
 					NAME, TYPE, ATTRS)		\
 	  if (brig_inst->type == HSAIL_DST_TYPE				\
@@ -212,7 +212,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	  else
 #include "hsail-builtins.def"
 	    gcc_unreachable ();
-	  
+
 	  tree casted_input = build_reinterpret_cast (src_type, input);
 	  conversion_result
 	    = call_builtin (builtin, 1, dest_type, src_type, casted_input);

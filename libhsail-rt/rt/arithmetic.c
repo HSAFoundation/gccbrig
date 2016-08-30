@@ -453,7 +453,7 @@ __hsail_class_f32 (float a, uint32_t flags)
 }
 
 /* 'class' for a f32-converted f16 which should otherwise be treated like f32
- except for its limits. */
+ except for its limits.  */
 
 uint32_t
 __hsail_class_f32_f16 (float a, uint32_t flags)

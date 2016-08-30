@@ -1,4 +1,4 @@
-/* Half-float conversion routines. Code mostly borrowed from the ARM's
+/* Half-float conversion routines.  Code mostly borrowed from the ARM's
    builtin function.
 
    Copyright (C) 2008-2015 Free Software Foundation, Inc.

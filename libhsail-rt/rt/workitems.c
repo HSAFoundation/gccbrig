@@ -26,14 +26,11 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-/**
- * The fiber based multiple work-item work-group execution uses ucontext
- * based user mode threading.  However, if gccbrig is able to optimize the
- * kernel to a much faster work-group function that implements the multiple
- * WI execution using loops instead of fibers requiring slow context switches,
- * the fiber-based implementation won't be called.
- *
- * @author pekka.jaaskelainen@parmance.com for General Processor Tech.
+/* The fiber based multiple work-item work-group execution uses ucontext
+   based user mode threading.  However, if gccbrig is able to optimize the
+   kernel to a much faster work-group function that implements the multiple
+   WI execution using loops instead of fibers requiring slow context switches,
+   the fiber-based implementation won't be called.
  */
 
 #include <stdlib.h>
@@ -68,8 +65,7 @@ static clock_t start_time;
 
 /* HSA requires WGs to be executed in flat work-group id order.  Enabling
    the following macro can reveal test cases that rely on the ordering,
-   but is not useful for much else.
-   #define EXECUTE_WGS_BACKWARDS  */
+   but is not useful for much else.  */
 
 uint32_t __hsail_workitemabsid (uint32_t dim, PHSAWorkItem *context);
 
@@ -140,7 +136,8 @@ phsa_work_item_thread (int arg0, int arg1)
 	}
 
       retcode
-	= fiber_barrier_reach ((fiber_barrier_t *) l_data->wg_completion_barrier);
+	= fiber_barrier_reach ((fiber_barrier_t *)
+			       l_data->wg_completion_barrier);
 
       /* The first thread updates the WG to execute next etc.  */
 
@@ -224,7 +221,7 @@ phsa_work_item_thread (int arg0, int arg1)
 
 #ifdef HAVE_FIBERS
 /* Spawns a given number of work-items to execute a set of work-groups,
- * blocks until their completion.  */
+   blocks until their completion.  */
 
 static void
 phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
@@ -317,7 +314,7 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 }
 
 /* Spawn the work-item threads to execute work-groups and let
- * them execute all the WGs, including a potential partial WG.  */
+   them execute all the WGs, including a potential partial WG.  */
 
 static void
 phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
@@ -384,15 +381,13 @@ phsa_spawn_work_items (PHSAKernelLaunchData *context, void *group_base_ptr)
 }
 #endif
 
-/*
- * Executes the given work-group function for all work groups in the grid.
- *
- * A work-group function is a version of the original kernel which executes
- * the kernel for all work-items in a work-group.  It is produced by gccbrig
- * if it can handle the kernel's barrier usage and is much faster way to
- * execute massive numbers of work-items in a non-SPMD machine than fibers
- * (easily 100x faster).
- */
+/* Executes the given work-group function for all work groups in the grid.
+
+   A work-group function is a version of the original kernel which executes
+   the kernel for all work-items in a work-group.  It is produced by gccbrig
+   if it can handle the kernel's barrier usage and is much faster way to
+   execute massive numbers of work-items in a non-SPMD machine than fibers
+   (easily 100x faster).  */
 static void
 phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
 {
@@ -492,7 +487,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
 	  context->kernel (context->kernarg_addr, &wi, group_base_ptr,
 			   private_base_ptr);
 
-#if defined(BENCHMARK_PHSA_RT) && 0
+#if defined (BENCHMARK_PHSA_RT)
 	  wg_count++;
 	  if (wg_count % 1000000 == 0)
 	    {
@@ -531,7 +526,7 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
    1) The actual kernel function (a single work-item kernel or a work-group
       function) generated from HSAIL (BRIG).
 
-	 static void _Kernel(void* args, void* context, void* group_base_ptr)
+	 static void _Kernel (void* args, void* context, void* group_base_ptr)
 	 {
 	   ...
 	 }
@@ -540,7 +535,8 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
 
    a) A single work-item function (that requires fibers for multi-WI):
 
-      void Kernel(void* context) {
+      void Kernel (void* context)
+      {
 	 __launch_launch_kernel (_Kernel, context);
       }
 
@@ -548,8 +544,9 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr)
 
     b) a when gccbrig could generate a work-group function:
 
-      void Kernel(void* context) {
-         __hsail_launch_wg_function (_Kernel, context);
+      void Kernel (void* context)
+      {
+		__hsail_launch_wg_function (_Kernel, context);
       }
 */
 
@@ -719,7 +716,7 @@ __hsail_workitemflatabsid_u64 (PHSAWorkItem *context)
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
-  /* Work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1  */
+  /* Work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1.  */
   uint64_t id0 = __hsail_workitemabsid (0, context);
   uint64_t id1 = __hsail_workitemabsid (1, context);
   uint64_t id2 = __hsail_workitemabsid (2, context);
@@ -737,7 +734,7 @@ __hsail_workitemflatabsid_u32 (PHSAWorkItem *context)
   PHSAWorkItem *c = (PHSAWorkItem *) context;
   hsa_kernel_dispatch_packet_t *dp = context->launch_data->dp;
 
-  /* work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1  */
+  /* work-item flattened absolute ID = ID0 + ID1 * max0 + ID2 * max0 * max1.  */
   uint64_t id0 = __hsail_workitemabsid (0, context);
   uint64_t id1 = __hsail_workitemabsid (1, context);
   uint64_t id2 = __hsail_workitemabsid (2, context);
@@ -758,21 +755,21 @@ __hsail_currentworkgroupsize (uint32_t dim, PHSAWorkItem *wi)
     default:
     case 0:
       if ((uint64_t) wi->wg->x < dp->grid_size_x / dp->workgroup_size_x)
-	wg_size = dp->workgroup_size_x; /* full WG */
+	wg_size = dp->workgroup_size_x; /* Full WG.  */
       else
-	wg_size = dp->grid_size_x % dp->workgroup_size_x; /* partial WG */
+	wg_size = dp->grid_size_x % dp->workgroup_size_x; /* Partial WG.  */
       break;
     case 1:
       if ((uint64_t) wi->wg->y < dp->grid_size_y / dp->workgroup_size_y)
-	wg_size = dp->workgroup_size_y; /* full WG */
+	wg_size = dp->workgroup_size_y; /* Full WG.  */
       else
-	wg_size = dp->grid_size_y % dp->workgroup_size_y; /* partial WG */
+	wg_size = dp->grid_size_y % dp->workgroup_size_y; /* Partial WG.  */
       break;
     case 2:
       if ((uint64_t) wi->wg->z < dp->grid_size_z / dp->workgroup_size_z)
-	wg_size = dp->workgroup_size_z; /* full WG */
+	wg_size = dp->workgroup_size_z; /* Full WG.  */
       else
-	wg_size = dp->grid_size_z % dp->workgroup_size_z; /* partial WG */
+	wg_size = dp->grid_size_z % dp->workgroup_size_z; /* Partial WG.  */
       break;
     }
   return wg_size;
@@ -904,7 +901,7 @@ __hsail_alloca (uint32_t size, uint32_t align, PHSAWorkItem *wi)
   return new_pos;
 }
 
-/* Initializes a new "alloca frame" in the private segment.   
+/* Initializes a new "alloca frame" in the private segment.
    This should be called at all the function entry points in case
    the function contains at least one call to alloca.  */
 
@@ -934,7 +931,7 @@ __hsail_alloca_push_frame (PHSAWorkItem *wi)
    This should be called at all the function return points in case
    the function contains at least one call to alloca.  Restores the
    alloca stack to the condition it was before pushing the frame
-   the last time. */
+   the last time.  */
 void
 __hsail_alloca_pop_frame (PHSAWorkItem *wi)
 {

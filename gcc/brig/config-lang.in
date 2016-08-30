@@ -31,9 +31,9 @@ compilers="brig1\$(exeext)"
 target_libs="target-libbrig target-libhsail-rt"
 
 # The BRIG frontend is written in C++, so we need to build the C++
-# compiler during stage 1. Note: when cross-compiling / not bootstrapping,
-# this can be safely removed. gcc 4.9.1 force enables c++/libstdc++ to the target
-# compiler due to this.
+# compiler during stage 1.  Note: when cross-compiling / not bootstrapping,
+# this can be safely removed. gcc 4.9.1 force enables c++/libstdc++ to the
+# target compiler due to this.
 lang_requires_boot_languages=c++
 
 gtfiles="\$(srcdir)/brig/brig-lang.c \$(srcdir)/brig/brig-c.h"

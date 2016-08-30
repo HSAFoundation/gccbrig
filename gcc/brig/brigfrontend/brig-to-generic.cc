@@ -659,9 +659,9 @@ typedef std::map<std::string, tree> builtin_index;
 builtin_index builtin_cache_;
 
 /* Build a call to a builtin function.  PDECL is the builtin function to
-   call. NARGS is the number of input arguments, RETTYPE the built-in functions
-   return value type, and ... is the list of arguments passed to the call
-   with type first, then the value. */
+   call.  NARGS is the number of input arguments, RETTYPE the built-in
+   functions return value type, and ... is the list of arguments passed to
+   the call with type first, then the value.  */
 
 tree
 call_builtin (tree pdecl, int nargs, tree rettype, ...)

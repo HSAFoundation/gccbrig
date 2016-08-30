@@ -38,9 +38,9 @@ extern "C" {
 #include <stdint.h>
 #include "hsa-interface.h"
 
-typedef __attribute__((aligned(64))) struct phsa_queue_s
+typedef __attribute__ ((aligned (64))) struct phsa_queue_s
 {
-  /* An HSA Architectured Queue object. Must be in the beginning
+  /* An HSA Architectured Queue object.  Must be in the beginning
      of the struct to enable direct pointer casting between hsa_queue_
      and phsa_queue_t.  */
   hsa_queue_t hsa_queue;

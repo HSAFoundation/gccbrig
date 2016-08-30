@@ -126,7 +126,7 @@ brig_seg_inst_handler::operator () (const BrigBase *base)
 	  break;
 	case BRIG_SEGMENT_GROUP:
 	  builtin = builtin_decl_explicit (BUILT_IN_HSAIL_SEGMENTP_GROUP);
-	  break;  
+	  break;
 	case BRIG_SEGMENT_PRIVATE:
 	  builtin = builtin_decl_explicit (BUILT_IN_HSAIL_SEGMENTP_PRIVATE);
 	  break;

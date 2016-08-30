@@ -29,7 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Return true if operand number OPNUM of instruction with OPCODE is an output.
    False if it is an input.  Some code reused from Martin Jambor's gcc-hsa
-   tree. */
+   tree.  */
 
 bool
 gccbrig_hsa_opcode_op_output_p (BrigOpcode16_t opcode, int opnum)
@@ -131,7 +131,7 @@ gccbrig_hsa_type_bit_size (BrigType16_t t)
     }
 }
 
-/* gcc-hsa borrowed code ENDS  */
+/* gcc-hsa borrowed code ENDS.  */
 
 uint64_t
 gccbrig_to_uint64_t (const BrigUInt64 &brig_type)
@@ -221,7 +221,7 @@ gccbrig_segment_name (BrigSegment8_t segment)
   else if (segment == BRIG_SEGMENT_PRIVATE)
     return "private";
   else
-    gcc_unreachable();
+    gcc_unreachable ();
 }
 
 bool
@@ -330,10 +330,10 @@ gccbrig_is_raw_operation (BrigOpcode16_t opcode)
 
 /* The program scope definition can be left external within the
    kernel binary which means it must be defined by the host via
-   HSA runtime.  For these we have special treatment: 
+   HSA runtime.  For these we have special treatment:
    Create additional pointer indirection when accessing the variable
    value from kernel code through a generated pointer
-   __gccbrig_ptr_variable_name. The pointer value then can be set either
+   __gccbrig_ptr_variable_name.  The pointer value then can be set either
    within the kernel binary (in case of a later linked in definition)
    or from the host.  */
 
@@ -342,8 +342,8 @@ might_be_host_defined_var (const BrigDirectiveVariable *brigVar)
 {
   bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
   return
-    brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition 
+    brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition
     && brigVar->linkage == BRIG_LINKAGE_PROGRAM
-    && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM ||
-	brigVar->allocation == BRIG_ALLOCATION_AGENT);
+    && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM
+    || brigVar->allocation == BRIG_ALLOCATION_AGENT);
 }

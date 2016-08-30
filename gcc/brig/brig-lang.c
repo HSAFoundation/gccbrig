@@ -51,7 +51,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "brig-c.h"
 #include "brig-builtins.h"
 
-/* This file is based on Go frontent'd go-lang.c and gogo-tree.cc. */
+/* This file is based on Go frontent'd go-lang.c and gogo-tree.cc.  */
 
 /* If -v set.  */
 
@@ -115,8 +115,8 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
   opts->x_flag_wrapv = 1;
 
   /* If we set this to one, the whole program optimizations internalize
-     all global variables, making them invisible to the .so loader (and
-     thus the Portable HSA Runtime API).  */
+     all global variables, making them invisible to the dyn loader (and
+     thus the HSA runtime implementation).  */
   opts->x_flag_whole_program = 0;
 
   /* The builtin math functions should not set errno.  */
@@ -240,7 +240,7 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	  return double_type_node;
 	default:
 	  /* We have to check for long double in order to support
-	     i386 excess precision. */
+	     i386 excess precision.  */
 	  if (mode == TYPE_MODE (long_double_type_node))
 	    return long_double_type_node;
 
@@ -359,7 +359,7 @@ brig_langhook_eh_personality (void)
 }
 
 /* Functions called directly by the generic backend.
-   Adapted from go-lang.c */
+   Adapted from go-lang.c.  */
 
 tree
 convert (tree type, tree expr)
@@ -635,7 +635,7 @@ brig_define_builtins (tree va_list_ref_type_node ATTRIBUTE_UNUSED,
 
 /* Build nodes that would have be created by the C front-end; necessary
    for including builtin-types.def and ultimately builtins.def.  Borrowed
-   from lto-lang.c  */
+   from lto-lang.c.  */
 
 static void
 brig_build_c_type_nodes (void)
@@ -645,7 +645,8 @@ brig_build_c_type_nodes (void)
   void_list_node = build_tree_list (NULL_TREE, void_type_node);
   string_type_node = build_pointer_type (char_type_node);
   const_string_type_node
-    = build_pointer_type (build_qualified_type (char_type_node, TYPE_QUAL_CONST));
+    = build_pointer_type (build_qualified_type (char_type_node,
+						TYPE_QUAL_CONST));
 
   if (strcmp (SIZE_TYPE, "unsigned int") == 0)
     {
@@ -697,7 +698,7 @@ brig_langhook_init (void)
 {
   build_common_tree_nodes (false);
 
-  /* Builtin initialization related code borrowed from lto-lang.c. */
+  /* Builtin initialization related code borrowed from lto-lang.c.  */
   void_list_node = build_tree_list (NULL_TREE, void_type_node);
 
   brig_build_c_type_nodes ();

@@ -78,8 +78,7 @@ protected:
   tree pack (tree_stl_vec &elements);
 
   bool can_expand_builtin (BrigOpcode16_t brig_opcode) const;
-  tree expand_builtin (BrigOpcode16_t brig_opcode, tree arith_type,
-		       tree_stl_vec &operands);
+  tree expand_builtin (BrigOpcode16_t brig_opcode, tree_stl_vec &operands);
 
   tree expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 			       BrigType16_t brig_type, tree arith_type,
@@ -171,7 +170,7 @@ public:
 
 /* A base class for instruction types that support floating point
    modifiers.
-   
+
    operator () delegates to subclasses (template method pattern) in
    type specific parts.  */
 

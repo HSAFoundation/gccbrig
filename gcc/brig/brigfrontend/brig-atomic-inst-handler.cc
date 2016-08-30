@@ -49,7 +49,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   tree instr_type = get_tree_type_for_hsa_type (inst.type);
 
   /* Utilize the atomic data types (from C++11 support) for implementing
-     atomic operations. */
+     atomic operations.  */
 
   tree atomic_type = build_qualified_type (instr_type, TYPE_QUAL_ATOMIC);
 
@@ -83,7 +83,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       /* signal_wait* instructions can return spuriously before the
 	 condition becomes true.  Therefore it's legal to return
 	 right away.  TO OPTIMIZE: builtin calls which can be
-	 implemented with a power efficient sleep-wait. */
+	 implemented with a power efficient sleep-wait.  */
       instr_expr = mem_ref;
     }
   else if (atomic_opcode == BRIG_ATOMIC_CAS)
@@ -93,12 +93,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       switch (gccbrig_hsa_type_bit_size (inst.type))
 	{
 	case 32:
-	  built_in =
-	    builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4);
+	  built_in
+	    = builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4);
 	  break;
 	case 64:
-	  built_in =
-	    builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8);
+	  built_in
+	    = builtin_decl_explicit (BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8);
 	  break;
 	default:
 	  gcc_unreachable ();
@@ -120,7 +120,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       tree built_in = NULL_TREE;
       /* The rest of the builtins have the same number of parameters.
 	 Generate a big if..else that finds the correct builtin
-	 automagically from the .def file.  */
+	 automagically from the def file.  */
 #undef DEF_HSAIL_SAT_BUILTIN
 #undef DEF_HSAIL_BUILTIN
 #undef DEF_HSAIL_ATOMIC_BUILTIN
@@ -139,12 +139,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_ADD_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -154,12 +154,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_SUB_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -169,12 +169,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_AND_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -184,12 +184,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_XOR_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -199,12 +199,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_FETCH_AND_OR_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -214,12 +214,12 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 	  switch (gccbrig_hsa_type_bit_size (inst.type))
 	    {
 	    case 32:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_4);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_4);
 	      break;
 	    case 64:
-	      built_in =
-		builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_8);
+	      built_in
+		= builtin_decl_explicit (BUILT_IN_SYNC_LOCK_TEST_AND_SET_8);
 	      break;
 	    default:
 	      gcc_unreachable ();
@@ -238,7 +238,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 
       /* We need a temp variable for the result, because otherwise
 	 the gimplifier drops a necessary (unsigned to signed) cast in
-	 the output assignment and fails a check later. */
+	 the output assignment and fails a check later.  */
       tree tmp_var = create_tmp_var (arg0_type, "builtin_out");
       tree tmp_assign
 	= build2 (MODIFY_EXPR, TREE_TYPE (tmp_var), tmp_var, instr_expr);

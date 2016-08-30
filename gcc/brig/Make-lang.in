@@ -1,4 +1,5 @@
-# Make-lang.in -- Top level -*- makefile -*- fragment for gcc BRIG (HSAIL) frontend.
+# Make-lang.in -- Top level -*- makefile -*- fragment for gcc BRIG (HSAIL)
+# frontend.
 
 # Copyright (C) 2015 Free Software Foundation, Inc.
 

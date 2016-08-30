@@ -42,7 +42,7 @@ struct reg_decl_index_entry;
 /* Converts an HSAIL BRIG input to GENERIC.  This class holds global state
    for the translation process.  Handling of the smaller pieces of BRIG data
    is delegated to various handler classes declared in
-   brig-code-entry-handlers.h. */
+   brig-code-entry-handlers.h.  */
 
 class brig_to_generic
 {
@@ -171,7 +171,7 @@ private:
   /* The original dump file.  */
   FILE *m_dump_file;
 
-  /* The original dump file flags. */
+  /* The original dump file flags.  */
   int m_dump_flags;
 };
 

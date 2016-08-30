@@ -171,7 +171,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       /* Do not create a real variable, but only a table of
 	 offsets to the kernarg segment buffer passed as the
 	 single argument by the kernel launcher for later
-	 reference. Ignore kernel declarations.  */
+	 reference.  Ignore kernel declarations.  */
       if (m_parent.m_cf != NULL && m_parent.m_cf->m_func_decl != NULL_TREE)
 	m_parent.m_cf->append_kernel_arg (brigVar, var_size, alignment);
       return base->byteCount;
@@ -202,7 +202,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	   || brigVar->segment == BRIG_SEGMENT_READONLY)
     {
       bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
-      tree def = is_definition ? NULL_TREE : m_parent.global_variable (var_name);
+      tree def = is_definition ? NULL_TREE :
+	m_parent.global_variable (var_name);
 
       if (!is_definition && def != NULL_TREE)
 	{

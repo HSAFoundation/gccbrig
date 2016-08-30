@@ -339,7 +339,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   if (ret_value != NULL_TREE && TREE_TYPE (ret_value) != void_type_node)
     {
-      /* We cannot assign to <<retval>> directly in gcc trunk. We need to
+      /* We cannot assign to <<retval>> directly in gcc trunk.  We need to
 	 create a local temporary variable which can be stored to and when
 	 returning from the function, we'll copy it to the actual <<retval>>
 	 in return statement's argument.  */

@@ -28,16 +28,16 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define DO_ATOMICALLY(T, OPERATION)                                            \
-  int done = 0;                                                                \
-  T old_value;                                                                 \
-  T new_value;                                                                 \
-  while (!done)                                                                \
-    {                                                                          \
-      old_value = *ptr;                                                        \
-      new_value = OPERATION;                                                   \
-      done = __sync_bool_compare_and_swap (ptr, old_value, new_value);         \
-    }                                                                          \
+#define DO_ATOMICALLY(T, OPERATION)					\
+  int done = 0;								\
+  T old_value;								\
+  T new_value;								\
+  while (!done)								\
+    {									\
+      old_value = *ptr;							\
+      new_value = OPERATION;						\
+      done = __sync_bool_compare_and_swap (ptr, old_value, new_value);	\
+    }									\
   return old_value
 
 int32_t

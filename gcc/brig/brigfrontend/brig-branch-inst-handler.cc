@@ -83,10 +83,10 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 
 	      if (brig_var->type & BRIG_TYPE_ARRAY)
 		{
-		  /* Array return values are passed as the first argument. */
+		  /* Array return values are passed as the first argument.  */
 		  args = in_args;
-		  /* Pass pointer to the element zero and use its element zero as
-		     the base address. */
+		  /* Pass pointer to the element zero and use its element zero
+		     as the base address.  */
 		  tree etype = TREE_TYPE (TREE_TYPE (var));
 		  tree ptype = build_pointer_type (etype);
 		  tree element_zero
@@ -115,7 +115,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 
       /* Pass the hidden kernel arguments along to the called functions as
 	 they might call builtins that need them or access group/private
-	 memory. */
+	 memory.  */
 
       vec_safe_push (in_args, m_parent.m_cf->m_context_arg);
       vec_safe_push (in_args, m_parent.m_cf->m_group_base_arg);
@@ -187,14 +187,14 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
     {
       tree condition = operands[0];
       tree target_goto = build1 (GOTO_EXPR, void_type_node, operands[1]);
-      /* Represents the if..else as (condition)?(goto foo):(goto bar). */
+      /* Represents the if..else as (condition)?(goto foo):(goto bar).  */
       tree if_stmt
 	= build3 (COND_EXPR, void_type_node, condition, target_goto, NULL_TREE);
       m_parent.m_cf->append_statement (if_stmt);
     }
   else if (brig_inst->opcode == BRIG_OPCODE_WAVEBARRIER)
     {
-      /* WAVEBARRIER is a NOP when WAVESIZE = 1. */
+      /* WAVEBARRIER is a NOP when WAVESIZE = 1.  */
     }
   else if (brig_inst->opcode == BRIG_OPCODE_BARRIER)
     {
@@ -202,7 +202,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
       tree_stl_vec call_operands;
       /* FIXME.  We should add attributes (are there suitable ones in gcc?) that
 	 ensure the barrier won't be duplicated or moved out of loops etc.
-	 Like the 'noduplicate' of LLVM.  Same goes for fbarriers. */
+	 Like the 'noduplicate' of LLVM.  Same goes for fbarriers.  */
       m_parent.m_cf->append_statement
 	(expand_or_call_builtin (brig_inst->opcode, BRIG_TYPE_NONE, NULL_TREE,
 				 call_operands));

@@ -41,15 +41,15 @@ static fiber_t *current_fiber = NULL;
 
 /* Makecontext accepts only integer arguments.  We need to split the
    pointer argument in case pointer does not fit into int.  This helper
-   function can be used to restore the pointer from the arguments. */
+   function can be used to restore the pointer from the arguments.  */
 
 void *
 fiber_int_args_to_ptr (int arg0, int arg1)
 {
   void *ptr = NULL;
 #if SIZEOF_VOIDP == 8 && SIZEOF_INT == 4
-  ptr = (void*)(((uint64_t) arg0 & (uint64_t) 0xFFFFFFFF) |
-		((uint64_t) arg1 << 32));
+  ptr = (void*)(((uint64_t) arg0 & (uint64_t) 0xFFFFFFFF)
+		| ((uint64_t) arg1 << 32));
 #elif SIZEOF_VOIDP == 4 && SIZEOF_INT == 4
   ptr = (void*)arg0;
 #else
@@ -71,7 +71,7 @@ fiber_init (fiber_t *fiber, fiber_function_t start_function, void *arg,
   fiber->context.uc_stack.ss_size = stack_size;
   fiber->context.uc_link = &main_context;
 
-  /* makecontext() accepts only integer arguments.  Split the
+  /* makecontext () accepts only integer arguments.  Split the
      pointer argument to two args in the case pointer does not fit
      into one int.  */
 #if SIZEOF_VOIDP == 8 && SIZEOF_INT == 4
@@ -132,7 +132,7 @@ fiber_join (fiber_t *fiber)
     }
 
   /* Remove the successfully joined fiber from the linked list so we won't
-     access it later (the fiber itself might be freed after the join). */
+     access it later (the fiber itself might be freed after the join).  */
   if (fiber->prev != NULL)
     fiber->prev->next = fiber->next;
 
@@ -153,8 +153,8 @@ fiber_yield ()
 {
   fiber_t *next_ready_fiber = current_fiber;
 
-  if (current_fiber == head_fiber &&
-      current_fiber == tail_fiber)
+  if (current_fiber == head_fiber
+      && current_fiber == tail_fiber)
     {
       /* If the last fiber exits independently, there is no
 	 fiber to switch to.  Switch to the main context in that
@@ -164,10 +164,10 @@ fiber_yield ()
     }
 
   do {
-    next_ready_fiber = next_ready_fiber->next != NULL ?
-      next_ready_fiber->next : head_fiber;
-  } while (next_ready_fiber != current_fiber &&
-	   next_ready_fiber->status == FIBER_STATUS_EXITED);
+    next_ready_fiber = next_ready_fiber->next != NULL
+      ? next_ready_fiber->next : head_fiber;
+  } while (next_ready_fiber != current_fiber
+	   && next_ready_fiber->status == FIBER_STATUS_EXITED);
 
   fiber_t *old_current_fiber = current_fiber;
   current_fiber = next_ready_fiber;
@@ -180,7 +180,7 @@ fiber_barrier_reach (fiber_barrier_t *barrier)
   /* Yield once to ensure that there are no fibers waiting for
      a previous triggering of the barrier in the waiting_count
      loop.  This should release them before we update the reached
-     counter again. */
+     counter again.  */
   fiber_yield ();
 
   barrier->reached++;
@@ -194,7 +194,7 @@ fiber_barrier_reach (fiber_barrier_t *barrier)
     fiber_yield ();
 
   /* Now all fibers have been released from the barrier waiting
-     loop.   We can now safely reset the reach count for new triggering.  */
+     loop.  We can now safely reset the reach count for new triggering.  */
   if (barrier->reached > 0)
     {
       barrier->reached = 0;

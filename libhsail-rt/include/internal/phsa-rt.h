@@ -35,37 +35,34 @@
 #define PHSA_MAX_WG_SIZE 1024 * 10
 
 /* Pointer type for the public facing kernel launcher function generated
-   by gccbrig. This launches the actual kernel for all work groups and
-   work items in the grid. */
+   by gccbrig.  This launches the actual kernel for all work groups and
+   work items in the grid.  */
 typedef void (*gccbrigKernelLauncherFunc) (void *context, void *);
 
 /* Pointer type for kernel functions produced by gccbrig from the HSAIL.
    This is private from outside the device binary and only called by
-   the launcher. */
+   the launcher.  */
 typedef void (*gccbrigKernelFunc) (unsigned char *, void *, void *, void *);
 
 /* Context data that is passed to the kernel function, initialized
-   by the runtime to the current launch information. The data is
+   by the runtime to the current launch information.  The data is
    used by different id functions etc.
 
    The struct is used by both the launcher and the targeted device,
    thus the fields must have the same alignment/padding in both sides.
-
-   @todo Would using alignment attributes or a packed struct be more
-   useful than harmful here?
 */
 typedef struct
 {
 
-  /****** Data set by the HSA Runtime's kernel launcher *******/
+  /* Data set by the HSA Runtime's kernel launcher.  */
   hsa_kernel_dispatch_packet_t *dp;
 
   size_t packet_id;
 
-  /****** Data set by the device-side launcher          *******/
+  /* Data set by the device-side launcher.  */
   gccbrigKernelFunc kernel;
 
-  /* The range of a work groups this dispatch should execute. */
+  /* The range of a work groups this dispatch should execute.  */
   size_t wg_min_x;
   size_t wg_min_y;
   size_t wg_min_z;
@@ -74,23 +71,23 @@ typedef struct
   size_t wg_max_y;
   size_t wg_max_z;
 
-  /* The barrier used to synch the work-items before executing a new WG. */
+  /* The barrier used to synch the work-items before executing a new WG.  */
   void *wg_start_barrier;
 
-  /* The barrier to wait at after executing a work-group. */
+  /* The barrier to wait at after executing a work-group.  */
   void *wg_completion_barrier;
 
   /* The barrier used to synchronize WIs in case of the 'barrier' HSAIL
-     instruction. */
+     instruction.  */
   void *wg_sync_barrier;
 
   /* This should be set to the flat address of the beginning of the group
-     segment. */
+     segment.  */
   size_t group_segment_start_addr;
 
   /* This must be set to the correct aligned flat address space location from
-     where the kernel can actually read its arguments. Might point to the
-     original global kernarg space. */
+     where the kernel can actually read its arguments.  Might point to the
+     original global kernarg space.  */
   void *kernarg_addr;
 } PHSAKernelLaunchData;
 

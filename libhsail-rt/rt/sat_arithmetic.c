@@ -24,12 +24,6 @@
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-/**
- *
- *
- * @author Pekka Jääskeläinen <pekka.jaaskelainen@parmance.com>
- */
-
 #include <stdint.h>
 
 uint8_t

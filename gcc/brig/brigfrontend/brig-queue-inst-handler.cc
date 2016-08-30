@@ -79,7 +79,7 @@ brig_queue_inst_handler::operator () (const BrigBase *base)
   else if (inst_base.opcode == BRIG_OPCODE_CASQUEUEWRITEINDEX)
     {
       tree builtin = builtin_decl_explicit (BUILT_IN_HSAIL_CASQUEUEWRITEINDEX);
-      
+
       tree expr
 	= call_builtin (builtin, 3, uint64_type_node,
 			uint64_type_node, operands[1], uint64_type_node,
