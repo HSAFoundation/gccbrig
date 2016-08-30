@@ -110,9 +110,6 @@ fiber_exit ()
 {
   fiber_status_t old_status = current_fiber->status;
   current_fiber->status = FIBER_STATUS_EXITED;
-#ifdef DEBUG_PHSA_FIBERS
-  printf ("%p exited\n", current_fiber);
-#endif
   if (old_status == FIBER_STATUS_JOINED)
     /* In case this thread has been joined, return back to the joiner.  */
     swapcontext (&current_fiber->context, &main_context);
@@ -163,12 +160,7 @@ fiber_yield ()
 	 fiber to switch to.  Switch to the main context in that
 	 case.  */
       if (current_fiber->status == FIBER_STATUS_EXITED)
-	{
-#ifdef DEBUG_PHSA_FIBERS
-	  printf ("%p is last, switching back to main\n", current_fiber);
-#endif
-	  swapcontext (&current_fiber->context, &main_context);
-	}
+	swapcontext (&current_fiber->context, &main_context);
     }
 
   do {
@@ -192,11 +184,6 @@ fiber_barrier_reach (fiber_barrier_t *barrier)
   fiber_yield ();
 
   barrier->reached++;
-#ifdef DEBUG_PHSA_FIBERS
-  printf ("reached %p %d of %d\n", barrier, barrier->reached,
-	  barrier->threshold);
-#endif
-
   ++barrier->waiting_count;
   while (barrier->reached < barrier->threshold)
     fiber_yield ();
