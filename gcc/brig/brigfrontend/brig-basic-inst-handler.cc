@@ -441,7 +441,11 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	  return build_zero_cst (arith_type);
 	}
       else
-	gcc_unreachable ();
+	{
+	  printf ("opcode %d for type %d not supported\n",
+		  brig_opcode, brig_type);
+	  gcc_unreachable ();
+	}
     }
   else if (opcode == CALL_EXPR)
     return expand_or_call_builtin (brig_opcode, brig_type, arith_type,
