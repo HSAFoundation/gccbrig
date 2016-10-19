@@ -59,6 +59,7 @@ brig_function::brig_function (const BrigDirectiveExecutable *exec,
 {
   memset (m_regs, 0,
 	  BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT * sizeof (BrigOperandRegister *));
+  memset (&m_descriptor, 0, sizeof (phsa_descriptor));
 }
 
 brig_function::~brig_function ()
@@ -447,8 +448,49 @@ brig_function::convert_to_wg_function ()
   return false;
 }
 
-/* Builds the kernel launcher function and the kernel descriptor
-   for the kernel.
+/* Emits a kernel description to a special ELF section so it can be
+   utilized by an HSA runtime implementation.  The assembly block
+   must be emitted to a statement list of an function, which is given
+   as an argument.  Returns the assembly block used to emit the section. */
+
+tree
+brig_function::emit_metadata (tree stmt_list)
+{
+  /* Emit an ELF section via an assembly directive that generates a special
+     ELF section for each kernel that contains raw bytes of a descriptor
+     object.  This is pretty disgusting, but life is never perfect ;)  */
+
+  /* Use the original kernel name without the '_' prefix in the section name.  */
+  std::string kern_name = m_is_kernel ? m_name.substr (1) : m_name;
+
+  std::ostringstream strstr;
+  strstr << std::endl
+	 << ".pushsection " << PHSA_DESC_SECTION_PREFIX << kern_name
+	 << std::endl
+	 << "\t.p2align 1, 1, 1" << std::endl
+	 << "\t.byte ";
+
+  for (size_t i = 0; i < sizeof (phsa_descriptor); ++i)
+    {
+      strstr << "0x" << std::setw (2) << std::setfill ('0') << std::hex
+	     << (unsigned) *((unsigned char *) &m_descriptor + i);
+      if (i + 1 < sizeof (phsa_descriptor))
+	strstr << ", ";
+    }
+
+  strstr << std::endl << ".popsection" << std::endl << std::endl;
+
+  tree metadata_asm
+    = build_stmt (ASM_EXPR,
+		  build_string (strstr.str ().size (), strstr.str ().c_str ()),
+		  NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE);
+
+  append_to_statement_list_force (metadata_asm, &stmt_list);
+  return metadata_asm;
+}
+
+/* Emits the kernel launcher function.  Also emits the metadata section
+   creation statements in it.
 
    The launcher function calls the device-side runtime
    that runs the kernel for all work-items.  In C:
@@ -470,11 +512,8 @@ brig_function::convert_to_wg_function ()
 */
 
 tree
-brig_function::build_launcher_and_metadata (size_t group_segment_size,
-					    size_t private_segment_size)
+brig_function::emit_launcher_and_metadata ()
 {
-
-
   /* The original kernel name without the '_' prefix.  */
   std::string kern_name = m_name.substr (1);
 
@@ -535,6 +574,8 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
 
   tree phsail_launch_kernel_call;
 
+  /* Emit a launcher depending whether we converted the kernel function to
+     a work group function or not.  */
   if (m_is_wg_function)
     phsail_launch_kernel_call
       = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_LAUNCH_WG_FUNC),
@@ -550,46 +591,7 @@ brig_function::build_launcher_and_metadata (size_t group_segment_size,
 
   append_to_statement_list_force (phsail_launch_kernel_call, &stmt_list);
 
-  phsa_kernel_descriptor desc;
-  /* TO FIX: This does not compute the total group segment size correctly,
-     in case the kernel is calling another function later in the program
-     that defines group variables.  We should first do a pass for collecting
-     all the variables used by the kernels to get the total size, and
-     preferably use a call graph to track which functions are called by which
-     kernels.  */
-  desc.group_segment_size = group_segment_size;
-  desc.private_segment_size = private_segment_size;
-  desc.kernarg_segment_size = m_next_kernarg_offset;
-  desc.kernarg_max_align = m_kernarg_max_align;
-
-  /* Generate a descriptor for the kernel with HSAIL-specific info needed by
-     the runtime.  It's done via an assembly directive that generates a special
-     ELF section for each kernel that contains raw bytes of a descriptor
-     object.  This is slightly disgusting, but life is never perfect ;) */
-
-  std::ostringstream strstr;
-  strstr << std::endl
-	 << ".pushsection " << PHSA_KERNELDESC_SECTION_PREFIX << kern_name
-	 << std::endl
-	 << "\t.p2align 1, 1, 1" << std::endl
-	 << "\t.byte ";
-
-  for (size_t i = 0; i < sizeof (phsa_kernel_descriptor); ++i)
-    {
-      strstr << "0x" << std::setw (2) << std::setfill ('0') << std::hex
-	     << (unsigned) *((unsigned char *) &desc + i);
-      if (i + 1 < sizeof (phsa_kernel_descriptor))
-	strstr << ", ";
-    }
-
-  strstr << std::endl << ".popsection" << std::endl << std::endl;
-
-  tree metadata_asm
-    = build_stmt (ASM_EXPR,
-		  build_string (strstr.str ().size (), strstr.str ().c_str ()),
-		  NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE);
-
-  append_to_statement_list_force (metadata_asm, &stmt_list);
+  emit_metadata (stmt_list);
 
   return launcher;
 }

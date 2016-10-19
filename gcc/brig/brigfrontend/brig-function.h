@@ -38,6 +38,8 @@ class brig_to_generic;
 #include <vector>
 #include <set>
 
+#include "phsa.h"
+
 typedef std::map<std::string, tree> label_index;
 typedef std::map<const BrigDirectiveVariable *, tree> variable_index;
 typedef std::vector<tree> tree_stl_vec;
@@ -89,8 +91,8 @@ public:
   void add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 		    tree_stmt_iterator *branch_after);
 
-  tree build_launcher_and_metadata (size_t group_segment_size,
-				    size_t private_segment_size);
+  tree emit_metadata (tree stmt_list);
+  tree emit_launcher_and_metadata ();
 
   tree append_statement (tree stmt);
 
@@ -198,6 +200,9 @@ public:
   std::vector<tree> m_called_functions;
 
   brig_to_generic *m_parent;
+  /* The metadata of the function that should be stored with the binary and
+     passed to the HSA runtime:  */
+  phsa_descriptor m_descriptor;
 
 private:
   /* Bookkeeping for the different HSA registers and their tree declarations

@@ -552,7 +552,7 @@ brig_code_entry_handler::build_tree_cst_element
   return cst;
 }
 
-/* Produce a tree constant type for the given birg constant (BRIG_CONST).
+/* Produce a tree constant type for the given BRIG constant (BRIG_CONST).
    TYPE should be the forced instruction type, otherwise the type is
    dictated by the BRIG_CONST.  */
 

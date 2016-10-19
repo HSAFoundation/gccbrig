@@ -542,6 +542,9 @@ brig_to_generic::finish_function ()
 
   if (!m_cf->m_is_kernel)
     {
+      tree bind_expr = m_cf->m_current_bind_expr;
+      tree stmts = BIND_EXPR_BODY (bind_expr);
+      m_cf->emit_metadata (stmts);
       m_cf->finish ();
       dump_function (m_cf);
       gimplify_function_tree (m_cf->m_func_decl);
@@ -550,7 +553,10 @@ brig_to_generic::finish_function ()
   pop_cfun ();
 
   if (m_cf->m_is_kernel)
+    /* Emit the kernel only at the very end so we can analyze the total
+       group and private memory usage.  */
     m_kernels.push_back (m_cf);
+
   m_finished_functions[m_cf->m_name] = m_cf;
   m_cf = NULL;
 }
@@ -724,7 +730,6 @@ brig_to_generic::write_globals ()
      and a metadata section for each built kernel.  */
   for (size_t i = 0; i < m_kernels.size (); ++i)
     {
-
       brig_function *f = m_kernels[i];
 
       /* Finish kernels now that we know the call graphs and their barrier
@@ -735,10 +740,20 @@ brig_to_generic::write_globals ()
       gimplify_function_tree (f->m_func_decl);
       cgraph_node::finalize_function (f->m_func_decl, true);
 
+      f->m_descriptor.is_kernel = 1;
       /* TODO: analyze the kernel's actual group and private segment usage
-	 using a call graph.  Now this is overly pessimistic.  */
-      tree launcher = f->build_launcher_and_metadata (group_segment_size (),
-						      private_segment_size ());
+	 using a call graph.  Now the private and group mem sizes are overly
+	 pessimistic in case of multiple kernels in the same module.  */
+      f->m_descriptor.group_segment_size = group_segment_size ();
+      f->m_descriptor.private_segment_size = private_segment_size ();
+
+      /* The kernarg size is rounded up to a multiple of 16 according to
+	 the PRM specs.  */
+      f->m_descriptor.kernarg_segment_size
+	= f->m_next_kernarg_offset + (16 - f->m_next_kernarg_offset % 16);
+      f->m_descriptor.kernarg_max_align = f->m_kernarg_max_align;
+
+      tree launcher = f->emit_launcher_and_metadata ();
 
       append_global (launcher);
 
