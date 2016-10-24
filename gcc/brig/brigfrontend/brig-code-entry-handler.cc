@@ -39,6 +39,7 @@
 #include "builtins.h"
 #include "phsa.h"
 #include "brig-builtins.h"
+#include "fold-const.h"
 
 brig_code_entry_handler::builtin_map brig_code_entry_handler::s_custom_builtins;
 
@@ -965,7 +966,7 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
    variable, if possible.  If not, just call the given builtin.
    BRIG_OPCODE and BRIG_TYPE identify the builtin's BRIG opcode/type,
    ARITH_TYPE its GENERIC type, and OPERANDS contains the builtin's
-   operands.  */
+   input operands.  */
 
 tree
 brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
@@ -975,76 +976,76 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 {
   if (m_parent.m_cf->m_is_kernel && can_expand_builtin (brig_opcode))
     return expand_builtin (brig_opcode, operands);
-  else
+
+  tree built_in
+    = get_builtin_for_hsa_opcode (arith_type, brig_opcode, brig_type);
+
+  if (!VECTOR_TYPE_P (TREE_TYPE (TREE_TYPE (built_in)))
+      && arith_type != NULL_TREE && VECTOR_TYPE_P (arith_type)
+      && brig_opcode != BRIG_OPCODE_LERP
+      && brig_opcode != BRIG_OPCODE_PACKCVT
+      && brig_opcode != BRIG_OPCODE_SAD
+      && brig_opcode != BRIG_OPCODE_SADHI)
     {
-      tree built_in
-	= get_builtin_for_hsa_opcode (arith_type, brig_opcode, brig_type);
+      /* Call the scalar built-in for all elements in the vector.  */
+      tree_stl_vec operand0_elements;
+      if (operands.size () > 0)
+	unpack (operands[0], operand0_elements);
 
-      if (!VECTOR_TYPE_P (TREE_TYPE (TREE_TYPE (built_in)))
-	  && arith_type != NULL_TREE && VECTOR_TYPE_P (arith_type)
-	  && brig_opcode != BRIG_OPCODE_LERP
-	  && brig_opcode != BRIG_OPCODE_PACKCVT
-	  && brig_opcode != BRIG_OPCODE_SAD
-	  && brig_opcode != BRIG_OPCODE_SADHI)
+      tree_stl_vec operand1_elements;
+      if (operands.size () > 1)
+	unpack (operands[1], operand1_elements);
+
+      tree_stl_vec result_elements;
+
+      for (size_t i = 0; i < TYPE_VECTOR_SUBPARTS (arith_type); ++i)
 	{
-	  /* Call the scalar built-in for all elements in the vector.  */
-	  tree_stl_vec operand0_elements;
-	  if (operands.size () > 0)
-	    unpack (operands[0], operand0_elements);
+	  tree_stl_vec call_operands;
+	  if (operand0_elements.size () > 0)
+	    call_operands.push_back (operand0_elements.at (i));
 
-	  tree_stl_vec operand1_elements;
-	  if (operands.size () > 1)
-	    unpack (operands[1], operand1_elements);
+	  if (operand1_elements.size () > 0)
+	    call_operands.push_back (operand1_elements.at (i));
 
-	  tree_stl_vec result_elements;
-
-	  for (size_t i = 0; i < TYPE_VECTOR_SUBPARTS (arith_type); ++i)
-	    {
-	      tree_stl_vec call_operands;
-	      if (operand0_elements.size () > 0)
-		call_operands.push_back (operand0_elements.at (i));
-
-	      if (operand1_elements.size () > 0)
-		call_operands.push_back (operand1_elements.at (i));
-
-	      result_elements.push_back
-		(expand_or_call_builtin (brig_opcode, brig_type,
-					 TREE_TYPE (arith_type),
-					 call_operands));
-	    }
-	  return pack (result_elements);
+	  result_elements.push_back
+	    (expand_or_call_builtin (brig_opcode, brig_type,
+				     TREE_TYPE (arith_type),
+				     call_operands));
 	}
-
-      tree_stl_vec call_operands;
-      tree_stl_vec operand_types;
-
-      tree arg_type_chain = TYPE_ARG_TYPES (TREE_TYPE (built_in));
-
-      for (size_t i = 0; i < operands.size (); ++i)
-	{
-	  tree operand_type = TREE_VALUE (arg_type_chain);
-	  call_operands.push_back (convert (operand_type, operands[i]));
-	  operand_types.push_back (operand_type);
-	  arg_type_chain = TREE_CHAIN (arg_type_chain);
-	}
-
-      if (needs_workitem_context_data (brig_opcode))
-	{
-	  call_operands.push_back (m_parent.m_cf->m_context_arg);
-	  operand_types.push_back (ptr_type_node);
-	  m_parent.m_cf->m_has_unexpanded_dp_builtins = true;
-	}
-
-      size_t operand_count = call_operands.size ();
-
-      call_operands.resize (4, NULL_TREE);
-      operand_types.resize (4, NULL_TREE);
-      return call_builtin (built_in, operand_count,
-			   TREE_TYPE (TREE_TYPE (built_in)), operand_types[0],
-			   call_operands[0], operand_types[1], call_operands[1],
-			   operand_types[2], call_operands[2], operand_types[3],
-			   call_operands[3]);
+      return pack (result_elements);
     }
+
+  tree_stl_vec call_operands;
+  tree_stl_vec operand_types;
+
+  tree arg_type_chain = TYPE_ARG_TYPES (TREE_TYPE (built_in));
+
+  for (size_t i = 0; i < operands.size (); ++i)
+    {
+      tree operand_type = TREE_VALUE (arg_type_chain);
+      call_operands.push_back (convert (operand_type, operands[i]));
+      operand_types.push_back (operand_type);
+      arg_type_chain = TREE_CHAIN (arg_type_chain);
+    }
+
+  if (needs_workitem_context_data (brig_opcode))
+    {
+      call_operands.push_back (m_parent.m_cf->m_context_arg);
+      operand_types.push_back (ptr_type_node);
+      m_parent.m_cf->m_has_unexpanded_dp_builtins = true;
+    }
+
+  size_t operand_count = call_operands.size ();
+
+  call_operands.resize (4, NULL_TREE);
+  operand_types.resize (4, NULL_TREE);
+  for (size_t i = 0; i < operand_count; ++i)
+    call_operands.at (i) = build_reinterpret_cast (operand_types.at (i),
+						   call_operands.at (i));
+
+  tree fnptr = build_fold_addr_expr (built_in);
+  return build_call_array (TREE_TYPE (TREE_TYPE (built_in)), fnptr,
+			   operand_count, &call_operands[0]);
 }
 
 /* Instead of calling a built-in, reuse a previously returned value known to
@@ -1186,7 +1187,7 @@ brig_code_entry_handler::build_h2f_conversion (tree source)
    performs half to float conversions, constant to correct type variable,
    and flush to zero (if applicable).  */
 
-std::vector<tree>
+tree_stl_vec
 brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 {
   /* Flush to zero.  */
@@ -1282,9 +1283,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	&& (brig_inst.type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16;
     }
 
-  /* Halfs are a tricky special case: their "storage format"
-     is u16, but scalars are stored in 32b regs while packed
-     f16 are... well packed.  */
+  /* Halfs are a tricky special case: their "storage format" is u16, but
+     scalars are stored in 32b regs while packed f16 are... well packed.  */
   tree half_storage_type = element_count > 1
 			     ? get_tree_type_for_hsa_type (brig_inst.type)
 			     : uint32_type_node;
@@ -1309,33 +1309,27 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
       if ((brig_inst.opcode == BRIG_OPCODE_SHL
 	   || brig_inst.opcode == BRIG_OPCODE_SHR)
 	  && i == 2)
-	{
 	  /* The shift amount is always a scalar.  */
-	  operand_type
-	    = VECTOR_TYPE_P (src_type) ? TREE_TYPE (src_type) : src_type;
-	}
+	operand_type
+	  = VECTOR_TYPE_P (src_type) ? TREE_TYPE (src_type) : src_type;
       else if (brig_inst.opcode == BRIG_OPCODE_SHUFFLE)
 	{
 	  if (i == 3)
-	    {
-	      /* HSAIL shuffle inputs the MASK vector as tightly packed bits
-		 while GENERIC VEC_PERM_EXPR expects the mask elements to be
-		 of the same size as the elements in the input vectors.  Let's
-		 cast to a scalar type here and convert to the VEC_PERM_EXPR
-		 format in instruction handling.  There are no arbitrary bit
-		 width int types in GENERIC so we cannot use the original
-		 vector type.  */
-	      operand_type = uint32_type_node;
-	    }
+	    /* HSAIL shuffle inputs the MASK vector as tightly packed bits
+	       while GENERIC VEC_PERM_EXPR expects the mask elements to be
+	       of the same size as the elements in the input vectors.  Let's
+	       cast to a scalar type here and convert to the VEC_PERM_EXPR
+	       format in instruction handling.  There are no arbitrary bit
+	       width int types in GENERIC so we cannot use the original
+	       vector type.  */
+	    operand_type = uint32_type_node;
 	  else
-	    {
-	      /* Always treat the element as unsigned ints to avoid
-		 sign extensions/negative offsets with masks, which
-		 are expected to be of the same element type as the
-		 data in VEC_PERM_EXPR.  With shuffles the data type
-		 should not matter as it's a "raw operation".  */
-	      operand_type = get_raw_tree_type (operand_type);
-	    }
+	    /* Always treat the element as unsigned ints to avoid
+	       sign extensions/negative offsets with masks, which
+	       are expected to be of the same element type as the
+	       data in VEC_PERM_EXPR.  With shuffles the data type
+	       should not matter as it's a "raw operation".  */
+	    operand_type = get_raw_tree_type (operand_type);
 	}
       else if (brig_inst.opcode == BRIG_OPCODE_PACK)
 	{
@@ -1347,40 +1341,32 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	    operand_type = uint32_type_node;
 	}
       else if (brig_inst.opcode == BRIG_OPCODE_UNPACK && i == 2)
-	{
-	  operand_type = uint32_type_node;
-	}
+	operand_type = uint32_type_node;
       else if (brig_inst.opcode == BRIG_OPCODE_SAD && i == 3)
-	{
-	  operand_type = uint32_type_node;
-	}
+	operand_type = uint32_type_node;
       else if (brig_inst.opcode == BRIG_OPCODE_CLASS && i == 2)
 	{
 	  operand_type = uint32_type_node;
 	  half_to_float = false;
 	}
       else if (half_to_float)
-	{
-	  /* Treat the operands as the storage type at this point.  */
-	  operand_type = half_storage_type;
-	}
+	/* Treat the operands as the storage type at this point.  */
+	operand_type = half_storage_type;
 
       tree operand = build_tree_operand (brig_inst, *operand_data, operand_type,
 					 !is_output);
-      if (operand == NULL_TREE)
-	gcc_unreachable ();
+
+      gcc_assert (operand);
 
       /* Cast/convert the inputs to correct types as expected by the GENERIC
 	 opcode instruction.  */
       if (!is_output)
 	{
 	  if (half_to_float)
-	    {
-	      operand = build_h2f_conversion
-		(build_reinterpret_cast (half_storage_type, operand));
-	    }
-	  else if (!(TREE_CODE (operand) == LABEL_DECL)
-		   && !(TREE_CODE (operand) == TREE_VEC)
+	    operand = build_h2f_conversion
+	      (build_reinterpret_cast (half_storage_type, operand));
+	  else if (TREE_CODE (operand) != LABEL_DECL
+		   && TREE_CODE (operand) != TREE_VEC
 		   && operand_data->kind != BRIG_KIND_OPERAND_ADDRESS
 		   && !VECTOR_TYPE_P (TREE_TYPE (operand)))
 	    {
@@ -1396,23 +1382,18 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 		    operand
 		      = convert_to_integer (signed_or_unsigned_type_for
 					    (TYPE_UNSIGNED (operand_type),
-					     operand_type),
-		       operand);
+					     operand_type), operand);
 		  else
-		    operand = build1 (VIEW_CONVERT_EXPR, operand_type, operand);
+		    operand = build_reinterpret_cast (operand_type, operand);
 		}
 	      else if (reg_width < instr_width)
-		{
-		  /* At least shift amount operands can be read from smaller
-		     registers than the data operands.  */
-		  operand = convert (operand_type, operand);
-		}
+		/* At least shift amount operands can be read from smaller
+		   registers than the data operands.  */
+		operand = convert (operand_type, operand);
 	    }
 	  else if (brig_inst.opcode == BRIG_OPCODE_SHUFFLE)
-	    {
-	      /* Force the operand type to be treated as the raw type.  */
-	      operand = build_reinterpret_cast (operand_type, operand);
-	    }
+	    /* Force the operand type to be treated as the raw type.  */
+	    operand = build_reinterpret_cast (operand_type, operand);
 
 	  if (brig_inst.opcode == BRIG_OPCODE_CMOV && i == 1)
 	    {
@@ -1428,7 +1409,6 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	  if (ftz)
 	    operand = flush_to_zero (is_fp16_arith) (*this, operand);
 	}
-
       operands.push_back (operand);
     }
   return operands;

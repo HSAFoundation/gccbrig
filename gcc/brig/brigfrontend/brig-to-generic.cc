@@ -594,7 +594,8 @@ void
 brig_to_generic::append_group_variable (const std::string &name, size_t size,
 					size_t alignment)
 {
-  size_t align_padding = m_next_group_offset % alignment;
+  size_t align_padding = m_next_group_offset % alignment == 0 ?
+    0 : (alignment - m_next_group_offset % alignment);
   m_next_group_offset += align_padding;
   m_group_offsets[name] = m_next_group_offset;
   if (alignment > size)
@@ -626,7 +627,8 @@ void
 brig_to_generic::append_private_variable (const std::string &name,
 					  size_t size, size_t alignment)
 {
-  size_t align_padding = m_next_private_offset % alignment;
+  size_t align_padding = m_next_private_offset % alignment == 0 ?
+    0 : (alignment - m_next_private_offset % alignment);
   m_next_private_offset += align_padding;
   m_private_offsets[name] = m_next_private_offset;
   if (alignment > size) size = alignment;
