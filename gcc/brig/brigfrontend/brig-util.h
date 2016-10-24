@@ -46,4 +46,7 @@ BrigType16_t gccbrig_tree_type_to_hsa_type (tree tree_type);
 
 bool might_be_host_defined_var (const BrigDirectiveVariable *brigVar);
 
+/* From hsa.h.  */
+bool hsa_type_packed_p (BrigType16_t type);
+
 #endif

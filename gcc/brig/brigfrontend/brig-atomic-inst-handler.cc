@@ -82,7 +82,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
 			     build_int_cst (atomic_ptype, 0));
       /* signal_wait* instructions can return spuriously before the
 	 condition becomes true.  Therefore it's legal to return
-	 right away.  TO OPTIMIZE: builtin calls which can be
+	 right away.  TODO: builtin calls which can be
 	 implemented with a power efficient sleep-wait.  */
       instr_expr = mem_ref;
     }

@@ -205,11 +205,39 @@ static tree
 brig_langhook_type_for_size (unsigned int bits,
 			     int unsignedp)
 {
-  if (bits == 64)
-    return unsignedp ? uint64_type_node : long_integer_type_node;
-  else if (bits == 32)
-    return unsignedp ? unsigned_type_node : integer_type_node;
-  return NULL_TREE;
+  /* Copied from go-lang.c  */
+  tree type;
+  if (unsignedp)
+    {
+      if (bits == INT_TYPE_SIZE)
+        type = unsigned_type_node;
+      else if (bits == CHAR_TYPE_SIZE)
+        type = unsigned_char_type_node;
+      else if (bits == SHORT_TYPE_SIZE)
+        type = short_unsigned_type_node;
+      else if (bits == LONG_TYPE_SIZE)
+        type = long_unsigned_type_node;
+      else if (bits == LONG_LONG_TYPE_SIZE)
+        type = long_long_unsigned_type_node;
+      else
+        type = make_unsigned_type(bits);
+    }
+  else
+    {
+      if (bits == INT_TYPE_SIZE)
+        type = integer_type_node;
+      else if (bits == CHAR_TYPE_SIZE)
+        type = signed_char_type_node;
+      else if (bits == SHORT_TYPE_SIZE)
+        type = short_integer_type_node;
+      else if (bits == LONG_TYPE_SIZE)
+        type = long_integer_type_node;
+      else if (bits == LONG_LONG_TYPE_SIZE)
+        type = long_long_integer_type_node;
+      else
+        type = make_signed_type(bits);
+    }
+  return type;
 }
 
 static tree
@@ -249,34 +277,13 @@ brig_langhook_type_for_mode (enum machine_mode mode, int unsignedp)
 	}
     }
   else if (mc == MODE_INT)
-    {
-      switch (GET_MODE_BITSIZE (mode))
-	{
-	case 8:
-	  gcc_assert (int_size_in_bytes (signed_char_type_node) == 1);
-	  return unsignedp ? unsigned_char_type_node : signed_char_type_node;
-	case 16:
-	  gcc_assert (int_size_in_bytes (short_integer_type_node) == 2);
-	  return unsignedp ? uint16_type_node : short_integer_type_node;
-	case 32:
-	  gcc_assert (int_size_in_bytes (integer_type_node) == 4);
-	  return unsignedp ? uint32_type_node : integer_type_node;
-	case 64:
-	  gcc_assert (int_size_in_bytes (long_integer_type_node) == 8);
-	  return unsignedp ? uint64_type_node : long_integer_type_node;
-	case 128:
-	  return build_nonstandard_integer_type (128, unsignedp);
-	default:
-	  gcc_unreachable ();
-	  return NULL_TREE;
-	}
-    }
+    return brig_langhook_type_for_size(GET_MODE_BITSIZE(mode), unsignedp);
   else
     {
       /* E.g., build_common_builtin_nodes () asks for modes/builtins
 	       we do not generate or need.  Just ignore them silently for now.
       */
-      return void_type_node;
+      return NULL_TREE;
     }
   return NULL_TREE;
 }
@@ -385,6 +392,8 @@ convert (tree type, tree expr)
       return fold (convert_to_real (type, expr));
     case VECTOR_TYPE:
       return build1 (VIEW_CONVERT_EXPR, type, expr);
+    case POINTER_TYPE:
+      return build1 (VIEW_CONVERT_EXPR, type, convert (size_type_node, expr));
     default:
       break;
     }

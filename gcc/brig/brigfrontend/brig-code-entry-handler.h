@@ -103,10 +103,12 @@ protected:
   /* HSAIL-specific builtin functions not yet integrated to gcc.  */
 
   static builtin_map s_custom_builtins;
-
-private:
-  tree get_raw_tree_type (tree original_type);
 };
+
+/* Implement the Visitor software pattern for performing various actions on
+   elements of vector operands.  This enables separating the vector element
+   traversal/extraction/packing code from whatever different actions are
+   performed to each element.  */
 
 class tree_element_unary_visitor
 {
@@ -293,8 +295,6 @@ private:
 
   tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
 					  BrigType16_t brig_type) const;
-
-  tree get_raw_type (tree orig_type);
 };
 
 class brig_cvt_inst_handler : public brig_inst_mod_handler

@@ -136,6 +136,12 @@ brig_to_generic::parse (const char *brig_blob)
 
   const BrigModuleHeader *mheader = (const BrigModuleHeader *) brig_blob;
 
+  if (strncmp (mheader->identification, "HSA BRIG", 8) != 0
+      || mheader->brigMajor != 1
+      || mheader->brigMinor != 0)
+    error ("File format not recognized. "
+	   "Currently only HSA BRIG 1.0 binaries supported.");
+
   m_data = m_code = m_operand = NULL;
 
   /* Find the positions of the different sections.  */
@@ -387,6 +393,12 @@ brig_to_generic::add_host_def_var_ptr (const std::string &name, tree var_decl)
   m_global_variables[var_name] = ptr_var;
 }
 
+/* Produce a "mangled name" for the given brig function or kernel.
+   The mangling is used to make unique global symbol name in case of
+   module scope functions.  Program scope functions are not mangled
+   (except for dropping the leading &), which makes the functions
+   directly visible for linking using the original function name.  */
+
 std::string
 brig_to_generic::get_mangled_name
 (const BrigDirectiveExecutable *func) const
@@ -471,12 +483,8 @@ tree
 build_reinterpret_cast (tree destination_type, tree source)
 {
 
-  if (!source || !destination_type || TREE_TYPE (source) == NULL_TREE
-      || destination_type == NULL_TREE)
-    {
-      gcc_unreachable ();
-      return NULL_TREE;
-    }
+  gcc_assert (source && destination_type && TREE_TYPE (source) != NULL_TREE
+	      && destination_type != NULL_TREE);
 
   tree source_type = TREE_TYPE (source);
   if (TREE_CODE (source) == CALL_EXPR)
@@ -493,14 +501,19 @@ build_reinterpret_cast (tree destination_type, tree source)
   if (src_size <= dst_size)
     {
       /* The src_size can be smaller at least with f16 scalars which are
-	 stored to 32b register variables.  */
-      tree conv = build1 (VIEW_CONVERT_EXPR, destination_type, source);
-      return conv;
+	 stored to 32b register variables.  First convert to an equivalent
+	 size unsigned type, then extend to an unsigned type of the
+	 target width, after which VIEW_CONVERT_EXPR can be used to
+	 force to the target type.  */
+      tree unsigned_temp = build1 (VIEW_CONVERT_EXPR,
+				   get_raw_tree_type (source_type),
+				   source);
+      return build1 (VIEW_CONVERT_EXPR, destination_type,
+		     convert (get_raw_tree_type (destination_type),
+			      unsigned_temp));
     }
   else
-    {
-      gcc_unreachable ();
-    }
+    gcc_unreachable ();
   return NULL_TREE;
 }
 
@@ -537,7 +550,7 @@ brig_to_generic::finish_function ()
 #if 0
   /* Enable to get dumps of the finished functions.  */
   debug_function (m_cf->m_func_decl,
-		  TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+                 TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
 #endif
 
   if (!m_cf->m_is_kernel)
@@ -546,16 +559,16 @@ brig_to_generic::finish_function ()
       tree stmts = BIND_EXPR_BODY (bind_expr);
       m_cf->emit_metadata (stmts);
       m_cf->finish ();
-      dump_function (m_cf);
+      dump_function (m_dump_file, m_cf);
       gimplify_function_tree (m_cf->m_func_decl);
       cgraph_node::finalize_function (m_cf->m_func_decl, true);
     }
-  pop_cfun ();
-
-  if (m_cf->m_is_kernel)
+  else
     /* Emit the kernel only at the very end so we can analyze the total
        group and private memory usage.  */
     m_kernels.push_back (m_cf);
+
+  pop_cfun ();
 
   m_finished_functions[m_cf->m_name] = m_cf;
   m_cf = NULL;
@@ -584,7 +597,8 @@ brig_to_generic::append_group_variable (const std::string &name, size_t size,
   size_t align_padding = m_next_group_offset % alignment;
   m_next_group_offset += align_padding;
   m_group_offsets[name] = m_next_group_offset;
-  if (alignment > size) size = alignment;
+  if (alignment > size)
+    size = alignment;
   m_next_group_offset += size;
 }
 
@@ -704,22 +718,6 @@ call_builtin (tree pdecl, int nargs, tree rettype, ...)
   return ret;
 }
 
-
-void
-brig_to_generic::dump_function (brig_function *f)
-{
-  /* Dump the BRIG-specific tree IR.  */
-  if (m_dump_file)
-    {
-      fprintf (m_dump_file, "\n;; Function %s", f->m_name.c_str ());
-      fprintf (m_dump_file, "\n;; enabled by -%s\n\n",
-	       dump_flag_name (TDI_original));
-      print_generic_decl (m_dump_file, f->m_func_decl, 0);
-      print_generic_expr (m_dump_file, f->m_current_bind_expr, 0);
-      fprintf (m_dump_file, "\n");
-    }
-}
-
 /* Generate all global declarations.  Should be called after the last
    BRIG has been fed in.  */
 
@@ -736,7 +734,7 @@ brig_to_generic::write_globals ()
 	 usage.  */
       f->finish_kernel ();
 
-      dump_function (f);
+      dump_function (m_dump_file, f);
       gimplify_function_tree (f->m_func_decl);
       cgraph_node::finalize_function (f->m_func_decl, true);
 
@@ -780,4 +778,39 @@ brig_to_generic::write_globals ()
 
   for (size_t i = 0; i < m_brig_blobs.size (); ++i)
     delete m_brig_blobs[i];
+}
+
+/* Returns a "raw type" (one with unsigned int elements) corresponding to the
+   size and element count of ORIGINAL_TYPE.  */
+
+tree
+get_raw_tree_type (tree original_type)
+{
+  if (VECTOR_TYPE_P (original_type))
+    {
+      size_t esize
+	= int_size_in_bytes (TREE_TYPE (original_type)) * BITS_PER_UNIT;
+      size_t ecount = TYPE_VECTOR_SUBPARTS (original_type);
+      return build_vector_type (build_nonstandard_integer_type (esize, true),
+				ecount);
+    }
+  else
+    return build_nonstandard_integer_type (int_size_in_bytes (original_type)
+					   * BITS_PER_UNIT,
+					   true);
+}
+
+void
+dump_function (FILE *dump_file, brig_function *f)
+{
+  /* Dump the BRIG-specific tree IR.  */
+  if (dump_file)
+    {
+      fprintf (dump_file, "\n;; Function %s", f->m_name.c_str ());
+      fprintf (dump_file, "\n;; enabled by -%s\n\n",
+	       dump_flag_name (TDI_original));
+      print_generic_decl (dump_file, f->m_func_decl, 0);
+      print_generic_expr (dump_file, f->m_current_bind_expr, 0);
+      fprintf (dump_file, "\n");
+    }
 }

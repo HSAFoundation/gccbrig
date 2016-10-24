@@ -66,7 +66,7 @@ public:
   visit_element (brig_code_entry_handler &, tree operand0, tree operand1)
   {
     /* Implement saturating arithmetics with scalar built-ins for now.
-       TO OPTIMIZE: emit GENERIC nodes for the simplest cases or at least
+       TODO: emit GENERIC nodes for the simplest cases or at least
        emit vector built-ins.  */
     return call_builtin (builtin, 2, TREE_TYPE (operand0),
 			 TREE_TYPE (operand0), operand0,
@@ -87,7 +87,7 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
 
   /* There is limited support for vector highpart mul nodes,
      and it probably depends on the target which ones are
-     supported.  TO DO: figure out a more robust way to ask this
+     supported.  TODO: figure out a more robust way to ask this
      from the target.  can_mult_highpart_p () from optabs.c seems
      not to be reliable enough.  */
 
@@ -101,16 +101,6 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
     return false;
 }
 
-/* Returns a "raw" type (unsigned integer) with the same bit width as
-   the given type.  */
-
-tree
-brig_basic_inst_handler::get_raw_type (tree orig_type)
-{
-  size_t esize = int_size_in_bytes (orig_type) * 8;
-  return build_nonstandard_integer_type (esize, true);
-}
-
 /* Implements a vector shuffle.  ARITH_TYPE is the type of the vector,
    OPERANDS[0] is the first vector, OPERAND[1] the second vector and
    OPERANDS[2] the shuffle mask in HSAIL format.  The output is a VEC_PERM_EXPR
@@ -119,7 +109,7 @@ brig_basic_inst_handler::get_raw_type (tree orig_type)
 tree
 brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
 {
-  tree element_type = get_raw_type (TREE_TYPE (TREE_TYPE (operands[0])));
+  tree element_type = get_raw_tree_type (TREE_TYPE (TREE_TYPE (operands[0])));
 
   /* Offsets to add to the mask values to convert from the
      HSAIL mask to VEC_PERM_EXPR masks.  VEC_PERM_EXPR mask
@@ -187,7 +177,7 @@ brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
   tree src_element_type = TREE_TYPE (TREE_TYPE (operands[0]));
 
   /* Perform the operations with a raw (unsigned int type) type.  */
-  tree element_type = get_raw_type (src_element_type);
+  tree element_type = get_raw_tree_type (src_element_type);
 
   vec<constructor_elt, va_gc> *input_mask_vals = NULL;
   vec<constructor_elt, va_gc> *and_mask_vals = NULL;
@@ -244,7 +234,7 @@ tree
 brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
 {
   /* Implement using a bit level insertion.
-     TO OPTIMIZE: Reuse this for implementing 'bitinsert'
+     TODO: Reuse this for implementing 'bitinsert'
      without a builtin call.  */
 
   size_t ecount = TYPE_VECTOR_SUBPARTS (TREE_TYPE (operands[0]));
@@ -286,7 +276,7 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
   tree zeroed_element
     = build2 (BIT_AND_EXPR, wide_type, src_vect, clearing_mask);
 
-  /* TO OPTIMIZE: Is the AND necessary: does HSA define what
+  /* TODO: Is the AND necessary: does HSA define what
      happens if the upper bits in the inserted element are not
      zero? */
   tree element_in_position
@@ -307,7 +297,7 @@ brig_basic_inst_handler::build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode,
 						tree arith_type,
 						tree_stl_vec &operands)
 {
-  tree element_type = get_raw_type (TREE_TYPE (arith_type));
+  tree element_type = get_raw_tree_type (TREE_TYPE (arith_type));
   tree mask_vec_type
     = build_vector_type (element_type, TYPE_VECTOR_SUBPARTS (arith_type));
 
@@ -418,7 +408,7 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	{
 	  /* Implement as 1.0/sqrt (x) and assume gcc instruction selects to
 	     native ISA other than a division, if available.
-	     TO OPTIMIZE: this will happen only with unsafe math optimizations
+	     TODO: this will happen only with unsafe math optimizations
 	     on which cannot be used in general to remain HSAIL compliant.
 	     Perhaps a builtin call would be better option here.  */
 	  return build2 (RDIV_EXPR, arith_type, build_one_cst (arith_type),
@@ -520,8 +510,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     = (brig_inst_type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
     && !gccbrig_is_raw_operation (brig_inst->opcode);
 
-  bool is_vec_instr = brig_inst_type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64
-					| BRIG_TYPE_PACK_128);
+  bool is_vec_instr = hsa_type_packed_p (brig_inst_type);
 
   bool scalarize = must_be_scalarized (brig_inst, instr_type);
 
@@ -593,7 +582,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 frontend, there should be a legalization phase before the backend
 	 that figures out the best way to compute this.
 
-	 TO OPTIMIZE: promote to larger vector types instead.  For example
+	 TODO: promote to larger vector types instead.  For example
 	 MULT_HIGHPART_EXPR with s8x8 doesn't work, but s16x8 seems to at least
 	 with my x86-64.
       */

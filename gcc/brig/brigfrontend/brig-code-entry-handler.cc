@@ -147,7 +147,6 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 
 	return build_constructor (vec_type, constructor_vals);
       }
-      break;
     case BRIG_KIND_OPERAND_CODE_LIST:
       {
 	/* Build a TREE_VEC of code expressions.  */
@@ -180,7 +179,6 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	  }
 	return vec;
       }
-      break;
     case BRIG_KIND_OPERAND_REGISTER:
       {
 	const BrigOperandRegister *brig_reg
@@ -212,7 +210,6 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	const BrigBase *ref = m_parent.get_brig_code_entry (brig_code_ref->ref);
 
 	return build_code_ref (*ref);
-	break;
       }
     case BRIG_KIND_OPERAND_ADDRESS:
       {
@@ -221,13 +218,11 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
       }
     default:
       gcc_unreachable ();
-      break;
     }
-  return NULL_TREE;
 }
 
-/* Build a tree node representing an address reference from
-   a BRIG_INST and its ADDR_OPERAND.  */
+/* Build a tree node representing an address reference from a BRIG_INST and its
+   ADDR_OPERAND.  */
 
 tree
 brig_code_entry_handler::build_address_operand
@@ -243,8 +238,8 @@ brig_code_entry_handler::build_address_operand
   else if (brig_inst.base.kind == BRIG_KIND_INST_ATOMIC)
     segment = ((const BrigInstAtomic &) brig_inst).segment;
 
-  tree ptr_base = NULL_TREE;
-  tree ptr_offset = NULL_TREE;
+  tree var_offset = NULL_TREE;
+  tree const_offset = NULL_TREE;
   tree symbol_base = NULL_TREE;
 
   if (addr_operand.symbol != 0)
@@ -264,13 +259,13 @@ brig_code_entry_handler::build_address_operand
 	  symbol_base = DECL_ARGUMENTS (func);
 	  uint64_t offset = m_parent.m_cf->kernel_arg_offset (arg_symbol);
 	  if (offset > 0)
-	    ptr_offset = build_int_cst (size_type_node, offset);
+	    const_offset = build_int_cst (size_type_node, offset);
 	}
       else if (segment == BRIG_SEGMENT_GROUP)
 	{
 
 	  uint64_t offset = m_parent.group_variable_segment_offset (var_name);
-	  ptr_offset = build_int_cst (size_type_node, offset);
+	  const_offset = build_int_cst (size_type_node, offset);
 	}
       else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
 	{
@@ -325,6 +320,11 @@ brig_code_entry_handler::build_address_operand
 
 	  tree var_offset
 	    = build2 (PLUS_EXPR, uint32_type_node, var_region, pos);
+
+	  /* In case of LDA this is returned directly as an integer value.
+	     For other mem-related instructions, we will convert this segment
+	     offset to a flat address by adding it as an offset to a (private
+	     or group) base pointer later on.  Same applies to group_var_offset.  */
 	  symbol_base
 	    = add_temp_var ("priv_var_offset",
 			    convert (size_type_node, var_offset));
@@ -392,19 +392,17 @@ brig_code_entry_handler::build_address_operand
 
   if (brig_inst.opcode != BRIG_OPCODE_LDA)
     {
-      /* In case of lda_* we want to return the segment address
-	 because it's used as a value, perhaps in address
-	 computation and later converted explicitly to
-	 a flat address.
-	 In case of other instructions with memory operands
-	 we produce the flat address directly here
-	 (assuming the target does not have a separate address space
-	 for group/private segments for now).  */
+      /* In case of lda_* we want to return the segment address because it's
+	 used as a value, perhaps in address computation and later converted
+	 explicitly to a flat address.
+
+	 In case of other instructions with memory operands we produce the flat
+	 address directly here (assuming the target does not have a separate
+	 address space for group/private segments for now).  */
       if (segment == BRIG_SEGMENT_GROUP)
-	{
-	  symbol_base = m_parent.m_cf->m_group_base_arg;
-	}
-      else if (segment == BRIG_SEGMENT_PRIVATE || segment == BRIG_SEGMENT_SPILL)
+	symbol_base = m_parent.m_cf->m_group_base_arg;
+      else if (segment == BRIG_SEGMENT_PRIVATE
+	       || segment == BRIG_SEGMENT_SPILL)
 	{
 	  if (symbol_base != NULL_TREE)
 	    symbol_base = build2 (POINTER_PLUS_EXPR, ptr_type_node,
@@ -421,13 +419,13 @@ brig_code_entry_handler::build_address_operand
 	= (const BrigOperandRegister *) m_parent.get_brig_operand_entry
 	(addr_operand.reg);
       tree base_reg_var = m_parent.m_cf->get_m_var_declfor_reg (mem_base_reg);
-      ptr_base = convert_to_pointer (ptr_type_node, base_reg_var);
+      var_offset = convert_to_pointer (ptr_type_node, base_reg_var);
 
-      gcc_assert (ptr_base != NULL_TREE);
+      gcc_assert (var_offset != NULL_TREE);
     }
   uint64_t offs = gccbrig_to_uint64_t (addr_operand.offset);
   if (offs > 0)
-    ptr_offset = build_int_cst (size_type_node, offs);
+    const_offset = build_int_cst (size_type_node, offs);
   /* The pointer type we use to access the memory.  Should be of the
      width of the load/store instruction, not the target/data
      register.  */
@@ -435,29 +433,36 @@ brig_code_entry_handler::build_address_operand
 
   gcc_assert (ptype != NULL_TREE);
 
-  /* Sum up the base + offset separately to ensure byte-based ptr
-     arithmetics.  In case of symbol + offset or reg + offset,
-     this is enough.  Note: the base can be actually a separate
-     (base + offset) in case of accessing private or group
-     memory through offsetting the hidden base pointer argument.  */
-  tree addr = ptr_base;
-  if (addr == NULL_TREE)
-    addr = symbol_base;
-  if (addr != NULL_TREE && ptr_offset != NULL_TREE)
-    addr = build2 (POINTER_PLUS_EXPR, ptr_type_node, addr, ptr_offset);
+  tree addr = NULL_TREE;
+  if (symbol_base != NULL_TREE && var_offset != NULL_TREE)
+    {
+      /* The most complex addressing mode: symbol + reg [+ const offset].  */
+      addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
+		     convert (ptr_type_node, symbol_base),
+		     convert (size_type_node, var_offset));
+    }
+  else if (var_offset != NULL)
+    {
+      addr = var_offset;
+    }
+  else if (symbol_base != NULL)
+    {
+      addr = symbol_base;
+    }
 
-  if (symbol_base != NULL_TREE && ptr_base != NULL_TREE)
-    /* The most complex addressing mode: symbol + reg [+ offset].  */
-    addr = build2 (POINTER_PLUS_EXPR, ptr_type_node, addr,
-		   convert (size_type_node, symbol_base));
-  else if (addr == NULL_TREE && ptr_offset != NULL_TREE)
-    /* At least direct module-scope global group symbol access with LDA
-       has only the ptr_offset.  Group base ptr is not added as LDA should
-       return the segment address, not the flattened one.  */
-    addr = ptr_offset;
-  else if (addr == NULL_TREE)
-    gcc_unreachable ();
+  if (const_offset != NULL_TREE)
+    {
+      if (addr == NULL_TREE)
+	/* At least direct module-scope global group symbol access with LDA
+	   has only the const_offset.  Group base ptr is not added as LDA should
+	   return the segment address, not the flattened one.  */
+	addr = const_offset;
+      else
+	addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
+		       addr, convert (size_type_node, const_offset));
+    }
 
+  gcc_assert (addr != NULL_TREE);
   return convert_to_pointer (ptype, addr);
 }
 
@@ -565,9 +570,7 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
   tree cst = NULL_TREE;
 
   if (type == NULL_TREE)
-    {
-      type = get_tree_type_for_hsa_type (brig_const->type);
-    }
+    type = get_tree_type_for_hsa_type (brig_const->type);
 
   /* The type of a single (scalar) element inside an array,
      vector or an array of vectors.  */
@@ -577,7 +580,7 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
 
   vec<constructor_elt, va_gc> *constructor_vals = NULL;
 
-  if (type != NULL && TREE_CODE (type) == ARRAY_TYPE)
+  if (TREE_CODE (type) == ARRAY_TYPE)
     tree_element_type = TREE_TYPE (type);
 
   size_t bytes_left = data->byteCount;
@@ -629,8 +632,8 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
     return cst;
 }
 
-/* Produce a GENERIC type for the given HSA/BRIG type.  Returns
-   the element type in case of vector instructions.  */
+/* Produce a GENERIC type for the given HSA/BRIG type.  Returns the element
+   type in case of vector instructions.  */
 
 tree
 brig_code_entry_handler::get_tree_type_for_hsa_type
@@ -638,11 +641,10 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
 {
   tree tree_type = NULL_TREE;
 
-  if (brig_type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64 | BRIG_TYPE_PACK_128))
+  if (hsa_type_packed_p (brig_type))
     {
       /* The element type is encoded in the bottom 5 bits.  */
-      BrigType16_t inner_brig_type
-	= brig_type & BRIG_TYPE_BASE_MASK;
+      BrigType16_t inner_brig_type = brig_type & BRIG_TYPE_BASE_MASK;
 
       unsigned full_size = gccbrig_hsa_type_bit_size (brig_type);
 
@@ -720,7 +722,7 @@ brig_code_entry_handler::get_tree_type_for_hsa_type
     }
 
   /* Drop const qualifiers.  */
-  return build_type_variant (tree_type, false, false);
+  return tree_type;
 }
 
 /* Return the matching tree instruction arithmetics type for the
@@ -952,7 +954,7 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMABSID:
     case BRIG_OPCODE_WORKGROUPSIZE:
     case BRIG_OPCODE_CURRENTWORKGROUPSIZE:
-      /* TO OPTIMIZE: expand more builtins.  */
+      /* TODO: expand more builtins.  */
       return true;
     default:
       return false;
@@ -1179,26 +1181,6 @@ brig_code_entry_handler::build_h2f_conversion (tree source)
   return half_to_float () (*this, source);
 }
 
-/* Returns a "raw type" (one with unsigned int elements) corresponding to the
-   size and element count of ORIGINAL_TYPE.  */
-
-tree
-brig_code_entry_handler::get_raw_tree_type (tree original_type)
-{
-  if (VECTOR_TYPE_P (original_type))
-    {
-      size_t esize
-	= int_size_in_bytes (TREE_TYPE (original_type)) * BITS_PER_UNIT;
-      size_t ecount = TYPE_VECTOR_SUBPARTS (original_type);
-      return build_vector_type (build_nonstandard_integer_type (esize, true),
-				ecount);
-    }
-  else
-    return build_nonstandard_integer_type (int_size_in_bytes (original_type)
-					   * BITS_PER_UNIT,
-					   true);
-}
-
 /* Builds and "normalizes" the dest and source operands for the instruction
    execution; converts the input operands to the expected instruction type,
    performs half to float conversions, constant to correct type variable,
@@ -1222,8 +1204,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
       ftz = cmp->modifier & BRIG_ALU_FTZ;
     }
 
-  bool is_vec_instr = brig_inst.type & (BRIG_TYPE_PACK_32 | BRIG_TYPE_PACK_64
-					| BRIG_TYPE_PACK_128);
+  bool is_vec_instr = hsa_type_packed_p (brig_inst.type);
 
   size_t element_count;
   if (is_vec_instr)
@@ -1841,3 +1822,4 @@ brig_code_entry_handler::int_constant_value (tree node)
     n = TREE_OPERAND (n, 0);
   return int_cst_value (n);
 }
+

@@ -128,8 +128,6 @@ public:
   std::string m_module_name;
 
 private:
-  void dump_function (brig_function *f);
-
   /* The BRIG blob and its different sections of the file currently being
      parsed.  */
   const char *m_brig;
@@ -175,13 +173,20 @@ private:
   int m_dump_flags;
 };
 
+/* Produce a "mangled name" for the given brig variable.  The mangling is used
+   to make unique global symbol names for module and function scope variables.
+   The templated version is suitable for most of the variable types.  Functions
+   and kernels (BrigDirectiveExecutable) are handled with a specialized
+   get_mangled_name() version.  */
+
 template <typename T>
 std::string
 brig_to_generic::get_mangled_name_tmpl (const T *brigVar) const
 {
   std::string var_name = get_string (brigVar->name).substr (1);
 
-  /* Mangle the variable name using the function name and the module name.  */
+  /* Mangle the variable name using the function name and the module name
+     in case of a function scope variable.  */
   if (m_cf != NULL
       && m_cf->has_function_scope_var (&brigVar->base))
     var_name = m_cf->m_name + "." + var_name;
@@ -213,5 +218,9 @@ tree call_builtin (tree pdecl, int nargs, tree rettype, ...);
 tree build_reinterpret_cast (tree destination_type, tree source);
 
 tree build_stmt (enum tree_code code, ...);
+
+tree get_raw_tree_type (tree type);
+
+void dump_function (FILE *dump_file, brig_function *f);
 
 #endif
