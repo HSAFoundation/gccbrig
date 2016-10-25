@@ -76,6 +76,10 @@ public:
   tree builtin;
 };
 
+/* Returns true in case the given BRIG_INST with vector operands cannot be
+   mapped to tree nodes as vector computation, but must be unpacked and each
+   element computed with separate scalar instructions.  */
+
 bool
 brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
 					     tree instr_type) const
@@ -85,20 +89,11 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
   if (brig_inst->opcode != BRIG_OPCODE_MULHI)
     return false;
 
-  /* There is limited support for vector highpart mul nodes,
-     and it probably depends on the target which ones are
-     supported.  TODO: figure out a more robust way to ask this
-     from the target.  can_mult_highpart_p () from optabs.c seems
-     not to be reliable enough.  */
-
-  size_t elements = TYPE_VECTOR_SUBPARTS (instr_type);
-  BrigType16_t element_type = brig_inst->type & BRIG_TYPE_BASE_MASK;
-  if (elements < 16
-      && (element_type == BRIG_TYPE_S8 || element_type == BRIG_TYPE_U8
-	  || element_type == BRIG_TYPE_S16 || element_type == BRIG_TYPE_U16))
-    return true;
-  else
-    return false;
+  /* There is limited support for vector highpart mul nodes, and it probably
+     depends on the target which ones are supported and _tested_.  For the sake
+     of robustness, always return false here to force scalarization for all
+     targets.  TODO: report bugs of the non-working cases. */
+  return false;
 }
 
 /* Implements a vector shuffle.  ARITH_TYPE is the type of the vector,
@@ -107,7 +102,8 @@ brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
    that implements the shuffle as a GENERIC expression.  */
 
 tree
-brig_basic_inst_handler::build_shuffle (tree arith_type, tree_stl_vec &operands)
+brig_basic_inst_handler::build_shuffle (tree arith_type,
+					tree_stl_vec &operands)
 {
   tree element_type = get_raw_tree_type (TREE_TYPE (TREE_TYPE (operands[0])));
 
