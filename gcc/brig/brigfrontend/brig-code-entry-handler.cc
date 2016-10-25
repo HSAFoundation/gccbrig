@@ -229,7 +229,7 @@ tree
 brig_code_entry_handler::build_address_operand
   (const BrigInstBase &brig_inst, const BrigOperandAddress &addr_operand)
 {
-  tree instr_type = get_tree_type_for_hsa_type (brig_inst.type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
 
   BrigSegment8_t segment = BRIG_SEGMENT_GLOBAL;
   if (brig_inst.opcode == BRIG_OPCODE_LDA)
@@ -492,7 +492,7 @@ brig_code_entry_handler::build_tree_cst_element
   (BrigType16_t element_type, const unsigned char *next_data) const
 {
 
-  tree tree_element_type = get_tree_type_for_hsa_type (element_type);
+  tree tree_element_type = gccbrig_tree_type_for_hsa_type (element_type);
 
   tree cst;
   switch (element_type)
@@ -571,7 +571,7 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
   tree cst = NULL_TREE;
 
   if (type == NULL_TREE)
-    type = get_tree_type_for_hsa_type (brig_const->type);
+    type = gccbrig_tree_type_for_hsa_type (brig_const->type);
 
   /* The type of a single (scalar) element inside an array,
      vector or an array of vectors.  */
@@ -633,99 +633,6 @@ brig_code_entry_handler::get_tree_cst_for_hsa_operand
     return cst;
 }
 
-/* Produce a GENERIC type for the given HSA/BRIG type.  Returns the element
-   type in case of vector instructions.  */
-
-tree
-brig_code_entry_handler::get_tree_type_for_hsa_type
-  (BrigType16_t brig_type) const
-{
-  tree tree_type = NULL_TREE;
-
-  if (hsa_type_packed_p (brig_type))
-    {
-      /* The element type is encoded in the bottom 5 bits.  */
-      BrigType16_t inner_brig_type = brig_type & BRIG_TYPE_BASE_MASK;
-
-      unsigned full_size = gccbrig_hsa_type_bit_size (brig_type);
-
-      if (inner_brig_type == BRIG_TYPE_F16)
-	return build_vector_type (get_tree_type_for_hsa_type (BRIG_TYPE_U16),
-				  full_size / 16);
-
-      tree inner_type = get_tree_type_for_hsa_type (inner_brig_type);
-
-      unsigned inner_size = gccbrig_hsa_type_bit_size (inner_brig_type);
-      unsigned nunits = full_size / inner_size;
-      tree_type = build_vector_type (inner_type, nunits);
-    }
-  else
-    {
-      switch (brig_type)
-	{
-	case BRIG_TYPE_NONE:
-	  tree_type = void_type_node;
-	  break;
-	case BRIG_TYPE_B1:
-	  tree_type = boolean_type_node;
-	  break;
-	case BRIG_TYPE_S8:
-	case BRIG_TYPE_S16:
-	case BRIG_TYPE_S32:
-	case BRIG_TYPE_S64:
-	  /* Ensure a fixed width integer.  */
-	  tree_type
-	    = build_nonstandard_integer_type
-	    (gccbrig_hsa_type_bit_size (brig_type), false);
-	  break;
-	case BRIG_TYPE_U8:
-	  return unsigned_char_type_node;
-	case BRIG_TYPE_U16:
-	case BRIG_TYPE_U32:
-	case BRIG_TYPE_U64:
-	case BRIG_TYPE_B8: /* Handle bit vectors as unsigned ints.  */
-	case BRIG_TYPE_B16:
-	case BRIG_TYPE_B32:
-	case BRIG_TYPE_B64:
-	case BRIG_TYPE_B128:
-	case BRIG_TYPE_SIG32: /* Handle signals as integers for now.  */
-	case BRIG_TYPE_SIG64:
-	  tree_type = build_nonstandard_integer_type
-	    (gccbrig_hsa_type_bit_size (brig_type), true);
-	  break;
-	case BRIG_TYPE_F16:
-	  tree_type = uint16_type_node;
-	  break;
-	case BRIG_TYPE_F32:
-	  tree_type = m_parent.s_fp32_type;
-	  break;
-	case BRIG_TYPE_F64:
-	  tree_type = m_parent.s_fp64_type;
-	  break;
-	case BRIG_TYPE_SAMP:
-	case BRIG_TYPE_ROIMG:
-	case BRIG_TYPE_WOIMG:
-	case BRIG_TYPE_RWIMG:
-	  {
-	    /* Handle images and samplers as target-specific blobs of data
-	       that should be allocated earlier on from the runtime side.
-	       Create a void* that should be initialized to point to the blobs
-	       by the kernel launcher.  Images and samplers are accessed
-	       via builtins that take void* as the reference.  TODO: who and
-	       how these arrays should be initialized?  */
-	    tree void_ptr = build_pointer_type (void_type_node);
-	    return void_ptr;
-	  }
-	default:
-	  gcc_unreachable ();
-	  break;
-	}
-    }
-
-  /* Drop const qualifiers.  */
-  return tree_type;
-}
-
 /* Return the matching tree instruction arithmetics type for the
    given BRIG_TYPE.  The aritmethics type is the one with which
    computation is done (in contrast to the storage type).  F16
@@ -744,7 +651,7 @@ brig_code_entry_handler::get_tree_expr_type_for_hsa_type
       return build_vector_type (m_parent.s_fp32_type, element_count);
     }
   else
-    return get_tree_type_for_hsa_type (brig_type);
+    return gccbrig_tree_type_for_hsa_type (brig_type);
 }
 
 /* In case the HSA instruction must be implemented using a builtin,
@@ -896,7 +803,7 @@ brig_code_entry_handler::get_comparison_result_type (tree source_type)
 	 TYPE_VECTOR_SUBPARTS (source_type));
     }
   else
-    return get_tree_type_for_hsa_type (BRIG_TYPE_B1);
+    return gccbrig_tree_type_for_hsa_type (BRIG_TYPE_B1);
 }
 
 /* Returns true in case the given opcode needs to know about work-item context
@@ -1224,8 +1131,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
   if (base->kind == BRIG_KIND_INST_CMP)
     {
       const BrigInstCmp *cmp_inst = (const BrigInstCmp *) base;
-      src_type = get_tree_type_for_hsa_type (cmp_inst->sourceType);
-      dest_type = get_tree_type_for_hsa_type (brig_inst.type);
+      src_type = gccbrig_tree_type_for_hsa_type (cmp_inst->sourceType);
+      dest_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
       is_fp16_arith
 	= (cmp_inst->sourceType & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16;
     }
@@ -1233,8 +1140,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
     {
       const BrigInstSourceType *src_type_inst
 	= (const BrigInstSourceType *) base;
-      src_type = get_tree_type_for_hsa_type (src_type_inst->sourceType);
-      dest_type = get_tree_type_for_hsa_type (brig_inst.type);
+      src_type = gccbrig_tree_type_for_hsa_type (src_type_inst->sourceType);
+      dest_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
       is_fp16_arith
 	= (src_type_inst->sourceType & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
 	&& !gccbrig_is_raw_operation (brig_inst.opcode);
@@ -1242,12 +1149,12 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
   else if (base->kind == BRIG_KIND_INST_SEG_CVT)
     {
       const BrigInstSegCvt *seg_cvt_inst = (const BrigInstSegCvt *) base;
-      src_type = get_tree_type_for_hsa_type (seg_cvt_inst->sourceType);
-      dest_type = get_tree_type_for_hsa_type (brig_inst.type);
+      src_type = gccbrig_tree_type_for_hsa_type (seg_cvt_inst->sourceType);
+      dest_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
     }
   else if (base->kind == BRIG_KIND_INST_MEM)
     {
-      src_type = get_tree_type_for_hsa_type (brig_inst.type);
+      src_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
       dest_type = src_type;
       /* With mem instructions we don't want to cast the fp16
 	 back and forth between fp32, because the load/stores
@@ -1258,8 +1165,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
     {
       const BrigInstCvt *cvt_inst = (const BrigInstCvt *) base;
 
-      src_type = get_tree_type_for_hsa_type (cvt_inst->sourceType);
-      dest_type = get_tree_type_for_hsa_type (brig_inst.type);
+      src_type = gccbrig_tree_type_for_hsa_type (cvt_inst->sourceType);
+      dest_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
     }
   else
     {
@@ -1274,7 +1181,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	  src_type = uint32_type_node;
 	  break;
 	default:
-	  src_type = get_tree_type_for_hsa_type (brig_inst.type);
+	  src_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
 	  break;
 	}
       dest_type = src_type;
@@ -1286,7 +1193,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
   /* Halfs are a tricky special case: their "storage format" is u16, but
      scalars are stored in 32b regs while packed f16 are... well packed.  */
   tree half_storage_type = element_count > 1
-			     ? get_tree_type_for_hsa_type (brig_inst.type)
+			     ? gccbrig_tree_type_for_hsa_type (brig_inst.type)
 			     : uint32_type_node;
 
   const BrigData *operand_entries
@@ -1476,7 +1383,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
       /* Expand/unpack the input value to the given vector elements.  */
       size_t i;
       tree input = inst_expr;
-      tree element_type = get_tree_type_for_hsa_type (brig_inst.type);
+      tree element_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
       tree element;
       tree last_assign = NULL_TREE;
       FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (output), i, element)

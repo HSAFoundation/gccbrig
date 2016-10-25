@@ -23,6 +23,7 @@
 #include "tree-pretty-print.h"
 #include "print-tree.h"
 #include "errors.h"
+#include "brig-util.h"
 
 size_t
 brig_copy_move_inst_handler::operator () (const BrigBase *base)
@@ -31,8 +32,8 @@ brig_copy_move_inst_handler::operator () (const BrigBase *base)
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
   const BrigInstSourceType *inst_src_type = (const BrigInstSourceType *) base;
 
-  tree source_type = get_tree_type_for_hsa_type (inst_src_type->sourceType);
-  tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree source_type = gccbrig_tree_type_for_hsa_type (inst_src_type->sourceType);
+  tree dest_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
 
   tree input = build_tree_operand_from_brig (brig_inst, source_type, 1);
   tree output = build_tree_operand_from_brig (brig_inst, dest_type, 0);

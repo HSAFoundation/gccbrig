@@ -491,7 +491,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     brig_inst_type
       = gccbrig_tree_type_to_hsa_type (TREE_TYPE (in_operands[0]));
 
-  tree instr_type = get_tree_type_for_hsa_type (brig_inst_type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst_type);
 
   if (!instr_type)
     {
@@ -529,7 +529,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
      operation.  This is not always the same as the original BRIG
      opcode's type due to implicit conversions of storage-only f16.  */
   tree arith_type = gccbrig_is_raw_operation (brig_inst->opcode)
-		      ? get_tree_type_for_hsa_type (brig_inst_type)
+		      ? gccbrig_tree_type_for_hsa_type (brig_inst_type)
 		      : get_tree_expr_type_for_hsa_type (brig_inst_type);
 
   tree instr_expr = NULL_TREE;
@@ -597,19 +597,26 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       tree promoted_type = short_integer_type_node;
       switch (element_type)
 	{
-	default:
 	case BRIG_TYPE_S8:
-	  promoted_type = short_integer_type_node;
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_S16);
 	  break;
 	case BRIG_TYPE_U8:
-	  promoted_type = short_unsigned_type_node;
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U16);
 	  break;
 	case BRIG_TYPE_S16:
-	  promoted_type = integer_type_node;
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_S32);
 	  break;
 	case BRIG_TYPE_U16:
-	  promoted_type = unsigned_type_node;
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U32);
 	  break;
+	case BRIG_TYPE_S32:
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_S64);
+	  break;
+	case BRIG_TYPE_U32:
+	  promoted_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U64);
+	  break;
+	default:
+	  gcc_unreachable ();
 	}
 
       size_t promoted_type_size = int_size_in_bytes (promoted_type) * 8;
@@ -656,7 +663,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 to keep data in vector registers as much as possible
 	 to avoid copies between scalar and vector datapaths.  */
       tree old_value;
-      tree half_storage_type = get_tree_type_for_hsa_type (brig_inst_type);
+      tree half_storage_type = gccbrig_tree_type_for_hsa_type (brig_inst_type);
       if (is_fp16_operation)
 	old_value = build_h2f_conversion
 	  (build_reinterpret_cast (half_storage_type, operands[0]));

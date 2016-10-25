@@ -29,6 +29,7 @@
 #include "tree-pretty-print.h"
 #include "print-tree.h"
 #include "diagnostic-core.h"
+#include "brig-util.h"
 
 const BrigAluModifier8_t *
 brig_cvt_inst_handler::modifier (const BrigBase *base) const
@@ -68,7 +69,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
   bool src_is_fp16 = cvt_inst->sourceType == BRIG_TYPE_F16;
 
   /* The conversion destination type.  */
-  tree dest_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree dest_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
 
   bool dest_is_fp16 = brig_inst->type == BRIG_TYPE_F16;
 
@@ -98,11 +99,11 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
       else /* Find a matching size int type for the REAL type.  */
 	{
 	  if (conv_src_size == 2)
-	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U16);
+	    unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U16);
 	  else if (conv_src_size == 4)
-	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U32);
+	    unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U32);
 	  else if (conv_src_size == 8)
-	    unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
+	    unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U64);
 	  else
 	    gcc_unreachable ();
 	}
@@ -142,17 +143,17 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	  tree and_mask = NULL_TREE;
 	  if (conv_src_size == 2)
 	    {
-	      unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U16);
+	      unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U16);
 	      and_mask = build_int_cst (unsigned_int_type, 0x7FFF);
 	    }
 	  else if (conv_src_size == 4)
 	    {
-	      unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U32);
+	      unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U32);
 	      and_mask = build_int_cst (unsigned_int_type, 0x7FFFFFFF);
 	    }
 	  else if (conv_src_size == 8)
 	    {
-	      unsigned_int_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
+	      unsigned_int_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U64);
 	      and_mask = build_int_cst (unsigned_int_type, 0x7FFFFFFFFFFFFFFF);
 	    }
 	  else
@@ -166,7 +167,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	}
       /* The result from the comparison is a boolean, convert it to such.  */
       conversion_result
-	= convert_to_integer (get_tree_type_for_hsa_type (BRIG_TYPE_B1),
+	= convert_to_integer (gccbrig_tree_type_for_hsa_type (BRIG_TYPE_B1),
 			      conversion_result);
     }
   else if (dest_is_fp16)

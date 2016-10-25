@@ -43,8 +43,9 @@ bool gccbrig_is_float_type (BrigType16_t type);
 bool gccbrig_is_raw_operation (BrigOpcode16_t opcode);
 
 BrigType16_t gccbrig_tree_type_to_hsa_type (tree tree_type);
+tree gccbrig_tree_type_for_hsa_type (BrigType16_t brig_type);
 
-bool might_be_host_defined_var (const BrigDirectiveVariable *brigVar);
+bool gccbrig_might_be_host_defined_var_p (const BrigDirectiveVariable *brigVar);
 
 /* From hsa.h.  */
 bool hsa_type_packed_p (BrigType16_t type);

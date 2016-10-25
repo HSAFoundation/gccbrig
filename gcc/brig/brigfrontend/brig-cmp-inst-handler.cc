@@ -35,7 +35,7 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
   tree cmp_type = get_tree_expr_type_for_hsa_type (inst->sourceType);
 
   /* The destination type to convert the comparison result to.  */
-  tree dest_type = get_tree_type_for_hsa_type (inst_base->type);
+  tree dest_type = gccbrig_tree_type_for_hsa_type (inst_base->type);
 
   const bool is_fp16_dest
     = (inst_base->type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16;

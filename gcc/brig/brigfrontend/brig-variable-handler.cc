@@ -45,7 +45,7 @@ brig_directive_variable_handler::build_variable
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
       tree element_type
-	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
+	= gccbrig_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
 	gcc_unreachable ();
@@ -59,7 +59,7 @@ brig_directive_variable_handler::build_variable
     }
   else
     {
-      t = get_tree_type_for_hsa_type (brigVar->type);
+      t = gccbrig_tree_type_for_hsa_type (brigVar->type);
       var_size = tree_to_uhwi (TYPE_SIZE (t)) / 8;
       alignment = var_size;
     }
@@ -142,7 +142,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
       tree element_type
-	= get_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
+	= gccbrig_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
       if (element_count == 0)
 	gcc_unreachable ();
@@ -153,7 +153,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
     }
   else
     {
-      var_type = get_tree_type_for_hsa_type (brigVar->type);
+      var_type = gccbrig_tree_type_for_hsa_type (brigVar->type);
       var_size = tree_to_uhwi (TYPE_SIZE (var_type)) / 8;
       natural_align = var_size;
     }
@@ -210,7 +210,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	  /* We have a definition already for this declaration.
 	     Use the definition instead of the declaration.  */
 	}
-      else if (might_be_host_defined_var (brigVar))
+      else if (gccbrig_might_be_host_defined_var_p (brigVar))
 	{
 	  tree var_decl = build_variable (brigVar);
 	  m_parent.add_host_def_var_ptr (var_name, var_decl);

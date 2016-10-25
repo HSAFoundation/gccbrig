@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "brig-code-entry-handler.h"
 #include "errors.h"
 #include "diagnostic-core.h"
+#include "brig-util.h"
 
 brig_lane_inst_handler::brig_lane_inst_handler (brig_to_generic &parent)
   : brig_code_entry_handler (parent)
@@ -48,7 +49,7 @@ brig_lane_inst_handler::operator () (const BrigBase *base)
     }
   else if (inst.base.opcode == BRIG_OPCODE_ACTIVELANEMASK)
     {
-      tree u64_type = get_tree_type_for_hsa_type (BRIG_TYPE_U64);
+      tree u64_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U64);
       tree zero_cst = build_zero_cst (u64_type);
       expr = build2 (NE_EXPR, u64_type, zero_cst, operands[1]);
 

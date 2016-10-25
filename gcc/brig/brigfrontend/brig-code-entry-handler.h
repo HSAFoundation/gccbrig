@@ -48,7 +48,6 @@ public:
 
 protected:
 
-  tree get_tree_type_for_hsa_type (BrigType16_t brig_type) const;
   tree get_tree_expr_type_for_hsa_type (BrigType16_t brig_type) const;
   tree get_tree_cst_for_hsa_operand (const BrigOperandConstantBytes *brigConst,
 				     tree type) const;

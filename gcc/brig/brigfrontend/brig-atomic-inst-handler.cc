@@ -46,7 +46,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
   const int first_input
     = gccbrig_hsa_opcode_op_output_p (inst.opcode, 0) ? 1 : 0;
 
-  tree instr_type = get_tree_type_for_hsa_type (inst.type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (inst.type);
 
   /* Utilize the atomic data types (from C++11 support) for implementing
      atomic operations.  */

@@ -338,7 +338,7 @@ gccbrig_is_raw_operation (BrigOpcode16_t opcode)
    or from the host.  */
 
 bool
-might_be_host_defined_var (const BrigDirectiveVariable *brigVar)
+gccbrig_might_be_host_defined_var_p (const BrigDirectiveVariable *brigVar)
 {
   bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
   return
@@ -346,4 +346,99 @@ might_be_host_defined_var (const BrigDirectiveVariable *brigVar)
     && brigVar->linkage == BRIG_LINKAGE_PROGRAM
     && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM
     || brigVar->allocation == BRIG_ALLOCATION_AGENT);
+}
+
+/* Produce a GENERIC type for the given HSA/BRIG type.  Returns the element
+   type in case of vector instructions.  */
+
+tree
+gccbrig_tree_type_for_hsa_type (BrigType16_t brig_type)
+{
+  tree tree_type = NULL_TREE;
+
+  if (hsa_type_packed_p (brig_type))
+    {
+      /* The element type is encoded in the bottom 5 bits.  */
+      BrigType16_t inner_brig_type = brig_type & BRIG_TYPE_BASE_MASK;
+
+      unsigned full_size = gccbrig_hsa_type_bit_size (brig_type);
+
+      if (inner_brig_type == BRIG_TYPE_F16)
+	return build_vector_type (gccbrig_tree_type_for_hsa_type (BRIG_TYPE_U16),
+				  full_size / 16);
+
+      tree inner_type = gccbrig_tree_type_for_hsa_type (inner_brig_type);
+
+      unsigned inner_size = gccbrig_hsa_type_bit_size (inner_brig_type);
+      unsigned nunits = full_size / inner_size;
+      tree_type = build_vector_type (inner_type, nunits);
+    }
+  else
+    {
+      switch (brig_type)
+	{
+	case BRIG_TYPE_NONE:
+	  tree_type = void_type_node;
+	  break;
+	case BRIG_TYPE_B1:
+	  tree_type = boolean_type_node;
+	  break;
+	case BRIG_TYPE_S8:
+	case BRIG_TYPE_S16:
+	case BRIG_TYPE_S32:
+	case BRIG_TYPE_S64:
+	  /* Ensure a fixed width integer.  */
+	  tree_type
+	    = build_nonstandard_integer_type
+	    (gccbrig_hsa_type_bit_size (brig_type), false);
+	  break;
+	case BRIG_TYPE_U8:
+	  return unsigned_char_type_node;
+	case BRIG_TYPE_U16:
+	case BRIG_TYPE_U32:
+	case BRIG_TYPE_U64:
+	case BRIG_TYPE_B8: /* Handle bit vectors as unsigned ints.  */
+	case BRIG_TYPE_B16:
+	case BRIG_TYPE_B32:
+	case BRIG_TYPE_B64:
+	case BRIG_TYPE_B128:
+	case BRIG_TYPE_SIG32: /* Handle signals as integers for now.  */
+	case BRIG_TYPE_SIG64:
+	  tree_type = build_nonstandard_integer_type
+	    (gccbrig_hsa_type_bit_size (brig_type), true);
+	  break;
+	case BRIG_TYPE_F16:
+	  tree_type = uint16_type_node;
+	  break;
+	case BRIG_TYPE_F32:
+	  /* TODO: make sure that the alignment of the float are at least as
+	     strict than mandated by HSA, and conform to IEEE (like mandated
+	     by HSA).  */
+	  tree_type = float_type_node;
+	  break;
+	case BRIG_TYPE_F64:
+	  tree_type = double_type_node;
+	  break;
+	case BRIG_TYPE_SAMP:
+	case BRIG_TYPE_ROIMG:
+	case BRIG_TYPE_WOIMG:
+	case BRIG_TYPE_RWIMG:
+	  {
+	    /* Handle images and samplers as target-specific blobs of data
+	       that should be allocated earlier on from the runtime side.
+	       Create a void* that should be initialized to point to the blobs
+	       by the kernel launcher.  Images and samplers are accessed
+	       via builtins that take void* as the reference.  TODO: who and
+	       how these arrays should be initialized?  */
+	    tree void_ptr = build_pointer_type (void_type_node);
+	    return void_ptr;
+	  }
+	default:
+	  gcc_unreachable ();
+	  break;
+	}
+    }
+
+  /* Drop const qualifiers.  */
+  return tree_type;
 }

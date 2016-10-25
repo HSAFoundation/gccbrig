@@ -78,11 +78,8 @@ brig_to_generic::brig_to_generic ()
   SET_TYPE_ALIGN (s_fp16_type, 16);
   layout_type (s_fp16_type);
 
-  /* TODO: make sure that the alignment of these types created in tree.c
-     are at least as strict than mandated by HSA, and conform to
-     IEEE (like mandated by HSA).  */
-  s_fp32_type = float_type_node;
-  s_fp64_type = double_type_node;
+  s_fp32_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_F32);
+  s_fp64_type = gccbrig_tree_type_for_hsa_type (BRIG_TYPE_F64);
 
   /* TODO: (machine)query the preferred rounding mode that is set by
      the machine by default.  This can be redefined by each BRIG module

@@ -144,7 +144,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
       return base->byteCount;
     }
 
-  tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
   tree_stl_vec operands = build_operands (*brig_inst);
 
   if (brig_inst->opcode == BRIG_OPCODE_BR)

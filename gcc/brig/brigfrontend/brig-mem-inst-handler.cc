@@ -41,7 +41,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
       gcc_unreachable ();
     }
 
-  tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
 
   if (VECTOR_TYPE_P (TREE_TYPE (data)))
     instr_type = TREE_TYPE (data);
@@ -100,7 +100,7 @@ brig_mem_inst_handler::operator () (const BrigBase *base)
       return base->byteCount;
     }
 
-  tree instr_type = get_tree_type_for_hsa_type (brig_inst->type);
+  tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
 
   const BrigData *operand_entries
     = m_parent.get_brig_data_entry (brig_inst->operands);
