@@ -76,26 +76,6 @@ public:
   tree builtin;
 };
 
-/* Returns true in case the given BRIG_INST with vector operands cannot be
-   mapped to tree nodes as vector computation, but must be unpacked and each
-   element computed with separate scalar instructions.  */
-
-bool
-brig_basic_inst_handler::must_be_scalarized (const BrigInstBase *brig_inst,
-					     tree instr_type) const
-{
-  if (!VECTOR_TYPE_P (instr_type))
-    return false;
-  if (brig_inst->opcode != BRIG_OPCODE_MULHI)
-    return false;
-
-  /* There is limited support for vector highpart mul nodes, and it probably
-     depends on the target which ones are supported and _tested_.  For the sake
-     of robustness, always return false here to force scalarization for all
-     targets.  TODO: report bugs of the non-working cases. */
-  return false;
-}
-
 /* Implements a vector shuffle.  ARITH_TYPE is the type of the vector,
    OPERANDS[0] is the first vector, OPERAND[1] the second vector and
    OPERANDS[2] the shuffle mask in HSAIL format.  The output is a VEC_PERM_EXPR
@@ -508,8 +488,6 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
   bool is_vec_instr = hsa_type_packed_p (brig_inst_type);
 
-  bool scalarize = must_be_scalarized (brig_inst, instr_type);
-
   size_t element_count;
   size_t element_size_bits;
   if (is_vec_instr)
@@ -566,17 +544,22 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	  return base->byteCount;
 	}
     }
-  else if (opcode == MULT_HIGHPART_EXPR && scalarize)
+  else if (opcode == MULT_HIGHPART_EXPR &&
+	   is_vec_instr && element_size_bits < 64)
     {
       /* MULT_HIGHPART_EXPR works only on target dependent vector sizes and
 	 even the scalars do not seem to work at least for char elements.
 
 	 Let's fall back to scalarization and promotion of the vector elements
-	 to larger types.
+	 to larger types with the MULHI computed as a regular MUL.
+	 MULHI for 2x64b seems to work with the Intel CPUs I've tested so
+	 that is passed on for vector processing so there is no need for
+	 128b scalar arithmetics.
 
 	 This is not modular as these type of things do not belong to the
 	 frontend, there should be a legalization phase before the backend
-	 that figures out the best way to compute this.
+	 that figures out the best way to compute the MULHI for any
+	 integer vector datatype.
 
 	 TODO: promote to larger vector types instead.  For example
 	 MULT_HIGHPART_EXPR with s8x8 doesn't work, but s16x8 seems to at least
