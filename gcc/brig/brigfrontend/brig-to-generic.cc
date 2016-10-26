@@ -133,11 +133,12 @@ brig_to_generic::parse (const char *brig_blob)
 
   const BrigModuleHeader *mheader = (const BrigModuleHeader *) brig_blob;
 
-  if (strncmp (mheader->identification, "HSA BRIG", 8) != 0
-      || mheader->brigMajor != 1
-      || mheader->brigMinor != 0)
-    error ("File format not recognized. "
-	   "Currently only HSA BRIG 1.0 binaries supported.");
+  if (strncmp (mheader->identification, "HSA BRIG", 8) != 0)
+    fatal_error (UNKNOWN_LOCATION, PHSA_ERROR_PREFIX_INCOMPATIBLE_MODULE
+		 "Unrecognized file format.");
+  if (mheader->brigMajor != 1 || mheader->brigMinor != 0)
+    fatal_error (UNKNOWN_LOCATION, PHSA_ERROR_PREFIX_INCOMPATIBLE_MODULE
+		 "BRIG version not supported. BRIG 1.0 required.");
 
   m_data = m_code = m_operand = NULL;
 
