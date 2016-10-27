@@ -7791,6 +7791,12 @@ $as_echo "#define ENABLE_HSA 1" >>confdefs.h
 
 fi
 
+if echo "$enable_languages" | grep "brig" > /dev/null; then
+
+$as_echo "#define ENABLE_BRIG_FE 1" >>confdefs.h
+
+fi
+
 
 # Check whether --with-multilib-list was given.
 if test "${with_multilib_list+set}" = set; then :
@@ -18476,7 +18482,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 18479 "configure"
+#line 18485 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -18582,7 +18588,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 18585 "configure"
+#line 18591 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
