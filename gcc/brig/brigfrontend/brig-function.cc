@@ -336,9 +336,6 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
      is, declare temporaries for new definitions inside the loop body, not at
      function scope.  */
 
-  /* TODO: Initialize the iteration variable.  Assume always starting
-     from 0.  */
-
   tree ivar_init = build2 (MODIFY_EXPR, TREE_TYPE (ivar), ivar,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
@@ -382,7 +379,8 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 void
 brig_function::analyze_calls ()
 {
-  if (m_calls_analyzed) return;
+  if (m_calls_analyzed)
+    return;
 
   /* Set this early to not get stuck in case of recursive call graphs.
      This is safe because if the function calls itself, either the function

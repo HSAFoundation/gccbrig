@@ -223,6 +223,8 @@ public:
 
   tree build_variable (const BrigDirectiveVariable *brigVar,
 		       tree_code var_decltype = VAR_DECL);
+
+  size_t get_brig_var_alignment (const BrigDirectiveVariable *brigVar);
 };
 
 class brig_directive_fbarrier_handler : public brig_code_entry_handler
@@ -282,7 +284,7 @@ private:
   bool must_be_scalarized (const BrigInstBase *brig_inst,
 			   tree instr_type) const;
 
-  tree build_instr_expr (BrigOpcode16_t brig_opcode, BrigType16_t brig_type,
+  tree build_inst_expr (BrigOpcode16_t brig_opcode, BrigType16_t brig_type,
 			 tree arith_type, tree_stl_vec &operands);
 
   tree build_shuffle (tree arith_type, tree_stl_vec &operands);

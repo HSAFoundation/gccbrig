@@ -70,6 +70,9 @@ gccbrig_hsa_type_bit_size (BrigType16_t t)
 
   switch (t)
     {
+    case BRIG_TYPE_NONE:
+      return 0;
+
     case BRIG_TYPE_B1:
       return 1;
 
@@ -126,8 +129,8 @@ gccbrig_hsa_type_bit_size (BrigType16_t t)
       return 128;
 
     default:
-      /* Uknown size.  */
-      return 0;
+      printf ("HMM %d %x\n", t, t);
+      gcc_unreachable ();
     }
 }
 
@@ -320,7 +323,7 @@ gccbrig_tree_type_to_hsa_type (tree tree_type)
    that is, not having operand type depending semantical differences.  */
 
 bool
-gccbrig_is_raw_operation (BrigOpcode16_t opcode)
+gccbrig_is_bit_operation (BrigOpcode16_t opcode)
 {
   return opcode == BRIG_OPCODE_CMOV || opcode == BRIG_OPCODE_SHUFFLE
 	 || opcode == BRIG_OPCODE_UNPACK || opcode == BRIG_OPCODE_UNPACKLO
@@ -341,11 +344,10 @@ bool
 gccbrig_might_be_host_defined_var_p (const BrigDirectiveVariable *brigVar)
 {
   bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
-  return
-    brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition
+  return brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition
     && brigVar->linkage == BRIG_LINKAGE_PROGRAM
     && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM
-    || brigVar->allocation == BRIG_ALLOCATION_AGENT);
+	|| brigVar->allocation == BRIG_ALLOCATION_AGENT);
 }
 
 /* Produce a GENERIC type for the given HSA/BRIG type.  Returns the element

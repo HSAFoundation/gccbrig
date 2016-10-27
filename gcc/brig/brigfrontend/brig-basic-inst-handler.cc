@@ -43,7 +43,7 @@ class scalarized_sat_arithmetics : public tree_element_binary_visitor
 {
 public:
   scalarized_sat_arithmetics (const BrigInstBase &brig_inst)
-    : brig_inst_ (brig_inst)
+    : m_brig_inst (brig_inst)
   {
     BrigType16_t element_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
 
@@ -56,7 +56,7 @@ public:
 #define DEF_HSAIL_SAT_BUILTIN(ENUM, BRIG_OPCODE, HSAIL_TYPE,		\
 			      NAME, TYPE, ATTRS)			\
     if (brig_inst.opcode == BRIG_OPCODE && element_type == HSAIL_TYPE)	\
-      builtin = builtin_decl_explicit (ENUM);				\
+      m_builtin = builtin_decl_explicit (ENUM);				\
     else
 #include "hsail-builtins.def"
       gcc_unreachable ();
@@ -68,12 +68,12 @@ public:
     /* Implement saturating arithmetics with scalar built-ins for now.
        TODO: emit GENERIC nodes for the simplest cases or at least
        emit vector built-ins.  */
-    return call_builtin (builtin, 2, TREE_TYPE (operand0),
+    return call_builtin (m_builtin, 2, TREE_TYPE (operand0),
 			 TREE_TYPE (operand0), operand0,
 			 TREE_TYPE (operand1), operand1);
   }
-  const BrigInstBase &brig_inst_;
-  tree builtin;
+  const BrigInstBase &m_brig_inst;
+  tree m_builtin;
 };
 
 /* Implements a vector shuffle.  ARITH_TYPE is the type of the vector,
@@ -85,7 +85,8 @@ tree
 brig_basic_inst_handler::build_shuffle (tree arith_type,
 					tree_stl_vec &operands)
 {
-  tree element_type = get_raw_tree_type (TREE_TYPE (TREE_TYPE (operands[0])));
+  tree element_type
+    = get_unsigned_int_type (TREE_TYPE (TREE_TYPE (operands[0])));
 
   /* Offsets to add to the mask values to convert from the
      HSAIL mask to VEC_PERM_EXPR masks.  VEC_PERM_EXPR mask
@@ -153,7 +154,7 @@ brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
   tree src_element_type = TREE_TYPE (TREE_TYPE (operands[0]));
 
   /* Perform the operations with a raw (unsigned int type) type.  */
-  tree element_type = get_raw_tree_type (src_element_type);
+  tree element_type = get_unsigned_int_type (src_element_type);
 
   vec<constructor_elt, va_gc> *input_mask_vals = NULL;
   vec<constructor_elt, va_gc> *and_mask_vals = NULL;
@@ -189,7 +190,7 @@ brig_basic_inst_handler::build_unpack (tree_stl_vec &operands)
 
   tree cleared = build2 (BIT_AND_EXPR, vec_type, perm, and_mask_vec);
 
-  size_t s = int_size_in_bytes (TREE_TYPE (cleared)) * 8;
+  size_t s = int_size_in_bytes (TREE_TYPE (cleared)) * BITS_PER_UNIT;
   tree raw_type = build_nonstandard_integer_type (s, true);
 
   tree as_int = build_reinterpret_cast (raw_type, cleared);
@@ -214,7 +215,7 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
      without a builtin call.  */
 
   size_t ecount = TYPE_VECTOR_SUBPARTS (TREE_TYPE (operands[0]));
-  size_t vecsize = int_size_in_bytes (TREE_TYPE (operands[0])) * 8;
+  size_t vecsize = int_size_in_bytes (TREE_TYPE (operands[0])) * BITS_PER_UNIT;
   tree wide_type = build_nonstandard_integer_type (vecsize, 1);
 
   tree src_vect = build_reinterpret_cast (wide_type, operands[0]);
@@ -232,7 +233,7 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
   pos = add_temp_var ("pos", convert (wide_type, t));
 
   tree element_type = TREE_TYPE (TREE_TYPE (operands[0]));
-  size_t element_width = int_size_in_bytes (element_type) * 8;
+  size_t element_width = int_size_in_bytes (element_type) * BITS_PER_UNIT;
   tree ewidth = build_int_cstu (wide_type, element_width);
 
   tree bitoffset = build2 (MULT_EXPR, wide_type, ewidth, pos);
@@ -273,7 +274,7 @@ brig_basic_inst_handler::build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode,
 						tree arith_type,
 						tree_stl_vec &operands)
 {
-  tree element_type = get_raw_tree_type (TREE_TYPE (arith_type));
+  tree element_type = get_unsigned_int_type (TREE_TYPE (arith_type));
   tree mask_vec_type
     = build_vector_type (element_type, TYPE_VECTOR_SUBPARTS (arith_type));
 
@@ -301,21 +302,15 @@ brig_basic_inst_handler::build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode,
 /* Builds a basic instruction expression from a BRIG instruction.  BRIG_OPCODE
    is the opcode, BRIG_TYPE the brig type of the instruction, ARITH_TYPE the
    desired tree type for the instruction, and OPERANDS the instruction's
-   operands already converted to tree nodes.  */
+   input operands already converted to tree nodes.  */
 
 tree
-brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
-					   BrigType16_t brig_type,
-					   tree arith_type,
-					   tree_stl_vec &operands)
+brig_basic_inst_handler::build_inst_expr (BrigOpcode16_t brig_opcode,
+					  BrigType16_t brig_type,
+					  tree arith_type,
+					  tree_stl_vec &operands)
 {
-  const int first_input
-    = gccbrig_hsa_opcode_op_output_p (brig_opcode, 0) ? 1 : 0;
-
   tree_code opcode = get_tree_code_for_hsa_opcode (brig_opcode, brig_type);
-
-  size_t input_count = operands.size ();
-  size_t output_count = first_input;
 
   BrigType16_t inner_type = brig_type & BRIG_TYPE_BASE_MASK;
 
@@ -341,6 +336,10 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
 	operands[1] = build_vector_from_val (arith_type, operands[1]);
       operands[1] = build2 (BIT_AND_EXPR, arith_type, operands[1], mask);
     }
+
+  size_t input_count = operands.size ();
+  size_t output_count = gccbrig_hsa_opcode_op_output_p (brig_opcode, 0) ?
+    1 : 0;
 
   if (opcode == TREE_LIST)
     {
@@ -435,6 +434,10 @@ brig_basic_inst_handler::build_instr_expr (BrigOpcode16_t brig_opcode,
   return NULL_TREE;
 }
 
+/* Handles the basic instructions, including packed instructions. Deals
+   with the different packing modes by unpacking/packing the wanted
+   elements.  Delegates most of the instruction cases to build_inst_expr(). */
+
 size_t
 brig_basic_inst_handler::operator () (const BrigBase *base)
 {
@@ -442,10 +445,8 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
   tree_stl_vec operands = build_operands (*brig_inst);
 
-  const int first_input
+  size_t output_count
     = gccbrig_hsa_opcode_op_output_p (brig_inst->opcode, 0) ? 1 : 0;
-
-  size_t output_count = first_input;
   size_t input_count
     = operands.size () == 0 ? 0 : (operands.size () - output_count);
 
@@ -479,23 +480,17 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       return base->byteCount;
     }
 
-  tree_code opcode
-    = get_tree_code_for_hsa_opcode (brig_inst->opcode, brig_inst_type);
-
-  bool is_fp16_operation
-    = (brig_inst_type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
-    && !gccbrig_is_raw_operation (brig_inst->opcode);
-
   bool is_vec_instr = hsa_type_packed_p (brig_inst_type);
 
-  size_t element_count;
   size_t element_size_bits;
+  size_t element_count;
+
   if (is_vec_instr)
     {
       BrigType16_t brig_element_type = brig_inst_type & BRIG_TYPE_BASE_MASK;
       element_size_bits = gccbrig_hsa_type_bit_size (brig_element_type);
       element_count = gccbrig_hsa_type_bit_size (brig_inst_type)
-		      / gccbrig_hsa_type_bit_size (brig_element_type);
+	/ gccbrig_hsa_type_bit_size (brig_element_type);
     }
   else
     {
@@ -506,7 +501,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
   /* The actual arithmetics type that should be performed with the
      operation.  This is not always the same as the original BRIG
      opcode's type due to implicit conversions of storage-only f16.  */
-  tree arith_type = gccbrig_is_raw_operation (brig_inst->opcode)
+  tree arith_type = gccbrig_is_bit_operation (brig_inst->opcode)
 		      ? gccbrig_tree_type_for_hsa_type (brig_inst_type)
 		      : get_tree_expr_type_for_hsa_type (brig_inst_type);
 
@@ -522,6 +517,9 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     in_operands[1] = build_lower_element_broadcast (in_operands[1]);
   else if (p == BRIG_PACK_SP || p == BRIG_PACK_SPSAT)
     in_operands[0] = build_lower_element_broadcast (in_operands[0]);
+
+  tree_code opcode
+    = get_tree_code_for_hsa_opcode (brig_inst->opcode, brig_inst_type);
 
   if (p >= BRIG_PACK_PPSAT && p <= BRIG_PACK_PSAT)
     {
@@ -627,7 +625,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 correct builtin.  */
       if (brig_inst->opcode == BRIG_OPCODE_CLASS)
 	brig_inst_type = ((const BrigInstSourceType *) base)->sourceType;
-      instr_expr = build_instr_expr (brig_inst->opcode, brig_inst_type,
+      instr_expr = build_inst_expr (brig_inst->opcode, brig_inst_type,
 				     arith_type, in_operands);
     }
 
@@ -647,6 +645,10 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 	 to avoid copies between scalar and vector datapaths.  */
       tree old_value;
       tree half_storage_type = gccbrig_tree_type_for_hsa_type (brig_inst_type);
+      bool is_fp16_operation
+	= (brig_inst_type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
+	&& !gccbrig_is_bit_operation (brig_inst->opcode);
+
       if (is_fp16_operation)
 	old_value = build_h2f_conversion
 	  (build_reinterpret_cast (half_storage_type, operands[0]));
@@ -725,10 +727,11 @@ brig_basic_inst_handler::build_lower_element_broadcast (tree vec_operand)
 }
 
 /* Returns the tree code that should be used to implement the given
-   HSA instruction opcode (BRIG_OPCODE) for the given type of
-   instruction (BRIG_TYPE). Return NULL_TREE in case the opcode cannot be
-   mapped to the tree directly, but should be either emulated with a number of
-   tree nodes or a builtin.  */
+   HSA instruction opcode (BRIG_OPCODE) for the given type of instruction
+   (BRIG_TYPE).  In case the opcode cannot be mapped to a TREE node directly,
+   returns TREE_LIST (if it can be emulated with a simple chain of tree
+   nodes) or CALL_EXPR if the opcode should be implemented using a builtin
+   call.  */
 
 tree_code
 brig_basic_inst_handler::get_tree_code_for_hsa_opcode

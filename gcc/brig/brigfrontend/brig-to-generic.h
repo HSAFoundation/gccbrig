@@ -219,7 +219,7 @@ tree build_reinterpret_cast (tree destination_type, tree source);
 
 tree build_stmt (enum tree_code code, ...);
 
-tree get_raw_tree_type (tree type);
+tree get_unsigned_int_type (tree type);
 
 void dump_function (FILE *dump_file, brig_function *f);
 

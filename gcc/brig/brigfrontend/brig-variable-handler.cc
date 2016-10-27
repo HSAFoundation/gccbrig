@@ -40,8 +40,6 @@ brig_directive_variable_handler::build_variable
 
   tree var_decl;
   tree t;
-  size_t alignment;
-  size_t var_size;
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
       tree element_type
@@ -53,34 +51,24 @@ brig_directive_variable_handler::build_variable
 	t = build_pointer_type (element_type);
       else
 	t = build_array_type_nelts (element_type, element_count);
-      size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
-      alignment = element_size / 8;
-      var_size = element_size * element_count / 8;
     }
   else
     {
       t = gccbrig_tree_type_for_hsa_type (brigVar->type);
-      var_size = tree_to_uhwi (TYPE_SIZE (t)) / 8;
-      alignment = var_size;
     }
+
+  size_t alignment = get_brig_var_alignment (brigVar);
 
   if (brigVar->segment == BRIG_SEGMENT_READONLY
       || brigVar->segment == BRIG_SEGMENT_KERNARG
       || (brigVar->modifier & BRIG_VARIABLE_CONST))
-    {
-      TYPE_READONLY (t) = 1;
-    }
-  TYPE_ADDR_SPACE (t) = gccbrig_get_target_addr_space_id (brigVar->segment);
+    TYPE_READONLY (t) = 1;
 
-  /* Non-default alignment.  */
-  if (brigVar->align != BRIG_ALIGNMENT_NONE)
-    {
-      alignment = 1 << (brigVar->align - 1);
-    }
+  TYPE_ADDR_SPACE (t) = gccbrig_get_target_addr_space_id (brigVar->segment);
 
   var_decl = build_decl (UNKNOWN_LOCATION, var_decltype, name_identifier, t);
 
-  SET_DECL_ALIGN (var_decl, alignment * 8);
+  SET_DECL_ALIGN (var_decl, alignment * BITS_PER_UNIT);
 
   /* Force the HSA alignments.  */
   DECL_USER_ALIGN (var_decl) = 1;
@@ -103,15 +91,11 @@ brig_directive_variable_handler::build_variable
 
       tree initializer = NULL_TREE;
       if (cst_operand_data->kind == BRIG_KIND_OPERAND_CONSTANT_BYTES)
-	{
-	  initializer = get_tree_cst_for_hsa_operand
-	    ((const BrigOperandConstantBytes *) cst_operand_data, t);
-	}
+	initializer = get_tree_cst_for_hsa_operand
+	  ((const BrigOperandConstantBytes *) cst_operand_data, t);
       else
-	{
-	  error ("variable initializers of type %x not implemented",
-		 cst_operand_data->kind);
-	}
+	error ("variable initializers of type %x not implemented",
+	       cst_operand_data->kind);
       gcc_assert (initializer != NULL_TREE);
       DECL_INITIAL (var_decl) = initializer;
     }
@@ -137,7 +121,7 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 {
   const BrigDirectiveVariable *brigVar = (const BrigDirectiveVariable *) base;
 
-  size_t var_size, alignment, natural_align;
+  size_t var_size;
   tree var_type;
   if (brigVar->type & BRIG_TYPE_ARRAY)
     {
@@ -148,19 +132,15 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 	gcc_unreachable ();
       var_type = build_array_type_nelts (element_type, element_count);
       size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
-      natural_align = element_size / 8;
       var_size = element_size * element_count / 8;
     }
   else
     {
       var_type = gccbrig_tree_type_for_hsa_type (brigVar->type);
       var_size = tree_to_uhwi (TYPE_SIZE (var_type)) / 8;
-      natural_align = var_size;
     }
 
-  size_t def_alignment
-    = brigVar->align == BRIG_ALIGNMENT_NONE ? 0 : 1 << (brigVar->align - 1);
-  alignment = def_alignment > natural_align ? def_alignment : natural_align;
+  size_t alignment = get_brig_var_alignment (brigVar);
 
   if (m_parent.m_cf != NULL)
     m_parent.m_cf->m_function_scope_vars.insert (base);
@@ -253,3 +233,31 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
   return base->byteCount;
 }
 
+/* Returns the alignment for the given BRIG variable.  In case the variable
+   explicitly defines alignment and its larger than the natural alignment,
+   returns it instead of the natural one.  */
+
+size_t
+brig_directive_variable_handler::get_brig_var_alignment
+(const BrigDirectiveVariable *brigVar)
+{
+
+  size_t defined_alignment
+    = brigVar->align == BRIG_ALIGNMENT_NONE ? 0 : 1 << (brigVar->align - 1);
+  size_t natural_alignment;
+  if (brigVar->type & BRIG_TYPE_ARRAY)
+    {
+      tree element_type
+	= gccbrig_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
+      size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
+      natural_alignment = element_size / BITS_PER_UNIT;
+    }
+  else
+    {
+      tree t = gccbrig_tree_type_for_hsa_type (brigVar->type);
+      natural_alignment = tree_to_uhwi (TYPE_SIZE (t)) / BITS_PER_UNIT;
+    }
+
+  return natural_alignment > defined_alignment
+    ? natural_alignment : defined_alignment;
+}

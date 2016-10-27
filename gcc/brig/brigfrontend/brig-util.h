@@ -40,7 +40,7 @@ std::string gccbrig_segment_name (BrigSegment8_t segment);
 
 bool gccbrig_is_float_type (BrigType16_t type);
 
-bool gccbrig_is_raw_operation (BrigOpcode16_t opcode);
+bool gccbrig_is_bit_operation (BrigOpcode16_t opcode);
 
 BrigType16_t gccbrig_tree_type_to_hsa_type (tree tree_type);
 tree gccbrig_tree_type_for_hsa_type (BrigType16_t brig_type);

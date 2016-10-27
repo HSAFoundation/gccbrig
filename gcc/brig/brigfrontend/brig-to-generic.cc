@@ -504,10 +504,10 @@ build_reinterpret_cast (tree destination_type, tree source)
 	 target width, after which VIEW_CONVERT_EXPR can be used to
 	 force to the target type.  */
       tree unsigned_temp = build1 (VIEW_CONVERT_EXPR,
-				   get_raw_tree_type (source_type),
+				   get_unsigned_int_type (source_type),
 				   source);
       return build1 (VIEW_CONVERT_EXPR, destination_type,
-		     convert (get_raw_tree_type (destination_type),
+		     convert (get_unsigned_int_type (destination_type),
 			      unsigned_temp));
     }
   else
@@ -780,11 +780,11 @@ brig_to_generic::write_globals ()
     delete m_brig_blobs[i];
 }
 
-/* Returns a "raw type" (one with unsigned int elements) corresponding to the
+/* Returns an type with unsigned int elements corresponding to the
    size and element count of ORIGINAL_TYPE.  */
 
 tree
-get_raw_tree_type (tree original_type)
+get_unsigned_int_type (tree original_type)
 {
   if (VECTOR_TYPE_P (original_type))
     {

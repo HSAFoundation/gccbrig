@@ -55,9 +55,6 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
      wanted destination type.  */
   tree expr = NULL_TREE;
 
-  /* If there's no direct tree expr but a negated one, this is set.  */
-  tree neg_expr = NULL_TREE;
-
   std::vector<tree> operands = build_operands (*inst_base);
 
   switch (inst->compare)
@@ -128,13 +125,9 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
       break;
     }
 
-  if (expr == NULL_TREE && neg_expr == NULL_TREE)
+  if (expr == NULL_TREE)
     gcc_unreachable ();
 
-  if (neg_expr != NULL_TREE)
-    expr = build1 (BIT_NOT_EXPR, TREE_TYPE (neg_expr), neg_expr);
-
-  size_t result_width = int_size_in_bytes (dest_type) * 8;
   if (is_fp16_dest)
     {
       expr = convert_to_real (brig_to_generic::s_fp32_type, expr);
@@ -164,10 +157,11 @@ brig_cmp_inst_handler::operator () (const BrigBase *base)
 	 the lower 1.  */
       tree signed_type = signed_type_for (dest_type);
       tree signed_result = convert_to_integer (signed_type, expr);
-      size_t element_width = result_width;
+
+      size_t result_width = int_size_in_bytes (dest_type) * BITS_PER_UNIT;
 
       tree shift_amount_cst
-	= build_int_cstu (signed_type, element_width - 1);
+	= build_int_cstu (signed_type, result_width - 1);
 
       tree shift_left_result
 	= build2 (LSHIFT_EXPR, signed_type, signed_result, shift_amount_cst);

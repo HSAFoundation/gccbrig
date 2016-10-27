@@ -1144,7 +1144,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
       dest_type = gccbrig_tree_type_for_hsa_type (brig_inst.type);
       is_fp16_arith
 	= (src_type_inst->sourceType & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
-	&& !gccbrig_is_raw_operation (brig_inst.opcode);
+	&& !gccbrig_is_bit_operation (brig_inst.opcode);
     }
   else if (base->kind == BRIG_KIND_INST_SEG_CVT)
     {
@@ -1186,7 +1186,7 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	}
       dest_type = src_type;
       is_fp16_arith
-	= !gccbrig_is_raw_operation (brig_inst.opcode)
+	= !gccbrig_is_bit_operation (brig_inst.opcode)
 	&& (brig_inst.type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16;
     }
 
@@ -1236,14 +1236,14 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	       are expected to be of the same element type as the
 	       data in VEC_PERM_EXPR.  With shuffles the data type
 	       should not matter as it's a "raw operation".  */
-	    operand_type = get_raw_tree_type (operand_type);
+	    operand_type = get_unsigned_int_type (operand_type);
 	}
       else if (brig_inst.opcode == BRIG_OPCODE_PACK)
 	{
 	  if (i == 1)
-	    operand_type = get_raw_tree_type (dest_type);
+	    operand_type = get_unsigned_int_type (dest_type);
 	  else if (i == 2)
-	    operand_type = get_raw_tree_type (TREE_TYPE (dest_type));
+	    operand_type = get_unsigned_int_type (TREE_TYPE (dest_type));
 	  else if (i == 3)
 	    operand_type = uint32_type_node;
 	}
@@ -1337,7 +1337,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
   tree input_type = TREE_TYPE (inst_expr);
   bool is_fp16 = (brig_inst.type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
 		 && brig_inst.base.kind != BRIG_KIND_INST_MEM
-		 && !gccbrig_is_raw_operation (brig_inst.opcode);
+		 && !gccbrig_is_bit_operation (brig_inst.opcode);
 
   /* Flush to zero.  */
   bool ftz = false;

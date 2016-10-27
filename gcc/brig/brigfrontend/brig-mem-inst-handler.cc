@@ -37,9 +37,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
   bool is_store = brig_inst->opcode == BRIG_OPCODE_ST;
 
   if (!is_load && !is_store)
-    {
-      gcc_unreachable ();
-    }
+    gcc_unreachable ();
 
   tree instr_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
 
@@ -49,7 +47,7 @@ brig_mem_inst_handler::build_mem_access (const BrigInstBase *brig_inst,
   tree ptype = build_pointer_type (instr_type);
 
   /* The HSAIL mem instructions are unaligned by default.
-     TODO/OPTIMIZE: exploit the align modifier, it should lead to faster code.
+     TODO: exploit the align modifier, it should lead to faster code.
   */
   tree unaligned_type = build_aligned_type (instr_type, 8);
 

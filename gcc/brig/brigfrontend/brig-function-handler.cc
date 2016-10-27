@@ -27,7 +27,6 @@
 #include "brig-machine.h"
 #include "stringpool.h"
 #include "tree-iterator.h"
-#include "assert.h"
 #include "gimple-expr.h"
 #include "function.h"
 #include "phsa.h"
@@ -148,7 +147,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 	     function directive.  */
 	  const BrigBase *retval
 	    = (const BrigBase *) ((const char *) base + base->byteCount);
-	  assert (retval->kind == BRIG_KIND_DIRECTIVE_VARIABLE);
+	  gcc_assert (retval->kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
 	  const BrigDirectiveVariable *brigVar
 	    = (const BrigDirectiveVariable *) retval;
@@ -201,7 +200,7 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 		= (const BrigDirectiveVariable *) m_parent.get_brig_code_entry
 		(arg_offset);
 
-	      assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
+	      gcc_assert (brigVar->base.kind == BRIG_KIND_DIRECTIVE_VARIABLE);
 
 	      /* Delegate to the brig_directive_variable_handler.  */
 	      brig_directive_variable_handler varhandler (m_parent);
