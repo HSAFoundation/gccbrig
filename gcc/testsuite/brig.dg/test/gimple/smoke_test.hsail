@@ -79,7 +79,7 @@ prog kernel &KernelWithBarrier(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* TODO: this should be disabled in case not outputting to an ELF. */
 /* Currently ELF is assumed by the brig frontend. Do not check for the context */
 /* as it is likely to change. */
-/* { dg-final { scan-tree-dump "\\\.pushsection phsa\\\.kerneldesc\\\.Kernel" "gimple"} }*/
+/* { dg-final { scan-tree-dump "\\\.pushsection phsa\\\.desc\\\.Kernel" "gimple"} }*/
 
 /* The kernel with the barrier call should have the barrier builtin call in between the two summations. */
 /* { dg-final { scan-tree-dump "s2 = s0 \\\+ s1;\[\n \]+__builtin___hsail_barrier \\\(__context\\\);\[\n \]+s3 = s0 \\\+ 4294967295;" "gimple"} } */

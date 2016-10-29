@@ -18,7 +18,7 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 	add_pp_f32x2 $d4, $d2, $d3;
 
-	expand_v2_b32_b64 ($s0, $s3), $d4; 
+	expand_v2_b32_b64 ($s0, $s3), $d4;
 
         ld_kernarg_u64 $d1, [%output_ptr];
         st_v2_global_f32 ($s0, $s1), [$d1];

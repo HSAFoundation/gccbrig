@@ -20,6 +20,6 @@ prog kernel &Kernel(kernarg_u64 %input[4], kernarg_u64 %output_ptr, kernarg_u64 
 /* { dg-final { scan-tree-dump " = \\\*\\\(unsigned long \\\*\\\) \\\(__args \\\+ 40\\\);" "original"} } */
 
 /* [%input][$d0 + 1] */
-/* { dg-final { scan-tree-dump "\\\*\\\(unsigned long \\\*\\\) \\\(\\\(\\\(void \\\*\\\) d0 \\\+ 1\\\) \\\+ \\\(unsigned long\\\) __args\\\);" "original"} } */
+/* { dg-final { scan-tree-dump "\\\*\\\(unsigned long \\\*\\\) \\\(\\\(VIEW_CONVERT_EXPR<void \\\*>\\\(\\\(unsigned long\\\) __args\\\) \\\+ \\\(unsigned long\\\) d0\\\) \\\+ 1\\\);" "original"} } */
 
 

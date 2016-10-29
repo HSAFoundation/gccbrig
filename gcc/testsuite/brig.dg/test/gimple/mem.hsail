@@ -36,4 +36,4 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %input_ptr2, kernarg_u64
 /* { dg-final { scan-tree-dump "d2 \\\+ 4\\\);\[\n \]+d1 = " "original"} } */
 
 /* ld_global_u32 $s2, [%global_array][$d1 + 4]; is the most complex form */
-/* { dg-final { scan-tree-dump "d1 \\\+ 4\\\) \\\+ \\\(unsigned long\\\) &_Kernel.global_array\\\);\[\n \]+s2 = " "original" } } */
+/* { dg-final { scan-tree-dump "\\\(unsigned long\\\) &_Kernel.global_array\\\) \\\+ \\\(unsigned long\\\) d1\\\) \\\+ 4" "original" } } */

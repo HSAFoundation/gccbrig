@@ -90,7 +90,7 @@ prog kernel &kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 /* Private variable offsets assigned in the order of their appearance */
 /*
- prog_private @0	(align 256) -> until 254 to ensure all WIs 
+ prog_private @0	(align 256) -> until 254 to ensure all WIs
  mod_private  @256	               have their chunks aligned
  func_private @260
  kern_private @264
@@ -113,7 +113,7 @@ prog kernel &kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 /* Host defined variables need indirect access as the address is
    known only at run time. */
-/* { dg-final { scan-tree-dump "MEM\\\[\\\(unsigned int \\\*\\\)__phsa.host_def.prog_global_host_def.\[0-9\]+_\[0-9\]+\\\] = s11;" "gimple" } } */
+/* { dg-final { scan-tree-dump "\\\*\\\__phsa.host_def.prog_global_host_def.\[0-9\]+_\[0-9\]+ = s11;" "gimple" } } */
 
 /* { dg-final { scan-tree-dump "\.subfunction.func_global;" "gimple" } } */
 /* { dg-final { scan-tree-dump "\.subfunction.func_readonly;" "gimple" } } */

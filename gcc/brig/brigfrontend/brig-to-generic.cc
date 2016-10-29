@@ -496,7 +496,9 @@ build_reinterpret_cast (tree destination_type, tree source)
 
   size_t src_size = int_size_in_bytes (source_type);
   size_t dst_size = int_size_in_bytes (destination_type);
-  if (src_size <= dst_size)
+  if (src_size == dst_size)
+    return build1 (VIEW_CONVERT_EXPR, destination_type, source);
+  else if (src_size < dst_size)
     {
       /* The src_size can be smaller at least with f16 scalars which are
 	 stored to 32b register variables.  First convert to an equivalent
@@ -555,8 +557,8 @@ brig_to_generic::finish_function ()
     {
       tree bind_expr = m_cf->m_current_bind_expr;
       tree stmts = BIND_EXPR_BODY (bind_expr);
-      m_cf->emit_metadata (stmts);
       m_cf->finish ();
+      m_cf->emit_metadata (stmts);
       dump_function (m_dump_file, m_cf);
       gimplify_function_tree (m_cf->m_func_decl);
       cgraph_node::finalize_function (m_cf->m_func_decl, true);
