@@ -391,7 +391,7 @@ convert (tree type, tree expr)
     case REAL_TYPE:
       return fold (convert_to_real (type, expr));
     case VECTOR_TYPE:
-      return build1 (VIEW_CONVERT_EXPR, type, expr);
+      return fold (convert_to_vector (type, expr));
     case POINTER_TYPE:
       return build1 (VIEW_CONVERT_EXPR, type, convert (size_type_node, expr));
     default:
