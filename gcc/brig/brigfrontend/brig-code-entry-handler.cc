@@ -424,9 +424,6 @@ brig_code_entry_handler::build_address_operand
 
       gcc_assert (var_offset != NULL_TREE);
     }
-  uint64_t offs = gccbrig_to_uint64_t (addr_operand.offset);
-  if (offs > 0)
-    const_offset = build_int_cst (size_type_node, offs);
   /* The pointer type we use to access the memory.  Should be of the
      width of the load/store instruction, not the target/data
      register.  */
@@ -436,20 +433,14 @@ brig_code_entry_handler::build_address_operand
 
   tree addr = NULL_TREE;
   if (symbol_base != NULL_TREE && var_offset != NULL_TREE)
-    {
-      /* The most complex addressing mode: symbol + reg [+ const offset].  */
-      addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
-		     convert (ptr_type_node, symbol_base),
-		     convert (size_type_node, var_offset));
-    }
+    /* The most complex addressing mode: symbol + reg [+ const offset].  */
+    addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
+		   convert (ptr_type_node, symbol_base),
+		   convert (size_type_node, var_offset));
   else if (var_offset != NULL)
-    {
-      addr = var_offset;
-    }
+    addr = var_offset;
   else if (symbol_base != NULL)
-    {
-      addr = symbol_base;
-    }
+    addr = symbol_base;
 
   if (const_offset != NULL_TREE)
     {
@@ -461,6 +452,21 @@ brig_code_entry_handler::build_address_operand
       else
 	addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
 		       addr, convert (size_type_node, const_offset));
+    }
+
+  /* We might have two const offsets in case of group or private arrays
+     which have the first offset to the incoming group/private pointer
+     arg, and the second one an offset to it.  */
+  uint64_t offs = gccbrig_to_uint64_t (addr_operand.offset);
+  if (offs > 0)
+    {
+      tree const_offset_2 = build_int_cst (size_type_node, offs);
+      if (addr == NULL_TREE)
+	addr = const_offset_2;
+      else
+	addr = build2 (POINTER_PLUS_EXPR, ptr_type_node,
+		       addr, convert (size_type_node, const_offset_2));
+
     }
 
   gcc_assert (addr != NULL_TREE);
