@@ -345,6 +345,9 @@ public:
   }
 
   size_t operator () (const BrigBase *base);
+
+private:
+  size_t handle_lda (const BrigInstBase *base);
 };
 
 class brig_atomic_inst_handler : public brig_code_entry_handler

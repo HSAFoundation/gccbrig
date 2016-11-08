@@ -468,7 +468,8 @@ brig_code_entry_handler::build_address_operand
 }
 
 /* Builds a tree operand with the given OPERAND_INDEX for the given
-   BRIG_INST with the desired tree OPERAND_TYPE.  */
+   BRIG_INST with the desired tree OPERAND_TYPE.  OPERAND_TYPE can
+   be NULL in case the type is forced by the BRIG_INST type.  */
 
 tree
 brig_code_entry_handler::build_tree_operand_from_brig

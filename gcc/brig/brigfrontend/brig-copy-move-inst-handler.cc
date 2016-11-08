@@ -26,10 +26,26 @@
 #include "brig-util.h"
 
 size_t
+brig_copy_move_inst_handler::handle_lda (const BrigInstBase *brig_inst)
+{
+  tree dest_type = gccbrig_tree_type_for_hsa_type (brig_inst->type);
+
+  tree input = build_tree_operand_from_brig (brig_inst, NULL, 1);
+  tree output = build_tree_operand_from_brig (brig_inst, dest_type, 0);
+
+  build_output_assignment (*brig_inst, output, input);
+  return brig_inst->base.byteCount;
+}
+
+size_t
 brig_copy_move_inst_handler::operator () (const BrigBase *base)
 {
   const BrigInstBase *brig_inst
     = (const BrigInstBase *) &((const BrigInstBasic *) base)->base;
+
+  if (brig_inst->opcode == BRIG_OPCODE_LDA)
+    return handle_lda (brig_inst);
+
   const BrigInstSourceType *inst_src_type = (const BrigInstSourceType *) base;
 
   tree source_type = gccbrig_tree_type_for_hsa_type (inst_src_type->sourceType);
@@ -46,8 +62,7 @@ brig_copy_move_inst_handler::operator () (const BrigBase *base)
       tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
       m_parent.m_cf->append_statement (assign);
     }
-  else if (brig_inst->opcode == BRIG_OPCODE_LDA
-	   || brig_inst->opcode == BRIG_OPCODE_EXPAND)
+  else if (brig_inst->opcode == BRIG_OPCODE_EXPAND)
     build_output_assignment (*brig_inst, output, input);
   else
     {
