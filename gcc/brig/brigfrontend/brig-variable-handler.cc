@@ -45,8 +45,8 @@ brig_directive_variable_handler::build_variable
       tree element_type
 	= gccbrig_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
-      if (element_count == 0)
-	gcc_unreachable ();
+      if (is_definition && element_count == 0)
+	fatal_error (UNKNOWN_LOCATION, "Array definition with zero elements.");
       if (var_decltype == PARM_DECL)
 	t = build_pointer_type (element_type);
       else
@@ -121,6 +121,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
 {
   const BrigDirectiveVariable *brigVar = (const BrigDirectiveVariable *) base;
 
+  bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
+
   size_t var_size;
   tree var_type;
   if (brigVar->type & BRIG_TYPE_ARRAY)
@@ -128,8 +130,8 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
       tree element_type
 	= gccbrig_tree_type_for_hsa_type (brigVar->type & ~BRIG_TYPE_ARRAY);
       uint64_t element_count = gccbrig_to_uint64_t (brigVar->dim);
-      if (element_count == 0)
-	gcc_unreachable ();
+      if (is_definition && element_count == 0)
+	fatal_error (UNKNOWN_LOCATION, "Array definition with zero elements.");
       var_type = build_array_type_nelts (element_type, element_count);
       size_t element_size = tree_to_uhwi (TYPE_SIZE (element_type));
       var_size = element_size * element_count / 8;
@@ -181,7 +183,6 @@ brig_directive_variable_handler::operator () (const BrigBase *base)
   else if (brigVar->segment == BRIG_SEGMENT_GLOBAL
 	   || brigVar->segment == BRIG_SEGMENT_READONLY)
     {
-      bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
       tree def = is_definition ? NULL_TREE :
 	m_parent.global_variable (var_name);
 
