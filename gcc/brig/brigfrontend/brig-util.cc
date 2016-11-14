@@ -344,7 +344,8 @@ bool
 gccbrig_might_be_host_defined_var_p (const BrigDirectiveVariable *brigVar)
 {
   bool is_definition = brigVar->modifier & BRIG_VARIABLE_DEFINITION;
-  return brigVar->segment == BRIG_SEGMENT_GLOBAL && !is_definition
+  return (brigVar->segment == BRIG_SEGMENT_GLOBAL
+	  || brigVar->segment == BRIG_SEGMENT_READONLY) && !is_definition
     && brigVar->linkage == BRIG_LINKAGE_PROGRAM
     && (brigVar->allocation == BRIG_ALLOCATION_PROGRAM
 	|| brigVar->allocation == BRIG_ALLOCATION_AGENT);
