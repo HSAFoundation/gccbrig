@@ -592,8 +592,6 @@ brig_to_generic::append_group_variable (const std::string &name, size_t size,
     0 : (alignment - m_next_group_offset % alignment);
   m_next_group_offset += align_padding;
   m_group_offsets[name] = m_next_group_offset;
-  if (alignment > size)
-    size = alignment;
   m_next_group_offset += size;
 }
 
@@ -625,7 +623,6 @@ brig_to_generic::append_private_variable (const std::string &name,
     0 : (alignment - m_next_private_offset % alignment);
   m_next_private_offset += align_padding;
   m_private_offsets[name] = m_next_private_offset;
-  if (alignment > size) size = alignment;
   m_next_private_offset += size;
   m_private_data_sizes[name] = size + align_padding;
 }
@@ -743,8 +740,10 @@ brig_to_generic::write_globals ()
 
       /* The kernarg size is rounded up to a multiple of 16 according to
 	 the PRM specs.  */
-      f->m_descriptor.kernarg_segment_size
-	= f->m_next_kernarg_offset + (16 - f->m_next_kernarg_offset % 16);
+      f->m_descriptor.kernarg_segment_size = f->m_next_kernarg_offset;
+      if (f->m_descriptor.kernarg_segment_size % 16 > 0)
+	f->m_descriptor.kernarg_segment_size
+	  += 16 - f->m_next_kernarg_offset % 16;
       f->m_descriptor.kernarg_max_align = f->m_kernarg_max_align;
 
       tree launcher = f->emit_launcher_and_metadata ();

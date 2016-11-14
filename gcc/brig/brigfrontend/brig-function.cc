@@ -128,11 +128,11 @@ brig_function::append_kernel_arg (const BrigDirectiveVariable *var, size_t size,
 {
   gcc_assert (m_func_decl != NULL_TREE);
   gcc_assert (m_is_kernel);
-  size_t align_padding = m_next_kernarg_offset % alignment;
+
+  size_t align_padding = m_next_kernarg_offset % alignment == 0 ?
+    0 : (alignment - m_next_kernarg_offset % alignment);
   m_next_kernarg_offset += align_padding;
   m_kernarg_offsets[var] = m_next_kernarg_offset;
-
-  if (alignment > size) size = alignment;
   m_next_kernarg_offset += size;
 
   m_kernarg_max_align
