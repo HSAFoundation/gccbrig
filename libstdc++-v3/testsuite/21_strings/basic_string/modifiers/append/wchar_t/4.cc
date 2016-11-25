@@ -25,7 +25,6 @@
 void
 test03()
 {
-  bool test __attribute__((unused)) = true;
   std::wstring_view str1(L"foo");
   std::wstring str2;
   str2 += str1;
@@ -38,8 +37,37 @@ test03()
   VERIFY (str4 == L"oo");
 }
 
+// PR libstdc++/77264
+void
+test04()
+{
+  std::wstring str(L"a");
+
+  wchar_t c = L'b';
+  str.append(&c, 1);
+  VERIFY (str[1] == c);
+
+  wchar_t arr[] = L"c";
+  str.append(arr, 1);
+  VERIFY (str[2] == arr[0]);
+
+  const wchar_t carr[] = L"d";
+  str.append(carr, 1);
+  VERIFY (str[3] == carr[0]);
+
+  struct S {
+    operator wchar_t*() { return &c; }
+    operator std::wstring_view() { return L"!"; }
+    wchar_t c = L'e';
+  };
+
+  str.append(S{}, 1);
+  VERIFY (str[4] == S{}.c);
+}
+
 int main()
 { 
   test03();
+  test04();
   return 0;
 }

@@ -588,7 +588,7 @@ simplify_loop_decl_cond (tree *cond_p, tree body)
   *cond_p = boolean_true_node;
 
   if_stmt = begin_if_stmt ();
-  cond = cp_build_unary_op (TRUTH_NOT_EXPR, cond, 0, tf_warning_or_error);
+  cond = cp_build_unary_op (TRUTH_NOT_EXPR, cond, false, tf_warning_or_error);
   finish_if_stmt_cond (cond, if_stmt);
   finish_break_stmt ();
   finish_then_clause (if_stmt);
@@ -953,11 +953,11 @@ begin_for_stmt (tree scope, tree init)
   return r;
 }
 
-/* Finish the for-init-statement of a for-statement, which may be
+/* Finish the init-statement of a for-statement, which may be
    given by FOR_STMT.  */
 
 void
-finish_for_init_stmt (tree for_stmt)
+finish_init_stmt (tree for_stmt)
 {
   if (processing_template_decl)
     FOR_INIT_STMT (for_stmt) = pop_stmt_list (FOR_INIT_STMT (for_stmt));
@@ -2259,7 +2259,7 @@ perform_koenig_lookup (cp_expr fn, vec<tree, va_gc> *args,
 	}
     }
 
-  if (fn && template_id)
+  if (fn && template_id && fn != error_mark_node)
     fn = build2 (TEMPLATE_ID_EXPR, unknown_type_node, fn, tmpl_args);
   
   return fn;
@@ -2671,6 +2671,11 @@ finish_compound_literal (tree type, tree compound_literal,
       return error_mark_node;
     }
 
+  if (tree anode = type_uses_auto (type))
+    if (CLASS_PLACEHOLDER_TEMPLATE (anode))
+      type = do_auto_deduction (type, compound_literal, anode, complain,
+				adc_variable_type);
+
   if (processing_template_decl)
     {
       TREE_TYPE (compound_literal) = type;
@@ -2708,7 +2713,8 @@ finish_compound_literal (tree type, tree compound_literal,
       if (type == error_mark_node)
 	return error_mark_node;
     }
-  compound_literal = digest_init (type, compound_literal, complain);
+  compound_literal = digest_init_flags (type, compound_literal, LOOKUP_NORMAL,
+					complain);
   if (TREE_CODE (compound_literal) == CONSTRUCTOR)
     TREE_HAS_CONSTRUCTOR (compound_literal) = true;
 
@@ -8885,6 +8891,21 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p,
         /* See through BASELINK nodes to the underlying function.  */
         expr = BASELINK_FUNCTIONS (expr);
 
+      /* decltype of a decomposition name drops references in the tuple case
+	 (unlike decltype of a normal variable) and keeps cv-qualifiers from
+	 the containing object in the other cases (unlike decltype of a member
+	 access expression).  */
+      if (DECL_DECOMPOSITION_P (expr))
+	{
+	  if (DECL_HAS_VALUE_EXPR_P (expr))
+	    /* Expr is an array or struct subobject proxy, handle
+	       bit-fields properly.  */
+	    return unlowered_expr_type (expr);
+	  else
+	    /* Expr is a reference variable for the tuple case.  */
+	    return lookup_decomp_type (expr);
+	}
+
       switch (TREE_CODE (expr))
         {
         case FIELD_DECL:
@@ -8894,6 +8915,7 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p,
               break;
             }
           /* Fall through for fields that aren't bitfields.  */
+	  gcc_fallthrough ();
 
         case FUNCTION_DECL:
         case VAR_DECL:
@@ -9086,6 +9108,9 @@ trait_expr_value (cp_trait_kind kind, tree type1, tree type2)
     case CPTK_HAS_VIRTUAL_DESTRUCTOR:
       return type_has_virtual_destructor (type1);
 
+    case CPTK_HAS_UNIQUE_OBJ_REPRESENTATIONS:
+      return type_has_unique_obj_representations (type1);
+
     case CPTK_IS_ABSTRACT:
       return (ABSTRACT_CLASS_TYPE_P (type1));
 
@@ -9193,6 +9218,7 @@ finish_trait_expr (cp_trait_kind kind, tree type1, tree type2)
     case CPTK_HAS_NOTHROW_COPY:
     case CPTK_HAS_TRIVIAL_COPY:
     case CPTK_HAS_TRIVIAL_DESTRUCTOR:
+    case CPTK_HAS_UNIQUE_OBJ_REPRESENTATIONS:
     case CPTK_HAS_VIRTUAL_DESTRUCTOR:
     case CPTK_IS_ABSTRACT:
     case CPTK_IS_EMPTY:
@@ -9437,6 +9463,28 @@ finish_binary_fold_expr (tree expr1, tree expr2, int op)
         error ("no unexpanded parameter packs in binary fold");
     }
   return error_mark_node;
+}
+
+/* Finish __builtin_launder (arg).  */
+
+tree
+finish_builtin_launder (location_t loc, tree arg, tsubst_flags_t complain)
+{
+  tree orig_arg = arg;
+  if (!type_dependent_expression_p (arg))
+    arg = decay_conversion (arg, complain);
+  if (error_operand_p (arg))
+    return error_mark_node;
+  if (!type_dependent_expression_p (arg)
+      && TREE_CODE (TREE_TYPE (arg)) != POINTER_TYPE)
+    {
+      error_at (loc, "non-pointer argument to %<__builtin_launder%>");
+      return error_mark_node;
+    }
+  if (processing_template_decl)
+    arg = orig_arg;
+  return build_call_expr_internal_loc (loc, IFN_LAUNDER,
+				       TREE_TYPE (arg), 1, arg);
 }
 
 #include "gt-cp-semantics.h"

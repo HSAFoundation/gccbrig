@@ -476,14 +476,14 @@ AC_ARG_ENABLE(build-format-warnings,
 AS_IF([test $enable_build_format_warnings = no],
       [wf_opt=-Wno-format],[wf_opt=])
 ACX_PROG_CXX_WARNING_OPTS(
-	m4_quote(m4_do([-W -Wall -Wno-narrowing -Wwrite-strings -Wcast-qual $wf_opt])), [loose_warn])
+	m4_quote(m4_do([-W -Wall -Wno-narrowing -Wwrite-strings ],
+		       [-Wcast-qual $wf_opt])), [loose_warn])
 ACX_PROG_CC_WARNING_OPTS(
 	m4_quote(m4_do([-Wstrict-prototypes -Wmissing-prototypes])),
 	[c_loose_warn])
 ACX_PROG_CXX_WARNING_OPTS(
-	m4_quote(m4_do([-Wmissing-format-attribute])), [strict_warn])
-ACX_PROG_CXX_WARNING_OPTS(
-	m4_quote(m4_do([-Woverloaded-virtual])), [strict_warn])
+	m4_quote(m4_do([-Wmissing-format-attribute ],
+		       [-Woverloaded-virtual])), [strict_warn])
 ACX_PROG_CC_WARNING_OPTS(
 	m4_quote(m4_do([-Wold-style-definition -Wc++-compat])), [c_strict_warn])
 ACX_PROG_CXX_WARNING_ALMOST_PEDANTIC(
@@ -579,18 +579,21 @@ IFS="$ac_save_IFS"
 
 nocommon_flag=""
 if test x$ac_checking != x ; then
-  if test x$ac_extra_checking != x ; then
-    ac_checking=2
-  fi
-  AC_DEFINE_UNQUOTED(CHECKING_P, $ac_checking,
-[Define to 1 if you want more run-time sanity checks.  This one gets a grab
-   bag of miscellaneous but relatively cheap checks.  Define to 2 if you want
-   also extra run-time checking that might affect code generation.])
+  AC_DEFINE(CHECKING_P, 1,
+[Define to 0/1 if you want more run-time sanity checks.  This one gets a grab
+bag of miscellaneous but relatively cheap checks.])
   nocommon_flag=-fno-common
 else
   AC_DEFINE(CHECKING_P, 0)
 fi
 AC_SUBST(nocommon_flag)
+if test x$ac_extra_checking != x ; then
+  AC_DEFINE(ENABLE_EXTRA_CHECKING, 1,
+[Define to 0/1 if you want extra run-time checking that might affect code
+generation.])
+else
+  AC_DEFINE(ENABLE_EXTRA_CHECKING, 0)
+fi
 if test x$ac_df_checking != x ; then
   AC_DEFINE(ENABLE_DF_CHECKING, 1,
 [Define if you want more run-time sanity checks for dataflow.])
@@ -2539,10 +2542,17 @@ gcc_GAS_CHECK_FEATURE([.nsubspa comdat], gcc_cv_as_nsubspa_comdat,
 # ld, we don't know its patchlevel version, so we set the baseline at 2.13
 # to be safe.
 # The gcc_GAS_CHECK_FEATURE call just sets a cache variable.
+case "${target}" in
+  *-*-aix*)
+    conftest_s='	.globl foobar,hidden'
+    ;;
+  *)
+    conftest_s='	.hidden foobar
+foobar:'
+    ;;
+esac
 gcc_GAS_CHECK_FEATURE([.hidden], gcc_cv_as_hidden,
- [elf,2,13,0],,
-[	.hidden foobar
-foobar:])
+ [elf,2,13,0],, [$conftest_s])
 case "${target}" in
   *-*-darwin*)
     # Darwin as has some visibility support, though with a different syntax.
@@ -2651,6 +2661,9 @@ else
     fi
   else
     case "${target}" in
+      *-*-aix[789]*)
+        gcc_cv_ld_hidden=yes
+        ;;
       *-*-darwin*)
 	# Darwin ld has some visibility support.
 	gcc_cv_ld_hidden=yes
@@ -2745,6 +2758,8 @@ L2:],
     fi
   fi]],
   [AC_DEFINE(HAVE_AS_LEB128, 1,
+    [Define if your assembler supports .sleb128 and .uleb128.])],
+  [AC_DEFINE(HAVE_AS_LEB128, 0,
     [Define if your assembler supports .sleb128 and .uleb128.])])
 
 # Check if we have assembler support for unwind directives.
@@ -4522,7 +4537,7 @@ LCF0:
 	  gcc_cv_as_aix_dwloc, [2,21,0],,
 	  [	.dwsect 0xA0000
 	Lframe..0:
-		.vbyte 4,Lframe..0:
+		.vbyte 4,Lframe..0
 	  ],,
 	  [AC_DEFINE(HAVE_XCOFF_DWARF_EXTRAS, 1,
 	    [Define if your assembler supports AIX debug frame section label reference.])])
@@ -5326,6 +5341,51 @@ if test "x$gcc_cv_ld_clearcap" = xyes; then
   AC_CONFIG_LINKS([clearcap.map:${srcdir}/config/$clearcap_map])
 fi
 AC_MSG_RESULT($gcc_cv_ld_clearcap)
+
+case "$target" in
+  powerpc*-*-*)
+    case "$target" in
+      *le-*-linux*)
+	emul_name="-melf32lppc"
+	;;
+      *)
+	emul_name="-melf32ppc"
+	;;
+    esac
+    AC_CACHE_CHECK(linker .gnu.attributes long double support,
+    gcc_cv_ld_ppc_attr,
+    [gcc_cv_ld_ppc_attr=no
+    if test x"$ld_is_gold" = xyes; then
+      gcc_cv_ld_ppc_attr=yes
+    elif test $in_tree_ld = yes ; then
+      if test "$gcc_cv_gld_major_version" -eq 2 \
+		-a "$gcc_cv_gld_minor_version" -ge 28 \
+		-o "$gcc_cv_gld_major_version" -gt 2; then
+        gcc_cv_ld_ppc_attr=yes
+      fi
+    elif test x$gcc_cv_as != x -a x$gcc_cv_ld != x ; then
+      # check that merging the long double .gnu_attribute doesn't warn
+      cat > conftest1.s <<EOF
+	.gnu_attribute 4,1
+EOF
+      cat > conftest2.s <<EOF
+	.gnu_attribute 4,9
+EOF
+      if $gcc_cv_as -a32 -o conftest1.o conftest1.s > /dev/null 2>&1 \
+         && $gcc_cv_as -a32 -o conftest2.o conftest2.s > /dev/null 2>&1 \
+         && $gcc_cv_ld $emul_name -r -o conftest.o conftest1.o conftest2.o > /dev/null 2> conftest.err \
+	 && test ! -s conftest.err; then
+        gcc_cv_ld_ppc_attr=yes
+      fi
+      rm -f conftest.err conftest.o conftest1.o conftest2.o conftest1.s conftest2.s
+    fi
+    ])
+    if test x$gcc_cv_ld_ppc_attr = xyes; then
+      AC_DEFINE(HAVE_LD_PPC_GNU_ATTR_LONG_DOUBLE, 1,
+    [Define if your PowerPC linker has .gnu.attributes long double support.])
+    fi
+    ;;
+esac
 
 case "$target:$tm_file" in
   powerpc64-*-freebsd* | powerpc64*-*-linux* | powerpc*-*-linux*rs6000/biarch64.h*)
@@ -6241,6 +6301,27 @@ if test x"$ld_bndplt_support" = xyes; then
 	[Define if your linker supports -z bndplt])
 fi
 AC_MSG_RESULT($ld_bndplt_support)
+
+# Check linker supports '--push-state'/'--pop-state'
+ld_pushpopstate_support=no
+AC_MSG_CHECKING(linker --push-state/--pop-state options)
+if test x"$ld_is_gold" = xno; then
+  if test $in_tree_ld = yes ; then
+    if test "$gcc_cv_gld_major_version" -eq 2 -a "$gcc_cv_gld_minor_version" -ge 25 -o "$gcc_cv_gld_major_version" -gt 2; then
+      ld_pushpopstate_support=yes
+    fi
+  elif test x$gcc_cv_ld != x; then
+    # Check if linker supports --push-state/--pop-state options
+    if $gcc_cv_ld --help 2>/dev/null | grep -- '--push-state' > /dev/null; then
+      ld_pushpopstate_support=yes
+    fi
+  fi
+fi
+if test x"$ld_pushpopstate_support" = xyes; then
+  AC_DEFINE(HAVE_LD_PUSHPOPSTATE_SUPPORT, 1,
+	[Define if your linker supports --push-state/--pop-state])
+fi
+AC_MSG_RESULT($ld_pushpopstate_support)
 
 # Configure the subdirectories
 # AC_CONFIG_SUBDIRS($subdirs)

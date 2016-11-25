@@ -889,13 +889,16 @@ static void
 fixup_call_stmt_edges_1 (struct cgraph_node *node, gimple **stmts,
 			 struct function *fn)
 {
+#define STMT_UID_NOT_IN_RANGE(uid) \
+  (gimple_stmt_max_uid (fn) < uid || uid == 0)
+
   struct cgraph_edge *cedge;
   struct ipa_ref *ref = NULL;
   unsigned int i;
 
   for (cedge = node->callees; cedge; cedge = cedge->next_callee)
     {
-      if (gimple_stmt_max_uid (fn) < cedge->lto_stmt_uid)
+      if (STMT_UID_NOT_IN_RANGE (cedge->lto_stmt_uid))
         fatal_error (input_location,
 		     "Cgraph edge statement index out of range");
       cedge->call_stmt = as_a <gcall *> (stmts[cedge->lto_stmt_uid - 1]);
@@ -905,7 +908,7 @@ fixup_call_stmt_edges_1 (struct cgraph_node *node, gimple **stmts,
     }
   for (cedge = node->indirect_calls; cedge; cedge = cedge->next_callee)
     {
-      if (gimple_stmt_max_uid (fn) < cedge->lto_stmt_uid)
+      if (STMT_UID_NOT_IN_RANGE (cedge->lto_stmt_uid))
         fatal_error (input_location,
 		     "Cgraph edge statement index out of range");
       cedge->call_stmt = as_a <gcall *> (stmts[cedge->lto_stmt_uid - 1]);
@@ -915,7 +918,7 @@ fixup_call_stmt_edges_1 (struct cgraph_node *node, gimple **stmts,
   for (i = 0; node->iterate_reference (i, ref); i++)
     if (ref->lto_stmt_uid)
       {
-	if (gimple_stmt_max_uid (fn) < ref->lto_stmt_uid)
+	if (STMT_UID_NOT_IN_RANGE (ref->lto_stmt_uid))
 	  fatal_error (input_location,
 		       "Reference statement index out of range");
 	ref->stmt = stmts[ref->lto_stmt_uid - 1];
@@ -937,7 +940,8 @@ fixup_call_stmt_edges (struct cgraph_node *orig, gimple **stmts)
     orig = orig->clone_of;
   fn = DECL_STRUCT_FUNCTION (orig->decl);
 
-  fixup_call_stmt_edges_1 (orig, stmts, fn);
+  if (!orig->thunk.thunk_p)
+    fixup_call_stmt_edges_1 (orig, stmts, fn);
   if (orig->clones)
     for (node = orig->clones; node != orig;)
       {
@@ -1036,6 +1040,9 @@ input_function (tree fn_decl, struct data_in *data_in,
 
   /* Read the tree of lexical scopes for the function.  */
   DECL_INITIAL (fn_decl) = stream_read_tree (ib, data_in);
+  unsigned block_leaf_count = streamer_read_uhwi (ib);
+  while (block_leaf_count--)
+    stream_read_tree (ib, data_in);
 
   if (!streamer_read_uhwi (ib))
     return;

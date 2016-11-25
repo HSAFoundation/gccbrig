@@ -565,7 +565,8 @@ supplement_binding_1 (cxx_binding *binding, tree decl)
     }
   else
     {
-      diagnose_name_conflict (decl, bval);
+      if (!error_operand_p (bval))
+	diagnose_name_conflict (decl, bval);
       ok = false;
     }
 
@@ -1156,7 +1157,7 @@ pushdecl_maybe_friend_1 (tree x, bool is_friend)
 		   }
 		}
 	      /* Error if redeclaring a local declared in a
-		 for-init-statement or in the condition of an if or
+		 init-statement or in the condition of an if or
 		 switch statement when the new declaration is in the
 		 outermost block of the controlled statement.
 		 Redeclaring a variable from a for or while condition is
@@ -1195,19 +1196,41 @@ pushdecl_maybe_friend_1 (tree x, bool is_friend)
 		  nowarn = true;
 		}
 
-	      if (warn_shadow && !nowarn)
+	      if ((warn_shadow
+		   || warn_shadow_local
+		   || warn_shadow_compatible_local)
+		  && !nowarn)
 		{
 		  bool warned;
+		  enum opt_code warning_code;
+		  /* If '-Wshadow=compatible-local' is specified without other
+		     -Wshadow= flags, we will warn only when the type of the
+		     shadowing variable (i.e. x) can be converted to that of
+		     the shadowed parameter (oldlocal). The reason why we only
+		     check if x's type can be converted to oldlocal's type
+		     (but not the other way around) is because when users
+		     accidentally shadow a parameter, more than often they
+		     would use the variable thinking (mistakenly) it's still
+		     the parameter. It would be rare that users would use the
+		     variable in the place that expects the parameter but
+		     thinking it's a new decl.  */
+		  if (warn_shadow)
+		    warning_code = OPT_Wshadow;
+		  else if (can_convert (TREE_TYPE (oldlocal), TREE_TYPE (x),
+					tf_none))
+		    warning_code = OPT_Wshadow_compatible_local;
+		  else
+		    warning_code = OPT_Wshadow_local;
 
 		  if (TREE_CODE (oldlocal) == PARM_DECL)
-		    warned = warning_at (input_location, OPT_Wshadow,
+		    warned = warning_at (input_location, warning_code,
 				"declaration of %q#D shadows a parameter", x);
 		  else if (is_capture_proxy (oldlocal))
-		    warned = warning_at (input_location, OPT_Wshadow,
+		    warned = warning_at (input_location, warning_code,
 				"declaration of %qD shadows a lambda capture",
 				x);
 		  else
-		    warned = warning_at (input_location, OPT_Wshadow,
+		    warned = warning_at (input_location, warning_code,
 				"declaration of %qD shadows a previous local",
 				x);
 
@@ -3359,6 +3382,7 @@ do_class_using_decl (tree scope, tree name)
     {
       maybe_warn_cpp0x (CPP0X_INHERITING_CTORS);
       name = ctor_identifier;
+      CLASSTYPE_NON_AGGREGATE (current_class_type) = true;
     }
   if (constructor_name_p (name, current_class_type))
     {
@@ -3398,6 +3422,12 @@ do_class_using_decl (tree scope, tree name)
 	      error_not_base_type (scope, current_class_type);
 	      return NULL_TREE;
 	    }
+	}
+      else if (name == ctor_identifier
+	       && BINFO_INHERITANCE_CHAIN (BINFO_INHERITANCE_CHAIN (binfo)))
+	{
+	  error ("cannot inherit constructors from indirect base %qT", scope);
+	  return NULL_TREE;
 	}
       else if (!name_dependent_p)
 	{
@@ -3530,7 +3560,7 @@ set_decl_namespace (tree decl, tree scope, bool friendp)
   /* Since decl is a function, old should contain a function decl.  */
   if (!is_overloaded_fn (old))
     goto complain;
-  /* A template can be explicitly specialized in any namespace.  */
+  /* We handle these in check_explicit_instantiation_namespace.  */
   if (processing_explicit_instantiation)
     return;
   if (processing_template_decl || processing_specialization)
@@ -4446,7 +4476,7 @@ suggest_alternatives_for (location_t location, tree name)
       if (fuzzy_name)
 	{
 	  gcc_rich_location richloc (location);
-	  richloc.add_fixit_misspelled_id (location, fuzzy_name);
+	  richloc.add_fixit_replace (fuzzy_name);
 	  inform_at_rich_loc (&richloc, "suggested alternative: %qs",
 			      fuzzy_name);
 	}
@@ -4707,19 +4737,29 @@ consider_binding_level (tree name, best_match <tree, tree> &bm,
 
   for (tree t = lvl->names; t; t = TREE_CHAIN (t))
     {
+      tree d = t;
+
+      /* OVERLOADs or decls from using declaration are wrapped into
+	 TREE_LIST.  */
+      if (TREE_CODE (d) == TREE_LIST)
+	{
+	  d = TREE_VALUE (d);
+	  d = OVL_CURRENT (d);
+	}
+
       /* Don't use bindings from implicitly declared functions,
 	 as they were likely misspellings themselves.  */
-      if (TREE_TYPE (t) == error_mark_node)
+      if (TREE_TYPE (d) == error_mark_node)
 	continue;
 
       /* Skip anticipated decls of builtin functions.  */
-      if (TREE_CODE (t) == FUNCTION_DECL
-	  && DECL_BUILT_IN (t)
-	  && DECL_ANTICIPATED (t))
+      if (TREE_CODE (d) == FUNCTION_DECL
+	  && DECL_BUILT_IN (d)
+	  && DECL_ANTICIPATED (d))
 	continue;
 
-      if (DECL_NAME (t))
-	bm.consider (DECL_NAME (t));
+      if (DECL_NAME (d))
+	bm.consider (DECL_NAME (d));
     }
 }
 
@@ -5354,7 +5394,7 @@ add_function (struct arg_lookup *k, tree fn)
        function templates are ignored.  */;
   else if (k->fn_set && k->fn_set->add (fn))
     /* It's already in the list.  */;
-  else if (!k->functions)
+  else if (!k->functions && TREE_CODE (fn) != TEMPLATE_DECL)
     k->functions = fn;
   else if (fn == k->functions)
     ;
@@ -6044,9 +6084,6 @@ pushtag_1 (tree name, tree type, tag_scope scope)
 	      && b->level_chain->kind == sk_class))
 	in_class = 1;
 
-      if (current_lang_name == lang_name_java)
-	TYPE_FOR_JAVA (type) = 1;
-
       tdef = create_implicit_typedef (name, type);
       DECL_CONTEXT (tdef) = FROB_CONTEXT (context);
       if (scope == ts_within_enclosing_non_class)
@@ -6187,7 +6224,7 @@ store_binding (tree id, vec<cxx_saved_binding, va_gc> **old_bindings)
 static void
 store_bindings (tree names, vec<cxx_saved_binding, va_gc> **old_bindings)
 {
-  static vec<tree> bindings_need_stored = vNULL;
+  static vec<tree> bindings_need_stored;
   tree t, id;
   size_t i;
 
@@ -6223,7 +6260,7 @@ static void
 store_class_bindings (vec<cp_class_binding, va_gc> *names,
 		      vec<cxx_saved_binding, va_gc> **old_bindings)
 {
-  static vec<tree> bindings_need_stored = vNULL;
+  static vec<tree> bindings_need_stored;
   size_t i;
   cp_class_binding *cb;
 

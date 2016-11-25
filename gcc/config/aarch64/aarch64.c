@@ -26,6 +26,7 @@
 #include "target.h"
 #include "rtl.h"
 #include "tree.h"
+#include "memmodel.h"
 #include "gimple.h"
 #include "cfghooks.h"
 #include "cfgloop.h"
@@ -61,7 +62,6 @@
 #include "rtl-iter.h"
 #include "tm-constrs.h"
 #include "sched-int.h"
-#include "cortex-a57-fma-steering.h"
 #include "target-globals.h"
 #include "common/common-target.h"
 
@@ -171,7 +171,6 @@ static const struct aarch64_flag_desc aarch64_fusible_pairs[] =
   { "all", AARCH64_FUSE_ALL },
   { NULL, AARCH64_FUSE_NOTHING }
 };
-#undef AARCH64_FUION_PAIR
 
 #define AARCH64_EXTRA_TUNING_OPTION(name, internal_name) \
   { name, AARCH64_EXTRA_TUNE_##internal_name },
@@ -182,7 +181,6 @@ static const struct aarch64_flag_desc aarch64_tuning_flags[] =
   { "all", AARCH64_EXTRA_TUNE_ALL },
   { NULL, AARCH64_EXTRA_TUNE_NONE }
 };
-#undef AARCH64_EXTRA_TUNING_OPTION
 
 /* Tuning parameters.  */
 
@@ -400,12 +398,12 @@ static const struct cpu_vector_cost cortexa57_vector_cost =
   1, /* scalar_stmt_cost  */
   4, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  3, /* vec_stmt_cost  */
+  2, /* vec_stmt_cost  */
   3, /* vec_permute_cost  */
   8, /* vec_to_scalar_cost  */
   8, /* scalar_to_vec_cost  */
-  5, /* vec_align_load_cost  */
-  5, /* vec_unalign_load_cost  */
+  4, /* vec_align_load_cost  */
+  4, /* vec_unalign_load_cost  */
   1, /* vec_unalign_store_cost  */
   1, /* vec_store_cost  */
   1, /* cond_taken_branch_cost  */
@@ -712,7 +710,7 @@ static const struct tune_params thunderx_tunings =
   0,	/* max_case_values.  */
   0,	/* cache_line_size.  */
   tune_params::AUTOPREFETCHER_OFF,	/* autoprefetcher_model.  */
-  (AARCH64_EXTRA_TUNE_NONE)	/* tune_flags.  */
+  (AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)	/* tune_flags.  */
 };
 
 static const struct tune_params xgene1_tunings =
@@ -827,7 +825,6 @@ static const struct processor all_architectures[] =
 #define AARCH64_ARCH(NAME, CORE, ARCH_IDENT, ARCH_REV, FLAGS) \
   {NAME, CORE, CORE, AARCH64_ARCH_##ARCH_IDENT, ARCH_REV, FLAGS, NULL},
 #include "aarch64-arches.def"
-#undef AARCH64_ARCH
   {NULL, aarch64_none, aarch64_none, aarch64_no_arch, 0, 0, NULL}
 };
 
@@ -839,7 +836,6 @@ static const struct processor all_cores[] =
   all_architectures[AARCH64_ARCH_##ARCH].architecture_version,	\
   FLAGS, &COSTS##_tunings},
 #include "aarch64-cores.def"
-#undef AARCH64_CORE
   {"generic", generic, cortexa53, AARCH64_ARCH_8A, 8,
     AARCH64_FL_FOR_ARCH8, &generic_tunings},
   {NULL, aarch64_none, aarch64_none, aarch64_no_arch, 0, 0, NULL}
@@ -1958,26 +1954,31 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
   aarch64_internal_mov_immediate (dest, imm, true, GET_MODE (dest));
 }
 
-/* Add DELTA to REGNUM in mode MODE.  SCRATCHREG can be used to held
-   intermediate value if necessary.
+/* Add DELTA to REGNUM in mode MODE.  SCRATCHREG can be used to hold a
+   temporary value if necessary.  FRAME_RELATED_P should be true if
+   the RTX_FRAME_RELATED flag should be set and CFA adjustments added
+   to the generated instructions.  If SCRATCHREG is known to hold
+   abs (delta), EMIT_MOVE_IMM can be set to false to avoid emitting the
+   immediate again.
 
-   This function is sometimes used to adjust the stack pointer, so we must
-   ensure that it can never cause transient stack deallocation by writing an
-   invalid value into REGNUM.  */
+   Since this function may be used to adjust the stack pointer, we must
+   ensure that it cannot cause transient stack deallocation (for example
+   by first incrementing SP and then decrementing when adjusting by a
+   large immediate).  */
 
 static void
-aarch64_add_constant (machine_mode mode, int regnum, int scratchreg,
-		      HOST_WIDE_INT delta, bool frame_related_p)
+aarch64_add_constant_internal (machine_mode mode, int regnum, int scratchreg,
+			       HOST_WIDE_INT delta, bool frame_related_p,
+			       bool emit_move_imm)
 {
   HOST_WIDE_INT mdelta = abs_hwi (delta);
   rtx this_rtx = gen_rtx_REG (mode, regnum);
   rtx_insn *insn;
 
-  /* Do nothing if mdelta is zero.  */
   if (!mdelta)
     return;
 
-  /* We only need single instruction if the offset fit into add/sub.  */
+  /* Single instruction adjustment.  */
   if (aarch64_uimm12_shift (mdelta))
     {
       insn = emit_insn (gen_add2_insn (this_rtx, GEN_INT (delta)));
@@ -1985,11 +1986,10 @@ aarch64_add_constant (machine_mode mode, int regnum, int scratchreg,
       return;
     }
 
-  /* We need two add/sub instructions, each one performing part of the
-     calculation.  Don't do this if the addend can be loaded into register with
-     a single instruction, in that case we prefer a move to a scratch register
-     following by an addition.  */
-  if (mdelta < 0x1000000 && !aarch64_move_imm (delta, mode))
+  /* Emit 2 additions/subtractions if the adjustment is less than 24 bits.
+     Only do this if mdelta is not a 16-bit move as adjusting using a move
+     is better.  */
+  if (mdelta < 0x1000000 && !aarch64_move_imm (mdelta, mode))
     {
       HOST_WIDE_INT low_off = mdelta & 0xfff;
 
@@ -2001,16 +2001,39 @@ aarch64_add_constant (machine_mode mode, int regnum, int scratchreg,
       return;
     }
 
-  /* Otherwise use generic function to handle all other situations.  */
+  /* Emit a move immediate if required and an addition/subtraction.  */
   rtx scratch_rtx = gen_rtx_REG (mode, scratchreg);
-  aarch64_internal_mov_immediate (scratch_rtx, GEN_INT (delta), true, mode);
-  insn = emit_insn (gen_add2_insn (this_rtx, scratch_rtx));
+  if (emit_move_imm)
+    aarch64_internal_mov_immediate (scratch_rtx, GEN_INT (mdelta), true, mode);
+  insn = emit_insn (delta < 0 ? gen_sub2_insn (this_rtx, scratch_rtx)
+			      : gen_add2_insn (this_rtx, scratch_rtx));
   if (frame_related_p)
     {
       RTX_FRAME_RELATED_P (insn) = frame_related_p;
       rtx adj = plus_constant (mode, this_rtx, delta);
       add_reg_note (insn , REG_CFA_ADJUST_CFA, gen_rtx_SET (this_rtx, adj));
     }
+}
+
+static inline void
+aarch64_add_constant (machine_mode mode, int regnum, int scratchreg,
+		      HOST_WIDE_INT delta)
+{
+  aarch64_add_constant_internal (mode, regnum, scratchreg, delta, false, true);
+}
+
+static inline void
+aarch64_add_sp (int scratchreg, HOST_WIDE_INT delta, bool emit_move_imm)
+{
+  aarch64_add_constant_internal (Pmode, SP_REGNUM, scratchreg, delta,
+				 true, emit_move_imm);
+}
+
+static inline void
+aarch64_sub_sp (int scratchreg, HOST_WIDE_INT delta, bool frame_related_p)
+{
+  aarch64_add_constant_internal (Pmode, SP_REGNUM, scratchreg, -delta,
+				 frame_related_p, true);
 }
 
 static bool
@@ -2738,7 +2761,7 @@ static void
 aarch64_layout_frame (void)
 {
   HOST_WIDE_INT offset = 0;
-  int regno;
+  int regno, last_fp_reg = INVALID_REGNUM;
 
   if (reload_completed && cfun->machine->frame.laid_out)
     return;
@@ -2772,7 +2795,10 @@ aarch64_layout_frame (void)
   for (regno = V0_REGNUM; regno <= V31_REGNUM; regno++)
     if (df_regs_ever_live_p (regno)
 	&& !call_used_regs[regno])
-      cfun->machine->frame.reg_offset[regno] = SLOT_REQUIRED;
+      {
+	cfun->machine->frame.reg_offset[regno] = SLOT_REQUIRED;
+	last_fp_reg = regno;
+      }
 
   if (frame_pointer_needed)
     {
@@ -2796,9 +2822,21 @@ aarch64_layout_frame (void)
 	offset += UNITS_PER_WORD;
       }
 
+  HOST_WIDE_INT max_int_offset = offset;
+  offset = ROUND_UP (offset, STACK_BOUNDARY / BITS_PER_UNIT);
+  bool has_align_gap = offset != max_int_offset;
+
   for (regno = V0_REGNUM; regno <= V31_REGNUM; regno++)
     if (cfun->machine->frame.reg_offset[regno] == SLOT_REQUIRED)
       {
+	/* If there is an alignment gap between integer and fp callee-saves,
+	   allocate the last fp register to it if possible.  */
+	if (regno == last_fp_reg && has_align_gap && (offset & 8) == 0)
+	  {
+	    cfun->machine->frame.reg_offset[regno] = max_int_offset;
+	    break;
+	  }
+
 	cfun->machine->frame.reg_offset[regno] = offset;
 	if (cfun->machine->frame.wb_candidate1 == INVALID_REGNUM)
 	  cfun->machine->frame.wb_candidate1 = regno;
@@ -2898,11 +2936,17 @@ aarch64_layout_frame (void)
   cfun->machine->frame.laid_out = true;
 }
 
+/* Return true if the register REGNO is saved on entry to
+   the current function.  */
+
 static bool
 aarch64_register_saved_on_entry (int regno)
 {
   return cfun->machine->frame.reg_offset[regno] >= 0;
 }
+
+/* Return the next register up from REGNO up to LIMIT for the callee
+   to save.  */
 
 static unsigned
 aarch64_next_callee_save (unsigned regno, unsigned limit)
@@ -2911,6 +2955,9 @@ aarch64_next_callee_save (unsigned regno, unsigned limit)
     regno ++;
   return regno;
 }
+
+/* Push the register number REGNO of mode MODE to the stack with write-back
+   adjusting the stack by ADJUSTMENT.  */
 
 static void
 aarch64_pushwb_single_reg (machine_mode mode, unsigned regno,
@@ -2927,6 +2974,10 @@ aarch64_pushwb_single_reg (machine_mode mode, unsigned regno,
   insn = emit_move_insn (mem, reg);
   RTX_FRAME_RELATED_P (insn) = 1;
 }
+
+/* Generate and return an instruction to store the pair of registers
+   REG and REG2 of mode MODE to location BASE with write-back adjusting
+   the stack location BASE by ADJUSTMENT.  */
 
 static rtx
 aarch64_gen_storewb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
@@ -2947,6 +2998,9 @@ aarch64_gen_storewb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
     }
 }
 
+/* Push registers numbered REGNO1 and REGNO2 to the stack, adjusting the
+   stack pointer by ADJUSTMENT.  */
+
 static void
 aarch64_push_regs (unsigned regno1, unsigned regno2, HOST_WIDE_INT adjustment)
 {
@@ -2966,6 +3020,9 @@ aarch64_push_regs (unsigned regno1, unsigned regno2, HOST_WIDE_INT adjustment)
   RTX_FRAME_RELATED_P (insn) = 1;
 }
 
+/* Load the pair of register REG, REG2 of mode MODE from stack location BASE,
+   adjusting it by ADJUSTMENT afterwards.  */
+
 static rtx
 aarch64_gen_loadwb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
 			 HOST_WIDE_INT adjustment)
@@ -2982,6 +3039,10 @@ aarch64_gen_loadwb_pair (machine_mode mode, rtx base, rtx reg, rtx reg2,
       gcc_unreachable ();
     }
 }
+
+/* Pop the two registers numbered REGNO1, REGNO2 from the stack, adjusting it
+   afterwards by ADJUSTMENT and writing the appropriate REG_CFA_RESTORE notes
+   into CFI_OPS.  */
 
 static void
 aarch64_pop_regs (unsigned regno1, unsigned regno2, HOST_WIDE_INT adjustment,
@@ -3007,6 +3068,9 @@ aarch64_pop_regs (unsigned regno1, unsigned regno2, HOST_WIDE_INT adjustment,
     }
 }
 
+/* Generate and return a store pair instruction of mode MODE to store
+   register REG1 to MEM1 and register REG2 to MEM2.  */
+
 static rtx
 aarch64_gen_store_pair (machine_mode mode, rtx mem1, rtx reg1, rtx mem2,
 			rtx reg2)
@@ -3023,6 +3087,9 @@ aarch64_gen_store_pair (machine_mode mode, rtx mem1, rtx reg1, rtx mem2,
       gcc_unreachable ();
     }
 }
+
+/* Generate and regurn a load pair isntruction of mode MODE to load register
+   REG1 from MEM1 and register REG2 from MEM2.  */
 
 static rtx
 aarch64_gen_load_pair (machine_mode mode, rtx reg1, rtx mem1, rtx reg2,
@@ -3041,6 +3108,9 @@ aarch64_gen_load_pair (machine_mode mode, rtx reg1, rtx mem1, rtx reg2,
     }
 }
 
+/* Emit code to save the callee-saved registers from register number START
+   to LIMIT to the stack at the location starting at offset START_OFFSET,
+   skipping any write-back candidates if SKIP_WB is true.  */
 
 static void
 aarch64_save_callee_saves (machine_mode mode, HOST_WIDE_INT start_offset,
@@ -3098,6 +3168,11 @@ aarch64_save_callee_saves (machine_mode mode, HOST_WIDE_INT start_offset,
       RTX_FRAME_RELATED_P (insn) = 1;
     }
 }
+
+/* Emit code to restore the callee registers of mode MODE from register
+   number START up to and including LIMIT.  Restore from the stack offset
+   START_OFFSET, skipping any write-back candidates if SKIP_WB is true.
+   Write the appropriate REG_CFA_RESTORE notes into CFI_OPS.  */
 
 static void
 aarch64_restore_callee_saves (machine_mode mode,
@@ -3219,7 +3294,7 @@ aarch64_expand_prologue (void)
 	aarch64_emit_probe_stack_range (STACK_CHECK_PROTECT, frame_size);
     }
 
-  aarch64_add_constant (Pmode, SP_REGNUM, IP0_REGNUM, -initial_adjust, true);
+  aarch64_sub_sp (IP0_REGNUM, initial_adjust, true);
 
   if (callee_adjust != 0)
     aarch64_push_regs (reg1, reg2, callee_adjust);
@@ -3240,8 +3315,7 @@ aarch64_expand_prologue (void)
 			     callee_adjust != 0 || frame_pointer_needed);
   aarch64_save_callee_saves (DFmode, callee_offset, V0_REGNUM, V31_REGNUM,
 			     callee_adjust != 0 || frame_pointer_needed);
-  aarch64_add_constant (Pmode, SP_REGNUM, IP1_REGNUM, -final_adjust,
-			!frame_pointer_needed);
+  aarch64_sub_sp (IP1_REGNUM, final_adjust, !frame_pointer_needed);
 }
 
 /* Return TRUE if we can use a simple_return insn.
@@ -3306,7 +3380,7 @@ aarch64_expand_epilogue (bool for_sibcall)
       RTX_FRAME_RELATED_P (insn) = callee_adjust == 0;
     }
   else
-    aarch64_add_constant (Pmode, SP_REGNUM, IP1_REGNUM, final_adjust, true);
+    aarch64_add_sp (IP1_REGNUM, final_adjust, df_regs_ever_live_p (IP1_REGNUM));
 
   aarch64_restore_callee_saves (DImode, callee_offset, R0_REGNUM, R30_REGNUM,
 				callee_adjust != 0, &cfi_ops);
@@ -3329,7 +3403,7 @@ aarch64_expand_epilogue (bool for_sibcall)
       cfi_ops = NULL;
     }
 
-  aarch64_add_constant (Pmode, SP_REGNUM, IP0_REGNUM, initial_adjust, true);
+  aarch64_add_sp (IP0_REGNUM, initial_adjust, df_regs_ever_live_p (IP0_REGNUM));
 
   if (cfi_ops)
     {
@@ -3424,7 +3498,7 @@ aarch64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
   emit_note (NOTE_INSN_PROLOGUE_END);
 
   if (vcall_offset == 0)
-    aarch64_add_constant (Pmode, this_regno, IP1_REGNUM, delta, false);
+    aarch64_add_constant (Pmode, this_regno, IP1_REGNUM, delta);
   else
     {
       gcc_assert ((vcall_offset & (POINTER_BYTES - 1)) == 0);
@@ -3440,7 +3514,7 @@ aarch64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 	    addr = gen_rtx_PRE_MODIFY (Pmode, this_rtx,
 				       plus_constant (Pmode, this_rtx, delta));
 	  else
-	    aarch64_add_constant (Pmode, this_regno, IP1_REGNUM, delta, false);
+	    aarch64_add_constant (Pmode, this_regno, IP1_REGNUM, delta);
 	}
 
       if (Pmode == ptr_mode)
@@ -3600,6 +3674,44 @@ aarch64_bitmask_imm (HOST_WIDE_INT val_in, machine_mode mode)
   return val == mask * bitmask_imm_mul[__builtin_clz (bits) - 26];
 }
 
+/* Create mask of ones, covering the lowest to highest bits set in VAL_IN.  
+   Assumed precondition: VAL_IN Is not zero.  */
+
+unsigned HOST_WIDE_INT
+aarch64_and_split_imm1 (HOST_WIDE_INT val_in)
+{
+  int lowest_bit_set = ctz_hwi (val_in);
+  int highest_bit_set = floor_log2 (val_in);
+  gcc_assert (val_in != 0);
+
+  return ((HOST_WIDE_INT_UC (2) << highest_bit_set) -
+	  (HOST_WIDE_INT_1U << lowest_bit_set));
+}
+
+/* Create constant where bits outside of lowest bit set to highest bit set
+   are set to 1.  */
+
+unsigned HOST_WIDE_INT
+aarch64_and_split_imm2 (HOST_WIDE_INT val_in)
+{
+  return val_in | ~aarch64_and_split_imm1 (val_in);
+}
+
+/* Return true if VAL_IN is a valid 'and' bitmask immediate.  */
+
+bool
+aarch64_and_bitmask_imm (unsigned HOST_WIDE_INT val_in, machine_mode mode)
+{
+  if (aarch64_bitmask_imm (val_in, mode))
+    return false;
+
+  if (aarch64_move_imm (val_in, mode))
+    return false;
+
+  unsigned HOST_WIDE_INT imm2 = aarch64_and_split_imm2 (val_in);
+
+  return aarch64_bitmask_imm (imm2, mode);
+}
 
 /* Return true if val is an immediate that can be loaded into a
    register in a single instruction.  */
@@ -4191,6 +4303,24 @@ aarch64_legitimate_address_p (machine_mode mode, rtx x,
   return aarch64_classify_address (&addr, x, mode, outer_code, strict_p);
 }
 
+/* Split an out-of-range address displacement into a base and offset.
+   Use 4KB range for 1- and 2-byte accesses and a 16KB range otherwise
+   to increase opportunities for sharing the base address of different sizes.
+   For TI/TFmode and unaligned accesses use a 256-byte range.  */
+static bool
+aarch64_legitimize_address_displacement (rtx *disp, rtx *off, machine_mode mode)
+{
+  HOST_WIDE_INT mask = GET_MODE_SIZE (mode) < 4 ? 0xfff : 0x3fff;
+
+  if (mode == TImode || mode == TFmode ||
+      (INTVAL (*disp) & (GET_MODE_SIZE (mode) - 1)) != 0)
+    mask = 0xff;
+
+  *off = GEN_INT (INTVAL (*disp) & ~mask);
+  *disp = GEN_INT (INTVAL (*disp) & mask);
+  return true;
+}
+
 /* Return TRUE if rtx X is immediate constant 0.0 */
 bool
 aarch64_float_const_zero_rtx_p (rtx x)
@@ -4262,6 +4392,14 @@ aarch64_select_cc_mode (RTX_CODE code, rtx x, rtx y)
   if (y == const0_rtx && REG_P (x)
       && (code == EQ || code == NE)
       && (GET_MODE (x) == HImode || GET_MODE (x) == QImode))
+    return CC_NZmode;
+
+  /* Similarly, comparisons of zero_extends from shorter modes can
+     be performed using an ANDS with an immediate mask.  */
+  if (y == const0_rtx && GET_CODE (x) == ZERO_EXTEND
+      && (GET_MODE (x) == SImode || GET_MODE (x) == DImode)
+      && (GET_MODE (XEXP (x, 0)) == HImode || GET_MODE (XEXP (x, 0)) == QImode)
+      && (code == EQ || code == NE))
     return CC_NZmode;
 
   if ((GET_MODE (x) == SImode || GET_MODE (x) == DImode)
@@ -4406,7 +4544,6 @@ aarch64_get_condition_code_1 (enum machine_mode mode, enum rtx_code comp_code)
 
     default:
       return -1;
-      break;
     }
 
   return -1;
@@ -5056,9 +5193,19 @@ aarch64_legitimize_address (rtx x, rtx /* orig_x  */, machine_mode mode)
       /* For offsets aren't a multiple of the access size, the limit is
 	 -256...255.  */
       else if (offset & (GET_MODE_SIZE (mode) - 1))
-	base_offset = (offset + 0x100) & ~0x1ff;
+	{
+	  base_offset = (offset + 0x100) & ~0x1ff;
+
+	  /* BLKmode typically uses LDP of X-registers.  */
+	  if (mode == BLKmode)
+	    base_offset = (offset + 512) & ~0x3ff;
+	}
+      /* Small negative offsets are supported.  */
+      else if (IN_RANGE (offset, -256, 0))
+	base_offset = 0;
+      /* Use 12-bit offset by access size.  */
       else
-	base_offset = offset & ~0xfff;
+	base_offset = offset & (~0xfff * GET_MODE_SIZE (mode));
 
       if (base_offset != 0)
 	{
@@ -7315,7 +7462,8 @@ cost_plus:
       break;
     }
 
-  if (dump_file && (dump_flags & TDF_DETAILS))
+  if (dump_file
+      && flag_aarch64_verbose_cost)
     fprintf (dump_file,
       "\nFailed to cost RTX.  Assuming default cost.\n");
 
@@ -7331,7 +7479,8 @@ aarch64_rtx_costs_wrapper (rtx x, machine_mode mode, int outer,
 {
   bool result = aarch64_rtx_costs (x, mode, outer, param, cost, speed);
 
-  if (dump_file && (dump_flags & TDF_DETAILS))
+  if (dump_file
+      && flag_aarch64_verbose_cost)
     {
       print_rtl_single (dump_file, x);
       fprintf (dump_file, "\n%s cost: %d (%s)\n",
@@ -8240,6 +8389,44 @@ aarch64_override_options_internal (struct gcc_options *opts)
   aarch64_override_options_after_change_1 (opts);
 }
 
+/* Print a hint with a suggestion for a core or architecture name that
+   most closely resembles what the user passed in STR.  ARCH is true if
+   the user is asking for an architecture name.  ARCH is false if the user
+   is asking for a core name.  */
+
+static void
+aarch64_print_hint_for_core_or_arch (const char *str, bool arch)
+{
+  auto_vec<const char *> candidates;
+  const struct processor *entry = arch ? all_architectures : all_cores;
+  for (; entry->name != NULL; entry++)
+    candidates.safe_push (entry->name);
+  char *s;
+  const char *hint = candidates_list_and_hint (str, s, candidates);
+  if (hint)
+    inform (input_location, "valid arguments are: %s;"
+			     " did you mean %qs?", s, hint);
+  XDELETEVEC (s);
+}
+
+/* Print a hint with a suggestion for a core name that most closely resembles
+   what the user passed in STR.  */
+
+inline static void
+aarch64_print_hint_for_core (const char *str)
+{
+  aarch64_print_hint_for_core_or_arch (str, false);
+}
+
+/* Print a hint with a suggestion for an architecture name that most closely
+   resembles what the user passed in STR.  */
+
+inline static void
+aarch64_print_hint_for_arch (const char *str)
+{
+  aarch64_print_hint_for_core_or_arch (str, true);
+}
+
 /* Validate a command-line -mcpu option.  Parse the cpu and extensions (if any)
    specified in STR and throw errors if appropriate.  Put the results if
    they are valid in RES and ISA_FLAGS.  Return whether the option is
@@ -8262,6 +8449,7 @@ aarch64_validate_mcpu (const char *str, const struct processor **res,
 	break;
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for -mcpu", str);
+	aarch64_print_hint_for_core (str);
 	break;
       case AARCH64_PARSE_INVALID_FEATURE:
 	error ("invalid feature modifier in -mcpu=%qs", str);
@@ -8280,7 +8468,7 @@ aarch64_validate_mcpu (const char *str, const struct processor **res,
 
 static bool
 aarch64_validate_march (const char *str, const struct processor **res,
-		       unsigned long *isa_flags)
+			 unsigned long *isa_flags)
 {
   enum aarch64_parse_opt_result parse_res
     = aarch64_parse_arch (str, res, isa_flags);
@@ -8295,6 +8483,7 @@ aarch64_validate_march (const char *str, const struct processor **res,
 	break;
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for -march", str);
+	aarch64_print_hint_for_arch (str);
 	break;
       case AARCH64_PARSE_INVALID_FEATURE:
 	error ("invalid feature modifier in -march=%qs", str);
@@ -8327,6 +8516,7 @@ aarch64_validate_mtune (const char *str, const struct processor **res)
 	break;
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for -mtune", str);
+	aarch64_print_hint_for_core (str);
 	break;
       default:
 	gcc_unreachable ();
@@ -8481,9 +8671,6 @@ aarch64_override_options (void)
      while processing functions with potential target attributes.  */
   target_option_default_node = target_option_current_node
       = build_target_option_node (&global_options);
-
-  aarch64_register_fma_steering ();
-
 }
 
 /* Implement targetm.override_options_after_change.  */
@@ -8698,6 +8885,7 @@ aarch64_handle_attr_arch (const char *str, const char *pragma_or_attr)
 	break;
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for 'arch' target %s", str, pragma_or_attr);
+	aarch64_print_hint_for_arch (str);
 	break;
       case AARCH64_PARSE_INVALID_FEATURE:
 	error ("invalid feature modifier %qs for 'arch' target %s",
@@ -8738,6 +8926,7 @@ aarch64_handle_attr_cpu (const char *str, const char *pragma_or_attr)
 	break;
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for 'cpu' target %s", str, pragma_or_attr);
+	aarch64_print_hint_for_core (str);
 	break;
       case AARCH64_PARSE_INVALID_FEATURE:
 	error ("invalid feature modifier %qs for 'cpu' target %s",
@@ -8772,6 +8961,7 @@ aarch64_handle_attr_tune (const char *str, const char *pragma_or_attr)
     {
       case AARCH64_PARSE_INVALID_ARG:
 	error ("unknown value %qs for 'tune' target %s", str, pragma_or_attr);
+	aarch64_print_hint_for_core (str);
 	break;
       default:
 	gcc_unreachable ();
@@ -11324,8 +11514,8 @@ aarch64_emit_unlikely_jump (rtx insn)
 {
   int very_unlikely = REG_BR_PROB_BASE / 100 - 1;
 
-  insn = emit_jump_insn (insn);
-  add_int_reg_note (insn, REG_BR_PROB, very_unlikely);
+  rtx_insn *jump = emit_jump_insn (insn);
+  add_int_reg_note (jump, REG_BR_PROB, very_unlikely);
 }
 
 /* Expand a compare and swap pattern.  */
@@ -13059,6 +13249,63 @@ aarch64_expand_movmem (rtx *operands)
   return true;
 }
 
+/* Split a DImode store of a CONST_INT SRC to MEM DST as two
+   SImode stores.  Handle the case when the constant has identical
+   bottom and top halves.  This is beneficial when the two stores can be
+   merged into an STP and we avoid synthesising potentially expensive
+   immediates twice.  Return true if such a split is possible.  */
+
+bool
+aarch64_split_dimode_const_store (rtx dst, rtx src)
+{
+  rtx lo = gen_lowpart (SImode, src);
+  rtx hi = gen_highpart_mode (SImode, DImode, src);
+
+  bool size_p = optimize_function_for_size_p (cfun);
+
+  if (!rtx_equal_p (lo, hi))
+    return false;
+
+  unsigned int orig_cost
+    = aarch64_internal_mov_immediate (NULL_RTX, src, false, DImode);
+  unsigned int lo_cost
+    = aarch64_internal_mov_immediate (NULL_RTX, lo, false, SImode);
+
+  /* We want to transform:
+     MOV	x1, 49370
+     MOVK	x1, 0x140, lsl 16
+     MOVK	x1, 0xc0da, lsl 32
+     MOVK	x1, 0x140, lsl 48
+     STR	x1, [x0]
+   into:
+     MOV	w1, 49370
+     MOVK	w1, 0x140, lsl 16
+     STP	w1, w1, [x0]
+   So we want to perform this only when we save two instructions
+   or more.  When optimizing for size, however, accept any code size
+   savings we can.  */
+  if (size_p && orig_cost <= lo_cost)
+    return false;
+
+  if (!size_p
+      && (orig_cost <= lo_cost + 1))
+    return false;
+
+  rtx mem_lo = adjust_address (dst, SImode, 0);
+  if (!aarch64_mem_pair_operand (mem_lo, SImode))
+    return false;
+
+  rtx tmp_reg = gen_reg_rtx (SImode);
+  aarch64_expand_mov_immediate (tmp_reg, lo);
+  rtx mem_hi = aarch64_move_pointer (mem_lo, GET_MODE_SIZE (SImode));
+  /* Don't emit an explicit store pair as this may not be always profitable.
+     Let the sched-fusion logic decide whether to merge them.  */
+  emit_move_insn (mem_lo, tmp_reg);
+  emit_move_insn (mem_hi, tmp_reg);
+
+  return true;
+}
+
 /* Implement the TARGET_ASAN_SHADOW_OFFSET hook.  */
 
 static unsigned HOST_WIDE_INT
@@ -13084,7 +13331,7 @@ aarch64_use_by_pieces_infrastructure_p (unsigned HOST_WIDE_INT size,
 }
 
 static rtx
-aarch64_gen_ccmp_first (rtx *prep_seq, rtx *gen_seq,
+aarch64_gen_ccmp_first (rtx_insn **prep_seq, rtx_insn **gen_seq,
 			int code, tree treeop0, tree treeop1)
 {
   machine_mode op_mode, cmp_mode, cc_mode = CCmode;
@@ -13158,8 +13405,8 @@ aarch64_gen_ccmp_first (rtx *prep_seq, rtx *gen_seq,
 }
 
 static rtx
-aarch64_gen_ccmp_next (rtx *prep_seq, rtx *gen_seq, rtx prev, int cmp_code,
-		       tree treeop0, tree treeop1, int bit_code)
+aarch64_gen_ccmp_next (rtx_insn **prep_seq, rtx_insn **gen_seq, rtx prev,
+		       int cmp_code, tree treeop0, tree treeop1, int bit_code)
 {
   rtx op0, op1, target;
   machine_mode op_mode, cmp_mode, cc_mode = CCmode;
@@ -13168,7 +13415,7 @@ aarch64_gen_ccmp_next (rtx *prep_seq, rtx *gen_seq, rtx prev, int cmp_code,
   struct expand_operand ops[6];
   int aarch64_cond;
 
-  push_to_sequence ((rtx_insn*) *prep_seq);
+  push_to_sequence (*prep_seq);
   expand_operands (treeop0, treeop1, NULL_RTX, &op0, &op1, EXPAND_NORMAL);
 
   op_mode = GET_MODE (op0);
@@ -13234,7 +13481,7 @@ aarch64_gen_ccmp_next (rtx *prep_seq, rtx *gen_seq, rtx prev, int cmp_code,
   create_fixed_operand (&ops[4], prev);
   create_fixed_operand (&ops[5], GEN_INT (aarch64_cond));
 
-  push_to_sequence ((rtx_insn*) *gen_seq);
+  push_to_sequence (*gen_seq);
   if (!maybe_expand_insn (icode, 6, ops))
     {
       end_sequence ();
@@ -13593,6 +13840,15 @@ aarch64_operands_ok_for_ldpstp (rtx *operands, bool load,
   if (MEM_VOLATILE_P (mem_1) || MEM_VOLATILE_P (mem_2))
     return false;
 
+  /* If we have SImode and slow unaligned ldp,
+     check the alignment to be at least 8 byte. */
+  if (mode == SImode
+      && (aarch64_tune_params.extra_tuning_flags
+          & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
+      && !optimize_size
+      && MEM_ALIGN (mem_1) < 8 * BITS_PER_UNIT)
+    return false;
+
   /* Check if the addresses are in the form of [base+offset].  */
   extract_base_offset_in_addr (mem_1, &base_1, &offset_1);
   if (base_1 == NULL_RTX || offset_1 == NULL_RTX)
@@ -13751,6 +14007,15 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
       if (offval_1 > offval_2 && reg_mentioned_p (reg_4, mem_4))
 	return false;
     }
+
+  /* If we have SImode and slow unaligned ldp,
+     check the alignment to be at least 8 byte. */
+  if (mode == SImode
+      && (aarch64_tune_params.extra_tuning_flags
+          & AARCH64_EXTRA_TUNE_SLOW_UNALIGNED_LDPW)
+      && !optimize_size
+      && MEM_ALIGN (mem_1) < 8 * BITS_PER_UNIT)
+    return false;
 
   if (REG_P (reg_1) && FP_REGNUM_P (REGNO (reg_1)))
     rclass_1 = FP_REGS;
@@ -13975,12 +14240,20 @@ aarch64_vec_fpconst_pow_of_2 (rtx x)
   return firstval;
 }
 
-/* Implement TARGET_PROMOTED_TYPE to promote __fp16 to float.  */
+/* Implement TARGET_PROMOTED_TYPE to promote 16-bit floating point types
+   to float.
+
+   __fp16 always promotes through this hook.
+   _Float16 may promote if TARGET_FLT_EVAL_METHOD is 16, but we do that
+   through the generic excess precision logic rather than here.  */
+
 static tree
 aarch64_promoted_type (const_tree t)
 {
-  if (SCALAR_FLOAT_TYPE_P (t) && TYPE_PRECISION (t) == 16)
+  if (SCALAR_FLOAT_TYPE_P (t)
+      && TYPE_MAIN_VARIANT (t) == aarch64_fp16_type_node)
     return float_type_node;
+
   return NULL_TREE;
 }
 
@@ -13998,6 +14271,69 @@ aarch64_optab_supported_p (int op, machine_mode mode1, machine_mode,
     default:
       return true;
     }
+}
+
+/* Implement TARGET_LIBGCC_FLOATING_POINT_MODE_SUPPORTED_P - return TRUE
+   if MODE is HFmode, and punt to the generic implementation otherwise.  */
+
+static bool
+aarch64_libgcc_floating_mode_supported_p (machine_mode mode)
+{
+  return (mode == HFmode
+	  ? true
+	  : default_libgcc_floating_mode_supported_p (mode));
+}
+
+/* Implement TARGET_SCALAR_MODE_SUPPORTED_P - return TRUE
+   if MODE is HFmode, and punt to the generic implementation otherwise.  */
+
+static bool
+aarch64_scalar_mode_supported_p (machine_mode mode)
+{
+  return (mode == HFmode
+	  ? true
+	  : default_scalar_mode_supported_p (mode));
+}
+
+/* Set the value of FLT_EVAL_METHOD.
+   ISO/IEC TS 18661-3 defines two values that we'd like to make use of:
+
+    0: evaluate all operations and constants, whose semantic type has at
+       most the range and precision of type float, to the range and
+       precision of float; evaluate all other operations and constants to
+       the range and precision of the semantic type;
+
+    N, where _FloatN is a supported interchange floating type
+       evaluate all operations and constants, whose semantic type has at
+       most the range and precision of _FloatN type, to the range and
+       precision of the _FloatN type; evaluate all other operations and
+       constants to the range and precision of the semantic type;
+
+   If we have the ARMv8.2-A extensions then we support _Float16 in native
+   precision, so we should set this to 16.  Otherwise, we support the type,
+   but want to evaluate expressions in float precision, so set this to
+   0.  */
+
+static enum flt_eval_method
+aarch64_excess_precision (enum excess_precision_type type)
+{
+  switch (type)
+    {
+      case EXCESS_PRECISION_TYPE_FAST:
+      case EXCESS_PRECISION_TYPE_STANDARD:
+	/* We can calculate either in 16-bit range and precision or
+	   32-bit range and precision.  Make that decision based on whether
+	   we have native support for the ARMv8.2-A 16-bit floating-point
+	   instructions or not.  */
+	return (TARGET_FP_F16INST
+		? FLT_EVAL_METHOD_PROMOTE_TO_FLOAT16
+		: FLT_EVAL_METHOD_PROMOTE_TO_FLOAT);
+      case EXCESS_PRECISION_TYPE_IMPLICIT:
+	return FLT_EVAL_METHOD_PROMOTE_TO_FLOAT16;
+      default:
+	gcc_unreachable ();
+    }
+  return FLT_EVAL_METHOD_UNPREDICTABLE;
 }
 
 #undef TARGET_ADDRESS_COST
@@ -14078,6 +14414,9 @@ aarch64_optab_supported_p (int op, machine_mode mode1, machine_mode,
 #undef TARGET_BUILTIN_RECIPROCAL
 #define TARGET_BUILTIN_RECIPROCAL aarch64_builtin_reciprocal
 
+#undef TARGET_C_EXCESS_PRECISION
+#define TARGET_C_EXCESS_PRECISION aarch64_excess_precision
+
 #undef  TARGET_EXPAND_BUILTIN
 #define TARGET_EXPAND_BUILTIN aarch64_expand_builtin
 
@@ -14127,11 +14466,16 @@ aarch64_optab_supported_p (int op, machine_mode mode1, machine_mode,
 #undef TARGET_LEGITIMATE_CONSTANT_P
 #define TARGET_LEGITIMATE_CONSTANT_P aarch64_legitimate_constant_p
 
+#undef TARGET_LEGITIMIZE_ADDRESS_DISPLACEMENT
+#define TARGET_LEGITIMIZE_ADDRESS_DISPLACEMENT \
+  aarch64_legitimize_address_displacement
+
 #undef TARGET_LIBGCC_CMP_RETURN_MODE
 #define TARGET_LIBGCC_CMP_RETURN_MODE aarch64_libgcc_cmp_return_mode
 
-#undef TARGET_LRA_P
-#define TARGET_LRA_P hook_bool_void_true
+#undef TARGET_LIBGCC_FLOATING_MODE_SUPPORTED_P
+#define TARGET_LIBGCC_FLOATING_MODE_SUPPORTED_P \
+aarch64_libgcc_floating_mode_supported_p
 
 #undef TARGET_MANGLE_TYPE
 #define TARGET_MANGLE_TYPE aarch64_mangle_type
@@ -14208,6 +14552,9 @@ aarch64_optab_supported_p (int op, machine_mode mode1, machine_mode,
 
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS aarch64_rtx_costs_wrapper
+
+#undef TARGET_SCALAR_MODE_SUPPORTED_P
+#define TARGET_SCALAR_MODE_SUPPORTED_P aarch64_scalar_mode_supported_p
 
 #undef TARGET_SCHED_ISSUE_RATE
 #define TARGET_SCHED_ISSUE_RATE aarch64_sched_issue_rate

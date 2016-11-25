@@ -95,6 +95,7 @@
 #include "cfghooks.h"
 #include "alloc-pool.h"
 #include "tree-pass.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "insn-config.h"
 #include "regs.h"
@@ -1810,8 +1811,7 @@ vars_copy (variable_table_type *dst, variable_table_type *src)
 static inline tree
 var_debug_decl (tree decl)
 {
-  if (decl && TREE_CODE (decl) == VAR_DECL
-      && DECL_HAS_DEBUG_EXPR_P (decl))
+  if (decl && VAR_P (decl) && DECL_HAS_DEBUG_EXPR_P (decl))
     {
       tree debugdecl = DECL_DEBUG_EXPR (decl);
       if (DECL_P (debugdecl))
@@ -1983,7 +1983,7 @@ static bool
 negative_power_of_two_p (HOST_WIDE_INT i)
 {
   unsigned HOST_WIDE_INT x = -(unsigned HOST_WIDE_INT)i;
-  return x == (x & -x);
+  return pow2_or_zerop (x);
 }
 
 /* Strip constant offsets and alignments off of LOC.  Return the base
@@ -5145,7 +5145,7 @@ track_expr_p (tree expr, bool need_rtl)
     return DECL_RTL_SET_P (expr);
 
   /* If EXPR is not a parameter or a variable do not track it.  */
-  if (TREE_CODE (expr) != VAR_DECL && TREE_CODE (expr) != PARM_DECL)
+  if (!VAR_P (expr) && TREE_CODE (expr) != PARM_DECL)
     return 0;
 
   /* It also must have a name...  */
@@ -5161,7 +5161,7 @@ track_expr_p (tree expr, bool need_rtl)
      don't need to track this expression if the ultimate declaration is
      ignored.  */
   realdecl = expr;
-  if (TREE_CODE (realdecl) == VAR_DECL && DECL_HAS_DEBUG_EXPR_P (realdecl))
+  if (VAR_P (realdecl) && DECL_HAS_DEBUG_EXPR_P (realdecl))
     {
       realdecl = DECL_DEBUG_EXPR (realdecl);
       if (!DECL_P (realdecl))

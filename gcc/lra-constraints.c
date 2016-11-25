@@ -115,6 +115,7 @@
 #include "tree.h"
 #include "predict.h"
 #include "df.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "expmed.h"
 #include "optabs.h"
@@ -182,41 +183,31 @@ get_try_hard_regno (int regno)
   return ira_class_hard_regs[rclass][0];
 }
 
-/* Return final hard regno (plus offset) which will be after
-   elimination.	 We do this for matching constraints because the final
-   hard regno could have a different class.  */
+/* Return the hard regno of X after removing its subreg.  If X is not
+   a register or a subreg of a register, return -1.  If X is a pseudo,
+   use its assignment.  If FINAL_P return the final hard regno which will
+   be after elimination.  */
 static int
-get_final_hard_regno (int hard_regno, int offset)
-{
-  if (hard_regno < 0)
-    return hard_regno;
-  hard_regno = lra_get_elimination_hard_regno (hard_regno);
-  return hard_regno + offset;
-}
-
-/* Return hard regno of X after removing subreg and making
-   elimination.  If X is not a register or subreg of register, return
-   -1.  For pseudo use its assignment.  */
-static int
-get_hard_regno (rtx x)
+get_hard_regno (rtx x, bool final_p)
 {
   rtx reg;
-  int offset, hard_regno;
+  int hard_regno;
 
   reg = x;
-  if (GET_CODE (x) == SUBREG)
+  if (SUBREG_P (x))
     reg = SUBREG_REG (x);
   if (! REG_P (reg))
     return -1;
-  if ((hard_regno = REGNO (reg)) >= FIRST_PSEUDO_REGISTER)
+  if (! HARD_REGISTER_NUM_P (hard_regno = REGNO (reg)))
     hard_regno = lra_get_regno_hard_regno (hard_regno);
   if (hard_regno < 0)
     return -1;
-  offset = 0;
-  if (GET_CODE (x) == SUBREG)
-    offset += subreg_regno_offset (hard_regno, GET_MODE (reg),
-				   SUBREG_BYTE (x),  GET_MODE (x));
-  return get_final_hard_regno (hard_regno, offset);
+  if (final_p)
+    hard_regno = lra_get_elimination_hard_regno (hard_regno);
+  if (SUBREG_P (x))
+    hard_regno += subreg_regno_offset (hard_regno, GET_MODE (reg),
+				       SUBREG_BYTE (x),  GET_MODE (x));
+  return hard_regno;
 }
 
 /* If REGNO is a hard register or has been allocated a hard register,
@@ -228,11 +219,11 @@ get_reg_class (int regno)
 {
   int hard_regno;
 
-  if ((hard_regno = regno) >= FIRST_PSEUDO_REGISTER)
+  if (! HARD_REGISTER_NUM_P (hard_regno = regno))
     hard_regno = lra_get_regno_hard_regno (regno);
   if (hard_regno >= 0)
     {
-      hard_regno = get_final_hard_regno (hard_regno, 0);
+      hard_regno = lra_get_elimination_hard_regno (hard_regno);
       return REGNO_REG_CLASS (hard_regno);
     }
   if (regno >= new_regno_start)
@@ -538,6 +529,8 @@ init_curr_operand_mode (void)
 /* Structure describes input reload of the current insns.  */
 struct input_reload
 {
+  /* True for input reload of matched operands.  */
+  bool match_p;
   /* Reloaded value.  */
   rtx input;
   /* Reload pseudo used.  */
@@ -572,6 +565,7 @@ get_reload_reg (enum op_type type, machine_mode mode, rtx original,
 {
   int i, regno;
   enum reg_class new_class;
+  bool unique_p = false;
 
   if (type == OP_OUT)
     {
@@ -583,39 +577,53 @@ get_reload_reg (enum op_type type, machine_mode mode, rtx original,
      e.g. volatile memory.  */
   if (! side_effects_p (original))
     for (i = 0; i < curr_insn_input_reloads_num; i++)
-      if (rtx_equal_p (curr_insn_input_reloads[i].input, original)
-	  && in_class_p (curr_insn_input_reloads[i].reg, rclass, &new_class))
-	{
-	  rtx reg = curr_insn_input_reloads[i].reg;
-	  regno = REGNO (reg);
-	  /* If input is equal to original and both are VOIDmode,
-	     GET_MODE (reg) might be still different from mode.
-	     Ensure we don't return *result_reg with wrong mode.  */
-	  if (GET_MODE (reg) != mode)
-	    {
-	      if (in_subreg_p)
-		continue;
-	      if (GET_MODE_SIZE (GET_MODE (reg)) < GET_MODE_SIZE (mode))
-		continue;
-	      reg = lowpart_subreg (mode, reg, GET_MODE (reg));
-	      if (reg == NULL_RTX || GET_CODE (reg) != SUBREG)
-		continue;
-	    }
-	  *result_reg = reg;
-	  if (lra_dump_file != NULL)
-	    {
-	      fprintf (lra_dump_file, "	 Reuse r%d for reload ", regno);
-	      dump_value_slim (lra_dump_file, original, 1);
-	    }
-	  if (new_class != lra_get_allocno_class (regno))
-	    lra_change_class (regno, new_class, ", change to", false);
-	  if (lra_dump_file != NULL)
-	    fprintf (lra_dump_file, "\n");
-	  return false;
-	}
-  *result_reg = lra_create_new_reg (mode, original, rclass, title);
+      {
+	if (! curr_insn_input_reloads[i].match_p
+	    && rtx_equal_p (curr_insn_input_reloads[i].input, original)
+	    && in_class_p (curr_insn_input_reloads[i].reg, rclass, &new_class))
+	  {
+	    rtx reg = curr_insn_input_reloads[i].reg;
+	    regno = REGNO (reg);
+	    /* If input is equal to original and both are VOIDmode,
+	       GET_MODE (reg) might be still different from mode.
+	       Ensure we don't return *result_reg with wrong mode.  */
+	    if (GET_MODE (reg) != mode)
+	      {
+		if (in_subreg_p)
+		  continue;
+		if (GET_MODE_SIZE (GET_MODE (reg)) < GET_MODE_SIZE (mode))
+		  continue;
+		reg = lowpart_subreg (mode, reg, GET_MODE (reg));
+		if (reg == NULL_RTX || GET_CODE (reg) != SUBREG)
+		  continue;
+	      }
+	    *result_reg = reg;
+	    if (lra_dump_file != NULL)
+	      {
+		fprintf (lra_dump_file, "	 Reuse r%d for reload ", regno);
+		dump_value_slim (lra_dump_file, original, 1);
+	      }
+	    if (new_class != lra_get_allocno_class (regno))
+	      lra_change_class (regno, new_class, ", change to", false);
+	    if (lra_dump_file != NULL)
+	      fprintf (lra_dump_file, "\n");
+	    return false;
+	  }
+	/* If we have an input reload with a different mode, make sure it
+	   will get a different hard reg.  */
+	else if (REG_P (original)
+		 && REG_P (curr_insn_input_reloads[i].input)
+		 && REGNO (original) == REGNO (curr_insn_input_reloads[i].input)
+		 && (GET_MODE (original)
+		     != GET_MODE (curr_insn_input_reloads[i].input)))
+	  unique_p = true;
+      }
+  *result_reg = (unique_p
+		 ? lra_create_new_reg_with_unique_value
+		 : lra_create_new_reg) (mode, original, rclass, title);
   lra_assert (curr_insn_input_reloads_num < LRA_MAX_INSN_RELOADS);
   curr_insn_input_reloads[curr_insn_input_reloads_num].input = original;
+  curr_insn_input_reloads[curr_insn_input_reloads_num].match_p = false;
   curr_insn_input_reloads[curr_insn_input_reloads_num++].reg = *result_reg;
   return true;
 }
@@ -693,7 +701,7 @@ operands_match_p (rtx x, rtx y, int y_hard_regno)
     {
       int j;
 
-      i = get_hard_regno (x);
+      i = get_hard_regno (x, false);
       if (i < 0)
 	goto slow;
 
@@ -748,7 +756,7 @@ operands_match_p (rtx x, rtx y, int y_hard_regno)
       return false;
 
     case LABEL_REF:
-      return LABEL_REF_LABEL (x) == LABEL_REF_LABEL (y);
+      return label_ref_label (x) == label_ref_label (y);
     case SYMBOL_REF:
       return XSTR (x, 0) == XSTR (y, 0);
 
@@ -1011,6 +1019,12 @@ match_reload (signed char out, signed char *ins, signed char *outs,
   lra_emit_move (copy_rtx (new_in_reg), in_rtx);
   *before = get_insns ();
   end_sequence ();
+  /* Add the new pseudo to consider values of subsequent input reload
+     pseudos.  */
+  lra_assert (curr_insn_input_reloads_num < LRA_MAX_INSN_RELOADS);
+  curr_insn_input_reloads[curr_insn_input_reloads_num].input = in_rtx;
+  curr_insn_input_reloads[curr_insn_input_reloads_num].match_p = true;
+  curr_insn_input_reloads[curr_insn_input_reloads_num++].reg = new_in_reg;
   for (i = 0; (in = ins[i]) >= 0; i++)
     {
       lra_assert
@@ -1495,9 +1509,10 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
 	     equivalences in function lra_constraints) and because for spilled
 	     pseudos we allocate stack memory enough for the biggest
 	     corresponding paradoxical subreg.  */
-	  if (!SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (reg))
-	      || SLOW_UNALIGNED_ACCESS (innermode, MEM_ALIGN (reg))
-	      || MEM_ALIGN (reg) >= GET_MODE_ALIGNMENT (mode))
+	  if (!(MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (mode)
+		&& SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (reg)))
+	      || (MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (innermode)
+		  && SLOW_UNALIGNED_ACCESS (innermode, MEM_ALIGN (reg))))
 	    return true;
 
 	  /* INNERMODE is fast, MODE slow.  Reload the mem in INNERMODE.  */
@@ -1712,7 +1727,7 @@ uses_hard_regs_p (rtx x, HARD_REG_SET set)
 
   if (REG_P (x))
     {
-      x_hard_regno = get_hard_regno (x);
+      x_hard_regno = get_hard_regno (x, true);
       return (x_hard_regno >= 0
 	      && overlaps_hard_reg_set_p (set, mode, x_hard_regno));
     }
@@ -1839,7 +1854,7 @@ process_alt_operands (int only_alternative)
 
       op = no_subreg_reg_operand[nop] = *curr_id->operand_loc[nop];
       /* The real hard regno of the operand after the allocation.  */
-      hard_regno[nop] = get_hard_regno (op);
+      hard_regno[nop] = get_hard_regno (op, true);
 
       operand_reg[nop] = reg = op;
       biggest_mode[nop] = GET_MODE (op);
@@ -2000,7 +2015,7 @@ process_alt_operands (int only_alternative)
 		    lra_assert (nop > m);
 
 		    this_alternative_matches = m;
-		    m_hregno = get_hard_regno (*curr_id->operand_loc[m]);
+		    m_hregno = get_hard_regno (*curr_id->operand_loc[m], false);
 		    /* We are supposed to match a previous operand.
 		       If we do, we win if that one did.  If we do
 		       not, count both of the operands as losers.
@@ -3493,6 +3508,13 @@ simple_move_p (void)
   lra_assert (curr_insn_set != NULL_RTX);
   dest = SET_DEST (curr_insn_set);
   src = SET_SRC (curr_insn_set);
+
+  /* If the instruction has multiple sets we need to process it even if it
+     is single_set.  This can happen if one or more of the SETs are dead.
+     See PR73650.  */
+  if (multiple_sets (curr_insn))
+    return false;
+
   return ((dclass = get_op_class (dest)) != NO_REGS
 	  && (sclass = get_op_class (src)) != NO_REGS
 	  /* The backend guarantees that register moves of cost 2

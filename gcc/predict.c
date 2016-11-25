@@ -37,6 +37,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfghooks.h"
 #include "tree-pass.h"
 #include "ssa.h"
+#include "memmodel.h"
 #include "emit-rtl.h"
 #include "cgraph.h"
 #include "coverage.h"
@@ -2024,9 +2025,7 @@ predict_loops (void)
 		   && gimple_expr_code (call_stmt) == NOP_EXPR
 		   && TREE_CODE (gimple_assign_rhs1 (call_stmt)) == SSA_NAME)
 		 call_stmt = SSA_NAME_DEF_STMT (gimple_assign_rhs1 (call_stmt));
-	       if (gimple_code (call_stmt) == GIMPLE_CALL
-		   && gimple_call_internal_p (call_stmt)
-		   && gimple_call_internal_fn (call_stmt) == IFN_BUILTIN_EXPECT
+	       if (gimple_call_internal_p (call_stmt, IFN_BUILTIN_EXPECT)
 		   && TREE_CODE (gimple_call_arg (call_stmt, 2)) == INTEGER_CST
 		   && tree_fits_uhwi_p (gimple_call_arg (call_stmt, 2))
 		   && tree_to_uhwi (gimple_call_arg (call_stmt, 2))
@@ -2513,6 +2512,21 @@ tree_predict_by_opcode (basic_block bb)
       }
 }
 
+/* Returns TRUE if the STMT is exit(0) like statement. */
+
+static bool
+is_exit_with_zero_arg (const gimple *stmt)
+{
+  /* This is not exit, _exit or _Exit. */
+  if (!gimple_call_builtin_p (stmt, BUILT_IN_EXIT)
+      && !gimple_call_builtin_p (stmt, BUILT_IN__EXIT)
+      && !gimple_call_builtin_p (stmt, BUILT_IN__EXIT2))
+    return false;
+
+  /* Argument is an interger zero. */
+  return integer_zerop (gimple_call_arg (stmt, 0));
+}
+
 /* Try to guess whether the value of return means error code.  */
 
 static enum br_predictor
@@ -2639,8 +2653,9 @@ tree_bb_level_predictions (void)
 
 	  if (is_gimple_call (stmt))
 	    {
-	      if ((gimple_call_flags (stmt) & ECF_NORETURN)
-	          && has_return_edges)
+	      if (gimple_call_noreturn_p (stmt)
+		  && has_return_edges
+		  && !is_exit_with_zero_arg (stmt))
 		predict_paths_leading_to (bb, PRED_NORETURN,
 					  NOT_TAKEN);
 	      decl = gimple_call_fndecl (stmt);
@@ -3724,7 +3739,7 @@ force_edge_cold (edge e, bool impossible)
   int prob_scale = REG_BR_PROB_BASE;
 
   /* If edge is already improbably or cold, just return.  */
-  if (e->probability <= impossible ? PROB_VERY_UNLIKELY : 0
+  if (e->probability <= (impossible ? PROB_VERY_UNLIKELY : 0)
       && (!impossible || !e->count))
     return;
   FOR_EACH_EDGE (e2, ei, e->src->succs)

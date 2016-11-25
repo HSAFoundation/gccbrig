@@ -24,6 +24,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "rtl.h"
 #include "df.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "regs.h"
 #include "cfgbuild.h"
@@ -494,7 +495,7 @@ static int max_ws;
 static int num_insns_scheduled;
 
 /* A vector of expressions is used to be able to sort them.  */
-static vec<expr_t> vec_av_set = vNULL;
+static vec<expr_t> vec_av_set;
 
 /* A vector of vinsns is used to hold temporary lists of vinsns.  */
 typedef vec<vinsn_t> vinsn_vec_t;
@@ -512,7 +513,7 @@ static vinsn_vec_t vec_target_unavailable_vinsns = vinsn_vec_t ();
 
 /* Vector to store temporary nops inserted in move_op to prevent removal
    of empty bbs.  */
-static vec<insn_t> vec_temp_moveop_nops = vNULL;
+static vec<insn_t> vec_temp_moveop_nops;
 
 /* These bitmaps record original instructions scheduled on the current
    iteration and bookkeeping copies created by them.  */
@@ -1185,7 +1186,7 @@ mark_unavailable_hard_regs (def_t def, struct reg_rename *reg_rename_p,
       || global_regs[regno]
       || (!HARD_FRAME_POINTER_IS_FRAME_POINTER && frame_pointer_needed
 	  && regno == HARD_FRAME_POINTER_REGNUM)
-      || (HARD_FRAME_POINTER_REGNUM && frame_pointer_needed
+      || (HARD_FRAME_POINTER_IS_FRAME_POINTER && frame_pointer_needed
 	  && regno == FRAME_POINTER_REGNUM)
       || (reload_completed && cl == NO_REGS))
     {

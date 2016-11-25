@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "builtins.h"
 #include "selftest.h"
 #include "gimple-pretty-print.h"
+#include "asan.h"
 
 
 /* All the tuples have their operand vector (if present) at the very bottom
@@ -373,6 +374,7 @@ gimple_build_call_from_tree (tree t)
     gimple_call_set_from_thunk (call, CALL_FROM_THUNK_P (t));
   gimple_call_set_va_arg_pack (call, CALL_EXPR_VA_ARG_PACK (t));
   gimple_call_set_nothrow (call, TREE_NOTHROW (t));
+  gimple_call_set_by_descriptor (call, CALL_EXPR_BY_DESCRIPTOR (t));
   gimple_set_no_warning (call, TREE_NO_WARNING (t));
   gimple_call_set_with_bounds (call, CALL_WITH_BOUNDS_P (t));
 
@@ -1385,6 +1387,9 @@ gimple_call_flags (const gimple *stmt)
 
   if (stmt->subcode & GF_CALL_NOTHROW)
     flags |= ECF_NOTHROW;
+
+  if (stmt->subcode & GF_CALL_BY_DESCRIPTOR)
+    flags |= ECF_BY_DESCRIPTOR;
 
   return flags;
 }
@@ -2625,6 +2630,8 @@ nonfreeing_call_p (gimple *call)
       {
       case IFN_ABNORMAL_DISPATCHER:
         return true;
+      case IFN_ASAN_MARK:
+	return tree_to_uhwi (gimple_call_arg (call, 0)) == ASAN_MARK_UNCLOBBER;
       default:
 	if (gimple_call_flags (call) & ECF_LEAF)
 	  return true;

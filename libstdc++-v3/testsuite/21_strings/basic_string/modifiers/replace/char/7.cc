@@ -25,7 +25,6 @@
 void
 test03()
 {
-  bool test __attribute__((unused)) = true;
   std::string_view str1("foo");
   std::string str2("bar");
   str2.replace(0, 3, str1);
@@ -47,8 +46,36 @@ test03()
   VERIFY (str2 == "foofoo");
 }
 
+// PR libstdc++/77264
+void
+test04()
+{
+  std::string str("a");
+  char c = 'b';
+  str.replace(0, 1, &c, 1);
+  VERIFY (str[0] == c);
+
+  char arr[] = "c";
+  str.replace(0, 1, arr, 1);
+  VERIFY (str[0] == arr[0]);
+
+  const char carr[] = "d";
+  str.replace(0, 1, carr, 1);
+  VERIFY (str[0] == carr[0]);
+
+  struct S {
+    operator char*() { return &c; }
+    operator std::string_view() { return "!"; }
+    char c = 'e';
+  };
+
+  str.replace(0, 1, S{}, 1);
+  VERIFY (str[0] == S{}.c);
+}
+
 int main()
 { 
   test03();
+  test04();
   return 0;
 }

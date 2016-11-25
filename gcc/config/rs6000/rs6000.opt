@@ -333,6 +333,10 @@ mblock-move-inline-limit=
 Target Report Var(rs6000_block_move_inline_limit) Init(0) RejectNegative Joined UInteger Save
 Specify how many bytes should be moved inline before calling out to memcpy/memmove.
 
+mblock-compare-inline-limit=
+Target Report Var(rs6000_block_compare_inline_limit) Init(5) RejectNegative Joined UInteger Save
+Specify the maximum number pairs of load instructions that should be generated inline for the compare.  If the number needed exceeds the limit, a call to memcmp will be generated instead.
+
 misel
 Target Report Mask(ISEL) Var(rs6000_isa_flags)
 Generate isel instructions.
@@ -641,8 +645,16 @@ mmodulo
 Target Undocumented Report Mask(MODULO) Var(rs6000_isa_flags)
 Generate the integer modulo instructions.
 
+; We want to enable the internal support for the IEEE 128-bit floating point
+; type without necessarily enabling the __float128 keyword.  This is to allow
+; Boost and other libraries that know about __float128 to work until the
+; official library support is finished.
+mfloat128-type
+Target Undocumented Mask(FLOAT128_TYPE) Var(rs6000_isa_flags)
+Allow the IEEE 128-bit types without requiring the __float128 keyword.
+
 mfloat128
-Target Report Mask(FLOAT128) Var(rs6000_isa_flags)
+Target Report Mask(FLOAT128_KEYWORD) Var(rs6000_isa_flags)
 Enable IEEE 128-bit floating point via the __float128 keyword.
 
 mfloat128-hardware
@@ -652,3 +664,7 @@ Enable using IEEE 128-bit floating point instructions.
 mfloat128-convert
 Target Undocumented Mask(FLOAT128_CVT) Var(rs6000_isa_flags)
 Enable default conversions between __float128 & long double.
+
+mvsx-small-integer
+Target Report Mask(VSX_SMALL_INTEGER) Var(rs6000_isa_flags)
+Enable small integers to be in VSX registers.

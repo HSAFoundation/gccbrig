@@ -43,6 +43,7 @@
 #include "builtins.h"
 
 #include "go-c.h"
+#include "go-gcc.h"
 
 #include "gogo.h"
 #include "backend.h"
@@ -411,9 +412,8 @@ class Gcc_backend : public Backend
   { return new Bvariable(error_mark_node); }
 
   Bvariable*
-  global_variable(const std::string& package_name,
-		  const std::string& pkgpath,
-		  const std::string& name,
+  global_variable(const std::string& var_name,
+		  const std::string& asm_name,
 		  Btype* btype,
 		  bool is_external,
 		  bool is_hidden,
@@ -439,25 +439,27 @@ class Gcc_backend : public Backend
 		     Location, Bstatement**);
 
   Bvariable*
-  implicit_variable(const std::string&, Btype*, bool, bool, bool,
-		    int64_t);
+  implicit_variable(const std::string&, const std::string&, Btype*,
+                    bool, bool, bool, int64_t);
 
   void
   implicit_variable_set_init(Bvariable*, const std::string&, Btype*,
 			     bool, bool, bool, Bexpression*);
 
   Bvariable*
-  implicit_variable_reference(const std::string&, Btype*);
+  implicit_variable_reference(const std::string&, const std::string&, Btype*);
 
   Bvariable*
-  immutable_struct(const std::string&, bool, bool, Btype*, Location);
+  immutable_struct(const std::string&, const std::string&,
+                   bool, bool, Btype*, Location);
 
   void
   immutable_struct_set_init(Bvariable*, const std::string&, bool, bool, Btype*,
 			    Location, Bexpression*);
 
   Bvariable*
-  immutable_struct_reference(const std::string&, Btype*, Location);
+  immutable_struct_reference(const std::string&, const std::string&,
+                             Btype*, Location);
 
   // Labels.
 
@@ -549,127 +551,31 @@ get_identifier_from_string(const std::string& str)
   return get_identifier_with_length(str.data(), str.length());
 }
 
-// Return whether the character c is OK to use in the assembler.
-
-static bool
-char_needs_encoding(char c)
-{
-  switch (c)
-    {
-    case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-    case 'G': case 'H': case 'I': case 'J': case 'K': case 'L':
-    case 'M': case 'N': case 'O': case 'P': case 'Q': case 'R':
-    case 'S': case 'T': case 'U': case 'V': case 'W': case 'X':
-    case 'Y': case 'Z':
-    case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
-    case 'g': case 'h': case 'i': case 'j': case 'k': case 'l':
-    case 'm': case 'n': case 'o': case 'p': case 'q': case 'r':
-    case 's': case 't': case 'u': case 'v': case 'w': case 'x':
-    case 'y': case 'z':
-    case '0': case '1': case '2': case '3': case '4':
-    case '5': case '6': case '7': case '8': case '9':
-    case '_': case '.': case '$': case '/':
-      return false;
-    default:
-      return true;
-    }
-}
-
-// Return whether the identifier needs to be translated because it
-// contains non-ASCII characters.
-
-static bool
-needs_encoding(const std::string& str)
-{
-  for (std::string::const_iterator p = str.begin();
-       p != str.end();
-       ++p)
-    if (char_needs_encoding(*p))
-      return true;
-  return false;
-}
-
-// Pull the next UTF-8 character out of P and store it in *PC.  Return
-// the number of bytes read.
-
-static size_t
-fetch_utf8_char(const char* p, unsigned int* pc)
-{
-  unsigned char c = *p;
-  if ((c & 0x80) == 0)
-    {
-      *pc = c;
-      return 1;
-    }
-  size_t len = 0;
-  while ((c & 0x80) != 0)
-    {
-      ++len;
-      c <<= 1;
-    }
-  unsigned int rc = *p & ((1 << (7 - len)) - 1);
-  for (size_t i = 1; i < len; i++)
-    {
-      unsigned int u = p[i];
-      rc <<= 6;
-      rc |= u & 0x3f;
-    }
-  *pc = rc;
-  return len;
-}
-
-// Encode an identifier using ASCII characters.
-
-static std::string
-encode_id(const std::string id)
-{
-  std::string ret;
-  const char* p = id.c_str();
-  const char* pend = p + id.length();
-  while (p < pend)
-    {
-      unsigned int c;
-      size_t len = fetch_utf8_char(p, &c);
-      if (len == 1 && !char_needs_encoding(c))
-	ret += c;
-      else
-	{
-	  ret += "$U";
-	  char buf[30];
-	  snprintf(buf, sizeof buf, "%x", c);
-	  ret += buf;
-	  ret += "$";
-	}
-      p += len;
-    }
-  return ret;
-}
-
 // Define the built-in functions that are exposed to GCCGo.
 
 Gcc_backend::Gcc_backend()
 {
   /* We need to define the fetch_and_add functions, since we use them
      for ++ and --.  */
-  tree t = this->integer_type(BITS_PER_UNIT, 1)->get_tree();
+  tree t = this->integer_type(true, BITS_PER_UNIT)->get_tree();
   tree p = build_pointer_type(build_qualified_type(t, TYPE_QUAL_VOLATILE));
   this->define_builtin(BUILT_IN_SYNC_ADD_AND_FETCH_1, "__sync_fetch_and_add_1",
 		       NULL, build_function_type_list(t, p, t, NULL_TREE),
 		       false, false);
 
-  t = this->integer_type(BITS_PER_UNIT * 2, 1)->get_tree();
+  t = this->integer_type(true, BITS_PER_UNIT * 2)->get_tree();
   p = build_pointer_type(build_qualified_type(t, TYPE_QUAL_VOLATILE));
   this->define_builtin(BUILT_IN_SYNC_ADD_AND_FETCH_2, "__sync_fetch_and_add_2",
 		       NULL, build_function_type_list(t, p, t, NULL_TREE),
 		       false, false);
 
-  t = this->integer_type(BITS_PER_UNIT * 4, 1)->get_tree();
+  t = this->integer_type(true, BITS_PER_UNIT * 4)->get_tree();
   p = build_pointer_type(build_qualified_type(t, TYPE_QUAL_VOLATILE));
   this->define_builtin(BUILT_IN_SYNC_ADD_AND_FETCH_4, "__sync_fetch_and_add_4",
 		       NULL, build_function_type_list(t, p, t, NULL_TREE),
 		       false, false);
 
-  t = this->integer_type(BITS_PER_UNIT * 8, 1)->get_tree();
+  t = this->integer_type(true, BITS_PER_UNIT * 8)->get_tree();
   p = build_pointer_type(build_qualified_type(t, TYPE_QUAL_VOLATILE));
   this->define_builtin(BUILT_IN_SYNC_ADD_AND_FETCH_8, "__sync_fetch_and_add_8",
 		       NULL, build_function_type_list(t, p, t, NULL_TREE),
@@ -691,6 +597,28 @@ Gcc_backend::Gcc_backend()
 						size_type_node,
 						NULL_TREE),
 		       false, false);
+
+  // Used by runtime/internal/sys.
+  this->define_builtin(BUILT_IN_CTZ, "__builtin_ctz", "ctz",
+		       build_function_type_list(integer_type_node,
+						unsigned_type_node,
+						NULL_TREE),
+		       true, false);
+  this->define_builtin(BUILT_IN_CTZLL, "__builtin_ctzll", "ctzll",
+		       build_function_type_list(integer_type_node,
+						long_long_unsigned_type_node,
+						NULL_TREE),
+		       true, false);
+  this->define_builtin(BUILT_IN_BSWAP32, "__builtin_bswap32", "bswap32",
+		       build_function_type_list(uint32_type_node,
+						uint32_type_node,
+						NULL_TREE),
+		       true, false);
+  this->define_builtin(BUILT_IN_BSWAP64, "__builtin_bswap64", "bswap64",
+		       build_function_type_list(uint64_type_node,
+						uint64_type_node,
+						NULL_TREE),
+		       true, false);
 
   // We provide some functions for the math library.
   tree math_function_type = build_function_type_list(double_type_node,
@@ -796,11 +724,21 @@ Gcc_backend::Gcc_backend()
 		       math_function_type_long, true, false);
 
   // We use __builtin_return_address in the thunk we build for
-  // functions which call recover.
+  // functions which call recover, and for runtime.getcallerpc.
+  t = build_function_type_list(ptr_type_node, unsigned_type_node, NULL_TREE);
   this->define_builtin(BUILT_IN_RETURN_ADDRESS, "__builtin_return_address",
-		       NULL,
+		       NULL, t, false, false);
+
+  // The runtime calls __builtin_frame_address for runtime.getcallersp.
+  this->define_builtin(BUILT_IN_FRAME_ADDRESS, "__builtin_frame_address",
+		       NULL, t, false, false);
+
+  // The runtime calls __builtin_extract_return_addr when recording
+  // the address to which a function returns.
+  this->define_builtin(BUILT_IN_EXTRACT_RETURN_ADDR,
+		       "__builtin_extract_return_addr", NULL,
 		       build_function_type_list(ptr_type_node,
-						unsigned_type_node,
+						ptr_type_node,
 						NULL_TREE),
 		       false, false);
 
@@ -2025,6 +1963,9 @@ Gcc_backend::stack_allocation_expression(int64_t size, Location location)
   tree alloca = builtin_decl_explicit(BUILT_IN_ALLOCA);
   tree size_tree = build_int_cst(integer_type_node, size);
   tree ret = build_call_expr_loc(location.gcc_location(), alloca, 1, size_tree);
+  tree memset = builtin_decl_explicit(BUILT_IN_MEMSET);
+  ret = build_call_expr_loc(location.gcc_location(), memset, 3,
+                            ret, integer_zero_node, size_tree);
   return this->make_expression(ret);
 }
 
@@ -2544,9 +2485,8 @@ Gcc_backend::non_zero_size_type(tree type)
 // Make a global variable.
 
 Bvariable*
-Gcc_backend::global_variable(const std::string& package_name,
-			     const std::string& pkgpath,
-			     const std::string& name,
+Gcc_backend::global_variable(const std::string& var_name,
+			     const std::string& asm_name,
 			     Btype* btype,
 			     bool is_external,
 			     bool is_hidden,
@@ -2562,9 +2502,6 @@ Gcc_backend::global_variable(const std::string& package_name,
   if ((is_external || !is_hidden) && int_size_in_bytes(type_tree) == 0)
     type_tree = this->non_zero_size_type(type_tree);
 
-  std::string var_name(package_name);
-  var_name.push_back('.');
-  var_name.append(name);
   tree decl = build_decl(location.gcc_location(), VAR_DECL,
 			 get_identifier_from_string(var_name),
 			 type_tree);
@@ -2575,17 +2512,12 @@ Gcc_backend::global_variable(const std::string& package_name,
   if (!is_hidden)
     {
       TREE_PUBLIC(decl) = 1;
-
-      std::string asm_name(pkgpath);
-      asm_name.push_back('.');
-      asm_name.append(name);
-      if (needs_encoding(asm_name))
-	asm_name = encode_id(asm_name);
       SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
     }
-  else if (needs_encoding(var_name))
-    SET_DECL_ASSEMBLER_NAME(decl,
-			    get_identifier_from_string(encode_id(var_name)));
+  else
+    {
+      SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
+    }
 
   TREE_USED(decl) = 1;
 
@@ -2778,8 +2710,9 @@ Gcc_backend::temporary_variable(Bfunction* function, Bblock* bblock,
 // generating GC root variables and storing the values of a slice initializer.
 
 Bvariable*
-Gcc_backend::implicit_variable(const std::string& name, Btype* type,
-			       bool is_hidden, bool is_constant,
+Gcc_backend::implicit_variable(const std::string& name,
+                               const std::string& asm_name,
+                               Btype* type, bool is_hidden, bool is_constant,
 			       bool is_common, int64_t alignment)
 {
   tree type_tree = type->get_tree();
@@ -2821,8 +2754,8 @@ Gcc_backend::implicit_variable(const std::string& name, Btype* type,
       SET_DECL_ALIGN(decl, alignment * BITS_PER_UNIT);
       DECL_USER_ALIGN(decl) = 1;
     }
-  if (needs_encoding(name))
-    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(encode_id(name)));
+  if (! asm_name.empty())
+    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
 
   go_preserve_from_gc(decl);
   return new Bvariable(decl);
@@ -2863,7 +2796,9 @@ Gcc_backend::implicit_variable_set_init(Bvariable* var, const std::string&,
 // Return a reference to an implicit variable defined in another package.
 
 Bvariable*
-Gcc_backend::implicit_variable_reference(const std::string& name, Btype* btype)
+Gcc_backend::implicit_variable_reference(const std::string& name,
+                                         const std::string& asm_name,
+                                         Btype* btype)
 {
   tree type_tree = btype->get_tree();
   if (type_tree == error_mark_node)
@@ -2875,8 +2810,8 @@ Gcc_backend::implicit_variable_reference(const std::string& name, Btype* btype)
   TREE_PUBLIC(decl) = 1;
   TREE_STATIC(decl) = 1;
   DECL_ARTIFICIAL(decl) = 1;
-  if (needs_encoding(name))
-    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(encode_id(name)));
+  if (! asm_name.empty())
+    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
   go_preserve_from_gc(decl);
   return new Bvariable(decl);
 }
@@ -2884,7 +2819,9 @@ Gcc_backend::implicit_variable_reference(const std::string& name, Btype* btype)
 // Create a named immutable initialized data structure.
 
 Bvariable*
-Gcc_backend::immutable_struct(const std::string& name, bool is_hidden,
+Gcc_backend::immutable_struct(const std::string& name,
+                              const std::string& asm_name,
+                              bool is_hidden,
 			      bool is_common, Btype* btype, Location location)
 {
   tree type_tree = btype->get_tree();
@@ -2901,8 +2838,8 @@ Gcc_backend::immutable_struct(const std::string& name, bool is_hidden,
   DECL_ARTIFICIAL(decl) = 1;
   if (!is_hidden)
     TREE_PUBLIC(decl) = 1;
-  if (needs_encoding(name))
-    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(encode_id(name)));
+  if (! asm_name.empty())
+    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
 
   // When the initializer for one immutable_struct refers to another,
   // it needs to know the visibility of the referenced struct so that
@@ -2962,7 +2899,9 @@ Gcc_backend::immutable_struct_set_init(Bvariable* var, const std::string&,
 // defined in another package.
 
 Bvariable*
-Gcc_backend::immutable_struct_reference(const std::string& name, Btype* btype,
+Gcc_backend::immutable_struct_reference(const std::string& name,
+                                        const std::string& asm_name,
+                                        Btype* btype,
 					Location location)
 {
   tree type_tree = btype->get_tree();
@@ -2977,8 +2916,8 @@ Gcc_backend::immutable_struct_reference(const std::string& name, Btype* btype,
   DECL_ARTIFICIAL(decl) = 1;
   TREE_PUBLIC(decl) = 1;
   DECL_EXTERNAL(decl) = 1;
-  if (needs_encoding(name))
-    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(encode_id(name)));
+  if (! asm_name.empty())
+    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
   go_preserve_from_gc(decl);
   return new Bvariable(decl);
 }
@@ -3068,10 +3007,8 @@ Gcc_backend::function(Btype* fntype, const std::string& name,
     return this->error_function();
 
   tree decl = build_decl(location.gcc_location(), FUNCTION_DECL, id, functype);
-  if (!asm_name.empty())
+  if (! asm_name.empty())
     SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(asm_name));
-  else if (needs_encoding(name))
-    SET_DECL_ASSEMBLER_NAME(decl, get_identifier_from_string(encode_id(name)));
   if (is_visible)
     TREE_PUBLIC(decl) = 1;
   if (is_declaration)

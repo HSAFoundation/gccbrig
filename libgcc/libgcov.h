@@ -126,7 +126,6 @@ typedef unsigned gcov_position_t;
 #define L_gcov 1
 #define L_gcov_merge_add 1
 #define L_gcov_merge_single 1
-#define L_gcov_merge_delta 1
 #define L_gcov_merge_ior 1
 #define L_gcov_merge_time_profile 1
 #define L_gcov_merge_icall_topn 1
@@ -235,6 +234,9 @@ extern void __gcov_dump_one (struct gcov_root *) ATTRIBUTE_HIDDEN;
 /* Register a new object file module.  */
 extern void __gcov_init (struct gcov_info *) ATTRIBUTE_HIDDEN;
 
+/* GCOV exit function registered via a static destructor.  */
+extern void __gcov_exit (void) ATTRIBUTE_HIDDEN;
+
 /* Called before fork, to avoid double counting.  */
 extern void __gcov_flush (void) ATTRIBUTE_HIDDEN;
 
@@ -255,10 +257,6 @@ extern void __gcov_merge_time_profile (gcov_type *, unsigned) ATTRIBUTE_HIDDEN;
 
 /* The merge function to choose the most common value.  */
 extern void __gcov_merge_single (gcov_type *, unsigned) ATTRIBUTE_HIDDEN;
-
-/* The merge function to choose the most common difference between
-   consecutive values.  */
-extern void __gcov_merge_delta (gcov_type *, unsigned) ATTRIBUTE_HIDDEN;
 
 /* The merge function that just ors the counters together.  */
 extern void __gcov_merge_ior (gcov_type *, unsigned) ATTRIBUTE_HIDDEN;

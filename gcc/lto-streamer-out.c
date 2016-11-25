@@ -131,7 +131,7 @@ tree_is_indexable (tree t)
   /* IMPORTED_DECL is put into BLOCK and thus it never can be shared.  */
   else if (TREE_CODE (t) == IMPORTED_DECL)
     return false;
-  else if (((TREE_CODE (t) == VAR_DECL && !TREE_STATIC (t))
+  else if (((VAR_P (t) && !TREE_STATIC (t))
 	    || TREE_CODE (t) == TYPE_DECL
 	    || TREE_CODE (t) == CONST_DECL
 	    || TREE_CODE (t) == NAMELIST_DECL)
@@ -357,7 +357,7 @@ get_symbol_initial_value (lto_symtab_encoder_t encoder, tree expr)
 
   /* Handle DECL_INITIAL for symbols.  */
   tree initial = DECL_INITIAL (expr);
-  if (TREE_CODE (expr) == VAR_DECL
+  if (VAR_P (expr)
       && (TREE_STATIC (expr) || DECL_EXTERNAL (expr))
       && !DECL_IN_CONSTANT_POOL (expr)
       && initial)
@@ -766,11 +766,11 @@ DFS::DFS_write_tree_body (struct output_block *ob,
 	 leaks to this point.  */
       gcc_assert (DECL_ABSTRACT_ORIGIN (expr) != error_mark_node);
 
-      if ((TREE_CODE (expr) == VAR_DECL
+      if ((VAR_P (expr)
 	   || TREE_CODE (expr) == PARM_DECL)
 	  && DECL_HAS_VALUE_EXPR_P (expr))
 	DFS_follow_tree_edge (DECL_VALUE_EXPR (expr));
-      if (TREE_CODE (expr) == VAR_DECL)
+      if (VAR_P (expr))
 	DFS_follow_tree_edge (DECL_DEBUG_EXPR (expr));
     }
 
@@ -2016,6 +2016,18 @@ output_struct_function_base (struct output_block *ob, struct function *fn)
 }
 
 
+/* Collect all leaf BLOCKs beyond ROOT into LEAFS.  */
+
+static void
+collect_block_tree_leafs (tree root, vec<tree> &leafs)
+{
+  for (root = BLOCK_SUBBLOCKS (root); root; root = BLOCK_CHAIN (root))
+    if (! BLOCK_SUBBLOCKS (root))
+      leafs.safe_push (root);
+    else
+      collect_block_tree_leafs (BLOCK_SUBBLOCKS (root), leafs);
+}
+
 /* Output the body of function NODE->DECL.  */
 
 static void
@@ -2048,10 +2060,16 @@ output_function (struct cgraph_node *node)
   streamer_write_chain (ob, DECL_ARGUMENTS (function), true);
 
   /* Output DECL_INITIAL for the function, which contains the tree of
-     lexical scopes.
-     ???  This only streams the outermost block because we do not
-     recurse into BLOCK_SUBBLOCKS but re-build those on stream-in.  */
+     lexical scopes.  */
   stream_write_tree (ob, DECL_INITIAL (function), true);
+  /* As we do not recurse into BLOCK_SUBBLOCKS but only BLOCK_SUPERCONTEXT
+     collect block tree leafs and stream those.  */
+  auto_vec<tree> block_tree_leafs;
+  if (DECL_INITIAL (function))
+    collect_block_tree_leafs (DECL_INITIAL (function), block_tree_leafs);
+  streamer_write_uhwi (ob, block_tree_leafs.length ());
+  for (unsigned i = 0; i < block_tree_leafs.length (); ++i)
+    stream_write_tree (ob, block_tree_leafs[i], true);
 
   /* We also stream abstract functions where we stream only stuff needed for
      debug info.  */
@@ -2509,12 +2527,10 @@ write_symbol (struct streamer_tree_cache_d *cache,
   if (!TREE_PUBLIC (t)
       || is_builtin_fn (t)
       || DECL_ABSTRACT_P (t)
-      || (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t)))
+      || (VAR_P (t) && DECL_HARD_REGISTER (t)))
     return;
-  gcc_assert (TREE_CODE (t) != RESULT_DECL);
 
-  gcc_assert (TREE_CODE (t) == VAR_DECL
-	      || TREE_CODE (t) == FUNCTION_DECL);
+  gcc_assert (VAR_OR_FUNCTION_DECL_P (t));
 
   name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (t));
 
@@ -2545,8 +2561,7 @@ write_symbol (struct streamer_tree_cache_d *cache,
 	kind = GCCPK_DEF;
 
       /* When something is defined, it should have node attached.  */
-      gcc_assert (alias || TREE_CODE (t) != VAR_DECL
-		  || varpool_node::get (t)->definition);
+      gcc_assert (alias || !VAR_P (t) || varpool_node::get (t)->definition);
       gcc_assert (alias || TREE_CODE (t) != FUNCTION_DECL
 		  || (cgraph_node::get (t)
 		      && cgraph_node::get (t)->definition));
@@ -2705,8 +2720,9 @@ lto_write_mode_table (void)
     if (streamer_mode_table[i])
       {
 	machine_mode m = (machine_mode) i;
-	if (GET_MODE_INNER (m) != m)
-	  streamer_mode_table[(int) GET_MODE_INNER (m)] = 1;
+	machine_mode inner_m = GET_MODE_INNER (m);
+	if (inner_m != m)
+	  streamer_mode_table[(int) inner_m] = 1;
       }
   /* First stream modes that have GET_MODE_INNER (m) == m,
      so that we can refer to them afterwards.  */

@@ -1172,6 +1172,12 @@
 (define_predicate "fpmask_comparison_operator"
   (match_code "eq,gt,ge"))
 
+;; Return 1 if OP is a comparison operator suitable for vector/scalar
+;; comparisons that generate a 0/-1 mask (i.e. the inverse of
+;; fpmask_comparison_operator).
+(define_predicate "invert_fpmask_comparison_operator"
+  (match_code "ne,unlt,unle"))
+
 ;; Return 1 if OP is a comparison operation that is valid for a branch
 ;; insn, which is true if the corresponding bit in the CC register is set.
 (define_predicate "branch_positive_comparison_operator"
@@ -1838,7 +1844,7 @@
 ;; Match a GPR load (lbz, lhz, lwz, ld) that uses a combined address in the
 ;; memory field with both the addis and the memory offset.  Sign extension
 ;; is not handled here, since lha and lwa are not fused.
-;; With extended fusion, also match a FPR load (lfd, lfs) and float_extend
+;; With P9 fusion, also match a fpr/vector load and float_extend
 (define_predicate "fusion_addis_mem_combo_load"
   (match_code "mem,zero_extend,float_extend")
 {
@@ -1861,14 +1867,24 @@
     case SImode:
       break;
 
+    /* Do not fuse 64-bit DImode in 32-bit since it splits into two
+       separate instructions.  */
     case DImode:
       if (!TARGET_POWERPC64)
 	return 0;
       break;
 
+    /* ISA 2.08/power8 only had fusion of GPR loads.  */
     case SFmode:
-    case DFmode:
       if (!TARGET_P9_FUSION)
+	return 0;
+      break;
+
+    /* ISA 2.08/power8 only had fusion of GPR loads.  Do not allow 64-bit
+       DFmode in 32-bit if -msoft-float since it splits into two separate
+       instructions.  */
+    case DFmode:
+      if ((!TARGET_POWERPC64 && !TARGET_DF_FPR) || !TARGET_P9_FUSION)
 	return 0;
       break;
 
@@ -1914,20 +1930,21 @@
     case QImode:
     case HImode:
     case SImode:
+    case SFmode:
       break;
 
+    /* Do not fuse 64-bit DImode in 32-bit since it splits into two
+       separate instructions.  */
     case DImode:
       if (!TARGET_POWERPC64)
 	return 0;
       break;
 
-    case SFmode:
-      if (!TARGET_SF_FPR)
-	return 0;
-      break;
-
+    /* Do not allow 64-bit DFmode in 32-bit if -msoft-float since it splits
+       into two separate instructions.  Do allow fusion if we have hardware
+       floating point.  */
     case DFmode:
-      if (!TARGET_DF_FPR)
+      if (!TARGET_POWERPC64 && !TARGET_DF_FPR)
 	return 0;
       break;
 

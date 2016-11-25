@@ -77,6 +77,7 @@ std_headers = \
 	${std_srcdir}/unordered_set \
 	${std_srcdir}/utility \
 	${std_srcdir}/valarray \
+	${std_srcdir}/variant \
 	${std_srcdir}/vector
 
 bits_srcdir = ${glibcxx_srcdir}/include/bits
@@ -128,7 +129,7 @@ bits_headers = \
 	${bits_srcdir}/specfun.h \
 	${bits_srcdir}/memoryfwd.h \
 	${bits_srcdir}/move.h \
-	${bits_srcdir}/std_mutex.h \
+	${bits_srcdir}/node_handle.h \
 	${bits_srcdir}/ostream.tcc \
 	${bits_srcdir}/ostream_insert.h \
 	${bits_srcdir}/parse_numbers.h \
@@ -139,6 +140,7 @@ bits_headers = \
 	${bits_srcdir}/random.h \
 	${bits_srcdir}/random.tcc \
 	${bits_srcdir}/range_access.h \
+	${bits_srcdir}/refwrap.h \
 	${bits_srcdir}/regex.h \
 	${bits_srcdir}/regex.tcc \
 	${bits_srcdir}/regex_constants.h \
@@ -151,13 +153,14 @@ bits_headers = \
 	${bits_srcdir}/regex_compiler.tcc \
 	${bits_srcdir}/regex_executor.h \
 	${bits_srcdir}/regex_executor.tcc \
-	${bits_srcdir}/stream_iterator.h \
-	${bits_srcdir}/streambuf_iterator.h \
 	${bits_srcdir}/shared_ptr.h \
 	${bits_srcdir}/shared_ptr_atomic.h \
 	${bits_srcdir}/shared_ptr_base.h \
 	${bits_srcdir}/slice_array.h \
 	${bits_srcdir}/sstream.tcc \
+	${bits_srcdir}/std_abs.h \
+	${bits_srcdir}/std_function.h \
+	${bits_srcdir}/std_mutex.h \
 	${bits_srcdir}/stl_algo.h \
 	${bits_srcdir}/stl_algobase.h \
 	${bits_srcdir}/stl_bvector.h \
@@ -183,6 +186,8 @@ bits_headers = \
 	${bits_srcdir}/stl_tree.h \
 	${bits_srcdir}/stl_uninitialized.h \
 	${bits_srcdir}/stl_vector.h \
+	${bits_srcdir}/stream_iterator.h \
+	${bits_srcdir}/streambuf_iterator.h \
 	${bits_srcdir}/streambuf.tcc \
 	${bits_srcdir}/stringfwd.h \
 	${bits_srcdir}/string_view.tcc \
@@ -204,6 +209,8 @@ bits_sup_srcdir = ${glibcxx_srcdir}/libsupc++
 bits_sup_headers = \
 	${bits_sup_srcdir}/atomic_lockfree_defines.h \
 	${bits_sup_srcdir}/cxxabi_forced.h \
+	${bits_sup_srcdir}/cxxabi_init_exception.h \
+	${bits_sup_srcdir}/exception.h \
 	${bits_sup_srcdir}/exception_defines.h \
 	${bits_sup_srcdir}/exception_ptr.h \
 	${bits_sup_srcdir}/hash_bytes.h \
@@ -687,6 +694,7 @@ experimental_bits_srcdir = ${glibcxx_srcdir}/include/experimental/bits
 experimental_bits_builddir = ./experimental/bits
 experimental_bits_headers = \
 	${experimental_bits_srcdir}/erase_if.h \
+	${experimental_bits_srcdir}/lfts_config.h \
 	${experimental_bits_srcdir}/shared_ptr.h \
 	${experimental_bits_srcdir}/string_view.tcc \
 	${experimental_bits_filesystem_headers}

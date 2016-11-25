@@ -27,6 +27,7 @@
 #include "tree.h"
 #include "gimple.h"
 #include "df.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "stringpool.h"
 #include "expmed.h"
@@ -2137,13 +2138,11 @@ tilepro_emit_setcc_internal_di (rtx res, enum rtx_code code, rtx op0, rtx op1)
       emit_insn (gen_insn_seq (tmp1, hi_half[0], hi_half[1]));
       emit_insn (gen_andsi3 (res, tmp0, tmp1));
       return true;
-      break;
     case NE:
       emit_insn (gen_insn_sne (tmp0, lo_half[0], lo_half[1]));
       emit_insn (gen_insn_sne (tmp1, hi_half[0], hi_half[1]));
       emit_insn (gen_iorsi3 (res, tmp0, tmp1));
       return true;
-      break;
     case LE:
       emit_insn (gen_insn_slte (tmp0, hi_half[0], hi_half[1]));
       emit_insn (gen_insn_seq (tmp1, hi_half[0], hi_half[1]));
@@ -4950,6 +4949,11 @@ tilepro_file_end (void)
 #undef  TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE tilepro_option_override
 
+#ifdef TARGET_THREAD_SSP_OFFSET
+#undef TARGET_STACK_PROTECT_GUARD
+#define TARGET_STACK_PROTECT_GUARD hook_tree_void_null
+#endif
+
 #undef  TARGET_SCALAR_MODE_SUPPORTED_P
 #define TARGET_SCALAR_MODE_SUPPORTED_P tilepro_scalar_mode_supported_p
 
@@ -5016,6 +5020,9 @@ tilepro_file_end (void)
 
 #undef  TARGET_LEGITIMATE_CONSTANT_P
 #define TARGET_LEGITIMATE_CONSTANT_P tilepro_legitimate_constant_p
+
+#undef TARGET_LRA_P
+#define TARGET_LRA_P hook_bool_void_false
 
 #undef  TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P tilepro_legitimate_address_p

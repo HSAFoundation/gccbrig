@@ -69,14 +69,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Core Issue 1776: Replacement of class objects containing reference members</entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0137r1.html">
 	P0137R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry> <code>__cpp_lib_launder >= 201606</code> </entry>
     </row>
 
@@ -92,14 +91,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Variant: a type-safe union for C++17 </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0088r3.html">
 	P0088R3
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry> <code>__has_include(&lt;variant&gt;)</code> </entry>
     </row>
 
@@ -160,27 +158,36 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Library Fundamentals V1 TS Components: <code>shared_ptr&lt;T[]&gt;</code> </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0220r1.html">
 	P0220R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry> <code>__cpp_lib_shared_ptr_arrays >= 201603</code> </entry>
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Library Fundamentals V1 TS Components: Searchers </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0220r1.html">
 	P0220R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry> <code>__cpp_lib_boyer_moore_searcher >= 201603</code> </entry>
+    </row>
+
+    <row>
+      <entry> Library Fundamentals V1 TS Components: Sampling </entry>
+      <entry>
+	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0220r1.html">
+	P0220R1
+	</link>
+      </entry>
+      <entry align="center"> 7 </entry>
+      <entry> <code>__cpp_lib_sample >= 201603</code> </entry>
     </row>
 
     <row>
@@ -206,14 +213,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
-      <entry> make_from_tuple: apply for construction </entry>
+      <entry> <code>make_from_tuple</code>: apply for construction </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0209r2.pdf">
 	P0209R2
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_make_from_tuple >= 201606 </code></entry>
     </row>
 
@@ -256,14 +262,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> <code>std::addressof</code> should be constexpr </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0304r0.html#2296">
 	LWG2296
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_addressof_constexpr >= 201603 </code></entry>
     </row>
 
@@ -274,7 +279,7 @@ Feature-testing recommendations for C++</link>.
 	N4089
 	</link>
       </entry>
-      <entry align="center"> 5 ? </entry>
+      <entry align="center"> 6 </entry>
       <entry/>
     </row>
 
@@ -285,7 +290,7 @@ Feature-testing recommendations for C++</link>.
 	  N4366
 	</link>
       </entry>
-      <entry align="center"> 5 ? </entry>
+      <entry align="center"> 6 </entry>
       <entry/>
     </row>
 
@@ -323,50 +328,46 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Adopt <code>not_fn</code> from Library Fundamentals 2 for C++17 </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0005r4.html">
 	P0005R4
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code>__cpp_lib_not_fn >= 201603</code></entry>
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Fixes for <code>not_fn</code> </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0358r1.html">
 	P0358R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry/>
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Fixing a design mistake in the searchers interface in Library Fundamentals </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0253r1.pdf">
 	P0253R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry/>
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Extending memory management tools </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0040r3.html">
 	P0040R3
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> </code></entry>
     </row>
 
@@ -448,14 +449,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> has_unique_object_representations </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0258r2.html">
 	P0258R2
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_has_unique_object_representations >= 201606 </code></entry>
     </row>
 
@@ -540,14 +540,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Emplace return type </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0084r2.pdf">
 	P0084R2
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry/>
     </row>
 
@@ -565,14 +564,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Splicing Maps and Sets </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0083r3.pdf">
 	P0083R3
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_node_extract >= 201606 </code></entry>
     </row>
 
@@ -623,28 +621,26 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Adopt Selected Library Fundamentals V2 Components for C++17 </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0295r0.pdf">
 	P0295R0
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_gcd >= 201606 </code>,
 	     <code> __cpp_lib_lcm >= 201606 </code>
       </entry>
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> Proposal to Introduce a 3-Argument Overload to <code>std::hypot</code> </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0030r1.pdf">
 	P0030R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_hypot >= 201603 </code></entry>
     </row>
 
@@ -701,14 +697,13 @@ Feature-testing recommendations for C++</link>.
     </row>
 
     <row>
-      <?dbhtml bgcolor="#C8B0B0" ?>
       <entry> constexpr <code>atomic&lt;T&gt;::is_always_lock_free</code>	 </entry>
       <entry>
 	<link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0152r1.html">
 	P0152R1
 	</link>
       </entry>
-      <entry align="center"> No </entry>
+      <entry align="center"> 7 </entry>
       <entry><code> __cpp_lib_atomic_is_always_lock_free >= 201603 </code></entry>
     </row>
 
@@ -887,5 +882,113 @@ Feature-testing recommendations for C++</link>.
   </tbody>
 </tgroup>
 </table>
+
+<section xml:id="iso.2017.specific" xreflabel="Implementation Specific"><info><title>Implementation Specific Behavior</title></info>
+
+   <para>For behaviour which is also specified by previous standards,
+      see <link linkend="iso.1998.specific">C++ 1998/2003 Implementation
+      Specific Behavior</link> and <link linkend="iso.2011.specific">C++
+      2011 Implementation Specific Behavior</link>. This section only
+      documents behaviour which is new in the 2017 standard.
+   </para>
+
+   <para>
+      <emphasis>20.6.5 [optional.bad_optional_access]</emphasis>
+      <code>what()</code> returns <literal>"bad optional access"</literal>.
+   </para>
+
+   <para>
+      <emphasis>20.7.2 [variant.variant]</emphasis>
+      Whether <classname>variant</classname> supports over-aligned types
+      should be documented here.
+   </para>
+
+   <para>
+      <emphasis>20.7.10 [variant.bad.access]</emphasis>
+      <code>what()</code> returns <literal>"Unexpected index"</literal>.
+   </para>
+
+   <para>
+      <emphasis>20.12.5.2 [memory.resource.pool.options]</emphasis>
+      The limits for maximum number of blocks and largest allocation size
+      supported by <classname>pool_options</classname> should be documented
+      here.
+   </para>
+
+   <para>
+      <emphasis>20.12.6.1 [memory.resource.monotonic.buffer.ctor]</emphasis>
+      The default <code>next_buffer_size</code> and growth factor should
+      be documented here.
+   </para>
+
+   <para>
+      <emphasis>20.15.4.3 [meta.unary.prop]</emphasis>
+      The predicate condition for
+      <code>has_unique_object_representations</code> is true for all scalar
+      types except floating point types.
+   </para>
+
+   <para>
+      <emphasis>20.19.3 [execpol.type],
+      25.2.3 [algorithms.parallel.exec]</emphasis>
+      There are no implementation-defined execution policies.
+   </para>
+
+   <para>
+      <emphasis>22.4.2 [string.view.template]</emphasis>
+      <classname>basic_string_view&lt;C, T&gt;::iterator</classname> is
+      <code>C*</code> and
+      <classname>basic_string_view&lt;C, T&gt;::const_iterator</classname> is
+      <code>const C*</code>.
+   </para>
+
+
+   <para>
+      <emphasis>25.2.3 [algorithms.parallel.exec]</emphasis>
+      Threads of execution created by <classname>std::thread</classname>
+      provide concurrent forward progress guarantees, so threads of execution
+      implicitly created by the library will provide parallel forward
+      progress guarantees.
+   </para>
+
+   <para>
+      <emphasis>26.4.1 [cfenv.syn]</emphasis>
+      The effects of the <filename>&lt;cfenv&gt;</filename> functions
+      depends on whether the <code>FENV_ACCESS</code> pragma is supported,
+      and on the C library that provides the header.
+   </para>
+
+   <para>
+      <emphasis>26.6.9 [c.math.rand]</emphasis>
+      Whether the <function>rand</function> function may introduce data
+      races depends on the target C library that provides the function.
+   </para>
+
+   <para>
+      <emphasis>26.9.5 [sf.cmath]</emphasis>
+      The effect of calling the mathematical special functions with large
+      inputs should be documented here.
+   </para>
+
+   <para>
+      <emphasis>27.10.2.1 [fs.conform.9945]</emphasis>
+      The behavior of the filesystem library implementation will depend on
+      the target operating system. Some features will not be not supported
+      on some targets.
+   </para>
+
+   <para>
+      <emphasis>27.10.6 [fs.filesystem.syn]</emphasis>
+      The clock used for file times is
+      <classname>std::chrono::system_clock</classname>.
+   </para>
+
+   <para>
+      <emphasis>27.10.8 [path.generic]</emphasis>
+      dot-dot in the root-directory refers to the root-directory itself.
+   </para>
+
+
+</section>
 
 </section>

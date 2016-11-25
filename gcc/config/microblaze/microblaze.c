@@ -27,6 +27,7 @@
 #include "rtl.h"
 #include "tree.h"
 #include "df.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "optabs.h"
 #include "regs.h"
@@ -542,6 +543,7 @@ tls_mentioned_p (rtx x)
       case UNSPEC:
         if (XINT (x, 1) == UNSPEC_TLS)
           return 1;
+	return 0;
 
       default:
         return 0;
@@ -1552,7 +1554,7 @@ microblaze_function_arg (cumulative_args_t cum_v, machine_mode mode,
     default:
       gcc_assert (GET_MODE_CLASS (mode) == MODE_COMPLEX_INT
 	  || GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT);
-      /* Drops through.  */
+      /* FALLTHRU */
     case BLKmode:
       regbase = GP_ARG_FIRST;
       break;
@@ -3809,6 +3811,9 @@ microblaze_machine_dependent_reorg (void)
 
 #undef TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P 	microblaze_legitimate_address_p 
+
+#undef TARGET_LRA_P
+#define TARGET_LRA_P hook_bool_void_false
 
 #undef TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED	microblaze_frame_pointer_required

@@ -78,33 +78,64 @@ class Import_init
   init_name() const
   { return this->init_name_; }
 
-  // The priority of the initialization function.  Functions with a
-  // lower priority number must be run first.
+  // Older V1 export data uses a priority scheme to order
+  // initialization functions; functions with a lower priority number
+  // must be run first. This value will be set to -1 for current
+  // generation objects, and will take on a non-negative value only
+  // when importing a V1-vintage object.
   int
   priority() const
   { return this->priority_; }
+
+  // Reset priority.
+  void
+  set_priority(int new_priority)
+  { this->priority_ = new_priority; }
+
+  // Record the fact that some other init fcn must be run before this init fcn.
+  void
+  record_precursor_fcn(std::string init_fcn_name)
+  { this->precursor_functions_.insert(init_fcn_name); }
+
+  // Return the list of precursor fcns for this fcn (must be run before it).
+  const std::set<std::string>&
+  precursors() const
+  { return this->precursor_functions_; }
 
  private:
   // The name of the package being imported.
   std::string package_name_;
   // The name of the package's init function.
   std::string init_name_;
-  // The priority.
+  // Names of init functions that must be run before this fcn.
+  std::set<std::string> precursor_functions_;
+  // Priority for this function. See note above on obsolescence.
   int priority_;
 };
 
 // For sorting purposes.
 
+struct Import_init_lt {
+  bool operator()(const Import_init* i1, const Import_init* i2)
+  {
+    return i1->init_name() < i2->init_name();
+  }
+};
+
+// Set of import init objects.
+class Import_init_set : public std::set<Import_init*, Import_init_lt> {
+};
+
 inline bool
-operator<(const Import_init& i1, const Import_init& i2)
+priority_compare(const Import_init* i1, const Import_init* i2)
 {
-  if (i1.priority() < i2.priority())
+  if (i1->priority() < i2->priority())
     return true;
-  if (i1.priority() > i2.priority())
+  if (i1->priority() > i2->priority())
     return false;
-  if (i1.package_name() != i2.package_name())
-    return i1.package_name() < i2.package_name();
-  return i1.init_name() < i2.init_name();
+  if (i1->package_name() != i2->package_name())
+    return i1->package_name() < i2->package_name();
+  return i1->init_name() < i2->init_name();
 }
 
 // The holder for the internal representation of the entire
@@ -219,6 +250,12 @@ class Gogo
   set_relative_import_path(const std::string& s)
   { this->relative_import_path_ = s; }
 
+  // Set the C header file to write.  This is used for the runtime
+  // package.
+  void
+  set_c_header(const std::string& s)
+  { this->c_header_ = s; }
+
   // Return whether to check for division by zero in binary operations.
   bool
   check_divide_by_zero() const
@@ -239,6 +276,16 @@ class Gogo
   set_check_divide_overflow(bool b)
   { this->check_divide_overflow_ = b; }
 
+  // Return whether we are compiling the runtime package.
+  bool
+  compiling_runtime() const
+  { return this->compiling_runtime_; }
+
+  // Set whether we are compiling the runtime package.
+  void
+  set_compiling_runtime(bool b)
+  { this->compiling_runtime_ = b; }
+
   // Return the level of escape analysis debug information to emit.
   int
   debug_escape_level() const
@@ -249,18 +296,12 @@ class Gogo
   set_debug_escape_level(int level)
   { this->debug_escape_level_ = level; }
 
-  // Return the priority to use for the package we are compiling.
-  // This is two more than the largest priority of any package we
-  // import.
-  int
-  package_priority() const;
-
   // Import a package.  FILENAME is the file name argument, LOCAL_NAME
   // is the local name to give to the package.  If LOCAL_NAME is empty
   // the declarations are added to the global scope.
   void
   import_package(const std::string& filename, const std::string& local_name,
-		 bool is_local_name_exported, Location);
+		 bool is_local_name_exported, bool must_exist, Location);
 
   // Whether we are the global binding level.
   bool
@@ -609,6 +650,10 @@ class Gogo
   add_import_init_fn(const std::string& package_name,
 		     const std::string& init_name, int prio);
 
+  // Return the Import_init for a given init name.
+  Import_init*
+  lookup_init(const std::string& init_name);
+
   // Turn short-cut operators (&&, ||) into explicit if statements.
   void
   remove_shortcuts();
@@ -624,6 +669,11 @@ class Gogo
   // Build thunks for functions which call recover.
   void
   build_recover_thunks();
+
+  // Return a declaration for __builtin_return_address or
+  // __builtin_frame_address.
+  static Named_object*
+  declare_builtin_rf_address(const char* name);
 
   // Simplify statements which might use thunks: go and defer
   // statements.
@@ -702,6 +752,9 @@ class Gogo
   const Bindings*
   current_bindings() const;
 
+  void
+  write_c_header();
+
   // Get the decl for the magic initialization function.
   Named_object*
   initialization_function_decl();
@@ -754,6 +807,15 @@ class Gogo
     { }
   };
 
+  // Recompute init priorities.
+  void
+  recompute_init_priorities();
+
+  // Recursive helper used by the routine above.
+  void
+  update_init_priority(Import_init* ii,
+                       std::set<const Import_init *>* visited);
+
   // The backend generator.
   Backend* backend_;
   // The object used to keep track of file names and line numbers.
@@ -787,7 +849,7 @@ class Gogo
   // The name of the magic initialization function.
   std::string init_fn_name_;
   // A list of import control variables for packages that we import.
-  std::set<Import_init> imported_init_fns_;
+  Import_init_set imported_init_fns_;
   // The package path used for reflection data.
   std::string pkgpath_;
   // The package path to use for a symbol name.
@@ -803,12 +865,17 @@ class Gogo
   // The relative import path, from the -fgo-relative-import-path
   // option.
   std::string relative_import_path_;
+  // The C header file to write, from the -fgo-c-header option.
+  std::string c_header_;
   // Whether or not to check for division by zero, from the
   // -fgo-check-divide-zero option.
   bool check_divide_by_zero_;
   // Whether or not to check for division overflow, from the
   // -fgo-check-divide-overflow option.
   bool check_divide_overflow_;
+  // Whether we are compiling the runtime package, from the
+  // -fgo-compiling-runtime option.
+  bool compiling_runtime_;
   // The level of escape analysis debug information to emit, from the
   // -fgo-debug-escape option.
   int debug_escape_level_;
@@ -2875,17 +2942,6 @@ class Package
     return this->package_name_;
   }
 
-  // The priority of this package.  The init function of packages with
-  // lower priority must be run before the init function of packages
-  // with higher priority.
-  int
-  priority() const
-  { return this->priority_; }
-
-  // Set the priority.
-  void
-  set_priority(int priority);
-
   // Return the bindings.
   Bindings*
   bindings()
@@ -2977,10 +3033,6 @@ class Package
   std::string package_name_;
   // The names in this package.
   Bindings* bindings_;
-  // The priority of this package.  A package has a priority higher
-  // than the priority of all of the packages that it imports.  This
-  // is used to run init functions in the right order.
-  int priority_;
   // The location of the most recent import statement.
   Location location_;
   // The set of aliases associated with this package.

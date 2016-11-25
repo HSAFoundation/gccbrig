@@ -486,7 +486,8 @@ make_vector_modes (enum mode_class cl, unsigned int width,
 {
   struct mode_data *m;
   struct mode_data *v;
-  char buf[8];
+  /* Big enough for a 32-bit UINT_MAX plus the text.  */
+  char buf[12];
   unsigned int ncomponents;
   enum mode_class vclass = vector_class (cl);
 
@@ -972,10 +973,10 @@ inline __attribute__((__always_inline__))\n\
 #else\n\
 extern __inline__ __attribute__((__always_inline__, __gnu_inline__))\n\
 #endif\n\
-unsigned char\n\
+unsigned short\n\
 mode_size_inline (machine_mode mode)\n\
 {\n\
-  extern %sunsigned char mode_size[NUM_MACHINE_MODES];\n\
+  extern %sunsigned short mode_size[NUM_MACHINE_MODES];\n\
   gcc_assert (mode >= 0 && mode < NUM_MACHINE_MODES);\n\
   switch (mode)\n\
     {\n", adj_bytesize ? "" : "const ");
@@ -1300,7 +1301,7 @@ emit_mode_size (void)
   int c;
   struct mode_data *m;
 
-  print_maybe_const_decl ("%sunsigned char", "mode_size",
+  print_maybe_const_decl ("%sunsigned short", "mode_size",
 			  "NUM_MACHINE_MODES", bytesize);
 
   for_all_modes (c, m)
@@ -1491,7 +1492,7 @@ emit_mode_base_align (void)
   int c;
   struct mode_data *m;
 
-  print_maybe_const_decl ("%sunsigned char",
+  print_maybe_const_decl ("%sunsigned short",
 			  "mode_base_align", "NUM_MACHINE_MODES",
 			  alignment);
 

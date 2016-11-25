@@ -114,6 +114,9 @@ struct GTY(()) globals {
   /* True if the mangling will be different in a future version of the
      ABI.  */
   bool need_abi_warning;
+
+  /* True if the mangling will be different in C++17 mode.  */
+  bool need_cxx1z_warning;
 };
 
 static GTY (()) globals G;
@@ -231,17 +234,13 @@ static void write_local_name (tree, const tree, const tree);
 static void dump_substitution_candidates (void);
 static tree mangle_decl_string (const tree);
 static int local_class_index (tree);
-static void maybe_check_abi_tags (tree, tree = NULL_TREE);
+static void maybe_check_abi_tags (tree, tree = NULL_TREE, int = 10);
 static bool equal_abi_tags (tree, tree);
 
 /* Control functions.  */
 
 static inline void start_mangling (const tree);
 static tree mangle_special_for_type (const tree, const char *);
-
-/* Foreign language functions.  */
-
-static void write_java_integer_type_codes (const tree);
 
 /* Append a single character to the end of the mangled
    representation.  */
@@ -348,6 +347,43 @@ dump_substitution_candidates (void)
     }
 }
 
+/* <exception-spec> ::=
+      Do  -- non-throwing exception specification
+      DO <expression> E  -- computed (instantiation-dependent) noexcept
+      Dw <type>* E  -- throw (types)  */
+
+static void
+write_exception_spec (tree spec)
+{
+
+  if (!spec || spec == noexcept_false_spec)
+    /* Nothing.  */
+    return;
+
+  if (!flag_noexcept_type)
+    {
+      G.need_cxx1z_warning = true;
+      return;
+    }
+
+  if (nothrow_spec_p (spec))
+    write_string ("Do");
+  else if (TREE_PURPOSE (spec))
+    {
+      gcc_assert (uses_template_parms (TREE_PURPOSE (spec)));
+      write_string ("DO");
+      write_expression (TREE_PURPOSE (spec));
+      write_char ('E');
+    }
+  else
+    {
+      write_string ("Dw");
+      for (tree t = spec; t; t = TREE_CHAIN (t))
+	write_type (TREE_VALUE (t));
+      write_char ('E');
+    }
+}
+
 /* Both decls and types can be substitution candidates, but sometimes
    they refer to the same thing.  For instance, a TYPE_DECL and
    RECORD_TYPE for the same class refer to the same thing, and should
@@ -379,7 +415,15 @@ canonicalize_for_substitution (tree node)
 					cp_type_quals (node));
       if (TREE_CODE (node) == FUNCTION_TYPE
 	  || TREE_CODE (node) == METHOD_TYPE)
-	node = build_ref_qualified_type (node, type_memfn_rqual (orig));
+	{
+	  node = build_ref_qualified_type (node, type_memfn_rqual (orig));
+	  tree r = canonical_eh_spec (TYPE_RAISES_EXCEPTIONS (orig));
+	  if (flag_noexcept_type)
+	    node = build_exception_variant (node, r);
+	  else
+	    /* Set the warning flag if appropriate.  */
+	    write_exception_spec (r);
+	}
     }
   return node;
 }
@@ -781,9 +825,11 @@ write_encoding (const tree decl)
     {
       tree fn_type;
       tree d;
+      bool tmpl = decl_is_template_id (decl, NULL);
 
-      if (decl_is_template_id (decl, NULL))
+      if (tmpl)
 	{
+	  ++processing_template_decl;
 	  fn_type = get_mostly_instantiated_function_type (decl);
 	  /* FN_TYPE will not have parameter types for in-charge or
 	     VTT parameters.  Therefore, we pass NULL_TREE to
@@ -800,6 +846,9 @@ write_encoding (const tree decl)
       write_bare_function_type (fn_type,
 				mangle_return_type_p (decl),
 				d);
+
+      if (tmpl)
+	--processing_template_decl;
     }
 }
 
@@ -1740,7 +1789,9 @@ static void
 write_real_cst (const tree value)
 {
   long target_real[4];  /* largest supported float */
-  char buffer[9];       /* eight hex digits in a 32-bit number */
+  /* Buffer for eight hex digits in a 32-bit number but big enough
+     even for 64-bit long to avoid warnings.  */
+  char buffer[17];
   int i, limit, dir;
 
   tree type = TREE_TYPE (value);
@@ -1788,18 +1839,25 @@ write_identifier (const char *identifier)
 static void
 write_special_name_constructor (const tree ctor)
 {
+  write_char ('C');
+  bool new_inh = (flag_new_inheriting_ctors
+		  && DECL_INHERITED_CTOR (ctor));
+  if (new_inh)
+    write_char ('I');
   if (DECL_BASE_CONSTRUCTOR_P (ctor))
-    write_string ("C2");
+    write_char ('2');
   /* This is the old-style "[unified]" constructor.
      In some cases, we may emit this function and call
      it from the clones in order to share code and save space.  */
   else if (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (ctor))
-    write_string ("C4");
+    write_char ('4');
   else
     {
       gcc_assert (DECL_COMPLETE_CONSTRUCTOR_P (ctor));
-      write_string ("C1");
+      write_char ('1');
     }
+  if (new_inh)
+    write_type (DECL_INHERITED_CTOR_BASE (ctor));
 }
 
 /* Handle destructor productions of non-terminal <special-name>.
@@ -2059,7 +2117,11 @@ write_type (tree type)
       type = TYPE_MAIN_VARIANT (type);
       if (TREE_CODE (type) == FUNCTION_TYPE
 	  || TREE_CODE (type) == METHOD_TYPE)
-	type = build_ref_qualified_type (type, type_memfn_rqual (type_orig));
+	{
+	  type = build_ref_qualified_type (type, type_memfn_rqual (type_orig));
+	  type = build_exception_variant (type,
+					  TYPE_RAISES_EXCEPTIONS (type_orig));
+	}
 
       /* According to the C++ ABI, some library classes are passed the
 	 same as the scalar type of their single member and use the same
@@ -2434,8 +2496,6 @@ write_builtin_type (tree type)
 	write_string ("Ds");
       else if (type == char32_type_node)
 	write_string ("Di");
-      else if (TYPE_FOR_JAVA (type))
-	write_java_integer_type_codes (type);
       else
 	{
 	  size_t itk;
@@ -2490,11 +2550,9 @@ write_builtin_type (tree type)
       break;
 
     case REAL_TYPE:
-      if (type == float_type_node
-	  || type == java_float_type_node)
+      if (type == float_type_node)
 	write_char ('f');
-      else if (type == double_type_node
-	       || type == java_double_type_node)
+      else if (type == double_type_node)
 	write_char ('d');
       else if (type == long_double_type_node)
 	write_char ('e');
@@ -2588,6 +2646,8 @@ write_function_type (const tree type)
       write_CV_qualifiers_for_type (this_type);
     }
 
+  write_exception_spec (TYPE_RAISES_EXCEPTIONS (type));
+
   if (tx_safe_fn_type_p (type))
     write_string ("Dx");
 
@@ -2619,40 +2679,16 @@ write_function_type (const tree type)
 /* Non-terminal <bare-function-type>.  TYPE is a FUNCTION_TYPE or
    METHOD_TYPE.  If INCLUDE_RETURN_TYPE is nonzero, the return value
    is mangled before the parameter types.  If non-NULL, DECL is
-   FUNCTION_DECL for the function whose type is being emitted.
-
-   If DECL is a member of a Java type, then a literal 'J'
-   is output and the return type is mangled as if INCLUDE_RETURN_TYPE
-   were nonzero.
-
-     <bare-function-type> ::= [J]</signature/ type>+  */
+   FUNCTION_DECL for the function whose type is being emitted.  */
 
 static void
 write_bare_function_type (const tree type, const int include_return_type_p,
 			  const tree decl)
 {
-  int java_method_p;
-
   MANGLE_TRACE_TREE ("bare-function-type", type);
 
-  /* Detect Java methods and emit special encoding.  */
-  if (decl != NULL
-      && DECL_FUNCTION_MEMBER_P (decl)
-      && TYPE_FOR_JAVA (DECL_CONTEXT (decl))
-      && !DECL_CONSTRUCTOR_P (decl)
-      && !DECL_DESTRUCTOR_P (decl)
-      && !DECL_CONV_FN_P (decl))
-    {
-      java_method_p = 1;
-      write_char ('J');
-    }
-  else
-    {
-      java_method_p = 0;
-    }
-
   /* Mangle the return type, if requested.  */
-  if (include_return_type_p || java_method_p)
+  if (include_return_type_p)
     write_type (TREE_TYPE (type));
 
   /* Now mangle the types of the arguments.  */
@@ -2804,10 +2840,9 @@ write_expression (tree expr)
 {
   enum tree_code code = TREE_CODE (expr);
 
-  /* Skip NOP_EXPRs.  They can occur when (say) a pointer argument
-     is converted (via qualification conversions) to another
-     type.  */
-  while (TREE_CODE (expr) == NOP_EXPR
+  /* Skip NOP_EXPR and CONVERT_EXPR.  They can occur when (say) a pointer
+     argument is converted (via qualification conversions) to another type.  */
+  while (CONVERT_EXPR_CODE_P (code)
 	 /* Parentheses aren't mangled.  */
 	 || code == PAREN_EXPR
 	 || TREE_CODE (expr) == NON_LVALUE_EXPR)
@@ -3614,6 +3649,7 @@ start_mangling (const tree entity)
 {
   G.entity = entity;
   G.need_abi_warning = false;
+  G.need_cxx1z_warning = false;
   obstack_free (&name_obstack, name_base);
   mangle_obstack = &name_obstack;
   name_base = obstack_alloc (&name_obstack, 0);
@@ -3800,6 +3836,13 @@ mangle_decl (const tree decl)
     }
   SET_DECL_ASSEMBLER_NAME (decl, id);
 
+  if (G.need_cxx1z_warning
+      && (TREE_PUBLIC (decl) || DECL_REALLY_EXTERN (decl)))
+    warning_at (DECL_SOURCE_LOCATION (decl), OPT_Wc__1z_compat,
+		"mangled name for %qD will change in C++17 because the "
+		"exception specification is part of a function type",
+		decl);
+
   if (id != DECL_NAME (decl)
       /* Don't do this for a fake symbol we aren't going to emit anyway.  */
       && TREE_CODE (decl) != TYPE_DECL
@@ -3952,6 +3995,53 @@ mangle_vtt_for_type (const tree type)
   return mangle_special_for_type (type, "TT");
 }
 
+/* Returns an identifier for the mangled name of the decomposition
+   artificial variable DECL.  DECLS is the vector of the VAR_DECLs
+   for the identifier-list.  */
+
+tree
+mangle_decomp (const tree decl, vec<tree> &decls)
+{
+  gcc_assert (!type_dependent_expression_p (decl));
+
+  location_t saved_loc = input_location;
+  input_location = DECL_SOURCE_LOCATION (decl);
+
+  start_mangling (decl);
+  write_string ("_Z");
+
+  tree context = decl_mangling_context (decl);
+  gcc_assert (context != NULL_TREE);
+
+  bool nested = false;
+  if (DECL_NAMESPACE_STD_P (context))
+    write_string ("St");
+  else if (context != global_namespace)
+    {
+      nested = true;
+      write_char ('N');
+      write_prefix (decl_mangling_context (decl));
+    }
+
+  write_string ("DC");
+  unsigned int i;
+  tree d;
+  FOR_EACH_VEC_ELT (decls, i, d)
+    write_unqualified_name (d);
+  write_char ('E');
+
+  if (nested)
+    write_char ('E');
+
+  tree id = finish_mangling_get_identifier ();
+  if (DEBUG_MANGLE)
+    fprintf (stderr, "mangle_decomp = '%s'\n\n",
+             IDENTIFIER_POINTER (id));
+
+  input_location = saved_loc;
+  return id;
+}
+
 /* Return an identifier for a construction vtable group.  TYPE is
    the most derived class in the hierarchy; BINFO is the base
    subobject for which this construction vtable group will be used.
@@ -4024,9 +4114,12 @@ mangle_call_offset (const tree fixed_offset, const tree virtual_offset)
 
 tree
 mangle_thunk (tree fn_decl, const int this_adjusting, tree fixed_offset,
-	      tree virtual_offset)
+	      tree virtual_offset, tree thunk)
 {
   tree result;
+
+  if (abi_version_at_least (11))
+    maybe_check_abi_tags (fn_decl, thunk, 11);
 
   start_mangling (fn_decl);
 
@@ -4142,7 +4235,7 @@ mangle_conv_op_name_for_type (const tree type)
    guard variable for T.  */
 
 static void
-maybe_check_abi_tags (tree t, tree for_decl)
+maybe_check_abi_tags (tree t, tree for_decl, int ver)
 {
   if (DECL_ASSEMBLER_NAME_SET_P (t))
     return;
@@ -4153,9 +4246,14 @@ maybe_check_abi_tags (tree t, tree for_decl)
 
   tree newtags = get_abi_tags (t);
   if (newtags && newtags != oldtags
-      && abi_version_crosses (10))
+      && abi_version_crosses (ver))
     {
-      if (for_decl)
+      if (for_decl && DECL_THUNK_P (for_decl))
+	warning_at (DECL_SOURCE_LOCATION (t), OPT_Wabi,
+		    "the mangled name of a thunk for %qD changes between "
+		    "-fabi-version=%d and -fabi-version=%d",
+		    t, flag_abi_version, warn_abi_version);
+      else if (for_decl)
 	warning_at (DECL_SOURCE_LOCATION (for_decl), OPT_Wabi,
 		    "the mangled name of %qD changes between "
 		    "-fabi-version=%d and -fabi-version=%d",
@@ -4203,6 +4301,7 @@ mangle_guard_variable (const tree variable)
 tree
 mangle_tls_init_fn (const tree variable)
 {
+  check_abi_tags (variable);
   start_mangling (variable);
   write_string ("_ZTH");
   write_guarded_var_name (variable);
@@ -4217,6 +4316,7 @@ mangle_tls_init_fn (const tree variable)
 tree
 mangle_tls_wrapper_fn (const tree variable)
 {
+  check_abi_tags (variable);
   start_mangling (variable);
   write_string (TLS_WRAPPER_PREFIX);
   write_guarded_var_name (variable);
@@ -4254,30 +4354,6 @@ mangle_ref_init_variable (const tree variable)
   return finish_mangling_get_identifier ();
 }
 
-
-/* Foreign language type mangling section.  */
-
-/* How to write the type codes for the integer Java type.  */
-
-static void
-write_java_integer_type_codes (const tree type)
-{
-  if (type == java_int_type_node)
-    write_char ('i');
-  else if (type == java_short_type_node)
-    write_char ('s');
-  else if (type == java_byte_type_node)
-    write_char ('c');
-  else if (type == java_char_type_node)
-    write_char ('w');
-  else if (type == java_long_type_node)
-    write_char ('x');
-  else if (type == java_boolean_type_node)
-    write_char ('b');
-  else
-    gcc_unreachable ();
-}
-
 /* Given a CLASS_TYPE, such as a record for std::bad_exception this
    function generates a mangled name for the vtable map variable of
    the class type.  For example, if the class type is

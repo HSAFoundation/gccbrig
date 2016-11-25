@@ -466,7 +466,7 @@ build_rdg (vec<loop_p> loop_nest, control_dependences *cd)
 
 
 enum partition_kind {
-    PKIND_NORMAL, PKIND_MEMSET, PKIND_MEMCPY
+    PKIND_NORMAL, PKIND_MEMSET, PKIND_MEMCPY, PKIND_MEMMOVE
 };
 
 struct partition
@@ -875,10 +875,11 @@ generate_memcpy_builtin (struct loop *loop, partition *partition)
 				       false, GSI_CONTINUE_LINKING);
   dest = build_addr_arg_loc (loc, partition->main_dr, nb_bytes);
   src = build_addr_arg_loc (loc, partition->secondary_dr, nb_bytes);
-  if (ptr_derefs_may_alias_p (dest, src))
-    kind = BUILT_IN_MEMMOVE;
-  else
+  if (partition->kind == PKIND_MEMCPY
+      || ! ptr_derefs_may_alias_p (dest, src))
     kind = BUILT_IN_MEMCPY;
+  else
+    kind = BUILT_IN_MEMMOVE;
 
   dest = force_gimple_operand_gsi (&gsi, dest, true, NULL_TREE,
 				   false, GSI_CONTINUE_LINKING);
@@ -970,6 +971,7 @@ generate_code_for_partition (struct loop *loop,
       break;
 
     case PKIND_MEMCPY:
+    case PKIND_MEMMOVE:
       generate_memcpy_builtin (loop, partition);
       break;
 
@@ -1166,10 +1168,12 @@ classify_partition (loop_p loop, struct graph *rdg, partition *partition)
 		  return;
 		}
 	    }
+	  partition->kind = PKIND_MEMMOVE;
 	}
+      else
+	partition->kind = PKIND_MEMCPY;
       free_dependence_relation (ddr);
       loops.release ();
-      partition->kind = PKIND_MEMCPY;
       partition->main_dr = single_store;
       partition->secondary_dr = single_load;
       partition->niter = nb_iter;
@@ -1408,9 +1412,11 @@ pg_add_dependence_edges (struct graph *rdg, vec<loop_p> loops, int dir,
 	else
 	  this_dir = 0;
 	free_dependence_relation (ddr);
-	if (dir == 0)
+	if (this_dir == 2)
+	  return 2;
+	else if (dir == 0)
 	  dir = this_dir;
-	else if (dir != this_dir)
+	else if (this_dir != 0 && dir != this_dir)
 	  return 2;
 	/* Shuffle "back" dr1.  */
 	dr1 = saved_dr1;

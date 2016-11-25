@@ -27,6 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "cfghooks.h"
 #include "df.h"
+#include "memmodel.h"
 #include "tm_p.h"
 #include "expmed.h"
 #include "insn-config.h"
@@ -934,7 +935,7 @@ resolve_simple_move (rtx set, rtx_insn *insn)
 
       if (AUTO_INC_DEC)
 	{
-	  rtx move = emit_move_insn (reg, src);
+	  rtx_insn *move = emit_move_insn (reg, src);
 	  if (MEM_P (src))
 	    {
 	      rtx note = find_reg_note (insn, REG_INC, NULL_RTX);

@@ -26,6 +26,17 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include "libgcov.h"
 #if !defined(inhibit_libc)
 
+/* Detect whether target can support atomic update of profilers.  */
+#if __SIZEOF_LONG_LONG__ == 4 && __GCC_HAVE_SYNC_COMPARE_AND_SWAP_4
+#define GCOV_SUPPORTS_ATOMIC 1
+#else
+#if __SIZEOF_LONG_LONG__ == 8 && __GCC_HAVE_SYNC_COMPARE_AND_SWAP_8
+#define GCOV_SUPPORTS_ATOMIC 1
+#else
+#define GCOV_SUPPORTS_ATOMIC 0
+#endif
+#endif
+
 #ifdef L_gcov_interval_profiler
 /* If VALUE is in interval <START, START + STEPS - 1>, then increases the
    corresponding counter in COUNTERS.  If the VALUE is above or below
@@ -46,7 +57,7 @@ __gcov_interval_profiler (gcov_type *counters, gcov_type value,
 }
 #endif
 
-#ifdef L_gcov_interval_profiler_atomic
+#if defined(L_gcov_interval_profiler_atomic) && GCOV_SUPPORTS_ATOMIC
 /* If VALUE is in interval <START, START + STEPS - 1>, then increases the
    corresponding counter in COUNTERS.  If the VALUE is above or below
    the interval, COUNTERS[STEPS] or COUNTERS[STEPS + 1] is increased
@@ -58,11 +69,11 @@ __gcov_interval_profiler_atomic (gcov_type *counters, gcov_type value,
 {
   gcov_type delta = value - start;
   if (delta < 0)
-    __atomic_fetch_add (&counters[steps + 1], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[steps + 1], 1, __ATOMIC_RELAXED);
   else if (delta >= steps)
-    __atomic_fetch_add (&counters[steps], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[steps], 1, __ATOMIC_RELAXED);
   else
-    __atomic_fetch_add (&counters[delta], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[delta], 1, __ATOMIC_RELAXED);
 }
 #endif
 
@@ -80,7 +91,7 @@ __gcov_pow2_profiler (gcov_type *counters, gcov_type value)
 }
 #endif
 
-#ifdef L_gcov_pow2_profiler_atomic
+#if defined(L_gcov_pow2_profiler_atomic) && GCOV_SUPPORTS_ATOMIC
 /* If VALUE is a power of two, COUNTERS[1] is incremented.  Otherwise
    COUNTERS[0] is incremented.  Function is thread-safe.  */
 
@@ -88,9 +99,9 @@ void
 __gcov_pow2_profiler_atomic (gcov_type *counters, gcov_type value)
 {
   if (value == 0 || (value & (value - 1)))
-    __atomic_fetch_add (&counters[0], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[0], 1, __ATOMIC_RELAXED);
   else
-    __atomic_fetch_add (&counters[1], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[1], 1, __ATOMIC_RELAXED);
 }
 #endif
 
@@ -121,7 +132,7 @@ __gcov_one_value_profiler_body (gcov_type *counters, gcov_type value,
     counters[1]--;
 
   if (use_atomic)
-    __atomic_fetch_add (&counters[2], 1, MEMMODEL_RELAXED);
+    __atomic_fetch_add (&counters[2], 1, __ATOMIC_RELAXED);
   else
     counters[2]++;
 }
@@ -134,7 +145,7 @@ __gcov_one_value_profiler (gcov_type *counters, gcov_type value)
 }
 #endif
 
-#ifdef L_gcov_one_value_profiler_atomic
+#if defined(L_gcov_one_value_profiler_atomic) && GCOV_SUPPORTS_ATOMIC
 
 /* Update one value profilers (COUNTERS) for a given VALUE.
 
@@ -331,28 +342,9 @@ __gcov_indirect_call_profiler_v2 (gcov_type value, void* cur_func)
 #ifdef L_gcov_time_profiler
 
 /* Counter for first visit of each function.  */
-static gcov_type function_counter;
+gcov_type __gcov_time_profiler_counter ATTRIBUTE_HIDDEN;
 
-/* Sets corresponding COUNTERS if there is no value.  */
-
-void
-__gcov_time_profiler (gcov_type* counters)
-{
-  if (!counters[0])
-    counters[0] = ++function_counter;
-}
-
-/* Sets corresponding COUNTERS if there is no value.
-   Function is thread-safe.  */
-
-void
-__gcov_time_profiler_atomic (gcov_type* counters)
-{
-  if (!counters[0])
-    counters[0] = __atomic_add_fetch (&function_counter, 1, MEMMODEL_RELAXED);
-}
 #endif
-
 
 #ifdef L_gcov_average_profiler
 /* Increase corresponding COUNTER by VALUE.  FIXME: Perhaps we want
@@ -366,15 +358,15 @@ __gcov_average_profiler (gcov_type *counters, gcov_type value)
 }
 #endif
 
-#ifdef L_gcov_average_profiler_atomic
+#if defined(L_gcov_average_profiler_atomic) && GCOV_SUPPORTS_ATOMIC
 /* Increase corresponding COUNTER by VALUE.  FIXME: Perhaps we want
    to saturate up.  Function is thread-safe.  */
 
 void
 __gcov_average_profiler_atomic (gcov_type *counters, gcov_type value)
 {
-  __atomic_fetch_add (&counters[0], value, MEMMODEL_RELAXED);
-  __atomic_fetch_add (&counters[1], 1, MEMMODEL_RELAXED);
+  __atomic_fetch_add (&counters[0], value, __ATOMIC_RELAXED);
+  __atomic_fetch_add (&counters[1], 1, __ATOMIC_RELAXED);
 }
 #endif
 
@@ -388,13 +380,13 @@ __gcov_ior_profiler (gcov_type *counters, gcov_type value)
 }
 #endif
 
-#ifdef L_gcov_ior_profiler_atomic
+#if defined(L_gcov_ior_profiler_atomic) && GCOV_SUPPORTS_ATOMIC
 /* Bitwise-OR VALUE into COUNTER.  Function is thread-safe.  */
 
 void
 __gcov_ior_profiler_atomic (gcov_type *counters, gcov_type value)
 {
-  __atomic_fetch_or (&counters[0], value, MEMMODEL_RELAXED);
+  __atomic_fetch_or (&counters[0], value, __ATOMIC_RELAXED);
 }
 #endif
 

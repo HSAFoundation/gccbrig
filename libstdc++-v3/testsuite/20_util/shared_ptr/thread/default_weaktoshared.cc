@@ -18,9 +18,8 @@
 // 20.6.6.2 Template class shared_ptr [util.smartptr.shared]
 
 // { dg-do run { target *-*-freebsd* *-*-dragonfly* *-*-netbsd* *-*-linux* *-*-gnu* *-*-solaris* *-*-cygwin *-*-rtems* *-*-darwin* } }
-// { dg-options "-pthread -std=gnu++11" { target *-*-freebsd* *-*-dragonfly* *-*-netbsd* *-*-linux* *-*-gnu* } }
-// { dg-options "-pthreads -std=gnu++11" { target *-*-solaris* } }
-// { dg-options " -std=gnu++11 " { target *-*-cygwin *-*-rtems* *-*-darwin* } }
+// { dg-options "-pthread" { target *-*-freebsd* *-*-dragonfly* *-*-netbsd* *-*-linux* *-*-gnu* *-*-solaris* } }
+// { dg-require-effective-target c++11 }
 
 #include <memory>
 #include <random>
@@ -29,6 +28,7 @@
 #include <cstdlib>
 #include <thread>
 #include <atomic>
+#include <functional>
 #include <testsuite_hooks.h>
 
 #ifdef _GLIBCXX_HAVE_UNISTD_H
@@ -125,7 +125,6 @@ void thread_hammer(wp_vector_t& weak_pool)
 void
 test01()
 {
-  bool test __attribute__((unused)) = true;
   sp_vector_t obj_pool(POOL_SIZE);
   
   for(auto& obj : obj_pool)

@@ -36,6 +36,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "toplev.h"
 #include "stor-layout.h"
 #include "symbol-summary.h"
+#include "tree-vrp.h"
 #include "ipa-prop.h"
 #include "common.h"
 #include "debug.h"
@@ -372,7 +373,9 @@ hash_canonical_type (tree type)
       tree f;
 
       for (f = TYPE_FIELDS (type), nf = 0; f; f = TREE_CHAIN (f))
-	if (TREE_CODE (f) == FIELD_DECL)
+	if (TREE_CODE (f) == FIELD_DECL
+	    && (! DECL_SIZE (f)
+		|| ! integer_zerop (DECL_SIZE (f))))
 	  {
 	    iterative_hash_canonical_type (TREE_TYPE (f), hstate);
 	    nf++;
@@ -3091,6 +3094,10 @@ do_whole_program_analysis (void)
 
   execute_ipa_pass_list (g->get_passes ()->all_regular_ipa_passes);
 
+  /* When WPA analysis raises errors, do not bother to output anything.  */
+  if (seen_error ())
+    return;
+
   if (symtab->dump_file)
     {
       fprintf (symtab->dump_file, "Optimized ");
@@ -3237,7 +3244,7 @@ offload_handle_link_vars (void)
 	TREE_TYPE (link_ptr_var) = type;
 	TREE_USED (link_ptr_var) = 1;
 	TREE_STATIC (link_ptr_var) = 1;
-	DECL_MODE (link_ptr_var) = TYPE_MODE (type);
+	SET_DECL_MODE (link_ptr_var, TYPE_MODE (type));
 	DECL_SIZE (link_ptr_var) = TYPE_SIZE (type);
 	DECL_SIZE_UNIT (link_ptr_var) = TYPE_SIZE_UNIT (type);
 	DECL_ARTIFICIAL (link_ptr_var) = 1;
@@ -3314,6 +3321,9 @@ lto_main (void)
 	  materialize_cgraph ();
 	  if (!flag_ltrans)
 	    lto_promote_statics_nonwpa ();
+
+	  /* Annotate the CU DIE and mark the early debug phase as finished.  */
+	  debug_hooks->early_finish ("<artificial>");
 
 	  /* Let the middle end know that we have read and merged all of
 	     the input files.  */ 

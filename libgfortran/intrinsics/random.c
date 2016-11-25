@@ -24,6 +24,9 @@ a copy of the GCC Runtime Library Exception along with this program;
 see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 <http://www.gnu.org/licenses/>.  */
 
+/* For rand_s.  */
+#define _CRT_RAND_S
+
 #include "libgfortran.h"
 #include <gthr.h>
 #include <string.h>
@@ -43,6 +46,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #ifdef __MINGW32__
 #define HAVE_GETPID 1
 #include <process.h>
+#include <_mingw.h> /* For __MINGW64_VERSION_MAJOR  */
 #endif
 
 extern void random_r4 (GFC_REAL_4 *);
@@ -193,9 +197,10 @@ typedef struct
 xorshift1024star_state;
 
 
-/* How many times we have jumped. This and master_state are the only
-   variables protected by random_lock.  */
-static unsigned njumps;
+/* master_init, njumps, and master_state are the only variables
+   protected by random_lock.  */
+static bool master_init;
+static unsigned njumps; /* How many times we have jumped.  */
 static uint64_t master_state[] = {
   0xad63fa1ed3b55f36ULL, 0xd94473e78978b497ULL, 0xbc60592a98172477ULL,
   0xa3de7c6e81265301ULL, 0x586640c5e785af27ULL, 0x7a2a3f63b67ce5eaULL,
@@ -272,24 +277,6 @@ jump (xorshift1024star_state* rs)
 }
 
 
-/* Initialize the random number generator for the current thread,
-   using the master state and the number of times we must jump.  */
-
-static void
-init_rand_state (xorshift1024star_state* rs, const bool locked)
-{
-  if (!locked)
-    __gthread_mutex_lock (&random_lock);
-  memcpy (&rs->s, master_state, sizeof (master_state));
-  unsigned n = njumps++;
-  if (!locked)
-    __gthread_mutex_unlock (&random_lock);
-  for (unsigned i = 0; i < n; i++)
-    jump (rs);
-  rs->init = true;
-}
-
-
 /* Super-simple LCG generator used in getosrandom () if /dev/urandom
    doesn't exist.  */
 
@@ -298,7 +285,7 @@ init_rand_state (xorshift1024star_state* rs, const bool locked)
 #define Q 127773 /* M / A (To avoid overflow on A * seed) */
 #define R 2836   /* M % A (To avoid overflow on A * seed) */
 
-static uint32_t
+__attribute__((unused)) static uint32_t
 lcg_parkmiller(uint32_t seed)
 {
     uint32_t hi = seed / Q;
@@ -314,14 +301,21 @@ lcg_parkmiller(uint32_t seed)
 #undef Q
 #undef R
 
+
 /* Get some random bytes from the operating system in order to seed
    the PRNG.  */
 
 static int
 getosrandom (void *buf, size_t buflen)
 {
-  /* TODO: On Windows one could use CryptGenRandom
-
+  /* rand_s is available in MinGW-w64 but not plain MinGW.  */
+#ifdef __MINGW64_VERSION_MAJOR
+  unsigned int* b = buf;
+  for (unsigned i = 0; i < buflen / sizeof (unsigned int); i++)
+    rand_s (&b[i]);
+  return buflen;
+#else
+  /*
      TODO: When glibc adds a wrapper for the getrandom() system call
      on Linux, one could use that.
 
@@ -350,12 +344,37 @@ getosrandom (void *buf, size_t buflen)
   seed ^= pid;
 #endif
   uint32_t* ub = buf;
-  for (size_t i = 0; i < buflen; i++)
+  for (size_t i = 0; i < buflen / sizeof (uint32_t); i++)
     {
       ub[i] = seed;
       seed = lcg_parkmiller (seed);
     }
   return buflen;
+#endif /* __MINGW64_VERSION_MAJOR  */
+}
+
+
+/* Initialize the random number generator for the current thread,
+   using the master state and the number of times we must jump.  */
+
+static void
+init_rand_state (xorshift1024star_state* rs, const bool locked)
+{
+  if (!locked)
+    __gthread_mutex_lock (&random_lock);
+  if (!master_init)
+    {
+      getosrandom (master_state, sizeof (master_state));
+      njumps = 0;
+      master_init = true;
+    }
+  memcpy (&rs->s, master_state, sizeof (master_state));
+  unsigned n = njumps++;
+  if (!locked)
+    __gthread_mutex_unlock (&random_lock);
+  for (unsigned i = 0; i < n; i++)
+    jump (rs);
+  rs->init = true;
 }
 
 
@@ -715,26 +734,31 @@ arandom_r16 (gfc_array_r16 *x)
 #endif
 
 
+/* Number of elements in master_state array.  */
+#define SZU64 (sizeof (master_state) / sizeof (uint64_t))
+
+
+/* Keys for scrambling the seed in order to avoid poor seeds.  */
+
+static const uint64_t xor_keys[] = {
+  0xbd0c5b6e50c2df49ULL, 0xd46061cd46e1df38ULL, 0xbb4f4d4ed6103544ULL,
+  0x114a583d0756ad39ULL, 0x4b5ad8623d0aaab6ULL, 0x3f2ed7afbe0c0f21ULL,
+  0xdec83fd65f113445ULL, 0x3824f8fbc4f10d24ULL, 0x5d9025af05878911ULL,
+  0x500bc46b540340e9ULL, 0x8bd53298e0d00530ULL, 0x57886e40a952e06aULL,
+  0x926e76c88e31cdb6ULL, 0xbd0724dac0a3a5f9ULL, 0xc5c8981b858ab796ULL,
+  0xbb12ab2694c2b32cULL
+};
+
+
+/* Since a XOR cipher is symmetric, we need only one routine, and we
+   can use it both for encryption and decryption.  */
 
 static void
-scramble_seed (unsigned char *dest, unsigned char *src, int size)
+scramble_seed (uint64_t *dest, const uint64_t *src)
 {
-  int i;
-
-  for (i = 0; i < size; i++)
-    dest[(i % 2) * (size / 2) + i / 2] = src[i];
+  for (int i = 0; i < (int) SZU64; i++)
+    dest[i] = src[i] ^ xor_keys[i];
 }
-
-
-static void
-unscramble_seed (unsigned char *dest, unsigned char *src, int size)
-{
-  int i;
-
-  for (i = 0; i < size; i++)
-    dest[i] = src[(i % 2) * (size / 2) + i / 2];
-}
-
 
 
 /* random_seed is used to seed the PRNG with either a default
@@ -744,7 +768,7 @@ unscramble_seed (unsigned char *dest, unsigned char *src, int size)
 void
 random_seed_i4 (GFC_INTEGER_4 *size, gfc_array_i4 *put, gfc_array_i4 *get)
 {
-  unsigned char seed[sizeof (master_state)];
+  uint64_t seed[SZU64];
 #define SZ (sizeof (master_state) / sizeof (GFC_INTEGER_4))
 
   /* Check that we only have one argument present.  */
@@ -771,12 +795,12 @@ random_seed_i4 (GFC_INTEGER_4 *size, gfc_array_i4 *put, gfc_array_i4 *get)
 	init_rand_state (rs, false);
 
       /* Unscramble the seed.  */
-      unscramble_seed (seed, (unsigned char *) rs->s, sizeof seed);
+      scramble_seed (seed, rs->s);
 
       /*  Then copy it back to the user variable.  */
       for (size_t i = 0; i < SZ ; i++)
 	memcpy (&(get->base_addr[(SZ - 1 - i) * GFC_DESCRIPTOR_STRIDE(get,0)]),
-               seed + i * sizeof(GFC_UINTEGER_4),
+		(unsigned char*) seed + i * sizeof(GFC_UINTEGER_4),
                sizeof(GFC_UINTEGER_4));
 
       /* Finally copy the value of p after the seed.  */
@@ -791,8 +815,7 @@ random_seed_i4 (GFC_INTEGER_4 *size, gfc_array_i4 *put, gfc_array_i4 *get)
      a processor-dependent value to the seed."  */
   if (size == NULL && put == NULL && get == NULL)
     {
-      getosrandom (master_state, sizeof (master_state));
-      njumps = 0;
+      master_init = false;
       init_rand_state (rs, true);
     }
 
@@ -808,20 +831,19 @@ random_seed_i4 (GFC_INTEGER_4 *size, gfc_array_i4 *put, gfc_array_i4 *get)
 
       /*  We copy the seed given by the user.  */
       for (size_t i = 0; i < SZ; i++)
-	memcpy (seed + i * sizeof(GFC_UINTEGER_4),
+	memcpy ((unsigned char*) seed + i * sizeof(GFC_UINTEGER_4),
 		&(put->base_addr[(SZ - 1 - i) * GFC_DESCRIPTOR_STRIDE(put,0)]),
 		sizeof(GFC_UINTEGER_4));
 
       /* We put it after scrambling the bytes, to paper around users who
 	 provide seeds with quality only in the lower or upper part.  */
-      scramble_seed ((unsigned char *) master_state, seed, sizeof seed);
+      scramble_seed (master_state, seed);
       njumps = 0;
+      master_init = true;
       init_rand_state (rs, true);
 
       rs->p = put->base_addr[SZ * GFC_DESCRIPTOR_STRIDE(put, 0)] & 15;
     }
-
-
 
   __gthread_mutex_unlock (&random_lock);
     }
@@ -833,6 +855,8 @@ iexport(random_seed_i4);
 void
 random_seed_i8 (GFC_INTEGER_8 *size, gfc_array_i8 *put, gfc_array_i8 *get)
 {
+  uint64_t seed[SZU64];
+
   /* Check that we only have one argument present.  */
   if ((size ? 1 : 0) + (put ? 1 : 0) + (get ? 1 : 0) > 1)
     runtime_error ("RANDOM_SEED should have at most one argument present.");
@@ -857,9 +881,12 @@ random_seed_i8 (GFC_INTEGER_8 *size, gfc_array_i8 *put, gfc_array_i8 *get)
       if (!rs->init)
 	init_rand_state (rs, false);
 
+      /* Unscramble the seed.  */
+      scramble_seed (seed, rs->s);
+
       /*  This code now should do correct strides.  */
       for (size_t i = 0; i < SZ; i++)
-	memcpy (&(get->base_addr[i * GFC_DESCRIPTOR_STRIDE(get,0)]), &rs->s[i],
+	memcpy (&(get->base_addr[i * GFC_DESCRIPTOR_STRIDE(get,0)]), &seed[i],
 		sizeof (GFC_UINTEGER_8));
 
       get->base_addr[SZ * GFC_DESCRIPTOR_STRIDE(get, 0)] = rs->p;
@@ -873,8 +900,7 @@ random_seed_i8 (GFC_INTEGER_8 *size, gfc_array_i8 *put, gfc_array_i8 *get)
      a processor-dependent value to the seed."  */
   if (size == NULL && put == NULL && get == NULL)
     {
-      getosrandom (master_state, sizeof (master_state));
-      njumps = 0;
+      master_init = false;
       init_rand_state (rs, true);
     }
 
@@ -890,10 +916,12 @@ random_seed_i8 (GFC_INTEGER_8 *size, gfc_array_i8 *put, gfc_array_i8 *get)
 
       /*  This code now should do correct strides.  */
       for (size_t i = 0; i < SZ; i++)
-	memcpy (&master_state[i], &(put->base_addr[i * GFC_DESCRIPTOR_STRIDE(put,0)]),
+	memcpy (&seed[i], &(put->base_addr[i * GFC_DESCRIPTOR_STRIDE(put,0)]),
 		sizeof (GFC_UINTEGER_8));
 
+      scramble_seed (master_state, seed);
       njumps = 0;
+      master_init = true;
       init_rand_state (rs, true);
       rs->p = put->base_addr[SZ * GFC_DESCRIPTOR_STRIDE(put, 0)] & 15;
      }

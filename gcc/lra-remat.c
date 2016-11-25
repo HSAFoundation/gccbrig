@@ -60,6 +60,7 @@ along with GCC; see the file COPYING3.	If not see
 #include "df.h"
 #include "insn-config.h"
 #include "regs.h"
+#include "memmodel.h"
 #include "ira.h"
 #include "recog.h"
 #include "lra.h"
@@ -369,6 +370,22 @@ operand_to_remat (rtx_insn *insn)
 		    < (reg->regno
 		       + hard_regno_nregs[reg->regno][reg->biggest_mode])))
 	      return -1;
+      }
+  /* Check hard coded insn registers.  */
+  for (struct lra_insn_reg *reg = static_id->hard_regs;
+       reg != NULL;
+       reg = reg->next)
+    if (reg->type == OP_INOUT)
+      return -1;
+    else if (reg->type == OP_IN)
+      {
+	/* Check that there is no output hard reg as the input
+	   one.  */
+	  for (struct lra_insn_reg *reg2 = static_id->hard_regs;
+	       reg2 != NULL;
+	       reg2 = reg2->next)
+	    if (reg2->type == OP_OUT && reg->regno == reg2->regno)
+		return -1;
       }
   /* Find the rematerialization operand.  */
   int nop = static_id->n_operands;

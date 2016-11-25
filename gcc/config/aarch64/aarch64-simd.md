@@ -2443,7 +2443,7 @@
 	  comparison = gen_aarch64_cmlt<mode>;
 	  break;
 	}
-      /* Else, fall through.  */
+      /* Fall through.  */
     case UNGE:
       std::swap (operands[2], operands[3]);
       /* Fall through.  */
@@ -2457,7 +2457,7 @@
 	  comparison = gen_aarch64_cmle<mode>;
 	  break;
 	}
-      /* Else, fall through.  */
+      /* Fall through.  */
     case UNGT:
       std::swap (operands[2], operands[3]);
       /* Fall through.  */
@@ -2573,7 +2573,17 @@
   "TARGET_SIMD"
 {
   rtx mask = gen_reg_rtx (<V_cmp_result>mode);
+  enum rtx_code code = GET_CODE (operands[3]);
 
+  /* NE is handled as !EQ in vec_cmp patterns, we can explicitly invert
+     it as well as switch operands 1/2 in order to avoid the additional
+     NOT instruction.  */
+  if (code == NE)
+    {
+      operands[3] = gen_rtx_fmt_ee (EQ, GET_MODE (operands[3]),
+				    operands[4], operands[5]);
+      std::swap (operands[1], operands[2]);
+    }
   emit_insn (gen_vec_cmp<mode><v_cmp_result> (mask, operands[3],
 					      operands[4], operands[5]));
   emit_insn (gen_vcond_mask_<mode><v_cmp_result> (operands[0], operands[1],
@@ -2593,7 +2603,17 @@
   "TARGET_SIMD"
 {
   rtx mask = gen_reg_rtx (<V_cmp_result>mode);
+  enum rtx_code code = GET_CODE (operands[3]);
 
+  /* NE is handled as !EQ in vec_cmp patterns, we can explicitly invert
+     it as well as switch operands 1/2 in order to avoid the additional
+     NOT instruction.  */
+  if (code == NE)
+    {
+      operands[3] = gen_rtx_fmt_ee (EQ, GET_MODE (operands[3]),
+				    operands[4], operands[5]);
+      std::swap (operands[1], operands[2]);
+    }
   emit_insn (gen_vec_cmp<mode><v_cmp_result> (mask, operands[3],
 					      operands[4], operands[5]));
   emit_insn (gen_vcond_mask_<v_cmp_mixed><v_cmp_result> (
@@ -2614,7 +2634,17 @@
   "TARGET_SIMD"
 {
   rtx mask = gen_reg_rtx (<MODE>mode);
+  enum rtx_code code = GET_CODE (operands[3]);
 
+  /* NE is handled as !EQ in vec_cmp patterns, we can explicitly invert
+     it as well as switch operands 1/2 in order to avoid the additional
+     NOT instruction.  */
+  if (code == NE)
+    {
+      operands[3] = gen_rtx_fmt_ee (EQ, GET_MODE (operands[3]),
+				    operands[4], operands[5]);
+      std::swap (operands[1], operands[2]);
+    }
   emit_insn (gen_vec_cmp<mode><mode> (mask, operands[3],
 				      operands[4], operands[5]));
   emit_insn (gen_vcond_mask_<mode><v_cmp_result> (operands[0], operands[1],
@@ -2633,7 +2663,17 @@
   "TARGET_SIMD"
 {
   rtx mask = gen_reg_rtx (<V_cmp_result>mode);
+  enum rtx_code code = GET_CODE (operands[3]);
 
+  /* NE is handled as !EQ in vec_cmp patterns, we can explicitly invert
+     it as well as switch operands 1/2 in order to avoid the additional
+     NOT instruction.  */
+  if (code == NE)
+    {
+      operands[3] = gen_rtx_fmt_ee (EQ, GET_MODE (operands[3]),
+				    operands[4], operands[5]);
+      std::swap (operands[1], operands[2]);
+    }
   emit_insn (gen_vec_cmp<v_cmp_mixed><v_cmp_mixed> (
 						  mask, operands[3],
 						  operands[4], operands[5]));
@@ -4861,7 +4901,7 @@
   DONE;
 })
 
-(define_insn "aarch64_ld2<mode>_dreg"
+(define_insn "aarch64_ld2<mode>_dreg_le"
   [(set (match_operand:OI 0 "register_operand" "=w")
 	(subreg:OI
 	  (vec_concat:<VRL2>
@@ -4874,12 +4914,30 @@
 	     (unspec:VD [(match_dup 1)]
 			UNSPEC_LD2)
 	     (vec_duplicate:VD (const_int 0)))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
   "ld2\\t{%S0.<Vtype> - %T0.<Vtype>}, %1"
   [(set_attr "type" "neon_load2_2reg<q>")]
 )
 
-(define_insn "aarch64_ld2<mode>_dreg"
+(define_insn "aarch64_ld2<mode>_dreg_be"
+  [(set (match_operand:OI 0 "register_operand" "=w")
+	(subreg:OI
+	  (vec_concat:<VRL2>
+	    (vec_concat:<VDBL>
+	     (vec_duplicate:VD (const_int 0))
+	     (unspec:VD
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD2))
+	    (vec_concat:<VDBL>
+	     (vec_duplicate:VD (const_int 0))
+	     (unspec:VD [(match_dup 1)]
+			UNSPEC_LD2))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "ld2\\t{%S0.<Vtype> - %T0.<Vtype>}, %1"
+  [(set_attr "type" "neon_load2_2reg<q>")]
+)
+
+(define_insn "aarch64_ld2<mode>_dreg_le"
   [(set (match_operand:OI 0 "register_operand" "=w")
 	(subreg:OI
 	  (vec_concat:<VRL2>
@@ -4892,12 +4950,30 @@
 	     (unspec:DX [(match_dup 1)]
 			UNSPEC_LD2)
 	     (const_int 0))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
   "ld1\\t{%S0.1d - %T0.1d}, %1"
   [(set_attr "type" "neon_load1_2reg<q>")]
 )
 
-(define_insn "aarch64_ld3<mode>_dreg"
+(define_insn "aarch64_ld2<mode>_dreg_be"
+  [(set (match_operand:OI 0 "register_operand" "=w")
+	(subreg:OI
+	  (vec_concat:<VRL2>
+	    (vec_concat:<VDBL>
+	     (const_int 0)
+	     (unspec:DX
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD2))
+	    (vec_concat:<VDBL>
+	     (const_int 0)
+	     (unspec:DX [(match_dup 1)]
+			UNSPEC_LD2))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "ld1\\t{%S0.1d - %T0.1d}, %1"
+  [(set_attr "type" "neon_load1_2reg<q>")]
+)
+
+(define_insn "aarch64_ld3<mode>_dreg_le"
   [(set (match_operand:CI 0 "register_operand" "=w")
 	(subreg:CI
 	 (vec_concat:<VRL3>
@@ -4915,12 +4991,35 @@
 	     (unspec:VD [(match_dup 1)]
 			UNSPEC_LD3)
 	     (vec_duplicate:VD (const_int 0)))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
   "ld3\\t{%S0.<Vtype> - %U0.<Vtype>}, %1"
   [(set_attr "type" "neon_load3_3reg<q>")]
 )
 
-(define_insn "aarch64_ld3<mode>_dreg"
+(define_insn "aarch64_ld3<mode>_dreg_be"
+  [(set (match_operand:CI 0 "register_operand" "=w")
+	(subreg:CI
+	 (vec_concat:<VRL3>
+	  (vec_concat:<VRL2>
+	    (vec_concat:<VDBL>
+	     (vec_duplicate:VD (const_int 0))
+	     (unspec:VD
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD3))
+	    (vec_concat:<VDBL>
+	     (vec_duplicate:VD (const_int 0))
+	     (unspec:VD [(match_dup 1)]
+			UNSPEC_LD3)))
+	  (vec_concat:<VDBL>
+	     (vec_duplicate:VD (const_int 0))
+	     (unspec:VD [(match_dup 1)]
+			UNSPEC_LD3))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "ld3\\t{%S0.<Vtype> - %U0.<Vtype>}, %1"
+  [(set_attr "type" "neon_load3_3reg<q>")]
+)
+
+(define_insn "aarch64_ld3<mode>_dreg_le"
   [(set (match_operand:CI 0 "register_operand" "=w")
 	(subreg:CI
 	 (vec_concat:<VRL3>
@@ -4938,12 +5037,35 @@
 	     (unspec:DX [(match_dup 1)]
 			UNSPEC_LD3)
 	     (const_int 0))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
   "ld1\\t{%S0.1d - %U0.1d}, %1"
   [(set_attr "type" "neon_load1_3reg<q>")]
 )
 
-(define_insn "aarch64_ld4<mode>_dreg"
+(define_insn "aarch64_ld3<mode>_dreg_be"
+  [(set (match_operand:CI 0 "register_operand" "=w")
+	(subreg:CI
+	 (vec_concat:<VRL3>
+	  (vec_concat:<VRL2>
+	    (vec_concat:<VDBL>
+	     (const_int 0)
+	     (unspec:DX
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD3))
+	    (vec_concat:<VDBL>
+	     (const_int 0)
+	     (unspec:DX [(match_dup 1)]
+			UNSPEC_LD3)))
+	  (vec_concat:<VDBL>
+	     (const_int 0)
+	     (unspec:DX [(match_dup 1)]
+			UNSPEC_LD3))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "ld1\\t{%S0.1d - %U0.1d}, %1"
+  [(set_attr "type" "neon_load1_3reg<q>")]
+)
+
+(define_insn "aarch64_ld4<mode>_dreg_le"
   [(set (match_operand:XI 0 "register_operand" "=w")
 	(subreg:XI
 	 (vec_concat:<VRL4>
@@ -4954,9 +5076,9 @@
 		UNSPEC_LD4)
 	       (vec_duplicate:VD (const_int 0)))
 	      (vec_concat:<VDBL>
-	        (unspec:VD [(match_dup 1)]
+		(unspec:VD [(match_dup 1)]
 			UNSPEC_LD4)
-	        (vec_duplicate:VD (const_int 0))))
+		(vec_duplicate:VD (const_int 0))))
 	   (vec_concat:<VRL2>
 	     (vec_concat:<VDBL>
 	       (unspec:VD [(match_dup 1)]
@@ -4966,12 +5088,40 @@
 	       (unspec:VD [(match_dup 1)]
 			UNSPEC_LD4)
 	       (vec_duplicate:VD (const_int 0))))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
   "ld4\\t{%S0.<Vtype> - %V0.<Vtype>}, %1"
   [(set_attr "type" "neon_load4_4reg<q>")]
 )
 
-(define_insn "aarch64_ld4<mode>_dreg"
+(define_insn "aarch64_ld4<mode>_dreg_be"
+  [(set (match_operand:XI 0 "register_operand" "=w")
+	(subreg:XI
+	 (vec_concat:<VRL4>
+	   (vec_concat:<VRL2>
+	     (vec_concat:<VDBL>
+	       (vec_duplicate:VD (const_int 0))
+	       (unspec:VD
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD4))
+	      (vec_concat:<VDBL>
+		(vec_duplicate:VD (const_int 0))
+		(unspec:VD [(match_dup 1)]
+			UNSPEC_LD4)))
+	   (vec_concat:<VRL2>
+	     (vec_concat:<VDBL>
+	       (vec_duplicate:VD (const_int 0))
+	       (unspec:VD [(match_dup 1)]
+			UNSPEC_LD4))
+	     (vec_concat:<VDBL>
+	       (vec_duplicate:VD (const_int 0))
+	       (unspec:VD [(match_dup 1)]
+			UNSPEC_LD4)))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
+  "ld4\\t{%S0.<Vtype> - %V0.<Vtype>}, %1"
+  [(set_attr "type" "neon_load4_4reg<q>")]
+)
+
+(define_insn "aarch64_ld4<mode>_dreg_le"
   [(set (match_operand:XI 0 "register_operand" "=w")
 	(subreg:XI
 	 (vec_concat:<VRL4>
@@ -4984,7 +5134,7 @@
 	      (vec_concat:<VDBL>
 	        (unspec:DX [(match_dup 1)]
 			UNSPEC_LD4)
-	        (const_int 0)))
+		(const_int 0)))
 	   (vec_concat:<VRL2>
 	     (vec_concat:<VDBL>
 	       (unspec:DX [(match_dup 1)]
@@ -4994,7 +5144,35 @@
 	       (unspec:DX [(match_dup 1)]
 			UNSPEC_LD4)
 	       (const_int 0)))) 0))]
-  "TARGET_SIMD"
+  "TARGET_SIMD && !BYTES_BIG_ENDIAN"
+  "ld1\\t{%S0.1d - %V0.1d}, %1"
+  [(set_attr "type" "neon_load1_4reg<q>")]
+)
+
+(define_insn "aarch64_ld4<mode>_dreg_be"
+  [(set (match_operand:XI 0 "register_operand" "=w")
+	(subreg:XI
+	 (vec_concat:<VRL4>
+	   (vec_concat:<VRL2>
+	     (vec_concat:<VDBL>
+	       (const_int 0)
+	       (unspec:DX
+		[(match_operand:BLK 1 "aarch64_simd_struct_operand" "Utv")]
+		UNSPEC_LD4))
+	      (vec_concat:<VDBL>
+		(const_int 0)
+		(unspec:DX [(match_dup 1)]
+			UNSPEC_LD4)))
+	   (vec_concat:<VRL2>
+	     (vec_concat:<VDBL>
+	       (const_int 0)
+	       (unspec:DX [(match_dup 1)]
+			UNSPEC_LD4))
+	     (vec_concat:<VDBL>
+	       (const_int 0)
+	       (unspec:DX [(match_dup 1)]
+			UNSPEC_LD4)))) 0))]
+  "TARGET_SIMD && BYTES_BIG_ENDIAN"
   "ld1\\t{%S0.1d - %V0.1d}, %1"
   [(set_attr "type" "neon_load1_4reg<q>")]
 )
@@ -5008,7 +5186,12 @@
   rtx mem = gen_rtx_MEM (BLKmode, operands[1]);
   set_mem_size (mem, <VSTRUCT:nregs> * 8);
 
-  emit_insn (gen_aarch64_ld<VSTRUCT:nregs><VDC:mode>_dreg (operands[0], mem));
+  if (BYTES_BIG_ENDIAN)
+    emit_insn (gen_aarch64_ld<VSTRUCT:nregs><VDC:mode>_dreg_be (operands[0],
+								mem));
+  else
+    emit_insn (gen_aarch64_ld<VSTRUCT:nregs><VDC:mode>_dreg_le (operands[0],
+								mem));
   DONE;
 })
 
@@ -5518,6 +5701,26 @@
                        "register_operand" "w")]
          UNSPEC_SHA1H))]
   "TARGET_SIMD && TARGET_CRYPTO"
+  "sha1h\\t%s0, %s1"
+  [(set_attr "type" "crypto_sha1_fast")]
+)
+
+(define_insn "aarch64_crypto_sha1hv4si"
+  [(set (match_operand:SI 0 "register_operand" "=w")
+	(unspec:SI [(vec_select:SI (match_operand:V4SI 1 "register_operand" "w")
+		     (parallel [(const_int 0)]))]
+	 UNSPEC_SHA1H))]
+  "TARGET_SIMD && TARGET_CRYPTO && !BYTES_BIG_ENDIAN"
+  "sha1h\\t%s0, %s1"
+  [(set_attr "type" "crypto_sha1_fast")]
+)
+
+(define_insn "aarch64_be_crypto_sha1hv4si"
+  [(set (match_operand:SI 0 "register_operand" "=w")
+	(unspec:SI [(vec_select:SI (match_operand:V4SI 1 "register_operand" "w")
+		     (parallel [(const_int 3)]))]
+	 UNSPEC_SHA1H))]
+  "TARGET_SIMD && TARGET_CRYPTO && BYTES_BIG_ENDIAN"
   "sha1h\\t%s0, %s1"
   [(set_attr "type" "crypto_sha1_fast")]
 )

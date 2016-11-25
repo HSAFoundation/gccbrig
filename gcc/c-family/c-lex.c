@@ -81,6 +81,7 @@ init_c_lex (void)
   cb->read_pch = c_common_read_pch;
   cb->has_attribute = c_common_has_attribute;
   cb->get_source_date_epoch = cb_get_source_date_epoch;
+  cb->get_suggestion = cb_get_suggestion;
 
   /* Set the debug callbacks if we can use them.  */
   if ((debug_info_level == DINFO_LEVEL_VERBOSE
@@ -349,7 +350,8 @@ c_common_has_attribute (cpp_reader *pfile)
 	      else if (is_attribute_p ("deprecated", attr_name))
 		result = 201309;
 	      else if (is_attribute_p ("maybe_unused", attr_name)
-		       || is_attribute_p ("nodiscard", attr_name))
+		       || is_attribute_p ("nodiscard", attr_name)
+		       || is_attribute_p ("fallthrough", attr_name))
 		result = 201603;
 	      if (result)
 		attr_name = NULL_TREE;
@@ -594,9 +596,21 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
     case CPP_MACRO_ARG:
       gcc_unreachable ();
 
-    /* CPP_COMMENT will appear when compiling with -C and should be
-       ignored.  */
-     case CPP_COMMENT:
+    /* CPP_COMMENT will appear when compiling with -C.  Ignore, except
+       when it is a FALLTHROUGH comment, in that case set
+       PREV_FALLTHROUGH flag on the next non-comment token.  */
+    case CPP_COMMENT:
+      if (tok->flags & PREV_FALLTHROUGH)
+	{
+	  do
+	    {
+	      tok = cpp_get_token_with_location (parse_in, loc);
+	      type = tok->type;
+	    }
+	  while (type == CPP_PADDING || type == CPP_COMMENT);
+	  add_flags |= PREV_FALLTHROUGH;
+	  goto retry_after_at;
+	}
        goto retry;
 
     default:
@@ -839,6 +853,26 @@ interpret_float (const cpp_token *token, unsigned int flags,
 	type = c_common_type_for_mode (mode, 0);
 	gcc_assert (type);
       }
+    else if ((flags & (CPP_N_FLOATN | CPP_N_FLOATNX)) != 0)
+      {
+	unsigned int n = (flags & CPP_N_WIDTH_FLOATN_NX) >> CPP_FLOATN_SHIFT;
+	bool extended = (flags & CPP_N_FLOATNX) != 0;
+	type = NULL_TREE;
+	for (int i = 0; i < NUM_FLOATN_NX_TYPES; i++)
+	  if (floatn_nx_types[i].n == (int) n
+	      && floatn_nx_types[i].extended == extended)
+	    {
+	      type = FLOATN_NX_TYPE_NODE (i);
+	      break;
+	    }
+	if (type == NULL_TREE)
+	  {
+	    error ("unsupported non-standard suffix on floating constant");
+	    return error_mark_node;
+	  }
+	else
+	  pedwarn (input_location, OPT_Wpedantic, "non-standard suffix on floating constant");
+      }
     else if ((flags & CPP_N_WIDTH) == CPP_N_LARGE)
       type = long_double_type_node;
     else if ((flags & CPP_N_WIDTH) == CPP_N_SMALL
@@ -867,6 +901,17 @@ interpret_float (const cpp_token *token, unsigned int flags,
       if (flags & CPP_N_IMAGINARY)
 	/* I or J suffix.  */
 	copylen--;
+      if (flags & CPP_N_FLOATNX)
+	copylen--;
+      if (flags & (CPP_N_FLOATN | CPP_N_FLOATNX))
+	{
+	  unsigned int n = (flags & CPP_N_WIDTH_FLOATN_NX) >> CPP_FLOATN_SHIFT;
+	  while (n > 0)
+	    {
+	      copylen--;
+	      n /= 10;
+	    }
+	}
     }
 
   copy = (char *) alloca (copylen + 1);

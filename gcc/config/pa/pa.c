@@ -21,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "memmodel.h"
 #include "backend.h"
 #include "target.h"
 #include "rtl.h"
@@ -396,6 +397,9 @@ static size_t n_deferred_plabels = 0;
 #define TARGET_SECTION_TYPE_FLAGS pa_section_type_flags
 #undef TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P pa_legitimate_address_p
+
+#undef TARGET_LRA_P
+#define TARGET_LRA_P hook_bool_void_false
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -6442,7 +6446,7 @@ branch_to_delay_slot_p (rtx_insn *insn)
   if (dbr_sequence_length ())
     return FALSE;
 
-  jump_insn = next_active_insn (JUMP_LABEL (insn));
+  jump_insn = next_active_insn (JUMP_LABEL_AS_INSN (insn));
   while (insn)
     {
       insn = next_active_insn (insn);
@@ -6476,7 +6480,7 @@ branch_needs_nop_p (rtx_insn *insn)
   if (dbr_sequence_length ())
     return FALSE;
 
-  jump_insn = next_active_insn (JUMP_LABEL (insn));
+  jump_insn = next_active_insn (JUMP_LABEL_AS_INSN (insn));
   while (insn)
     {
       insn = next_active_insn (insn);
@@ -6499,7 +6503,7 @@ branch_needs_nop_p (rtx_insn *insn)
 static bool
 use_skip_p (rtx_insn *insn)
 {
-  rtx_insn *jump_insn = next_active_insn (JUMP_LABEL (insn));
+  rtx_insn *jump_insn = next_active_insn (JUMP_LABEL_AS_INSN (insn));
 
   while (insn)
     {
@@ -8341,7 +8345,7 @@ pa_asm_output_mi_thunk (FILE *file, tree thunk_fndecl, HOST_WIDE_INT delta,
   static unsigned int current_thunk_number;
   int val_14 = VAL_14_BITS_P (delta);
   unsigned int old_last_address = last_address, nbytes = 0;
-  char label[16];
+  char label[17];
   rtx xoperands[4];
 
   xoperands[0] = XEXP (DECL_RTL (function), 0);
