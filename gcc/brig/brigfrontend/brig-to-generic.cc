@@ -547,6 +547,12 @@ brig_to_generic::finish_function ()
       return;
     }
 
+#if 0
+  /* Enable to get dumps of the finished functions.  */
+  debug_function (m_cf->m_func_decl,
+                 TDF_VOPS|TDF_MEMSYMS|TDF_VERBOSE|TDF_ADDRESS);
+#endif
+
   if (!m_cf->m_is_kernel)
     {
       tree bind_expr = m_cf->m_current_bind_expr;

@@ -283,9 +283,13 @@ brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
   switch (reg->regKind)
     {
     case BRIG_REGISTER_KIND_QUAD:
-      offset += BRIG_2_TREE_HSAIL_D_REG_COUNT;
+      offset
+	+= BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT +
+	BRIG_2_TREE_HSAIL_C_REG_COUNT;
+      break;
     case BRIG_REGISTER_KIND_DOUBLE:
-      offset += BRIG_2_TREE_HSAIL_S_REG_COUNT;
+      offset += BRIG_2_TREE_HSAIL_S_REG_COUNT + BRIG_2_TREE_HSAIL_C_REG_COUNT;
+      break;
     case BRIG_REGISTER_KIND_SINGLE:
       offset += BRIG_2_TREE_HSAIL_C_REG_COUNT;
     case BRIG_REGISTER_KIND_CONTROL:
