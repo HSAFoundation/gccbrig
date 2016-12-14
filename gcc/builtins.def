@@ -1037,7 +1037,7 @@ DEF_GCC_BUILTIN (BUILT_IN_LINE, "LINE", BT_FN_INT, ATTR_NOTHROW_LEAF_LIST)
 
 #ifdef ENABLE_BRIG_FE
 /* HSAIL/BRIG frontend builtins.  */
-#include "hsail-builtins.def"
+#include "brig-builtins.def"
 #endif
 
 #undef DEF_BUILTIN_CHKP

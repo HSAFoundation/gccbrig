@@ -132,7 +132,7 @@ brig_atomic_inst_handler::generate_tree (const BrigInstBase &inst,
       if (atomic_opcode == ATOMIC_OPCODE && inst.type == HSAIL_TYPE)	\
 	built_in = builtin_decl_explicit (ENUM);			\
       else
-#include "hsail-builtins.def"
+#include "brig-builtins.def"
       switch (atomic_opcode)
 	{
 	case BRIG_ATOMIC_ADD:

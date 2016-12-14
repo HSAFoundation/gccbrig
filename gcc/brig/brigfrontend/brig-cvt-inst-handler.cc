@@ -211,7 +211,7 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	      && src_arith_type == HSAIL_SRC_TYPE)		\
 	    builtin = builtin_decl_explicit (ENUM);			\
 	  else
-#include "hsail-builtins.def"
+#include "brig-builtins.def"
 	    gcc_unreachable ();
 
 	  tree casted_input = build_reinterpret_cast (src_type, input);

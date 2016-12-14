@@ -58,7 +58,7 @@ brig_code_entry_handler::brig_code_entry_handler (brig_to_generic &parent)
   s_custom_builtins[std::make_pair (HSAIL_OPCODE, HSAIL_TYPE)]		\
     = builtin_decl_explicit (ENUM);
 
-#include "hsail-builtins.def"
+#include "brig-builtins.def"
 }
 
 /* Build a tree operand which is a reference to a piece of code.  REF is the
@@ -681,7 +681,7 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
   /* Some BRIG opcodes can use the same builtins for unsigned and
      signed types.  Force these cases to unsigned types.
 
-     TODO: remove the signed lastbit builtins from hsail-builtins.defs
+     TODO: remove the signed lastbit builtins from brig-builtins.defs
   */
 
   if (brig_opcode == BRIG_OPCODE_BORROW

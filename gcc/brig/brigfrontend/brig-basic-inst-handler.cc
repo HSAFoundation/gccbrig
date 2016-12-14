@@ -58,7 +58,7 @@ public:
     if (brig_inst.opcode == BRIG_OPCODE && element_type == HSAIL_TYPE)	\
       m_builtin = builtin_decl_explicit (ENUM);				\
     else
-#include "hsail-builtins.def"
+#include "brig-builtins.def"
       gcc_unreachable ();
   }
 
