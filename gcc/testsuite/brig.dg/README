@@ -7,4 +7,6 @@ suite for all HSAIL instructions. The HSA PRM conformance suite
 is supposed to be used for that.
 
 HSAILasm is required for converting the text HSAIL files to BRIGs
-which the compiler consumes.
+which the compiler consumes. It can be built from
+https://github.com/HSAFoundation/HSAIL-Tools
+
