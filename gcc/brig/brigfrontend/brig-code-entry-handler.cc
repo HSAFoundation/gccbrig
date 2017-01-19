@@ -679,10 +679,7 @@ brig_code_entry_handler::get_builtin_for_hsa_opcode
   BrigType16_t brig_inner_type = brig_type & BRIG_TYPE_BASE_MASK;
 
   /* Some BRIG opcodes can use the same builtins for unsigned and
-     signed types.  Force these cases to unsigned types.
-
-     TODO: remove the signed lastbit builtins from brig-builtins.defs
-  */
+     signed types.  Force these cases to unsigned types.  */
 
   if (brig_opcode == BRIG_OPCODE_BORROW
       || brig_opcode == BRIG_OPCODE_CARRY

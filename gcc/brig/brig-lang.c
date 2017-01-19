@@ -639,6 +639,43 @@ brig_define_builtins (tree va_list_ref_type_node ATTRIBUTE_UNUSED,
       def_builtin_1 (ENUM, NAME, CLASS, builtin_types[(int) TYPE],	\
 		     builtin_types[(int) LIBTYPE], BOTH_P, FALLBACK_P,	\
 		     NONANSI_P, built_in_attributes[(int) ATTRS], IMPLICIT);
+
+#undef DEF_HSAIL_BUILTIN
+#define DEF_HSAIL_BUILTIN(ENUM, HSAIL_OPCODE, HSAIL_TYPE, NAME, TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+              false, true, true, ATTRS, false, true)
+
+/* HSAIL atomic builtins do not have separate identifying opcodes.  */
+
+#undef DEF_HSAIL_ATOMIC_BUILTIN
+#define DEF_HSAIL_ATOMIC_BUILTIN(ENUM, ATOMIC_OPCODE, HSAIL_TYPE, NAME, \
+       TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+              false, true, true, ATTRS, false, true)
+
+/* HSAIL saturating arithmetics builtins.  */
+
+#undef DEF_HSAIL_SAT_BUILTIN
+#define DEF_HSAIL_SAT_BUILTIN(ENUM, BRIG_OPCODE, HSAIL_TYPE, NAME, \
+       TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+              false, true, true, ATTRS, false, true)
+
+/* HSAIL builtins used internally by the frontend.  */
+
+#undef DEF_HSAIL_INTR_BUILTIN
+#define DEF_HSAIL_INTR_BUILTIN(ENUM, NAME, TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+              false, true, true, ATTRS, false, true)
+
+/* HSAIL saturated conversions.  */
+
+#undef DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN
+#define DEF_HSAIL_CVT_ZEROI_SAT_BUILTIN(ENUM, HSAIL_DEST_TYPE, HSAIL_SRC_TYPE, \
+  NAME, TYPE, ATTRS) \
+  DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
+              false, true, true, ATTRS, false, true)
+
 #include "builtins.def"
 }
 
