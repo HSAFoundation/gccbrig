@@ -1,5 +1,5 @@
 /* Routines for manipulation of expression nodes.
-   Copyright (C) 2000-2016 Free Software Foundation, Inc.
+   Copyright (C) 2000-2017 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -795,8 +795,6 @@ gfc_build_conversion (gfc_expr *e)
   p = gfc_get_expr ();
   p->expr_type = EXPR_FUNCTION;
   p->symtree = NULL;
-  p->value.function.actual = NULL;
-
   p->value.function.actual = gfc_get_actual_arglist ();
   p->value.function.actual->expr = e;
 
@@ -883,18 +881,17 @@ done:
 }
 
 
-/* Function to determine if an expression is constant or not.  This
-   function expects that the expression has already been simplified.  */
+/* Determine if an expression is constant in the sense of F08:7.1.12.
+ * This function expects that the expression has already been simplified.  */
 
-int
+bool
 gfc_is_constant_expr (gfc_expr *e)
 {
   gfc_constructor *c;
   gfc_actual_arglist *arg;
-  gfc_symbol *sym;
 
   if (e == NULL)
-    return 1;
+    return true;
 
   switch (e->expr_type)
     {
@@ -904,7 +901,7 @@ gfc_is_constant_expr (gfc_expr *e)
 		  || gfc_is_constant_expr (e->value.op.op2)));
 
     case EXPR_VARIABLE:
-      return 0;
+      return false;
 
     case EXPR_FUNCTION:
     case EXPR_PPC:
@@ -917,40 +914,21 @@ gfc_is_constant_expr (gfc_expr *e)
 	{
 	  for (arg = e->value.function.actual; arg; arg = arg->next)
 	    if (!gfc_is_constant_expr (arg->expr))
-	      return 0;
+	      return false;
 	}
-
-      /* Specification functions are constant.  */
-      /* F95, 7.1.6.2; F2003, 7.1.7  */
-      sym = NULL;
-      if (e->symtree)
-	sym = e->symtree->n.sym;
-      if (e->value.function.esym)
-	sym = e->value.function.esym;
-
-      if (sym
-	  && sym->attr.function
-	  && sym->attr.pure
-	  && !sym->attr.intrinsic
-	  && !sym->attr.recursive
-	  && sym->attr.proc != PROC_INTERNAL
-	  && sym->attr.proc != PROC_ST_FUNCTION
-	  && sym->attr.proc != PROC_UNKNOWN
-	  && gfc_sym_get_dummy_args (sym) == NULL)
-	return 1;
 
       if (e->value.function.isym
 	  && (e->value.function.isym->elemental
 	      || e->value.function.isym->pure
 	      || e->value.function.isym->inquiry
 	      || e->value.function.isym->transformational))
-	return 1;
+	return true;
 
-      return 0;
+      return false;
 
     case EXPR_CONSTANT:
     case EXPR_NULL:
-      return 1;
+      return true;
 
     case EXPR_SUBSTRING:
       return e->ref == NULL || (gfc_is_constant_expr (e->ref->u.ss.start)
@@ -964,14 +942,14 @@ gfc_is_constant_expr (gfc_expr *e)
 
       for (; c; c = gfc_constructor_next (c))
 	if (!gfc_is_constant_expr (c->expr))
-	  return 0;
+	  return false;
 
-      return 1;
+      return true;
 
 
     default:
       gfc_internal_error ("gfc_is_constant_expr(): Unknown expression type");
-      return 0;
+      return false;
     }
 }
 
@@ -2741,7 +2719,8 @@ restricted_args (gfc_actual_arglist *a)
 /************* Restricted/specification expressions *************/
 
 
-/* Make sure a non-intrinsic function is a specification function.  */
+/* Make sure a non-intrinsic function is a specification function,
+ * see F08:7.1.11.5.  */
 
 static bool
 external_spec_function (gfc_expr *e)
@@ -3314,9 +3293,9 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform,
   if (lvalue->ts.type == BT_CHARACTER && rvalue->ts.type == BT_CHARACTER)
     {
       if (lvalue->ts.kind != rvalue->ts.kind && allow_convert)
-	gfc_convert_chartype (rvalue, &lvalue->ts);
-
-      return true;
+	return gfc_convert_chartype (rvalue, &lvalue->ts);
+      else
+	return true;
     }
 
   if (!allow_convert)
@@ -3729,9 +3708,20 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 
   if (rvalue->expr_type == EXPR_FUNCTION && !attr.pointer)
     {
-      gfc_error ("Target expression in pointer assignment "
-		 "at %L must deliver a pointer result",
-		 &rvalue->where);
+      /* F2008, C725.  For PURE also C1283.  Sometimes rvalue is a function call
+	 to caf_get.  Map this to the same error message as below when it is
+	 still a variable expression.  */
+      if (rvalue->value.function.isym
+	  && rvalue->value.function.isym->id == GFC_ISYM_CAF_GET)
+	/* The test above might need to be extend when F08, Note 5.4 has to be
+	   interpreted in the way that target and pointer with the same coindex
+	   are allowed.  */
+	gfc_error ("Data target at %L shall not have a coindex",
+		   &rvalue->where);
+      else
+	gfc_error ("Target expression in pointer assignment "
+		   "at %L must deliver a pointer result",
+		   &rvalue->where);
       return false;
     }
 

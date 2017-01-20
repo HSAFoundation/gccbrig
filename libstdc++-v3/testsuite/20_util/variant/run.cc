@@ -1,7 +1,7 @@
 // { dg-options "-std=gnu++17" }
 // { dg-do run }
 
-// Copyright (C) 2016 Free Software Foundation, Inc.
+// Copyright (C) 2016-2017 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -157,48 +157,6 @@ void in_place_type_ctor()
     variant<int, string> v(in_place_type<string>, {'a', 'b'});
     VERIFY(holds_alternative<string>(v));
     VERIFY(get<1>(v) == "ab");
-  }
-}
-
-struct UsesAllocatable
-{
-  template<typename Alloc>
-    UsesAllocatable(std::allocator_arg_t, const Alloc& a)
-    : d(0), a(static_cast<const void*>(&a)) { }
-
-  template<typename Alloc>
-    UsesAllocatable(std::allocator_arg_t, const Alloc& a, const UsesAllocatable&)
-    : d(1), a(static_cast<const void*>(&a)) { }
-
-  template<typename Alloc>
-    UsesAllocatable(std::allocator_arg_t, const Alloc& a, UsesAllocatable&&)
-    : d(2), a(static_cast<const void*>(&a)) { }
-
-  int d;
-  const void* a;
-};
-
-namespace std
-{
-  template<>
-    struct uses_allocator<UsesAllocatable, std::allocator<char>> : true_type { };
-}
-
-void uses_allocator_ctor()
-{
-  std::allocator<char> a;
-  variant<UsesAllocatable> v(std::allocator_arg, a);
-  VERIFY(get<0>(v).d == 0);
-  VERIFY(get<0>(v).a == &a);
-  {
-    variant<UsesAllocatable> u(std::allocator_arg, a, v);
-    VERIFY(get<0>(u).d == 1);
-    VERIFY(get<0>(u).a == &a);
-  }
-  {
-    variant<UsesAllocatable> u(std::allocator_arg, a, std::move(v));
-    VERIFY(get<0>(u).d == 2);
-    VERIFY(get<0>(u).a == &a);
   }
 }
 
@@ -450,7 +408,6 @@ int main()
   arbitrary_ctor();
   in_place_index_ctor();
   in_place_type_ctor();
-  uses_allocator_ctor();
   copy_assign();
   move_assign();
   arbitrary_assign();

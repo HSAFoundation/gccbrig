@@ -1,5 +1,5 @@
 ;; GCC machine description for MMX and 3dNOW! instructions
-;; Copyright (C) 2005-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2017 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -205,11 +205,9 @@
 	   (const_string "DI")))])
 
 (define_split
-  [(set (match_operand:MMXMODE 0 "nonimmediate_operand")
-        (match_operand:MMXMODE 1 "general_operand"))]
-  "!TARGET_64BIT && reload_completed
-   && !(MMX_REG_P (operands[0]) || SSE_REG_P (operands[0]))
-   && !(MMX_REG_P (operands[1]) || SSE_REG_P (operands[1]))"
+  [(set (match_operand:MMXMODE 0 "nonimmediate_gr_operand")
+        (match_operand:MMXMODE 1 "general_gr_operand"))]
+  "!TARGET_64BIT && reload_completed"
   [(const_int 0)]
   "ix86_split_long_move (operands); DONE;")
 

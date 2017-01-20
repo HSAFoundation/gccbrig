@@ -1,5 +1,5 @@
 ;; GCC machine description for SSE instructions
-;; Copyright (C) 2005-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2017 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -105,6 +105,9 @@
   UNSPEC_EXPAND
   UNSPEC_MASKED_EQ
   UNSPEC_MASKED_GT
+
+  ;; Mask operations
+  UNSPEC_MASKOP
 
   ;; For embed. rounding feature
   UNSPEC_EMBEDDED_ROUNDING
@@ -517,12 +520,6 @@
 
 ;; All 256bit vector integer modes
 (define_mode_iterator VI_256 [V32QI V16HI V8SI V4DI])
-
-;; All 512bit vector integer modes
-(define_mode_iterator VI_512
-  [(V64QI "TARGET_AVX512BW")
-   (V32HI "TARGET_AVX512BW")
-   V16SI V8DI])
 
 ;; Various 128bit vector integer mode combinations
 (define_mode_iterator VI12_128 [V16QI V8HI])
@@ -1184,8 +1181,8 @@
 			 (match_operand:DF 3 "memory_operand")))]
   "TARGET_SSE2 && TARGET_SSE_UNALIGNED_LOAD_OPTIMAL
    && ix86_operands_ok_for_move_multiple (operands, true, DFmode)"
-  [(set (match_dup 2) (match_dup 4))]
-  "operands[4] = adjust_address (operands[1], V2DFmode, 0);")
+  [(set (match_dup 2) (match_dup 5))]
+  "operands[5] = adjust_address (operands[1], V2DFmode, 0);")
 
 (define_peephole2
   [(set (match_operand:DF 0 "sse_reg_operand")
@@ -1196,8 +1193,8 @@
   "TARGET_SSE2 && TARGET_SSE_UNALIGNED_LOAD_OPTIMAL
    && REGNO (operands[4]) == REGNO (operands[2])
    && ix86_operands_ok_for_move_multiple (operands, true, DFmode)"
-  [(set (match_dup 2) (match_dup 4))]
-  "operands[4] = adjust_address (operands[1], V2DFmode, 0);")
+  [(set (match_dup 2) (match_dup 5))]
+  "operands[5] = adjust_address (operands[1], V2DFmode, 0);")
 
 ;; Merge movlpd/movhpd to movupd for TARGET_SSE_UNALIGNED_STORE_OPTIMAL targets.
 (define_peephole2
@@ -1287,6 +1284,207 @@
 	  [(match_operand:STORENT_MODE 1 "register_operand")]
 	  UNSPEC_MOVNT))]
   "TARGET_SSE")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Mask operations
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; All integer modes with AVX512BW/DQ.
+(define_mode_iterator SWI1248_AVX512BWDQ
+  [(QI "TARGET_AVX512DQ") HI (SI "TARGET_AVX512BW") (DI "TARGET_AVX512BW")])
+
+;; All integer modes with AVX512BW, where HImode operation
+;; can be used instead of QImode.
+(define_mode_iterator SWI1248_AVX512BW
+  [QI HI (SI "TARGET_AVX512BW") (DI "TARGET_AVX512BW")])
+
+(define_expand "kmov<mskmodesuffix>"
+  [(set (match_operand:SWI1248_AVX512BWDQ 0 "nonimmediate_operand")
+	(match_operand:SWI1248_AVX512BWDQ 1 "nonimmediate_operand"))]
+  "TARGET_AVX512F
+   && !(MEM_P (operands[0]) && MEM_P (operands[1]))")
+
+(define_insn "k<code><mode>"
+  [(set (match_operand:SWI1248_AVX512BW 0 "register_operand" "=k")
+	(any_logic:SWI1248_AVX512BW
+	  (match_operand:SWI1248_AVX512BW 1 "register_operand" "k")
+	  (match_operand:SWI1248_AVX512BW 2 "register_operand" "k")))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+{
+  if (get_attr_mode (insn) == MODE_HI)
+    return "k<logic>w\t{%2, %1, %0|%0, %1, %2}";
+  else
+    return "k<logic><mskmodesuffix>\t{%2, %1, %0|%0, %1, %2}";
+}
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set (attr "mode")
+     (cond [(and (match_test "<MODE>mode == QImode")
+		 (not (match_test "TARGET_AVX512DQ")))
+	       (const_string "HI")
+	   ]
+	   (const_string "<MODE>")))])
+
+(define_insn "kandn<mode>"
+  [(set (match_operand:SWI1248_AVX512BW 0 "register_operand" "=k")
+	(and:SWI1248_AVX512BW
+	  (not:SWI1248_AVX512BW
+	    (match_operand:SWI1248_AVX512BW 1 "register_operand" "k"))
+	  (match_operand:SWI1248_AVX512BW 2 "register_operand" "k")))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+{
+  if (get_attr_mode (insn) == MODE_HI)
+    return "kandnw\t{%2, %1, %0|%0, %1, %2}";
+  else
+    return "kandn<mskmodesuffix>\t{%2, %1, %0|%0, %1, %2}";
+}
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set (attr "mode")
+     (cond [(and (match_test "<MODE>mode == QImode")
+		 (not (match_test "TARGET_AVX512DQ")))
+	      (const_string "HI")
+	   ]
+	   (const_string "<MODE>")))])
+
+(define_insn "kxnor<mode>"
+  [(set (match_operand:SWI1248_AVX512BW 0 "register_operand" "=k")
+	(not:SWI1248_AVX512BW
+	  (xor:SWI1248_AVX512BW
+	    (match_operand:SWI1248_AVX512BW 1 "register_operand" "k")
+	    (match_operand:SWI1248_AVX512BW 2 "register_operand" "k"))))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+{
+  if (get_attr_mode (insn) == MODE_HI)
+    return "kxnorw\t{%2, %1, %0|%0, %1, %2}";
+  else
+    return "kxnor<mskmodesuffix>\t{%2, %1, %0|%0, %1, %2}";
+}
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set (attr "mode")
+     (cond [(and (match_test "<MODE>mode == QImode")
+		 (not (match_test "TARGET_AVX512DQ")))
+	      (const_string "HI")
+	   ]
+	   (const_string "<MODE>")))])
+
+(define_insn "knot<mode>"
+  [(set (match_operand:SWI1248_AVX512BW 0 "register_operand" "=k")
+	(not:SWI1248_AVX512BW
+	  (match_operand:SWI1248_AVX512BW 1 "register_operand" "k")))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+{
+  if (get_attr_mode (insn) == MODE_HI)
+    return "knotw\t{%1, %0|%0, %1}";
+  else
+    return "knot<mskmodesuffix>\t{%1, %0|%0, %1}";
+}
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set (attr "mode")
+     (cond [(and (match_test "<MODE>mode == QImode")
+		 (not (match_test "TARGET_AVX512DQ")))
+	       (const_string "HI")
+	   ]
+	   (const_string "<MODE>")))])
+
+(define_insn "kadd<mode>"
+  [(set (match_operand:SWI1248_AVX512BWDQ 0 "register_operand" "=k")
+	(plus:SWI1248_AVX512BWDQ
+	  (match_operand:SWI1248_AVX512BWDQ 1 "register_operand" "k")
+	  (match_operand:SWI1248_AVX512BWDQ 2 "register_operand" "k")))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+  "kadd<mskmodesuffix>\t{%2, %1, %0|%0, %1, %2}"
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set_attr "mode" "<MODE>")])
+
+;; Mask variant shift mnemonics
+(define_code_attr mshift [(ashift "shiftl") (lshiftrt "shiftr")])
+
+(define_insn "k<code><mode>"
+  [(set (match_operand:SWI1248_AVX512BWDQ 0 "register_operand" "=k")
+	(any_lshift:SWI1248_AVX512BWDQ
+	  (match_operand:SWI1248_AVX512BWDQ 1 "register_operand" "k")
+	  (match_operand:QI 2 "immediate_operand" "n")))
+   (unspec [(const_int 0)] UNSPEC_MASKOP)]
+  "TARGET_AVX512F"
+  "k<mshift><mskmodesuffix>\t{%2, %1, %0|%0, %1, %2}"
+  [(set_attr "type" "msklog")
+   (set_attr "prefix" "vex")
+   (set_attr "mode" "<MODE>")])
+
+;;There are kortrest[bdq] but no intrinsics for them.
+;;We probably don't need to implement them.
+(define_insn "kortestzhi"
+  [(set (reg:CCZ FLAGS_REG)
+	(compare:CCZ
+	  (ior:HI
+	    (match_operand:HI 0 "register_operand" "k")
+	    (match_operand:HI 1 "register_operand" "k"))
+	  (const_int 0)))]
+  "TARGET_AVX512F && ix86_match_ccmode (insn, CCZmode)"
+  "kortestw\t{%1, %0|%0, %1}"
+  [(set_attr "mode" "HI")
+   (set_attr "type" "msklog")
+   (set_attr "prefix" "vex")])
+
+(define_insn "kortestchi"
+  [(set (reg:CCC FLAGS_REG)
+	(compare:CCC
+	  (ior:HI
+	    (match_operand:HI 0 "register_operand" "k")
+	    (match_operand:HI 1 "register_operand" "k"))
+	  (const_int -1)))]
+  "TARGET_AVX512F && ix86_match_ccmode (insn, CCCmode)"
+  "kortestw\t{%1, %0|%0, %1}"
+  [(set_attr "mode" "HI")
+   (set_attr "type" "msklog")
+   (set_attr "prefix" "vex")])
+
+(define_insn "kunpckhi"
+  [(set (match_operand:HI 0 "register_operand" "=k")
+	(ior:HI
+	  (ashift:HI
+	    (zero_extend:HI (match_operand:QI 1 "register_operand" "k"))
+	    (const_int 8))
+	  (zero_extend:HI (match_operand:QI 2 "register_operand" "k"))))]
+  "TARGET_AVX512F"
+  "kunpckbw\t{%2, %1, %0|%0, %1, %2}"
+  [(set_attr "mode" "HI")
+   (set_attr "type" "msklog")
+   (set_attr "prefix" "vex")])
+
+(define_insn "kunpcksi"
+  [(set (match_operand:SI 0 "register_operand" "=k")
+	(ior:SI
+	  (ashift:SI
+	    (zero_extend:SI (match_operand:HI 1 "register_operand" "k"))
+	    (const_int 16))
+	  (zero_extend:SI (match_operand:HI 2 "register_operand" "k"))))]
+  "TARGET_AVX512BW"
+  "kunpckwd\t{%2, %1, %0|%0, %1, %2}"
+  [(set_attr "mode" "SI")])
+
+(define_insn "kunpckdi"
+  [(set (match_operand:DI 0 "register_operand" "=k")
+	(ior:DI
+	  (ashift:DI
+	    (zero_extend:DI (match_operand:SI 1 "register_operand" "k"))
+	    (const_int 32))
+	  (zero_extend:DI (match_operand:SI 2 "register_operand" "k"))))]
+  "TARGET_AVX512BW"
+  "kunpckdq\t{%2, %1, %0|%0, %1, %2}"
+  [(set_attr "mode" "DI")])
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -11045,17 +11243,17 @@
    (set_attr "prefix" "orig,vex")
    (set_attr "mode" "TI")])
 
-(define_expand "vcond<V_512:mode><VI_512:mode>"
+(define_expand "vcond<V_512:mode><VI_AVX512BW:mode>"
   [(set (match_operand:V_512 0 "register_operand")
 	(if_then_else:V_512
 	  (match_operator 3 ""
-	    [(match_operand:VI_512 4 "nonimmediate_operand")
-	     (match_operand:VI_512 5 "general_operand")])
+	    [(match_operand:VI_AVX512BW 4 "nonimmediate_operand")
+	     (match_operand:VI_AVX512BW 5 "general_operand")])
 	  (match_operand:V_512 1)
 	  (match_operand:V_512 2)))]
   "TARGET_AVX512F
    && (GET_MODE_NUNITS (<V_512:MODE>mode)
-       == GET_MODE_NUNITS (<VI_512:MODE>mode))"
+       == GET_MODE_NUNITS (<VI_AVX512BW:MODE>mode))"
 {
   bool ok = ix86_expand_int_vcond (operands);
   gcc_assert (ok);
@@ -11111,17 +11309,17 @@
   DONE;
 })
 
-(define_expand "vcondu<V_512:mode><VI_512:mode>"
+(define_expand "vcondu<V_512:mode><VI_AVX512BW:mode>"
   [(set (match_operand:V_512 0 "register_operand")
 	(if_then_else:V_512
 	  (match_operator 3 ""
-	    [(match_operand:VI_512 4 "nonimmediate_operand")
-	     (match_operand:VI_512 5 "nonimmediate_operand")])
+	    [(match_operand:VI_AVX512BW 4 "nonimmediate_operand")
+	     (match_operand:VI_AVX512BW 5 "nonimmediate_operand")])
 	  (match_operand:V_512 1 "general_operand")
 	  (match_operand:V_512 2 "general_operand")))]
   "TARGET_AVX512F
    && (GET_MODE_NUNITS (<V_512:MODE>mode)
-       == GET_MODE_NUNITS (<VI_512:MODE>mode))"
+       == GET_MODE_NUNITS (<VI_AVX512BW:MODE>mode))"
 {
   bool ok = ix86_expand_int_vcond (operands);
   gcc_assert (ok);
@@ -13712,19 +13910,22 @@
   "ix86_expand_sse_unpack (operands[0], operands[1], true, true); DONE;")
 
 (define_expand "vec_unpacks_hi_hi"
-  [(set (subreg:HI (match_operand:QI 0 "register_operand") 0)
-        (lshiftrt:HI (match_operand:HI 1 "register_operand")
-                     (const_int 8)))]
+  [(parallel
+     [(set (subreg:HI (match_operand:QI 0 "register_operand") 0)
+	   (lshiftrt:HI (match_operand:HI 1 "register_operand")
+			(const_int 8)))
+      (unspec [(const_int 0)] UNSPEC_MASKOP)])]
   "TARGET_AVX512F")
 
 (define_expand "vec_unpacks_hi_<mode>"
-  [(set (subreg:SWI48x (match_operand:<HALFMASKMODE> 0 "register_operand") 0)
-        (lshiftrt:SWI48x (match_operand:SWI48x 1 "register_operand")
-                         (match_dup 2)))]
+  [(parallel
+     [(set (subreg:SWI48x
+	     (match_operand:<HALFMASKMODE> 0 "register_operand") 0)
+	   (lshiftrt:SWI48x (match_operand:SWI48x 1 "register_operand")
+			    (match_dup 2)))
+      (unspec [(const_int 0)] UNSPEC_MASKOP)])]
   "TARGET_AVX512BW"
-{
-  operands[2] = GEN_INT (GET_MODE_BITSIZE (<HALFMASKMODE>mode));
-})
+  "operands[2] = GEN_INT (GET_MODE_BITSIZE (<HALFMASKMODE>mode));")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -19674,3 +19875,10 @@
    [(set_attr ("type") ("ssemuladd"))
     (set_attr ("prefix") ("evex"))
     (set_attr ("mode") ("TI"))])
+
+(define_insn "vpopcount<mode><mask_name>"
+  [(set (match_operand:VI48_512 0 "register_operand" "=v")
+	(popcount:VI48_512
+          (match_operand:VI48_512 1 "nonimmediate_operand" "vm")))]
+  "TARGET_AVX512VPOPCNTDQ"
+  "vpopcnt<ssemodesuffix>\t{%1, %0<mask_operand2>|%0<mask_operand2>, %1}")

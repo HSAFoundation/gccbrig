@@ -1,5 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003-2016 Free Software Foundation, Inc.
+   Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1510,36 +1510,6 @@ bool
 no_c99_libc_has_function (enum function_class fn_class ATTRIBUTE_UNUSED)
 {
   return false;
-}
-
-/* Return the format string to which "%p" corresponds.  By default,
-   assume it corresponds to the C99 "%zx" format and set *FLAGS to
-   the empty string to indicate that format flags have no effect.
-   An example of an implementation that matches this description
-   is AIX.  */
-
-const char*
-default_printf_pointer_format (tree, const char **flags)
-{
-  *flags = "";
-
-  return "%zx";
-}
-
-/* For Glibc and uClibc targets also define the hook here because
-   otherwise it would have to be duplicated in each target's .c file
-   (such as in bfin/bfin.c and c6x/c6x.c, etc.)
-   Glibc and uClibc format pointers as if by "%zx" except for the null
-   pointer which outputs "(nil)".  It ignores the pound ('#') format
-   flag but interprets the space and plus flags the same as in the integer
-   directive.  */
-
-const char*
-linux_printf_pointer_format (tree arg, const char **flags)
-{
-  *flags = " +";
-
-  return arg && integer_zerop (arg) ? "(nil)" : "%#zx";
 }
 
 tree

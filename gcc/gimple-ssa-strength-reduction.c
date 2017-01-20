@@ -1,5 +1,5 @@
 /* Straight-line strength reduction.
-   Copyright (C) 2012-2016 Free Software Foundation, Inc.
+   Copyright (C) 2012-2017 Free Software Foundation, Inc.
    Contributed by Bill Schmidt, IBM <wschmidt@linux.ibm.com>
 
 This file is part of GCC.
@@ -1921,7 +1921,7 @@ replace_ref (tree *expr, slsr_cand_t c)
   if (align < TYPE_ALIGN (acc_type))
     acc_type = build_aligned_type (acc_type, align);
 
-  add_expr = fold_build2 (POINTER_PLUS_EXPR, TREE_TYPE (c->base_expr),
+  add_expr = fold_build2 (POINTER_PLUS_EXPR, c->cand_type,
 			  c->base_expr, c->stride);
   mem_ref = fold_build2 (MEM_REF, acc_type, add_expr,
 			 wide_int_to_tree (c->cand_type, c->index));
@@ -2253,7 +2253,7 @@ create_add_on_incoming_edge (slsr_cand_t c, tree basis_name,
   insert_bb = single_succ_p (e->src) ? e->src : split_edge (e);
   gsi = gsi_last_bb (insert_bb);
 
-  if (!gsi_end_p (gsi) && is_ctrl_stmt (gsi_stmt (gsi)))
+  if (!gsi_end_p (gsi) && stmt_ends_bb_p (gsi_stmt (gsi)))
     {
       gsi_insert_before (&gsi, new_stmt, GSI_SAME_STMT);
       if (cast_stmt)
@@ -3243,7 +3243,7 @@ insert_initializers (slsr_cand_t c)
 	  gimple *basis_stmt = lookup_cand (c->basis)->cand_stmt;
 	  location_t loc = gimple_location (basis_stmt);
 
-	  if (!gsi_end_p (gsi) && is_ctrl_stmt (gsi_stmt (gsi)))
+	  if (!gsi_end_p (gsi) && stmt_ends_bb_p (gsi_stmt (gsi)))
 	    {
 	      if (cast_stmt)
 		{

@@ -1,4 +1,4 @@
-#   Copyright (C) 1999-2016 Free Software Foundation, Inc.
+#   Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -1011,12 +1011,19 @@ proc check_effective_target_fstack_protector {} {
 }
 
 # Return 1 if compilation with -freorder-blocks-and-partition is error-free
-# for trivial code, 0 otherwise.
+# for trivial code, 0 otherwise.  As some targets (ARM for example) only
+# warn when -fprofile-use is also supplied we test that combination too.
 
 proc check_effective_target_freorder {} {
-    return [check_no_compiler_messages freorder object {
+    if { [check_no_compiler_messages freorder object {
 	void foo (void) { }
     } "-freorder-blocks-and-partition"]
+    && [check_no_compiler_messages fprofile_use_freorder object {
+	void foo (void) { }
+    } "-fprofile-use -freorder-blocks-and-partition"] } {
+	return 1
+    }
+    return 0
 }
 
 # Return 1 if -fpic and -fPIC are supported, as in no warnings or errors
@@ -2739,6 +2746,26 @@ proc check_effective_target_dfprt { } {
     }]
 }
 
+proc check_effective_target_powerpc_popcntb_ok { } {
+    return [check_cached_effective_target powerpc_popcntb_ok {
+
+	# Disable on Darwin.
+	if { [istarget powerpc-*-eabi] || [istarget powerpc*-*-eabispe] || [istarget *-*-darwin*]} {
+	    expr 0
+	} else {
+	    check_runtime_nocache powerpc_popcntb_ok {
+		volatile int r;
+		volatile int a = 0x12345678;
+		int main()
+		{
+		    asm volatile ("popcntb %0,%1" : "=r" (r) : "r" (a));
+		    return 0;
+		}
+	    } "-mcpu=power5"
+	}
+    }]
+}
+
 # Return 1 if the target supports executing DFP hardware instructions,
 # 0 otherwise.  Cache the result.
 
@@ -3721,25 +3748,26 @@ proc check_effective_target_arm_fp16_hw { } {
 # Usage: /* { dg-require-effective-target arm_arch_v5_ok } */
 #        /* { dg-add-options arm_arch_v5 } */
 #	 /* { dg-require-effective-target arm_arch_v5_multilib } */
-foreach { armfunc armflag armdef } { v4 "-march=armv4 -marm" __ARM_ARCH_4__
-				     v4t "-march=armv4t" __ARM_ARCH_4T__
-				     v5 "-march=armv5 -marm" __ARM_ARCH_5__
-				     v5t "-march=armv5t" __ARM_ARCH_5T__
-				     v5te "-march=armv5te" __ARM_ARCH_5TE__
-				     v6 "-march=armv6" __ARM_ARCH_6__
-				     v6k "-march=armv6k" __ARM_ARCH_6K__
-				     v6t2 "-march=armv6t2" __ARM_ARCH_6T2__
-				     v6z "-march=armv6z" __ARM_ARCH_6Z__
-				     v6m "-march=armv6-m -mthumb" __ARM_ARCH_6M__
-				     v7a "-march=armv7-a" __ARM_ARCH_7A__
-				     v7r "-march=armv7-r" __ARM_ARCH_7R__
-				     v7m "-march=armv7-m -mthumb" __ARM_ARCH_7M__
-				     v7em "-march=armv7e-m -mthumb" __ARM_ARCH_7EM__
-				     v8a "-march=armv8-a" __ARM_ARCH_8A__
-				     v8_1a "-march=armv8.1a" __ARM_ARCH_8A__
-				     v8_2a "-march=armv8.2a" __ARM_ARCH_8A__
-				     v8m_base "-march=armv8-m.base -mthumb" __ARM_ARCH_8M_BASE__
-				     v8m_main "-march=armv8-m.main -mthumb" __ARM_ARCH_8M_MAIN__ } {
+foreach { armfunc armflag armdef } {
+	v4 "-march=armv4 -marm" __ARM_ARCH_4__
+	v4t "-march=armv4t" __ARM_ARCH_4T__
+	v5 "-march=armv5 -marm" __ARM_ARCH_5__
+	v5t "-march=armv5t" __ARM_ARCH_5T__
+	v5te "-march=armv5te" __ARM_ARCH_5TE__
+	v6 "-march=armv6" __ARM_ARCH_6__
+	v6k "-march=armv6k" __ARM_ARCH_6K__
+	v6t2 "-march=armv6t2" __ARM_ARCH_6T2__
+	v6z "-march=armv6z" __ARM_ARCH_6Z__
+	v6m "-march=armv6-m -mthumb -mfloat-abi=soft" __ARM_ARCH_6M__
+	v7a "-march=armv7-a" __ARM_ARCH_7A__
+	v7r "-march=armv7-r" __ARM_ARCH_7R__
+	v7m "-march=armv7-m -mthumb" __ARM_ARCH_7M__
+	v7em "-march=armv7e-m -mthumb" __ARM_ARCH_7EM__
+	v8a "-march=armv8-a" __ARM_ARCH_8A__
+	v8_1a "-march=armv8.1a" __ARM_ARCH_8A__
+	v8_2a "-march=armv8.2a" __ARM_ARCH_8A__
+	v8m_base "-march=armv8-m.base -mthumb -mfloat-abi=soft" __ARM_ARCH_8M_BASE__
+	v8m_main "-march=armv8-m.main -mthumb" __ARM_ARCH_8M_MAIN__ } {
     eval [string map [list FUNC $armfunc FLAG $armflag DEF $armdef ] {
 	proc check_effective_target_arm_arch_FUNC_ok { } {
 	    if { [ string match "*-marm*" "FLAG" ] &&
@@ -3906,6 +3934,19 @@ proc check_effective_target_arm_thumb1_cbz_ok {} {
     } else {
 	return 0
     }
+}
+
+# Return 1 if this is an ARM target where ARMv8-M Security Extensions is
+# available.
+
+proc check_effective_target_arm_cmse_ok {} {
+    return [check_no_compiler_messages arm_cmse object {
+	int
+	foo (void)
+	{
+	  asm ("bxns r0");
+	}
+    } "-mcmse"];
 }
 
 # Return 1 if this compilation turns on string_ops_prefer_neon on.
@@ -6117,7 +6158,8 @@ proc check_effective_target_vect_call_copysignf { } {
     } else {
 	set et_vect_call_copysignf_saved($et_index) 0
 	if { [istarget i?86-*-*] || [istarget x86_64-*-*]
-	     || [istarget powerpc*-*-*] } {
+	     || [istarget powerpc*-*-*]
+	     || [istarget aarch64*-*-*] } {
 	   set et_vect_call_copysignf_saved($et_index) 1
 	}
     }
@@ -6744,6 +6786,17 @@ proc check_effective_target_newlib {} {
     }]
 }
 
+# Some newlib versions don't provide a frexpl and instead depend
+# on frexp to implement long double conversions in their printf-like
+# functions.  This leads to broken results.  Detect such versions here.
+
+proc check_effective_target_newlib_broken_long_double_io {} {
+  if { [is-effective-target newlib] && ![is-effective-target frexpl] } {
+	return 1
+  }
+  return 0
+}
+
 # Return true if this is NOT a Bionic target.
 
 proc check_effective_target_non_bionic {} {
@@ -7358,6 +7411,21 @@ proc check_effective_target_pow10 { } {
 	}
     } "-lm" ]
 }
+
+# Return 1 if frexpl function exists.
+
+proc check_effective_target_frexpl { } {
+    return [check_runtime frexpl {
+	#include <math.h>
+	int main () {
+	long double x;
+	int y;
+	x = frexpl (5.0, &y);
+	return 0;
+	}
+    } "-lm" ]
+}
+
 
 # Return 1 if issignaling function exists.
 proc check_effective_target_issignaling {} {
@@ -8171,4 +8239,79 @@ proc check_effective_target_store_merge { } {
     }
 
     return 0
+}
+
+# Return 1 if the target supports coprocessor instructions: cdp, ldc, stc, mcr and
+# mrc.
+proc check_effective_target_arm_coproc1_ok_nocache { } {
+    if { ![istarget arm*-*-*] } {
+	return 0
+    }
+    return [check_no_compiler_messages_nocache arm_coproc1_ok assembly {
+	#if (__thumb__ && !__thumb2__) || __ARM_ARCH < 4
+	#error FOO
+	#endif
+    }]
+}
+
+proc check_effective_target_arm_coproc1_ok { } {
+    return [check_cached_effective_target arm_coproc1_ok \
+		check_effective_target_arm_coproc1_ok_nocache]
+}
+
+# Return 1 if the target supports all coprocessor instructions checked by
+# check_effective_target_arm_coproc1_ok in addition to the following: cdp2,
+# ldc2, ldc2l, stc2, stc2l, mcr2 and mrc2.
+proc check_effective_target_arm_coproc2_ok_nocache { } {
+    if { ![check_effective_target_arm_coproc1_ok] } {
+	return 0
+    }
+    return [check_no_compiler_messages_nocache arm_coproc2_ok assembly {
+	#if __ARM_ARCH < 5
+	#error FOO
+	#endif
+    }]
+}
+
+proc check_effective_target_arm_coproc2_ok { } {
+    return [check_cached_effective_target arm_coproc2_ok \
+		check_effective_target_arm_coproc2_ok_nocache]
+}
+
+# Return 1 if the target supports all coprocessor instructions checked by
+# check_effective_target_arm_coproc2_ok in addition the following: mcrr and
+# mrrc.
+proc check_effective_target_arm_coproc3_ok_nocache { } {
+    if { ![check_effective_target_arm_coproc2_ok] } {
+	return 0
+    }
+    return [check_no_compiler_messages_nocache arm_coproc3_ok assembly {
+	#if __ARM_ARCH < 6 && !defined (__ARM_ARCH_5TE__)
+	#error FOO
+	#endif
+    }]
+}
+
+proc check_effective_target_arm_coproc3_ok { } {
+    return [check_cached_effective_target arm_coproc3_ok \
+		check_effective_target_arm_coproc3_ok_nocache]
+}
+
+# Return 1 if the target supports all coprocessor instructions checked by
+# check_effective_target_arm_coproc3_ok in addition the following: mcrr2 and
+# mrcc2.
+proc check_effective_target_arm_coproc4_ok_nocache { } {
+    if { ![check_effective_target_arm_coproc3_ok] } {
+	return 0
+    }
+    return [check_no_compiler_messages_nocache arm_coproc4_ok assembly {
+	#if __ARM_ARCH < 6
+	#error FOO
+	#endif
+    }]
+}
+
+proc check_effective_target_arm_coproc4_ok { } {
+    return [check_cached_effective_target arm_coproc4_ok \
+		check_effective_target_arm_coproc4_ok_nocache]
 }

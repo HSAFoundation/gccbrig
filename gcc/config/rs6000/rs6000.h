@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for IBM RS/6000.
-   Copyright (C) 1992-2016 Free Software Foundation, Inc.
+   Copyright (C) 1992-2017 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu)
 
    This file is part of GCC.
@@ -608,6 +608,12 @@ extern int rs6000_vector_align[];
 				 && TARGET_POWERPC64)
 #define TARGET_VEXTRACTUB	(TARGET_P9_VECTOR && TARGET_DIRECT_MOVE \
 				 && TARGET_UPPER_REGS_DI && TARGET_POWERPC64)
+
+
+/* Whether we should avoid (SUBREG:SI (REG:SF) and (SUBREG:SF (REG:SI).  */
+#define TARGET_NO_SF_SUBREG	TARGET_DIRECT_MOVE_64BIT
+#define TARGET_ALLOW_SF_SUBREG	(!TARGET_DIRECT_MOVE_64BIT)
+
 /* This wants to be set for p8 and newer.  On p7, overlapping unaligned
    loads are slow. */
 #define TARGET_EFFICIENT_OVERLAPPING_UNALIGNED TARGET_EFFICIENT_UNALIGNED_VSX
@@ -1866,19 +1872,19 @@ extern enum reg_class rs6000_constraints[RS6000_CONSTRAINT_MAX];
    On RS/6000, this is r3, fp1, and v2 (for AltiVec).  */
 #define FUNCTION_VALUE_REGNO_P(N)					\
   ((N) == GP_ARG_RETURN							\
-   || ((N) >= FP_ARG_RETURN && (N) <= FP_ARG_MAX_RETURN			\
+   || (IN_RANGE ((N), FP_ARG_RETURN, FP_ARG_MAX_RETURN)			\
        && TARGET_HARD_FLOAT && TARGET_FPRS)				\
-   || ((N) >= ALTIVEC_ARG_RETURN && (N) <= ALTIVEC_ARG_MAX_RETURN	\
+   || (IN_RANGE ((N), ALTIVEC_ARG_RETURN, ALTIVEC_ARG_MAX_RETURN)	\
        && TARGET_ALTIVEC && TARGET_ALTIVEC_ABI))
 
 /* 1 if N is a possible register number for function argument passing.
    On RS/6000, these are r3-r10 and fp1-fp13.
    On AltiVec, v2 - v13 are used for passing vectors.  */
 #define FUNCTION_ARG_REGNO_P(N)						\
-  ((unsigned) (N) - GP_ARG_MIN_REG < GP_ARG_NUM_REG			\
-   || ((unsigned) (N) - ALTIVEC_ARG_MIN_REG < ALTIVEC_ARG_NUM_REG	\
+  (IN_RANGE ((N), GP_ARG_MIN_REG, GP_ARG_MAX_REG)			\
+   || (IN_RANGE ((N), ALTIVEC_ARG_MIN_REG, ALTIVEC_ARG_MAX_REG)		\
        && TARGET_ALTIVEC && TARGET_ALTIVEC_ABI)				\
-   || ((unsigned) (N) - FP_ARG_MIN_REG < FP_ARG_NUM_REG			\
+   || (IN_RANGE ((N), FP_ARG_MIN_REG, FP_ARG_MAX_REG)			\
        && TARGET_HARD_FLOAT && TARGET_FPRS))
 
 /* Define a data type for recording info about an argument list
@@ -2199,14 +2205,15 @@ do {									     \
 
 /* The cntlzw and cntlzd instructions return 32 and 64 for input of zero.  */
 #define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
-  ((VALUE) = ((MODE) == SImode ? 32 : 64), 1)
+  ((VALUE) = GET_MODE_BITSIZE (MODE), 2)
 
 /* The CTZ patterns that are implemented in terms of CLZ return -1 for input of
-   zero.  The hardware instructions added in Power9 return 32 or 64.  */
+   zero.  The hardware instructions added in Power9 and the sequences using
+   popcount return 32 or 64.  */
 #define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE)				\
-  ((!TARGET_CTZ)							\
-   ? ((VALUE) = -1, 1)							\
-   : ((VALUE) = ((MODE) == SImode ? 32 : 64), 1))
+  (TARGET_CTZ || TARGET_POPCNTD						\
+   ? ((VALUE) = GET_MODE_BITSIZE (MODE), 2)				\
+   : ((VALUE) = -1, 2))
 
 /* Specify the machine mode that pointers have.
    After generation of rtl, the compiler makes no further distinction

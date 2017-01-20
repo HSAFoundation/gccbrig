@@ -1410,7 +1410,7 @@ package body Sem_Res is
                Opnd_Type := Base_Type (Typ);
 
             elsif (Scope (Opnd_Type) = Standard_Standard
-                     and then Is_Binary)
+                    and then Is_Binary)
               or else (Nkind (Right_Opnd (Op_Node)) = N_Attribute_Reference
                         and then Is_Binary
                         and then not Comes_From_Source (Opnd_Type))
@@ -1424,7 +1424,6 @@ package body Sem_Res is
                --  the given literal. Optimize the case where Pack is Standard.
 
                if Pack /= Standard_Standard then
-
                   if Opnd_Type = Universal_Integer then
                      Orig_Type := Type_In_P (Is_Integer_Type'Access);
 
@@ -1576,11 +1575,20 @@ package body Sem_Res is
 
       if Is_Private_Type (Typ) then
          case Nkind (N) is
-            when N_Op_Add   | N_Op_Subtract | N_Op_Multiply | N_Op_Divide |
-                 N_Op_Expon | N_Op_Mod      | N_Op_Rem      =>
+            when N_Op_Add
+               | N_Op_Divide
+               | N_Op_Expon
+               | N_Op_Mod
+               | N_Op_Multiply
+               | N_Op_Rem
+               | N_Op_Subtract
+            =>
                Resolve_Intrinsic_Operator (N, Typ);
 
-            when N_Op_Plus  | N_Op_Minus    | N_Op_Abs      =>
+            when N_Op_Abs
+               | N_Op_Minus
+               | N_Op_Plus
+            =>
                Resolve_Intrinsic_Unary_Operator (N, Typ);
 
             when others =>
@@ -1996,23 +2004,11 @@ package body Sem_Res is
          return;
       end Resolution_Failed;
 
-      --  Local variables
-
-      Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
-
    --  Start of processing for Resolve
 
    begin
       if N = Error then
          return;
-      end if;
-
-      --  A declaration may be subject to pragma Ghost. Set the mode now to
-      --  ensure that any nodes generated during analysis and expansion are
-      --  marked as Ghost.
-
-      if Is_Declaration (N) then
-         Set_Ghost_Mode (N);
       end if;
 
       --  Access attribute on remote subprogram cannot be used for a non-remote
@@ -2130,7 +2126,6 @@ package body Sem_Res is
       if Analyzed (N) then
          Debug_A_Exit ("resolving  ", N, "  (done, already analyzed)");
          Analyze_Dimension (N);
-         Ghost_Mode := Save_Ghost_Mode;
          return;
 
       --  Any case of Any_Type as the Etype value means that we had a
@@ -2138,7 +2133,6 @@ package body Sem_Res is
 
       elsif Etype (N) = Any_Type then
          Debug_A_Exit ("resolving  ", N, "  (done, Etype = Any_Type)");
-         Ghost_Mode := Save_Ghost_Mode;
          return;
       end if;
 
@@ -2471,9 +2465,10 @@ package body Sem_Res is
                --  with a name that is an explicit dereference, there is
                --  nothing to be done at this point.
 
-               elsif Nkind_In (N, N_Explicit_Dereference,
-                                  N_Attribute_Reference,
+               elsif Nkind_In (N, N_Attribute_Reference,
                                   N_And_Then,
+                                  N_Explicit_Dereference,
+                                  N_Identifier,
                                   N_Indexed_Component,
                                   N_Or_Else,
                                   N_Range,
@@ -2578,7 +2573,6 @@ package body Sem_Res is
             then
                Resolve (N, Full_View (Typ));
                Set_Etype (N, Typ);
-               Ghost_Mode := Save_Ghost_Mode;
                return;
 
             --  Check for an aggregate. Sometimes we can get bogus aggregates
@@ -2633,7 +2627,9 @@ package body Sem_Res is
                            --  replaced by the appropriate call during late
                            --  expansion.
 
-                           if not Box_Present (Elmt) then
+                           if Nkind (Elmt) /= N_Iterated_Component_Association
+                             and then not Box_Present (Elmt)
+                           then
                               Check_Elmt (Expression (Elmt));
                            end if;
 
@@ -2687,7 +2683,6 @@ package body Sem_Res is
             if Address_Integer_Convert_OK (Typ, Etype (N)) then
                Rewrite (N, Unchecked_Convert_To (Typ, Relocate_Node (N)));
                Analyze_And_Resolve (N, Typ);
-               Ghost_Mode := Save_Ghost_Mode;
                return;
 
             --  Under relaxed RM semantics silently replace occurrences of null
@@ -2725,8 +2720,8 @@ package body Sem_Res is
 
                      Error_Msg_Node_2 := Typ;
                      Error_Msg_NE
-                       ("no visible interpretation of& "
-                        & "matches expected type&", N, Subp_Name);
+                       ("no visible interpretation of& matches expected type&",
+                        N, Subp_Name);
                   end;
 
                   if All_Errors_Mode then
@@ -2758,14 +2753,12 @@ package body Sem_Res is
          end if;
 
          Resolution_Failed;
-         Ghost_Mode := Save_Ghost_Mode;
          return;
 
       --  Test if we have more than one interpretation for the context
 
       elsif Ambiguous then
          Resolution_Failed;
-         Ghost_Mode := Save_Ghost_Mode;
          return;
 
       --  Only one intepretation
@@ -2838,7 +2831,6 @@ package body Sem_Res is
            and then Present (Entity (N))
            and then Ekind (Entity (N)) /= E_Operator
          then
-
             if not Is_Predefined_Op (Entity (N)) then
                Rewrite_Operator_As_Call (N, Entity (N));
 
@@ -2853,130 +2845,154 @@ package body Sem_Res is
                --  Rewrite_Renamed_Operator.
 
                if Analyzed (N) then
-                  Ghost_Mode := Save_Ghost_Mode;
                   return;
                end if;
             end if;
          end if;
 
          case N_Subexpr'(Nkind (N)) is
+            when N_Aggregate =>
+               Resolve_Aggregate                 (N, Ctx_Type);
 
-            when N_Aggregate => Resolve_Aggregate                (N, Ctx_Type);
+            when N_Allocator =>
+               Resolve_Allocator                 (N, Ctx_Type);
 
-            when N_Allocator => Resolve_Allocator                (N, Ctx_Type);
+            when N_Short_Circuit =>
+               Resolve_Short_Circuit             (N, Ctx_Type);
 
-            when N_Short_Circuit
-                             => Resolve_Short_Circuit            (N, Ctx_Type);
+            when N_Attribute_Reference =>
+               Resolve_Attribute                 (N, Ctx_Type);
 
-            when N_Attribute_Reference
-                             => Resolve_Attribute                (N, Ctx_Type);
+            when N_Case_Expression =>
+               Resolve_Case_Expression           (N, Ctx_Type);
 
-            when N_Case_Expression
-                             => Resolve_Case_Expression          (N, Ctx_Type);
+            when N_Character_Literal =>
+               Resolve_Character_Literal         (N, Ctx_Type);
 
-            when N_Character_Literal
-                             => Resolve_Character_Literal        (N, Ctx_Type);
+            when N_Expanded_Name =>
+               Resolve_Entity_Name               (N, Ctx_Type);
 
-            when N_Expanded_Name
-                             => Resolve_Entity_Name              (N, Ctx_Type);
+            when N_Explicit_Dereference =>
+               Resolve_Explicit_Dereference      (N, Ctx_Type);
 
-            when N_Explicit_Dereference
-                             => Resolve_Explicit_Dereference     (N, Ctx_Type);
+            when N_Expression_With_Actions =>
+               Resolve_Expression_With_Actions   (N, Ctx_Type);
 
-            when N_Expression_With_Actions
-                             => Resolve_Expression_With_Actions  (N, Ctx_Type);
+            when N_Extension_Aggregate =>
+               Resolve_Extension_Aggregate       (N, Ctx_Type);
 
-            when N_Extension_Aggregate
-                             => Resolve_Extension_Aggregate      (N, Ctx_Type);
+            when N_Function_Call =>
+               Resolve_Call                      (N, Ctx_Type);
 
-            when N_Function_Call
-                             => Resolve_Call                     (N, Ctx_Type);
+            when N_Identifier =>
+               Resolve_Entity_Name               (N, Ctx_Type);
 
-            when N_Identifier
-                             => Resolve_Entity_Name              (N, Ctx_Type);
+            when N_If_Expression =>
+               Resolve_If_Expression             (N, Ctx_Type);
 
-            when N_If_Expression
-                             => Resolve_If_Expression            (N, Ctx_Type);
+            when N_Indexed_Component =>
+               Resolve_Indexed_Component         (N, Ctx_Type);
 
-            when N_Indexed_Component
-                             => Resolve_Indexed_Component        (N, Ctx_Type);
+            when N_Integer_Literal =>
+               Resolve_Integer_Literal           (N, Ctx_Type);
 
-            when N_Integer_Literal
-                             => Resolve_Integer_Literal          (N, Ctx_Type);
+            when N_Membership_Test =>
+               Resolve_Membership_Op             (N, Ctx_Type);
 
-            when N_Membership_Test
-                             => Resolve_Membership_Op            (N, Ctx_Type);
+            when N_Null =>
+               Resolve_Null                      (N, Ctx_Type);
 
-            when N_Null      => Resolve_Null                     (N, Ctx_Type);
+            when N_Op_And
+               | N_Op_Or
+               | N_Op_Xor
+            =>
+               Resolve_Logical_Op                (N, Ctx_Type);
 
-            when N_Op_And | N_Op_Or | N_Op_Xor
-                             => Resolve_Logical_Op               (N, Ctx_Type);
+            when N_Op_Eq
+               | N_Op_Ne
+            =>
+               Resolve_Equality_Op               (N, Ctx_Type);
 
-            when N_Op_Eq | N_Op_Ne
-                             => Resolve_Equality_Op              (N, Ctx_Type);
+            when N_Op_Ge
+               | N_Op_Gt
+               | N_Op_Le
+               | N_Op_Lt
+            =>
+               Resolve_Comparison_Op             (N, Ctx_Type);
 
-            when N_Op_Lt | N_Op_Le | N_Op_Gt | N_Op_Ge
-                             => Resolve_Comparison_Op            (N, Ctx_Type);
+            when N_Op_Not =>
+               Resolve_Op_Not                    (N, Ctx_Type);
 
-            when N_Op_Not    => Resolve_Op_Not                   (N, Ctx_Type);
+            when N_Op_Add
+               | N_Op_Divide
+               | N_Op_Mod
+               | N_Op_Multiply
+               | N_Op_Rem
+               | N_Op_Subtract
+            =>
+               Resolve_Arithmetic_Op             (N, Ctx_Type);
 
-            when N_Op_Add    | N_Op_Subtract | N_Op_Multiply |
-                 N_Op_Divide | N_Op_Mod      | N_Op_Rem
+            when N_Op_Concat =>
+               Resolve_Op_Concat                 (N, Ctx_Type);
 
-                             => Resolve_Arithmetic_Op            (N, Ctx_Type);
+            when N_Op_Expon =>
+               Resolve_Op_Expon                  (N, Ctx_Type);
 
-            when N_Op_Concat => Resolve_Op_Concat                (N, Ctx_Type);
+            when N_Op_Abs
+               | N_Op_Minus
+               | N_Op_Plus
+            =>
+               Resolve_Unary_Op                  (N, Ctx_Type);
 
-            when N_Op_Expon  => Resolve_Op_Expon                 (N, Ctx_Type);
+            when N_Op_Shift =>
+               Resolve_Shift                     (N, Ctx_Type);
 
-            when N_Op_Plus | N_Op_Minus  | N_Op_Abs
-                             => Resolve_Unary_Op                 (N, Ctx_Type);
+            when N_Procedure_Call_Statement =>
+               Resolve_Call                      (N, Ctx_Type);
 
-            when N_Op_Shift  => Resolve_Shift                    (N, Ctx_Type);
+            when N_Operator_Symbol =>
+               Resolve_Operator_Symbol           (N, Ctx_Type);
 
-            when N_Procedure_Call_Statement
-                             => Resolve_Call                     (N, Ctx_Type);
-
-            when N_Operator_Symbol
-                             => Resolve_Operator_Symbol          (N, Ctx_Type);
-
-            when N_Qualified_Expression
-                             => Resolve_Qualified_Expression     (N, Ctx_Type);
+            when N_Qualified_Expression =>
+               Resolve_Qualified_Expression      (N, Ctx_Type);
 
             --  Why is the following null, needs a comment ???
 
-            when N_Quantified_Expression
-                             => null;
+            when N_Quantified_Expression =>
+               null;
 
-            when N_Raise_Expression
-                             => Resolve_Raise_Expression         (N, Ctx_Type);
+            when N_Raise_Expression =>
+               Resolve_Raise_Expression          (N, Ctx_Type);
 
-            when N_Raise_xxx_Error
-                             => Set_Etype (N, Ctx_Type);
+            when N_Raise_xxx_Error =>
+               Set_Etype (N, Ctx_Type);
 
-            when N_Range     => Resolve_Range                    (N, Ctx_Type);
+            when N_Range =>
+               Resolve_Range                     (N, Ctx_Type);
 
-            when N_Real_Literal
-                             => Resolve_Real_Literal             (N, Ctx_Type);
+            when N_Real_Literal =>
+               Resolve_Real_Literal              (N, Ctx_Type);
 
-            when N_Reference => Resolve_Reference                (N, Ctx_Type);
+            when N_Reference =>
+               Resolve_Reference                 (N, Ctx_Type);
 
-            when N_Selected_Component
-                             => Resolve_Selected_Component       (N, Ctx_Type);
+            when N_Selected_Component =>
+               Resolve_Selected_Component        (N, Ctx_Type);
 
-            when N_Slice     => Resolve_Slice                    (N, Ctx_Type);
+            when N_Slice =>
+               Resolve_Slice                     (N, Ctx_Type);
 
-            when N_String_Literal
-                             => Resolve_String_Literal           (N, Ctx_Type);
+            when N_String_Literal =>
+               Resolve_String_Literal            (N, Ctx_Type);
 
-            when N_Type_Conversion
-                             => Resolve_Type_Conversion          (N, Ctx_Type);
+            when N_Type_Conversion =>
+               Resolve_Type_Conversion           (N, Ctx_Type);
 
             when N_Unchecked_Expression =>
-               Resolve_Unchecked_Expression                      (N, Ctx_Type);
+               Resolve_Unchecked_Expression      (N, Ctx_Type);
 
             when N_Unchecked_Type_Conversion =>
-               Resolve_Unchecked_Type_Conversion                 (N, Ctx_Type);
+               Resolve_Unchecked_Type_Conversion (N, Ctx_Type);
          end case;
 
          --  Ada 2012 (AI05-0149): Apply an (implicit) conversion to an
@@ -3003,7 +3019,6 @@ package body Sem_Res is
          if Nkind (N) not in N_Subexpr then
             Debug_A_Exit ("resolving  ", N, "  (done)");
             Expand (N);
-            Ghost_Mode := Save_Ghost_Mode;
             return;
          end if;
 
@@ -3038,8 +3053,6 @@ package body Sem_Res is
 
          Expand (N);
       end if;
-
-      Ghost_Mode := Save_Ghost_Mode;
    end Resolve;
 
    -------------
@@ -4265,10 +4278,12 @@ package body Sem_Res is
                --  Apply predicate tests except in certain special cases. Note
                --  that it might be more consistent to apply these only when
                --  expansion is active (in Exp_Ch6.Expand_Actuals), as we do
-               --  for the outbound predicate tests ???
+               --  for the outbound predicate tests ??? In any case indicate
+               --  the function being called, for better warnings if the call
+               --  leads to an infinite recursion.
 
                if Predicate_Tests_On_Arguments (Nam) then
-                  Apply_Predicate_Check (A, F_Typ);
+                  Apply_Predicate_Check (A, F_Typ, Nam);
                end if;
 
                --  Apply required constraint checks
@@ -4350,24 +4365,36 @@ package body Sem_Res is
 
             if Ekind_In (F, E_Out_Parameter, E_In_Out_Parameter) then
 
-               --  If there is a type conversion, to make sure the return value
+               --  If there is a type conversion, make sure the return value
                --  meets the constraints of the variable before the conversion.
 
                if Nkind (A) = N_Type_Conversion then
                   if Is_Scalar_Type (A_Typ) then
                      Apply_Scalar_Range_Check
                        (Expression (A), Etype (Expression (A)), A_Typ);
+
+                     --  In addition, the returned value of the parameter must
+                     --  satisfy the bounds of the object type (see comment
+                     --  below).
+
+                     Apply_Scalar_Range_Check (A, A_Typ, F_Typ);
+
                   else
                      Apply_Range_Check
                        (Expression (A), Etype (Expression (A)), A_Typ);
                   end if;
 
-               --  If no conversion apply scalar range checks and length checks
-               --  base on the subtype of the actual (NOT that of the formal).
+               --  If no conversion, apply scalar range checks and length check
+               --  based on the subtype of the actual (NOT that of the formal).
+               --  This indicates that the check takes place on return from the
+               --  call. During expansion the required constraint checks are
+               --  inserted. In GNATprove mode, in the absence of expansion,
+               --  the flag indicates that the returned value is valid.
 
                else
                   if Is_Scalar_Type (F_Typ) then
                      Apply_Scalar_Range_Check (A, A_Typ, F_Typ);
+
                   elsif Is_Array_Type (F_Typ)
                     and then Ekind (F) = E_Out_Parameter
                   then
@@ -6034,12 +6061,16 @@ package body Sem_Res is
          end;
 
       else
-         --  If the function returns the limited view of type, the call must
-         --  appear in a context in which the non-limited view is available.
-         --  As is done in Try_Object_Operation, use the available view to
-         --  prevent back-end confusion.
+         --  If the called function is not declared in the main unit and it
+         --  returns the limited view of type then use the available view (as
+         --  is done in Try_Object_Operation) to prevent back-end confusion;
+         --  the call must appear in a context where the nonlimited view is
+         --  available. If the called function is in the extended main unit
+         --  then no action is needed, because the back end handles this case.
 
-         if From_Limited_With (Etype (Nam)) then
+         if not In_Extended_Main_Code_Unit (Nam)
+           and then From_Limited_With (Etype (Nam))
+         then
             Set_Etype (Nam, Available_View (Etype (Nam)));
          end if;
 
@@ -6236,7 +6267,10 @@ package body Sem_Res is
       --  within the specialized Exp_Ch6 procedures for expanding those
       --  build-in-place calls.
 
-      --  e) If the subprogram is marked Inline_Always, then even if it returns
+      --  e) Calls to inlinable expression functions do not use the secondary
+      --  stack (since the call will be replaced by its returned object).
+
+      --  f) If the subprogram is marked Inline_Always, then even if it returns
       --  an unconstrained type the call does not require use of the secondary
       --  stack. However, inlining will only take place if the body to inline
       --  is already present. It may not be available if e.g. the subprogram is
@@ -6257,6 +6291,7 @@ package body Sem_Res is
       elsif Ekind (Nam) = E_Enumeration_Literal
         or else Is_Build_In_Place_Function (Nam)
         or else Is_Intrinsic_Subprogram (Nam)
+        or else Is_Inlinable_Expression_Function (Nam)
       then
          null;
 
@@ -6285,12 +6320,14 @@ package body Sem_Res is
 
       --  A protected function cannot be called within the definition of the
       --  enclosing protected type, unless it is part of a pre/postcondition
-      --  on another protected operation.
+      --  on another protected operation. This may appear in the entry wrapper
+      --  created for an entry with preconditions.
 
       if Is_Protected_Type (Scope (Nam))
         and then In_Open_Scopes (Scope (Nam))
         and then not Has_Completion (Scope (Nam))
         and then not In_Spec_Expression
+        and then not Is_Entry_Wrapper (Current_Scope)
       then
          Error_Msg_NE
            ("& cannot be called before end of protected definition", N, Nam);
@@ -6596,6 +6633,14 @@ package body Sem_Res is
                elsif Is_Potentially_Unevaluated (N) then
                   Cannot_Inline
                     ("cannot inline & (in potentially unevaluated context)?",
+                     N, Nam_UA);
+
+               --  Do not inline calls which would possibly lead to missing a
+               --  type conversion check on an input parameter.
+
+               elsif not Call_Can_Be_Inlined_In_GNATprove_Mode (N, Nam) then
+                  Cannot_Inline
+                    ("cannot inline & (possible check on input parameters)?",
                      N, Nam_UA);
 
                --  Otherwise, inline the call
@@ -8120,7 +8165,7 @@ package body Sem_Res is
          end loop;
 
          if Nkind (Call) = N_Function_Call then
-            Indexes := Parameter_Associations (Call);
+            Indexes := New_Copy_List (Parameter_Associations (Call));
             Pref := Remove_Head (Indexes);
             Set_Expressions (N, Indexes);
 
@@ -9311,20 +9356,20 @@ package body Sem_Res is
 
          else
             case Nkind (Parent (N)) is
-               when N_Op_And   |
-                    N_Op_Eq    |
-                    N_Op_Ge    |
-                    N_Op_Gt    |
-                    N_Op_Le    |
-                    N_Op_Lt    |
-                    N_Op_Ne    |
-                    N_Op_Or    |
-                    N_Op_Xor   |
-                    N_In       |
-                    N_Not_In   |
-                    N_And_Then |
-                    N_Or_Else  =>
-
+               when N_And_Then
+                  | N_In
+                  | N_Not_In
+                  | N_Op_And
+                  | N_Op_Eq
+                  | N_Op_Ge
+                  | N_Op_Gt
+                  | N_Op_Le
+                  | N_Op_Lt
+                  | N_Op_Ne
+                  | N_Op_Or
+                  | N_Op_Xor
+                  | N_Or_Else
+               =>
                   return Left_Opnd (Parent (N)) = N;
 
                when others =>
@@ -10984,7 +11029,7 @@ package body Sem_Res is
       --  remove side effects in order to store the result of the conversion
       --  into a temporary.
 
-      if Generate_C_Code
+      if Modify_Tree_For_C
         and then Nkind (N) = N_Type_Conversion
         and then Nkind (Parent (N)) /= N_Object_Declaration
         and then Is_Access_Type (Etype (N))
@@ -11320,11 +11365,20 @@ package body Sem_Res is
 
          if Is_Intrinsic_Subprogram (Op) and then Is_Private_Type (Typ) then
             case Nkind (N) is
-               when N_Op_Add   | N_Op_Subtract | N_Op_Multiply | N_Op_Divide |
-                    N_Op_Expon | N_Op_Mod      | N_Op_Rem      =>
+               when N_Op_Add
+                  | N_Op_Divide
+                  | N_Op_Expon
+                  | N_Op_Mod
+                  | N_Op_Multiply
+                  | N_Op_Rem
+                  | N_Op_Subtract
+               =>
                   Resolve_Intrinsic_Operator (N, Typ);
 
-               when N_Op_Plus  | N_Op_Minus    | N_Op_Abs      =>
+               when N_Op_Abs
+                  | N_Op_Minus
+                  | N_Op_Plus
+               =>
                   Resolve_Intrinsic_Unary_Operator (N, Typ);
 
                when others =>
@@ -11806,8 +11860,7 @@ package body Sem_Res is
       -- Valid_Array_Conversion --
       ----------------------------
 
-      function Valid_Array_Conversion return Boolean
-      is
+      function Valid_Array_Conversion return Boolean is
          Opnd_Comp_Type : constant Entity_Id := Component_Type (Opnd_Type);
          Opnd_Comp_Base : constant Entity_Id := Base_Type (Opnd_Comp_Type);
 

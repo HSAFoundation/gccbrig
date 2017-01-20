@@ -1,3 +1,56 @@
+2017-01-19  Uros Bizjak  <ubizjak@gmail.com>
+
+	PR target/78478
+	* config/ax_check_define.m4: New file.
+
+2017-01-17  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/79046
+	* configure: Regenerated.
+
+2017-01-04  Alan Modra  <amodra@gmail.com>
+
+	* configure: Regenerate.
+
+2016-12-29  Ben Elliston  <bje@gnu.org>
+
+	* config.sub: Import latest version.
+
+2016-12-26  Alexander Ivchenko  <alexander.ivchenko@intel.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2016-12-21  Jakub Jelinek  <jakub@redhat.com>
+
+	* configure.ac: Don't bootstrap libmpx unless --with-build-config
+	includes bootstrap-mpx.
+	* configure: Regenerated.
+
+2016-12-19  Chenghua Xu  <paul.hua.gm@gmail.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2016-12-01  Ma Jiang  <ma.jiang@zte.com.cn>
+
+	* configure: Regenerate.
+
+2016-12-01  Matthias Klose  <doko@ubuntu.com>
+
+	* configure.ac: Don't use pkg-config to check for bdw-gc.
+	* configure: Regenerate.
+
+2016-11-30  Matthias Klose  <doko@ubuntu.com>
+
+	* Makefile.def: Remove reference to boehm-gc target module.
+  	* configure.ac: Include pkg.m4, check for --with-target-bdw-gc
+	options and for the bdw-gc pkg-config module.
+	* configure: Regenerate.
+	* Makefile.in: Regenerate.
+
+2016-11-28  Nathan Sidwell  <nathan@acm.org>
+
+	* MAINTAINERS (nvptx): Remove self.
+
 2016-11-25  Ben Elliston  <bje@gnu.org>
 
 	* config.guess: Import latest version.

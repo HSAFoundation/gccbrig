@@ -1,5 +1,5 @@
 /* Process declarations and variables for C++ compiler.
-   Copyright (C) 1988-2016 Free Software Foundation, Inc.
+   Copyright (C) 1988-2017 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -926,6 +926,7 @@ wrapup_globals_for_namespace (tree name_space, void* data ATTRIBUTE_UNUSED)
 	    && DECL_EXTERNAL (decl)
 	    && !TREE_PUBLIC (decl)
 	    && !DECL_ARTIFICIAL (decl)
+	    && !DECL_FRIEND_PSEUDO_TEMPLATE_INSTANTIATION (decl)
 	    && !TREE_NO_WARNING (decl))
 	  {
 	    warning_at (DECL_SOURCE_LOCATION (decl),
@@ -4034,6 +4035,8 @@ initialize_predefined_identifiers (void)
     { "__vtt_parm", &vtt_parm_identifier, 0 },
     { "::", &global_scope_name, 0 },
     { "std", &std_identifier, 0 },
+    { "auto", &auto_identifier, 0 },
+    { "decltype(auto)", &decltype_auto_identifier, 0 },
     { NULL, NULL, 0 }
   };
 
@@ -4157,6 +4160,9 @@ cxx_init_decl_processing (void)
 
   global_type_node = make_node (LANG_TYPE);
   record_unknown_type (global_type_node, "global type");
+
+  any_targ_node = make_node (LANG_TYPE);
+  record_unknown_type (any_targ_node, "any type");
 
   /* Now, C++.  */
   current_lang_name = lang_name_cplusplus;
@@ -6293,14 +6299,14 @@ check_initializer (tree decl, tree init, int flags, vec<tree, va_gc> **cleanups)
       if (type == error_mark_node)
 	return NULL_TREE;
 
-      if ((type_build_ctor_call (type) || CLASS_TYPE_P (type)
-	   || (DECL_DECOMPOSITION_P (decl) && TREE_CODE (type) == ARRAY_TYPE))
-	  && !(flags & LOOKUP_ALREADY_DIGESTED)
-	  && !(init && BRACE_ENCLOSED_INITIALIZER_P (init)
-	       && CP_AGGREGATE_TYPE_P (type)
-	       && (CLASS_TYPE_P (type)
-		   || !TYPE_NEEDS_CONSTRUCTING (type)
-		   || type_has_extended_temps (type))))
+      if (((type_build_ctor_call (type) || CLASS_TYPE_P (type))
+	   && !(flags & LOOKUP_ALREADY_DIGESTED)
+	   && !(init && BRACE_ENCLOSED_INITIALIZER_P (init)
+		&& CP_AGGREGATE_TYPE_P (type)
+		&& (CLASS_TYPE_P (type)
+		    || !TYPE_NEEDS_CONSTRUCTING (type)
+		    || type_has_extended_temps (type))))
+	  || (DECL_DECOMPOSITION_P (decl) && TREE_CODE (type) == ARRAY_TYPE))
 	{
 	  init_code = build_aggr_init_full_exprs (decl, init, flags);
 
@@ -7257,7 +7263,7 @@ find_decomp_class_base (location_t loc, tree type, tree ret)
 
 /* Return std::tuple_size<TYPE>::value.  */
 
-tree
+static tree
 get_tuple_size (tree type)
 {
   tree args = make_tree_vec (1);
@@ -7266,6 +7272,9 @@ get_tuple_size (tree type)
 				     /*in_decl*/NULL_TREE,
 				     /*context*/std_node,
 				     /*entering_scope*/false, tf_none);
+  inst = complete_type (inst);
+  if (inst == error_mark_node || !COMPLETE_TYPE_P (inst))
+    return NULL_TREE;
   tree val = lookup_qualified_name (inst, get_identifier ("value"),
 				    /*type*/false, /*complain*/false);
   if (TREE_CODE (val) == VAR_DECL || TREE_CODE (val) == CONST_DECL)
@@ -7273,12 +7282,12 @@ get_tuple_size (tree type)
   if (TREE_CODE (val) == INTEGER_CST)
     return val;
   else
-    return NULL_TREE;
+    return error_mark_node;
 }
 
 /* Return std::tuple_element<I,TYPE>::type.  */
 
-tree
+static tree
 get_tuple_element_type (tree type, unsigned i)
 {
   tree args = make_tree_vec (2);
@@ -7295,7 +7304,7 @@ get_tuple_element_type (tree type, unsigned i)
 
 /* Return e.get<i>() or get<i>(e).  */
 
-tree
+static tree
 get_tuple_decomp_init (tree decl, unsigned i)
 {
   tree get_id = get_identifier ("get");
@@ -7340,6 +7349,7 @@ store_decomp_type (tree v, tree t)
     decomp_type_table = hash_map<tree,tree>::create_ggc (13);
   decomp_type_table->put (v, t);
 }
+
 tree
 lookup_decomp_type (tree v)
 {
@@ -7500,6 +7510,12 @@ cp_finish_decomp (tree decl, tree first, unsigned int count)
     }
   else if (tree tsize = get_tuple_size (type))
     {
+      if (tsize == error_mark_node)
+	{
+	  error_at (loc, "%<std::tuple_size<%T>::value%> is not an integral "
+			 "constant expression", type);
+	  goto error_out;
+	}
       eltscnt = tree_to_uhwi (tsize);
       if (count != eltscnt)
 	goto cnt_mismatch;
@@ -7577,10 +7593,9 @@ cp_finish_decomp (tree decl, tree first, unsigned int count)
 	else
 	  {
 	    tree tt = finish_non_static_data_member (field, t, NULL_TREE);
-	    tree probe = tt;
-	    if (REFERENCE_REF_P (probe))
-	      probe = TREE_OPERAND (probe, 0);
-	    TREE_TYPE (v[i]) = TREE_TYPE (probe);
+	    if (REFERENCE_REF_P (tt))
+	      tt = TREE_OPERAND (tt, 0);
+	    TREE_TYPE (v[i]) = TREE_TYPE (tt);
 	    layout_decl (v[i], 0);
 	    SET_DECL_VALUE_EXPR (v[i], tt);
 	    DECL_HAS_VALUE_EXPR_P (v[i]) = 1;
@@ -10600,7 +10615,7 @@ grokdeclarator (const cp_declarator *declarator,
 	  gcc_unreachable ();
 	}
       if (TREE_CODE (type) != TEMPLATE_TYPE_PARM
-	  || TYPE_IDENTIFIER (type) != get_identifier ("auto"))
+	  || TYPE_IDENTIFIER (type) != auto_identifier)
 	{
 	  if (type != error_mark_node)
 	    {
@@ -14280,8 +14295,11 @@ finish_enum_value_list (tree enumtype)
   if (at_class_scope_p ()
       && COMPLETE_TYPE_P (current_class_type)
       && UNSCOPED_ENUM_P (enumtype))
-    insert_late_enum_def_into_classtype_sorted_fields (enumtype,
-						       current_class_type);
+    {
+      insert_late_enum_def_into_classtype_sorted_fields (enumtype,
+							 current_class_type);
+      fixup_type_variants (current_class_type);
+    }
 
   /* Finish debugging output for this type.  */
   rest_of_type_compilation (enumtype, namespace_bindings_p ());

@@ -38,7 +38,6 @@ with Exp_Dbug; use Exp_Dbug;
 with Exp_Pakd; use Exp_Pakd;
 with Exp_Tss;  use Exp_Tss;
 with Exp_Util; use Exp_Util;
-with Ghost;    use Ghost;
 with Inline;   use Inline;
 with Namet;    use Namet;
 with Nlists;   use Nlists;
@@ -328,7 +327,10 @@ package body Exp_Ch5 is
       function Is_Non_Local_Array (Exp : Node_Id) return Boolean is
       begin
          case Nkind (Exp) is
-            when N_Indexed_Component | N_Selected_Component | N_Slice =>
+            when N_Indexed_Component
+               | N_Selected_Component
+               | N_Slice
+            =>
                return Is_Non_Local_Array (Prefix (Exp));
 
             when others =>
@@ -740,10 +742,15 @@ package body Exp_Ch5 is
                end if;
 
                case Cresult is
-                  when LT | LE | EQ => Set_Backwards_OK (N, False);
-                  when GT | GE      => Set_Forwards_OK  (N, False);
-                  when NE | Unknown => Set_Backwards_OK (N, False);
-                                       Set_Forwards_OK  (N, False);
+                  when EQ | LE | LT =>
+                     Set_Backwards_OK (N, False);
+
+                  when GE | GT =>
+                     Set_Forwards_OK  (N, False);
+
+                  when NE | Unknown =>
+                     Set_Backwards_OK (N, False);
+                     Set_Forwards_OK  (N, False);
                end case;
             end if;
          end if;
@@ -1613,15 +1620,7 @@ package body Exp_Ch5 is
       Typ  : constant Entity_Id  := Underlying_Type (Etype (Lhs));
       Exp  : Node_Id;
 
-      Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
-
    begin
-      --  The assignment statement is Ghost when the left hand side is Ghost.
-      --  Set the mode now to ensure that any nodes generated during expansion
-      --  are properly marked as Ghost.
-
-      Set_Ghost_Mode (N);
-
       --  Special case to check right away, if the Componentwise_Assignment
       --  flag is set, this is a reanalysis from the expansion of the primitive
       --  assignment procedure for a tagged type, and all we need to do is to
@@ -1631,7 +1630,6 @@ package body Exp_Ch5 is
 
       if Componentwise_Assignment (N) then
          Expand_Assign_Record (N);
-         Ghost_Mode := Save_Ghost_Mode;
          return;
       end if;
 
@@ -1723,7 +1721,6 @@ package body Exp_Ch5 is
                Rewrite (N, Call);
                Analyze (N);
 
-               Ghost_Mode := Save_Ghost_Mode;
                return;
             end if;
          end;
@@ -1812,8 +1809,8 @@ package body Exp_Ch5 is
             loop
                Set_Analyzed (Exp, False);
 
-               if Nkind_In
-                   (Exp, N_Selected_Component, N_Indexed_Component)
+               if Nkind_In (Exp, N_Indexed_Component,
+                                 N_Selected_Component)
                then
                   Exp := Prefix (Exp);
                else
@@ -1874,7 +1871,6 @@ package body Exp_Ch5 is
          Rewrite (N, Make_Null_Statement (Loc));
          Analyze (N);
 
-         Ghost_Mode := Save_Ghost_Mode;
          return;
       end if;
 
@@ -2099,7 +2095,6 @@ package body Exp_Ch5 is
 
          if not Crep then
             Expand_Bit_Packed_Element_Set (N);
-            Ghost_Mode := Save_Ghost_Mode;
             return;
 
          --  Change of representation case
@@ -2198,7 +2193,6 @@ package body Exp_Ch5 is
                   --  expansion, since they would be missed in -gnatc mode ???
 
                   Error_Msg_N ("assignment not available on limited type", N);
-                  Ghost_Mode := Save_Ghost_Mode;
                   return;
                end if;
 
@@ -2401,7 +2395,6 @@ package body Exp_Ch5 is
             --  it with all checks suppressed.
 
             Analyze (N, Suppress => All_Checks);
-            Ghost_Mode := Save_Ghost_Mode;
             return;
          end Tagged_Case;
 
@@ -2419,7 +2412,6 @@ package body Exp_Ch5 is
             end loop;
 
             Expand_Assign_Array (N, Actual_Rhs);
-            Ghost_Mode := Save_Ghost_Mode;
             return;
          end;
 
@@ -2427,7 +2419,6 @@ package body Exp_Ch5 is
 
       elsif Is_Record_Type (Typ) then
          Expand_Assign_Record (N);
-         Ghost_Mode := Save_Ghost_Mode;
          return;
 
       --  Scalar types. This is where we perform the processing related to the
@@ -2540,11 +2531,8 @@ package body Exp_Ch5 is
          end if;
       end if;
 
-      Ghost_Mode := Save_Ghost_Mode;
-
    exception
       when RE_Not_Available =>
-         Ghost_Mode := Save_Ghost_Mode;
          return;
    end Expand_N_Assignment_Statement;
 
@@ -2939,7 +2927,7 @@ package body Exp_Ch5 is
       --  For an element iterator, the Element aspect must be present,
       --  (this is checked during analysis) and the expansion takes the form:
 
-      --    Cursor : Cursor_type := First (Container);
+      --    Cursor : Cursor_Type := First (Container);
       --    Elmt : Element_Type;
       --    while Has_Element (Cursor, Container) loop
       --       Elmt := Element (Container, Cursor);
@@ -2951,10 +2939,10 @@ package body Exp_Ch5 is
       --   In that case we create a block to hold a variable declaration
       --   initialized with a call to Element, and generate:
 
-      --    Cursor : Cursor_type := First (Container);
+      --    Cursor : Cursor_Type := First (Container);
       --    while Has_Element (Cursor, Container) loop
       --       declare
-      --          Elmt : Element-Type := Element (Container, Cursor);
+      --          Elmt : Element_Type := Element (Container, Cursor);
       --       begin
       --          <original loop statements>
       --          Cursor := Next (Container, Cursor);
@@ -2968,7 +2956,7 @@ package body Exp_Ch5 is
       Set_Ekind (Cursor, E_Variable);
       Insert_Action (N, Init);
 
-      --  Declaration for Element.
+      --  Declaration for Element
 
       Elmt_Decl :=
         Make_Object_Declaration (Loc,
@@ -3209,10 +3197,6 @@ package body Exp_Ch5 is
             if Present (Condition_Actions (E))
               or else Compile_Time_Known_Value (Condition (E))
             then
-               --  Note this is not an implicit if statement, since it is part
-               --  of an explicit if statement in the source (or of an implicit
-               --  if statement that has already been tested).
-
                New_If :=
                  Make_If_Statement (Sloc (E),
                    Condition       => Condition (E),
@@ -3243,6 +3227,15 @@ package body Exp_Ch5 is
                end if;
 
                Analyze (New_If);
+
+               --  Note this is not an implicit if statement, since it is part
+               --  of an explicit if statement in the source (or of an implicit
+               --  if statement that has already been tested). We set the flag
+               --  after calling Analyze to avoid generating extra warnings
+               --  specific to pure if statements, however (see
+               --  Sem_Ch5.Analyze_If_Statement).
+
+               Set_Comes_From_Source (New_If, Comes_From_Source (N));
                return;
 
             --  No special processing for that elsif part, move to next
@@ -3764,14 +3757,18 @@ package body Exp_Ch5 is
                elsif Is_Derived_Type (T) then
 
                   --  The default iterator must be a primitive operation of the
-                  --  type, at the same dispatch slot position.
+                  --  type, at the same dispatch slot position. The DT position
+                  --  may not be established if type is not frozen yet.
 
                   Prim := First_Elmt (Primitive_Operations (T));
                   while Present (Prim) loop
                      Op := Node (Prim);
 
-                     if Chars (Op) = Chars (Iter)
-                       and then DT_Position (Op) = DT_Position (Iter)
+                     if Alias (Op) = Iter
+                       or else
+                         (Chars (Op) = Chars (Iter)
+                           and then Present (DTC_Entity (Op))
+                           and then DT_Position (Op) = DT_Position (Iter))
                      then
                         return Op;
                      end if;
@@ -4667,7 +4664,9 @@ package body Exp_Ch5 is
                                        and then not Comp_Asn
                                        and then not No_Ctrl_Actions (N)
                                        and then Tagged_Type_Expansion;
-      Tag_Id  : Entity_Id;
+      Adj_Call : Node_Id;
+      Fin_Call : Node_Id;
+      Tag_Id   : Entity_Id;
 
    begin
       --  Finalize the target of the assignment when controlled
@@ -4700,10 +4699,14 @@ package body Exp_Ch5 is
          null;
 
       else
-         Append_To (Res,
+         Fin_Call :=
            Make_Final_Call
              (Obj_Ref => Duplicate_Subexpr_No_Checks (L),
-              Typ     => Etype (L)));
+              Typ     => Etype (L));
+
+         if Present (Fin_Call) then
+            Append_To (Res, Fin_Call);
+         end if;
       end if;
 
       --  Save the Tag in a local variable Tag_Id
@@ -4756,10 +4759,14 @@ package body Exp_Ch5 is
       --  init proc since it is an initialization more than an assignment).
 
       if Ctrl_Act then
-         Append_To (Res,
+         Adj_Call :=
            Make_Adjust_Call
              (Obj_Ref => Duplicate_Subexpr_Move_Checks (L),
-              Typ     => Etype (L)));
+              Typ     => Etype (L));
+
+         if Present (Adj_Call) then
+            Append_To (Res, Adj_Call);
+         end if;
       end if;
 
       return Res;

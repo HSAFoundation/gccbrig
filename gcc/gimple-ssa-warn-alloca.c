@@ -1,5 +1,5 @@
 /* Warn on problematic uses of alloca and variable length arrays.
-   Copyright (C) 2016 Free Software Foundation, Inc.
+   Copyright (C) 2016-2017 Free Software Foundation, Inc.
    Contributed by Aldy Hernandez <aldyh@redhat.com>.
 
 This file is part of GCC.
@@ -339,6 +339,8 @@ alloca_call_type (gimple *stmt, bool is_vla, tree *invalid_casted_type)
 		{
 		  // Fall through.
 		}
+	      else if (range_type == VR_ANTI_RANGE)
+		return alloca_type_and_limit (ALLOCA_UNBOUNDED);
 	      else if (range_type != VR_VARYING)
 		return
 		  alloca_type_and_limit (ALLOCA_BOUND_MAYBE_LARGE, max);

@@ -1,5 +1,5 @@
 /* Unit tests for RTL-handling.
-   Copyright (C) 2015-2016 Free Software Foundation, Inc.
+   Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -62,11 +62,12 @@ verify_print_pattern (const char *expected, rtx pat)
    Use LOC as the effective location when reporting errors.  */
 
 void
-assert_rtl_dump_eq (const location &loc, const char *expected_dump, rtx x)
+assert_rtl_dump_eq (const location &loc, const char *expected_dump, rtx x,
+		    rtx_reuse_manager *reuse_manager)
 {
   named_temp_file tmp_out (".rtl");
   FILE *outfile = fopen (tmp_out.get_filename (), "w");
-  rtx_writer w (outfile, 0, false, true);
+  rtx_writer w (outfile, 0, false, true, reuse_manager);
   w.print_rtl (x);
   fclose (outfile);
 
@@ -103,9 +104,9 @@ test_dumping_regs ()
     }
 
   /* Test dumping of non-virtual pseudos.  */
-  ASSERT_RTL_DUMP_EQ ("(reg:SI %0)",
+  ASSERT_RTL_DUMP_EQ ("(reg:SI <0>)",
     gen_raw_REG (SImode, LAST_VIRTUAL_REGISTER + 1));
-  ASSERT_RTL_DUMP_EQ ("(reg:SI %1)",
+  ASSERT_RTL_DUMP_EQ ("(reg:SI <1>)",
     gen_raw_REG (SImode, LAST_VIRTUAL_REGISTER + 2));
 }
 
@@ -126,6 +127,53 @@ test_dumping_insns ()
 
   LABEL_NAME (label)= "some_label";
   ASSERT_RTL_DUMP_EQ ("(clabel 0 42 (\"some_label\"))\n", label);
+}
+
+/* Manually exercise the rtx_reuse_manager code.  */
+
+static void
+test_dumping_rtx_reuse ()
+{
+  rtx_reuse_manager r;
+
+  rtx x = rtx_alloc (SCRATCH);
+  rtx y = rtx_alloc (SCRATCH);
+  rtx z = rtx_alloc (SCRATCH);
+
+  /* x and y will be seen more than once.  */
+  r.preprocess (x);
+  r.preprocess (x);
+  r.preprocess (y);
+  r.preprocess (y);
+
+  /* z will be only seen once.  */
+  r.preprocess (z);
+
+  /* Verify that x and y have been assigned reuse IDs.  */
+  int reuse_id_for_x;
+  ASSERT_TRUE (r.has_reuse_id (x, &reuse_id_for_x));
+  ASSERT_EQ (0, reuse_id_for_x);
+
+  int reuse_id_for_y;
+  ASSERT_TRUE (r.has_reuse_id (y, &reuse_id_for_y));
+  ASSERT_EQ (1, reuse_id_for_y);
+
+  /* z is only seen once and thus shouldn't get a reuse ID.  */
+  ASSERT_FALSE (r.has_reuse_id (z, NULL));
+
+  /* The first dumps of x and y should be prefixed by reuse ID;
+     all subsequent dumps of them should show up as "reuse_rtx".  */
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(0|scratch)", x, &r);
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(reuse_rtx 0)", x, &r);
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(reuse_rtx 0)", x, &r);
+
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(1|scratch)", y, &r);
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(reuse_rtx 1)", y, &r);
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(reuse_rtx 1)", y, &r);
+
+  /* z only appears once and thus shouldn't be prefixed with a
+     reuse ID.  */
+  ASSERT_RTL_DUMP_EQ_WITH_REUSE ("(scratch)", z, &r);
 }
 
 /* Unit testing of "single_set".  */
@@ -152,6 +200,7 @@ test_single_set ()
 static void
 test_uncond_jump ()
 {
+  set_new_first_and_last_insn (NULL, NULL);
   rtx_insn *label = gen_label_rtx ();
   rtx jump_pat = gen_rtx_SET (pc_rtx,
 			      gen_rtx_LABEL_REF (VOIDmode,
@@ -187,6 +236,7 @@ rtl_tests_c_tests ()
 {
   test_dumping_regs ();
   test_dumping_insns ();
+  test_dumping_rtx_reuse ();
   test_single_set ();
   test_uncond_jump ();
 

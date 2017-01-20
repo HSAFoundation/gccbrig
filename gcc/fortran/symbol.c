@@ -1,5 +1,5 @@
 /* Maintain binary trees of symbols.
-   Copyright (C) 2000-2016 Free Software Foundation, Inc.
+   Copyright (C) 2000-2017 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -2965,6 +2965,7 @@ gfc_new_symbol (const char *name, gfc_namespace *ns)
   p->common_block = NULL;
   p->f2k_derived = NULL;
   p->assoc = NULL;
+  p->fn_result_spec = 0;
   
   return p;
 }
@@ -3794,31 +3795,22 @@ gfc_charlen*
 gfc_new_charlen (gfc_namespace *ns, gfc_charlen *old_cl)
 {
   gfc_charlen *cl;
+
   cl = gfc_get_charlen ();
 
   /* Copy old_cl.  */
   if (old_cl)
     {
-      /* Put into namespace, but don't allow reject_statement
-	 to free it if old_cl is given.  */
-      gfc_charlen **prev = &ns->cl_list;
-      cl->next = ns->old_cl_list;
-      while (*prev != ns->old_cl_list)
-	prev = &(*prev)->next;
-      *prev = cl;
-      ns->old_cl_list = cl;
       cl->length = gfc_copy_expr (old_cl->length);
       cl->length_from_typespec = old_cl->length_from_typespec;
       cl->backend_decl = old_cl->backend_decl;
       cl->passed_length = old_cl->passed_length;
       cl->resolved = old_cl->resolved;
     }
-  else
-    {
-      /* Put into namespace.  */
-      cl->next = ns->cl_list;
-      ns->cl_list = cl;
-    }
+
+  /* Put into namespace.  */
+  cl->next = ns->cl_list;
+  ns->cl_list = cl;
 
   return cl;
 }

@@ -1,5 +1,5 @@
 /* Induction variable optimizations.
-   Copyright (C) 2003-2016 Free Software Foundation, Inc.
+   Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1853,6 +1853,11 @@ find_deriving_biv_for_expr (struct ivopts_data *data, tree expr)
     {
       ssa_op_iter iter;
       use_operand_p use_p;
+      basic_block phi_bb = gimple_bb (phi);
+
+      /* Skip loop header PHI that doesn't define biv.  */
+      if (phi_bb->loop_father == data->current_loop)
+	return NULL;
 
       if (virtual_operand_p (gimple_phi_result (phi)))
 	return NULL;

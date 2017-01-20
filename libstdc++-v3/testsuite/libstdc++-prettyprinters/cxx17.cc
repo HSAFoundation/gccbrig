@@ -1,7 +1,8 @@
 // { dg-options "-g -O0 -std=gnu++1z" }
 // { dg-do run { target c++1z } }
+// { dg-skip-if "" { *-*-* } { "-D_GLIBCXX_PROFILE" } }
 
-// Copyright (C) 2014-2016 Free Software Foundation, Inc.
+// Copyright (C) 2014-2017 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -86,8 +87,6 @@ main()
 // { dg-final { note-test v3 {std::variant<float, int, std::string_view> [index 1] = {3}} } }
   variant<float, int, string_view> v4{ str };
 // { dg-final { note-test v4 {std::variant<float, int, std::string_view> [index 2] = {"string"}} } }
-  variant<string_view> vref{str};
-// { dg-final { note-test vref {std::variant<std::string_view> [index 0] = {"string"}} } }
 
   map<int, string_view> m{ {1, "one"} };
   map<int, string_view>::node_type n0;

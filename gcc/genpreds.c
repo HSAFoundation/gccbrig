@@ -2,7 +2,7 @@
    - prototype declarations for operand predicates (tm-preds.h)
    - function definitions of operand predicates, if defined new-style
      (insn-preds.c)
-   Copyright (C) 2001-2016 Free Software Foundation, Inc.
+   Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1205,7 +1205,7 @@ write_tm_constrs_h (void)
   printf ("\
 /* Generated automatically by the program '%s'\n\
    from the machine description file '%s'.  */\n\n", progname,
-	  rtx_reader_ptr->get_top_level_filename ());
+	  md_reader_ptr->get_top_level_filename ());
 
   puts ("\
 #ifndef GCC_TM_CONSTRS_H\n\
@@ -1405,7 +1405,7 @@ write_tm_preds_h (void)
   printf ("\
 /* Generated automatically by the program '%s'\n\
    from the machine description file '%s'.  */\n\n", progname,
-	  rtx_reader_ptr->get_top_level_filename ());
+	  md_reader_ptr->get_top_level_filename ());
 
   puts ("\
 #ifndef GCC_TM_PREDS_H\n\
@@ -1555,7 +1555,7 @@ write_insn_preds_c (void)
   printf ("\
 /* Generated automatically by the program '%s'\n\
    from the machine description file '%s'.  */\n\n", progname,
-	  rtx_reader_ptr->get_top_level_filename ());
+	  md_reader_ptr->get_top_level_filename ());
 
   puts ("\
 #include \"config.h\"\n\

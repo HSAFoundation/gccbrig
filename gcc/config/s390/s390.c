@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on IBM S/390 and zSeries
-   Copyright (C) 1999-2016 Free Software Foundation, Inc.
+   Copyright (C) 1999-2017 Free Software Foundation, Inc.
    Contributed by Hartmut Penner (hpenner@de.ibm.com) and
                   Ulrich Weigand (uweigand@de.ibm.com) and
                   Andreas Krebbel (Andreas.Krebbel@de.ibm.com).
@@ -820,13 +820,13 @@ s390_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
       bflags = bflags_for_builtin (fcode);
       if ((bflags & B_HTM) && !TARGET_HTM)
 	{
-	  error ("Builtin %qF is not supported without -mhtm "
+	  error ("builtin %qF is not supported without -mhtm "
 		 "(default with -march=zEC12 and higher).", fndecl);
 	  return const0_rtx;
 	}
       if ((bflags & B_VX) && !TARGET_VX)
 	{
-	  error ("Builtin %qF is not supported without -mvx "
+	  error ("builtin %qF is not supported without -mvx "
 		 "(default with -march=z13 and higher).", fndecl);
 	  return const0_rtx;
 	}
@@ -846,7 +846,7 @@ s390_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
     }
   else if (fcode < S390_OVERLOADED_BUILTIN_VAR_OFFSET)
     {
-      error ("Unresolved overloaded builtin");
+      error ("unresolved overloaded builtin");
       return const0_rtx;
     }
   else
@@ -981,7 +981,7 @@ s390_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 
       if (!insn_op->predicate (op[arity], insn_op->mode))
 	{
-	  error ("Invalid argument %d for builtin %qF", arity + 1, fndecl);
+	  error ("invalid argument %d for builtin %qF", arity + 1, fndecl);
 	  return const0_rtx;
 	}
       arity++;
@@ -1275,6 +1275,11 @@ s390_match_ccmode_set (rtx set, machine_mode req_mode)
 
   gcc_assert (GET_CODE (set) == SET);
 
+  /* These modes are supposed to be used only in CC consumer
+     patterns.  */
+  gcc_assert (req_mode != CCVIALLmode && req_mode != CCVIANYmode
+	      && req_mode != CCVFALLmode && req_mode != CCVFANYmode);
+
   if (GET_CODE (SET_DEST (set)) != REG || !CC_REGNO_P (REGNO (SET_DEST (set))))
     return 1;
 
@@ -1293,8 +1298,8 @@ s390_match_ccmode_set (rtx set, machine_mode req_mode)
     case CCT2mode:
     case CCT3mode:
     case CCVEQmode:
-    case CCVHmode:
-    case CCVHUmode:
+    case CCVIHmode:
+    case CCVIHUmode:
     case CCVFHmode:
     case CCVFHEmode:
       if (req_mode != set_mode)
@@ -1717,6 +1722,31 @@ s390_canonicalize_comparison (int *code, rtx *op0, rtx *op1,
 	}
       tmp = *op0; *op0 = *op1; *op1 = tmp;
     }
+
+  /* A comparison result is compared against zero.  Replace it with
+     the (perhaps inverted) original comparison.
+     This probably should be done by simplify_relational_operation.  */
+  if ((*code == EQ || *code == NE)
+      && *op1 == const0_rtx
+      && COMPARISON_P (*op0)
+      && CC_REG_P (XEXP (*op0, 0)))
+    {
+      enum rtx_code new_code;
+
+      if (*code == EQ)
+	new_code = reversed_comparison_code_parts (GET_CODE (*op0),
+						   XEXP (*op0, 0),
+						   XEXP (*op1, 0), NULL);
+      else
+	new_code = GET_CODE (*op0);
+
+      if (new_code != UNKNOWN)
+	{
+	  *code = new_code;
+	  *op1 = XEXP (*op0, 1);
+	  *op0 = XEXP (*op0, 0);
+	}
+    }
 }
 
 /* Helper function for s390_emit_compare.  If possible emit a 64 bit
@@ -1752,14 +1782,20 @@ s390_expand_vec_compare_scalar (enum rtx_code *code, rtx cmp1, rtx cmp2,
       cmp2 = cmp1;
       cmp1 = tmp;
     }
-  *cc = gen_rtx_REG (cmp_mode, CC_REGNUM);
+
   emit_insn (gen_rtx_PARALLEL (VOIDmode,
 	       gen_rtvec (2,
-			  gen_rtx_SET (*cc,
+			  gen_rtx_SET (gen_rtx_REG (cmp_mode, CC_REGNUM),
 				       gen_rtx_COMPARE (cmp_mode, cmp1,
 							cmp2)),
 			  gen_rtx_CLOBBER (VOIDmode,
 					   gen_rtx_SCRATCH (V2DImode)))));
+
+  /* This is the cc reg how it will be used in the cc mode consumer.
+     It either needs to be CCVFALL or CCVFANY.  However, CC1 will
+     never be set by the scalar variants.  So it actually doesn't
+     matter which one we choose here.  */
+  *cc = gen_rtx_REG (CCVFALLmode, CC_REGNUM);
   return true;
 }
 
@@ -2021,91 +2057,62 @@ s390_branch_condition_mask (rtx code)
       break;
 
       /* Vector comparison modes.  */
-
-    case CCVEQmode:
+      /* CC2 will never be set.  It however is part of the negated
+	 masks.  */
+    case CCVIALLmode:
       switch (GET_CODE (code))
 	{
-	case EQ:        return CC0;
-	case NE:        return CC3;
-	default:        return -1;
-	}
-
-    case CCVEQANYmode:
-      switch (GET_CODE (code))
-	{
-	case EQ:        return CC0 | CC1;
-	case NE:        return CC3 | CC1;
-	default:        return -1;
-	}
-
-      /* Integer vector compare modes.  */
-
-    case CCVHmode:
-      switch (GET_CODE (code))
-	{
-	case GT:        return CC0;
-	case LE:        return CC3;
-	default:        return -1;
-	}
-
-    case CCVHANYmode:
-      switch (GET_CODE (code))
-	{
-	case GT:        return CC0 | CC1;
-	case LE:        return CC3 | CC1;
-	default:        return -1;
-	}
-
-    case CCVHUmode:
-      switch (GET_CODE (code))
-	{
-	case GTU:       return CC0;
-	case LEU:       return CC3;
-	default:        return -1;
-	}
-
-    case CCVHUANYmode:
-      switch (GET_CODE (code))
-	{
-	case GTU:       return CC0 | CC1;
-	case LEU:       return CC3 | CC1;
-	default:        return -1;
-	}
-
-      /* FP vector compare modes.  */
-
-    case CCVFHmode:
-      switch (GET_CODE (code))
-	{
-	case GT:        return CC0;
-	case UNLE:      return CC3;
-	default:        return -1;
-	}
-
-    case CCVFHANYmode:
-      switch (GET_CODE (code))
-	{
-	case GT:        return CC0 | CC1;
-	case UNLE:      return CC3 | CC1;
-	default:        return -1;
-	}
-
-    case CCVFHEmode:
-      switch (GET_CODE (code))
-	{
+	case EQ:
+	case GTU:
+	case GT:
 	case GE:        return CC0;
-	case UNLT:      return CC3;
+	  /* The inverted modes are in fact *any* modes.  */
+	case NE:
+	case LEU:
+	case LE:
+	case LT:        return CC3 | CC1 | CC2;
 	default:        return -1;
 	}
 
-    case CCVFHEANYmode:
+    case CCVIANYmode:
       switch (GET_CODE (code))
 	{
+	case EQ:
+	case GTU:
+	case GT:
 	case GE:        return CC0 | CC1;
-	case UNLT:      return CC3 | CC1;
+	  /* The inverted modes are in fact *all* modes.  */
+	case NE:
+	case LEU:
+	case LE:
+	case LT:        return CC3 | CC2;
+	default:        return -1;
+	}
+    case CCVFALLmode:
+      switch (GET_CODE (code))
+	{
+	case EQ:
+	case GT:
+	case GE:        return CC0;
+	  /* The inverted modes are in fact *any* modes.  */
+	case NE:
+	case UNLE:
+	case UNLT:      return CC3 | CC1 | CC2;
 	default:        return -1;
 	}
 
+    case CCVFANYmode:
+      switch (GET_CODE (code))
+	{
+	case EQ:
+	case GT:
+	case GE:        return CC0 | CC1;
+	  /* The inverted modes are in fact *all* modes.  */
+	case NE:
+	case UNLE:
+	case UNLT:      return CC3 | CC2;
+	default:        return -1;
+	}
 
     case CCRAWmode:
       switch (GET_CODE (code))
@@ -3667,6 +3674,40 @@ s390_address_cost (rtx addr, machine_mode mode ATTRIBUTE_UNUSED,
   return ad.indx? COSTS_N_INSNS (1) + 1 : COSTS_N_INSNS (1);
 }
 
+/* Implement targetm.vectorize.builtin_vectorization_cost.  */
+static int
+s390_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+				 tree vectype,
+				 int misalign ATTRIBUTE_UNUSED)
+{
+  switch (type_of_cost)
+    {
+      case scalar_stmt:
+      case scalar_load:
+      case scalar_store:
+      case vector_stmt:
+      case vector_load:
+      case vector_store:
+      case vec_to_scalar:
+      case scalar_to_vec:
+      case cond_branch_not_taken:
+      case vec_perm:
+      case vec_promote_demote:
+      case unaligned_load:
+      case unaligned_store:
+	return 1;
+
+      case cond_branch_taken:
+	return 3;
+
+      case vec_construct:
+	return TYPE_VECTOR_SUBPARTS (vectype) - 1;
+
+      default:
+	gcc_unreachable ();
+    }
+}
+
 /* If OP is a SYMBOL_REF of a thread-local symbol, return its TLS mode,
    otherwise return 0.  */
 
@@ -5205,10 +5246,25 @@ s390_expand_movmem (rtx dst, rtx src, rtx len)
       && (GET_CODE (len) != CONST_INT || INTVAL (len) > (1<<16)))
     return false;
 
-  if (GET_CODE (len) == CONST_INT && INTVAL (len) >= 0 && INTVAL (len) <= 256)
+  /* Expand memcpy for constant length operands without a loop if it
+     is shorter that way.
+
+     With a constant length argument a
+     memcpy loop (without pfd) is 36 bytes -> 6 * mvc  */
+  if (GET_CODE (len) == CONST_INT
+      && INTVAL (len) >= 0
+      && INTVAL (len) <= 256 * 6
+      && (!TARGET_MVCLE || INTVAL (len) <= 256))
     {
-      if (INTVAL (len) > 0)
-        emit_insn (gen_movmem_short (dst, src, GEN_INT (INTVAL (len) - 1)));
+      HOST_WIDE_INT o, l;
+
+      for (l = INTVAL (len), o = 0; l > 0; l -= 256, o += 256)
+	{
+	  rtx newdst = adjust_address (dst, BLKmode, o);
+	  rtx newsrc = adjust_address (src, BLKmode, o);
+	  emit_insn (gen_movmem_short (newdst, newsrc,
+				       GEN_INT (l > 256 ? 255 : l - 1)));
+	}
     }
 
   else if (TARGET_MVCLE)
@@ -5305,34 +5361,48 @@ s390_expand_movmem (rtx dst, rtx src, rtx len)
 void
 s390_expand_setmem (rtx dst, rtx len, rtx val)
 {
-  if (GET_CODE (len) == CONST_INT && INTVAL (len) == 0)
+  const int very_unlikely = REG_BR_PROB_BASE / 100 - 1;
+
+  if (GET_CODE (len) == CONST_INT && INTVAL (len) <= 0)
     return;
 
   gcc_assert (GET_CODE (val) == CONST_INT || GET_MODE (val) == QImode);
 
-  if (GET_CODE (len) == CONST_INT && INTVAL (len) > 0 && INTVAL (len) <= 257)
+  /* Expand setmem/clrmem for a constant length operand without a
+     loop if it will be shorter that way.
+     With a constant length and without pfd argument a
+     clrmem loop is 32 bytes -> 5.3 * xc
+     setmem loop is 36 bytes -> 3.6 * (mvi/stc + mvc) */
+  if (GET_CODE (len) == CONST_INT
+      && ((INTVAL (len) <= 256 * 5 && val == const0_rtx)
+	  || INTVAL (len) <= 257 * 3)
+      && (!TARGET_MVCLE || INTVAL (len) <= 256))
     {
-      if (val == const0_rtx && INTVAL (len) <= 256)
-        emit_insn (gen_clrmem_short (dst, GEN_INT (INTVAL (len) - 1)));
+      HOST_WIDE_INT o, l;
+
+      if (val == const0_rtx)
+	/* clrmem: emit 256 byte blockwise XCs.  */
+	for (l = INTVAL (len), o = 0; l > 0; l -= 256, o += 256)
+	  {
+	    rtx newdst = adjust_address (dst, BLKmode, o);
+	    emit_insn (gen_clrmem_short (newdst,
+					 GEN_INT (l > 256 ? 255 : l - 1)));
+	  }
       else
-	{
-	  /* Initialize memory by storing the first byte.  */
-	  emit_move_insn (adjust_address (dst, QImode, 0), val);
-
-	  if (INTVAL (len) > 1)
-	    {
-	      /* Initiate 1 byte overlap move.
-	         The first byte of DST is propagated through DSTP1.
-		 Prepare a movmem for:  DST+1 = DST (length = LEN - 1).
-		 DST is set to size 1 so the rest of the memory location
-		 does not count as source operand.  */
-	      rtx dstp1 = adjust_address (dst, VOIDmode, 1);
-	      set_mem_size (dst, 1);
-
-	      emit_insn (gen_movmem_short (dstp1, dst,
-					   GEN_INT (INTVAL (len) - 2)));
-	    }
-	}
+	/* setmem: emit 1(mvi) + 256(mvc) byte blockwise memsets by
+	   setting first byte to val and using a 256 byte mvc with one
+	   byte overlap to propagate the byte.  */
+	for (l = INTVAL (len), o = 0; l > 0; l -= 257, o += 257)
+	  {
+	    rtx newdst = adjust_address (dst, BLKmode, o);
+	    emit_move_insn (adjust_address (dst, QImode, o), val);
+	    if (l > 1)
+	      {
+		rtx newdstp1 = adjust_address (dst, BLKmode, o + 1);
+		emit_insn (gen_movmem_short (newdstp1, newdst,
+					     GEN_INT (l > 257 ? 255 : l - 2)));
+	      }
+	  }
     }
 
   else if (TARGET_MVCLE)
@@ -5350,13 +5420,14 @@ s390_expand_setmem (rtx dst, rtx len, rtx val)
     {
       rtx dst_addr, count, blocks, temp, dstp1 = NULL_RTX;
       rtx_code_label *loop_start_label = gen_label_rtx ();
-      rtx_code_label *loop_end_label = gen_label_rtx ();
-      rtx_code_label *end_label = gen_label_rtx ();
+      rtx_code_label *onebyte_end_label = gen_label_rtx ();
+      rtx_code_label *zerobyte_end_label = gen_label_rtx ();
+      rtx_code_label *restbyte_end_label = gen_label_rtx ();
       machine_mode mode;
 
       mode = GET_MODE (len);
       if (mode == VOIDmode)
-        mode = Pmode;
+	mode = Pmode;
 
       dst_addr = gen_reg_rtx (Pmode);
       count = gen_reg_rtx (mode);
@@ -5364,39 +5435,56 @@ s390_expand_setmem (rtx dst, rtx len, rtx val)
 
       convert_move (count, len, 1);
       emit_cmp_and_jump_insns (count, const0_rtx,
-			       EQ, NULL_RTX, mode, 1, end_label);
+			       EQ, NULL_RTX, mode, 1, zerobyte_end_label,
+			       very_unlikely);
 
+      /* We need to make a copy of the target address since memset is
+	 supposed to return it unmodified.  We have to make it here
+	 already since the new reg is used at onebyte_end_label.  */
       emit_move_insn (dst_addr, force_operand (XEXP (dst, 0), NULL_RTX));
       dst = change_address (dst, VOIDmode, dst_addr);
 
-      if (val == const0_rtx)
-        temp = expand_binop (mode, add_optab, count, constm1_rtx, count, 1,
-			     OPTAB_DIRECT);
-      else
+      if (val != const0_rtx)
 	{
-	  dstp1 = adjust_address (dst, VOIDmode, 1);
+	  /* When using the overlapping mvc the original target
+	     address is only accessed as single byte entity (even by
+	     the mvc reading this value).  */
 	  set_mem_size (dst, 1);
-
-	  /* Initialize memory by storing the first byte.  */
-	  emit_move_insn (adjust_address (dst, QImode, 0), val);
-
-	  /* If count is 1 we are done.  */
-	  emit_cmp_and_jump_insns (count, const1_rtx,
-				   EQ, NULL_RTX, mode, 1, end_label);
-
-	  temp = expand_binop (mode, add_optab, count, GEN_INT (-2), count, 1,
-			       OPTAB_DIRECT);
+	  dstp1 = adjust_address (dst, VOIDmode, 1);
+	  emit_cmp_and_jump_insns (count,
+				   const1_rtx, EQ, NULL_RTX, mode, 1,
+				   onebyte_end_label, very_unlikely);
 	}
+
+      /* There is one unconditional (mvi+mvc)/xc after the loop
+	 dealing with the rest of the bytes, subtracting two (mvi+mvc)
+	 or one (xc) here leaves this number of bytes to be handled by
+	 it.  */
+      temp = expand_binop (mode, add_optab, count,
+			   val == const0_rtx ? constm1_rtx : GEN_INT (-2),
+			   count, 1, OPTAB_DIRECT);
       if (temp != count)
-        emit_move_insn (count, temp);
+	emit_move_insn (count, temp);
 
       temp = expand_binop (mode, lshr_optab, count, GEN_INT (8), blocks, 1,
 			   OPTAB_DIRECT);
       if (temp != blocks)
-        emit_move_insn (blocks, temp);
+	emit_move_insn (blocks, temp);
 
       emit_cmp_and_jump_insns (blocks, const0_rtx,
-			       EQ, NULL_RTX, mode, 1, loop_end_label);
+			       EQ, NULL_RTX, mode, 1, restbyte_end_label);
+
+      emit_jump (loop_start_label);
+
+      if (val != const0_rtx)
+	{
+	  /* The 1 byte != 0 special case.  Not handled efficiently
+	     since we require two jumps for that.  However, this
+	     should be very rare.  */
+	  emit_label (onebyte_end_label);
+	  emit_move_insn (adjust_address (dst, QImode, 0), val);
+	  emit_jump (zerobyte_end_label);
+	}
 
       emit_label (loop_start_label);
 
@@ -5414,26 +5502,39 @@ s390_expand_setmem (rtx dst, rtx len, rtx val)
       if (val == const0_rtx)
 	emit_insn (gen_clrmem_short (dst, GEN_INT (255)));
       else
-	emit_insn (gen_movmem_short (dstp1, dst, GEN_INT (255)));
+	{
+	  /* Set the first byte in the block to the value and use an
+	     overlapping mvc for the block.  */
+	  emit_move_insn (adjust_address (dst, QImode, 0), val);
+	  emit_insn (gen_movmem_short (dstp1, dst, GEN_INT (254)));
+	}
       s390_load_address (dst_addr,
 			 gen_rtx_PLUS (Pmode, dst_addr, GEN_INT (256)));
 
       temp = expand_binop (mode, add_optab, blocks, constm1_rtx, blocks, 1,
 			   OPTAB_DIRECT);
       if (temp != blocks)
-        emit_move_insn (blocks, temp);
+	emit_move_insn (blocks, temp);
 
       emit_cmp_and_jump_insns (blocks, const0_rtx,
-			       EQ, NULL_RTX, mode, 1, loop_end_label);
+			       NE, NULL_RTX, mode, 1, loop_start_label);
 
-      emit_jump (loop_start_label);
-      emit_label (loop_end_label);
+      emit_label (restbyte_end_label);
 
       if (val == const0_rtx)
-        emit_insn (gen_clrmem_short (dst, convert_to_mode (Pmode, count, 1)));
+	emit_insn (gen_clrmem_short (dst, convert_to_mode (Pmode, count, 1)));
       else
-        emit_insn (gen_movmem_short (dstp1, dst, convert_to_mode (Pmode, count, 1)));
-      emit_label (end_label);
+	{
+	  /* Set the first byte in the block to the value and use an
+	     overlapping mvc for the block.  */
+	  emit_move_insn (adjust_address (dst, QImode, 0), val);
+	  /* execute only uses the lowest 8 bits of count that's
+	     exactly what we need here.  */
+	  emit_insn (gen_movmem_short (dstp1, dst,
+				       convert_to_mode (Pmode, count, 1)));
+	}
+
+      emit_label (zerobyte_end_label);
     }
 }
 
@@ -6256,13 +6357,15 @@ s390_expand_vec_compare (rtx target, enum rtx_code cond,
 
 /* Expand the comparison CODE of CMP1 and CMP2 and copy 1 or 0 into
    TARGET if either all (ALL_P is true) or any (ALL_P is false) of the
-   elements in CMP1 and CMP2 fulfill the comparison.  */
+   elements in CMP1 and CMP2 fulfill the comparison.
+   This function is only used to emit patterns for the vx builtins and
+   therefore only handles comparison codes required by the
+   builtins.  */
 void
 s390_expand_vec_compare_cc (rtx target, enum rtx_code code,
 			    rtx cmp1, rtx cmp2, bool all_p)
 {
-  enum rtx_code new_code = code;
-  machine_mode cmp_mode, full_cmp_mode, scratch_mode;
+  machine_mode cc_producer_mode, cc_consumer_mode, scratch_mode;
   rtx tmp_reg = gen_reg_rtx (SImode);
   bool swap_p = false;
 
@@ -6270,52 +6373,70 @@ s390_expand_vec_compare_cc (rtx target, enum rtx_code code,
     {
       switch (code)
 	{
-	case EQ:  cmp_mode = CCVEQmode; break;
-	case NE:  cmp_mode = CCVEQmode; break;
-	case GT:  cmp_mode = CCVHmode;  break;
-	case GE:  cmp_mode = CCVHmode;  new_code = LE; swap_p = true; break;
-	case LT:  cmp_mode = CCVHmode;  new_code = GT; swap_p = true; break;
-	case LE:  cmp_mode = CCVHmode;  new_code = LE; break;
-	case GTU: cmp_mode = CCVHUmode; break;
-	case GEU: cmp_mode = CCVHUmode; new_code = LEU; swap_p = true; break;
-	case LTU: cmp_mode = CCVHUmode; new_code = GTU; swap_p = true; break;
-	case LEU: cmp_mode = CCVHUmode; new_code = LEU; break;
-	default: gcc_unreachable ();
+	case EQ:
+	case NE:
+	  cc_producer_mode = CCVEQmode;
+	  break;
+	case GE:
+	case LT:
+	  code = swap_condition (code);
+	  swap_p = true;
+	  /* fallthrough */
+	case GT:
+	case LE:
+	  cc_producer_mode = CCVIHmode;
+	  break;
+	case GEU:
+	case LTU:
+	  code = swap_condition (code);
+	  swap_p = true;
+	  /* fallthrough */
+	case GTU:
+	case LEU:
+	  cc_producer_mode = CCVIHUmode;
+	  break;
+	default:
+	  gcc_unreachable ();
 	}
+
       scratch_mode = GET_MODE (cmp1);
+      /* These codes represent inverted CC interpretations.  Inverting
+	 an ALL CC mode results in an ANY CC mode and the other way
+	 around.  Invert the all_p flag here to compensate for
+	 that.  */
+      if (code == NE || code == LE || code == LEU)
+	all_p = !all_p;
+
+      cc_consumer_mode = all_p ? CCVIALLmode : CCVIANYmode;
     }
-  else if (GET_MODE (cmp1) == V2DFmode)
+  else if (GET_MODE_CLASS (GET_MODE (cmp1)) == MODE_VECTOR_FLOAT)
     {
+      bool inv_p = false;
+
       switch (code)
 	{
-	case EQ:   cmp_mode = CCVEQmode;  break;
-	case NE:   cmp_mode = CCVEQmode;  break;
-	case GT:   cmp_mode = CCVFHmode;  break;
-	case GE:   cmp_mode = CCVFHEmode; break;
-	case UNLE: cmp_mode = CCVFHmode;  break;
-	case UNLT: cmp_mode = CCVFHEmode; break;
-	case LT:   cmp_mode = CCVFHmode;  new_code = GT; swap_p = true; break;
-	case LE:   cmp_mode = CCVFHEmode; new_code = GE; swap_p = true; break;
+	case EQ:   cc_producer_mode = CCVEQmode;  break;
+	case NE:   cc_producer_mode = CCVEQmode;  inv_p = true; break;
+	case GT:   cc_producer_mode = CCVFHmode;  break;
+	case GE:   cc_producer_mode = CCVFHEmode; break;
+	case UNLE: cc_producer_mode = CCVFHmode;  inv_p = true; break;
+	case UNLT: cc_producer_mode = CCVFHEmode; inv_p = true; break;
+	case LT:   cc_producer_mode = CCVFHmode;  code = GT; swap_p = true; break;
+	case LE:   cc_producer_mode = CCVFHEmode; code = GE; swap_p = true; break;
 	default: gcc_unreachable ();
 	}
-      scratch_mode = V2DImode;
+      scratch_mode = mode_for_vector (
+		       int_mode_for_mode (GET_MODE_INNER (GET_MODE (cmp1))),
+		       GET_MODE_NUNITS (GET_MODE (cmp1)));
+      gcc_assert (scratch_mode != BLKmode);
+
+      if (inv_p)
+	all_p = !all_p;
+
+      cc_consumer_mode = all_p ? CCVFALLmode : CCVFANYmode;
     }
   else
     gcc_unreachable ();
-
-  if (!all_p)
-    switch (cmp_mode)
-      {
-      case CCVEQmode:  full_cmp_mode = CCVEQANYmode;  break;
-      case CCVHmode:   full_cmp_mode = CCVHANYmode;   break;
-      case CCVHUmode:  full_cmp_mode = CCVHUANYmode;  break;
-      case CCVFHmode:  full_cmp_mode = CCVFHANYmode;  break;
-      case CCVFHEmode: full_cmp_mode = CCVFHEANYmode; break;
-      default: gcc_unreachable ();
-      }
-  else
-    /* The modes without ANY match the ALL modes.  */
-    full_cmp_mode = cmp_mode;
 
   if (swap_p)
     {
@@ -6326,8 +6447,8 @@ s390_expand_vec_compare_cc (rtx target, enum rtx_code code,
 
   emit_insn (gen_rtx_PARALLEL (VOIDmode,
 	       gen_rtvec (2, gen_rtx_SET (
-			       gen_rtx_REG (cmp_mode, CC_REGNUM),
-			       gen_rtx_COMPARE (cmp_mode, cmp1, cmp2)),
+			       gen_rtx_REG (cc_producer_mode, CC_REGNUM),
+			       gen_rtx_COMPARE (cc_producer_mode, cmp1, cmp2)),
 			  gen_rtx_CLOBBER (VOIDmode,
 					   gen_rtx_SCRATCH (scratch_mode)))));
   emit_move_insn (target, const0_rtx);
@@ -6335,10 +6456,27 @@ s390_expand_vec_compare_cc (rtx target, enum rtx_code code,
 
   emit_move_insn (target,
 		  gen_rtx_IF_THEN_ELSE (SImode,
-		    gen_rtx_fmt_ee (new_code, VOIDmode,
-				    gen_rtx_REG (full_cmp_mode, CC_REGNUM),
+		    gen_rtx_fmt_ee (code, VOIDmode,
+				    gen_rtx_REG (cc_consumer_mode, CC_REGNUM),
 				    const0_rtx),
-		      target, tmp_reg));
+					tmp_reg, target));
+}
+
+/* Invert the comparison CODE applied to a CC mode.  This is only safe
+   if we know whether there result was created by a floating point
+   compare or not.  For the CCV modes this is encoded as part of the
+   mode.  */
+enum rtx_code
+s390_reverse_condition (machine_mode mode, enum rtx_code code)
+{
+  /* Reversal of FP compares takes care -- an ordered compare
+     becomes an unordered compare and vice versa.  */
+  if (mode == CCVFALLmode || mode == CCVFANYmode)
+    return reverse_condition_maybe_unordered (code);
+  else if (mode == CCVIALLmode || mode == CCVIANYmode)
+    return reverse_condition (code);
+  else
+    gcc_unreachable ();
 }
 
 /* Generate a vector comparison expression loading either elements of
@@ -10588,7 +10726,7 @@ s390_save_gprs_to_fprs (void)
 	  /* This prevents dwarf2cfi from interpreting the set.  Doing
 	     so it might emit def_cfa_register infos setting an FPR as
 	     new CFA.  */
-	  add_reg_note (insn, REG_CFA_REGISTER, PATTERN (insn));
+	  add_reg_note (insn, REG_CFA_REGISTER, copy_rtx (PATTERN (insn)));
 	}
     }
 }
@@ -11420,7 +11558,7 @@ s390_invalid_arg_for_unprototyped_fn (const_tree typelist, const_tree funcdecl, 
 	   && (funcdecl == NULL_TREE
 	       || (TREE_CODE (funcdecl) == FUNCTION_DECL
 		   && DECL_BUILT_IN_CLASS (funcdecl) != BUILT_IN_MD)))
-	  ? N_("Vector argument passed to unprototyped function")
+	  ? N_("vector argument passed to unprototyped function")
 	  : NULL);
 }
 
@@ -14800,7 +14938,7 @@ s390_valid_target_attribute_inner_p (tree args,
       else if (attrs[i].only_as_pragma && !force_pragma)
 	{
 	  /* Value is not allowed for the target attribute.  */
-	  error ("Value %qs is not supported by attribute %<target%>",
+	  error ("value %qs is not supported by attribute %<target%>",
 		 attrs[i].string);
 	  return false;
 	}
@@ -15233,7 +15371,7 @@ s390_invalid_binary_op (int op ATTRIBUTE_UNUSED, const_tree type1, const_tree ty
      operators.  */
   if (!bool1_p && !bool2_p
       && TYPE_UNSIGNED (type1) != TYPE_UNSIGNED (type2))
-    return N_("types differ in signess");
+    return N_("types differ in signedness");
 
   plusminus_p = (op == PLUS_EXPR || op == MINUS_EXPR);
   muldiv_p = (op == MULT_EXPR || op == RDIV_EXPR || op == TRUNC_DIV_EXPR
@@ -15384,6 +15522,9 @@ s390_excess_precision (enum excess_precision_type type)
 #define TARGET_REGISTER_MOVE_COST s390_register_move_cost
 #undef TARGET_MEMORY_MOVE_COST
 #define TARGET_MEMORY_MOVE_COST s390_memory_move_cost
+#undef TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST
+#define TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST \
+  s390_builtin_vectorization_cost
 
 #undef TARGET_MACHINE_DEPENDENT_REORG
 #define TARGET_MACHINE_DEPENDENT_REORG s390_reorg

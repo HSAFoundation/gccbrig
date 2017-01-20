@@ -1,5 +1,5 @@
 /* Code for RTL transformations to satisfy insn constraints.
-   Copyright (C) 2010-2016 Free Software Foundation, Inc.
+   Copyright (C) 2010-2017 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
    This file is part of GCC.
@@ -1109,9 +1109,9 @@ emit_spill_move (bool to_p, rtx mem_pseudo, rtx val)
 	 dependent macro HARD_REGNO_CALLER_SAVE_MODE.  */
       if (! MEM_P (val))
 	{
-	  val = gen_rtx_SUBREG (GET_MODE (mem_pseudo),
-				GET_CODE (val) == SUBREG ? SUBREG_REG (val) : val,
-				0);
+	  val = gen_lowpart_SUBREG (GET_MODE (mem_pseudo),
+				    GET_CODE (val) == SUBREG
+				    ? SUBREG_REG (val) : val);
 	  LRA_SUBREG_P (val) = 1;
 	}
       else
@@ -1150,6 +1150,7 @@ check_and_process_move (bool *change_p, bool *sec_mem_p ATTRIBUTE_UNUSED)
   sclass = dclass = NO_REGS;
   if (REG_P (dreg))
     dclass = get_reg_class (REGNO (dreg));
+  gcc_assert (dclass < LIM_REG_CLASSES);
   if (dclass == ALL_REGS)
     /* ALL_REGS is used for new pseudos created by transformations
        like reload of SUBREG_REG (see function
@@ -1161,6 +1162,7 @@ check_and_process_move (bool *change_p, bool *sec_mem_p ATTRIBUTE_UNUSED)
     return false;
   if (REG_P (sreg))
     sclass = get_reg_class (REGNO (sreg));
+  gcc_assert (sclass < LIM_REG_CLASSES);
   if (sclass == ALL_REGS)
     /* See comments above.  */
     return false;
@@ -1452,6 +1454,7 @@ insert_move_for_subreg (rtx_insn **before, rtx_insn **after, rtx origreg,
 }
 
 static int valid_address_p (machine_mode mode, rtx addr, addr_space_t as);
+static bool process_address (int, bool, rtx_insn **, rtx_insn **);
 
 /* Make reloads for subreg in operand NOP with internal subreg mode
    REG_MODE, add new reloads for further processing.  Return true if
@@ -1478,13 +1481,13 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
   type = curr_static_id->operand[nop].type;
   if (MEM_P (reg))
     {
-      rtx subst;
-
+      const bool addr_was_valid
+	= valid_address_p (innermode, XEXP (reg, 0), MEM_ADDR_SPACE (reg));
       alter_subreg (curr_id->operand_loc[nop], false);
-      subst = *curr_id->operand_loc[nop];
+      rtx subst = *curr_id->operand_loc[nop];
       lra_assert (MEM_P (subst));
-      if (! valid_address_p (innermode, XEXP (reg, 0),
-			     MEM_ADDR_SPACE (reg))
+
+      if (!addr_was_valid
 	  || valid_address_p (GET_MODE (subst), XEXP (subst, 0),
 			      MEM_ADDR_SPACE (subst))
 	  || ((get_constraint_type (lookup_constraint
@@ -1501,42 +1504,50 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
 						    ADDRESS, SCRATCH)][0]],
 				  MEM_ADDR_SPACE (subst))))
 	{
-	  /* If we change address for paradoxical subreg of memory, the
-	     address might violate the necessary alignment or the access might
-	     be slow.  So take this into consideration.  We should not worry
-	     about access beyond allocated memory for paradoxical memory
+	  /* If we change the address for a paradoxical subreg of memory, the
+	     new address might violate the necessary alignment or the access
+	     might be slow; take this into consideration.  We need not worry
+	     about accesses beyond allocated memory for paradoxical memory
 	     subregs as we don't substitute such equiv memory (see processing
 	     equivalences in function lra_constraints) and because for spilled
 	     pseudos we allocate stack memory enough for the biggest
 	     corresponding paradoxical subreg.  */
-	  if (!(MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (mode)
-		&& SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (reg)))
+	  if (!(MEM_ALIGN (subst) < GET_MODE_ALIGNMENT (mode)
+		&& SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (subst)))
 	      || (MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (innermode)
 		  && SLOW_UNALIGNED_ACCESS (innermode, MEM_ALIGN (reg))))
 	    return true;
 
+	  *curr_id->operand_loc[nop] = operand;
+
+	  /* But if the address was not valid, we cannot reload the MEM without
+	     reloading the address first.  */
+	  if (!addr_was_valid)
+	    process_address (nop, false, &before, &after);
+
 	  /* INNERMODE is fast, MODE slow.  Reload the mem in INNERMODE.  */
 	  enum reg_class rclass
 	    = (enum reg_class) targetm.preferred_reload_class (reg, ALL_REGS);
-	  if (get_reload_reg (curr_static_id->operand[nop].type, innermode, reg,
-			      rclass, TRUE, "slow mem", &new_reg))
+	  if (get_reload_reg (curr_static_id->operand[nop].type, innermode,
+			      reg, rclass, TRUE, "slow mem", &new_reg))
 	    {
 	      bool insert_before, insert_after;
 	      bitmap_set_bit (&lra_subreg_reload_pseudos, REGNO (new_reg));
 
 	      insert_before = (type != OP_OUT
-			       || GET_MODE_SIZE (innermode) > GET_MODE_SIZE (mode));
+			       || GET_MODE_SIZE (innermode)
+				    > GET_MODE_SIZE (mode));
 	      insert_after = type != OP_IN;
 	      insert_move_for_subreg (insert_before ? &before : NULL,
 				      insert_after ? &after : NULL,
 				      reg, new_reg);
 	    }
-	  *curr_id->operand_loc[nop] = operand;
 	  SUBREG_REG (operand) = new_reg;
 
 	  /* Convert to MODE.  */
 	  reg = operand;
-	  rclass = (enum reg_class) targetm.preferred_reload_class (reg, ALL_REGS);
+	  rclass
+	    = (enum reg_class) targetm.preferred_reload_class (reg, ALL_REGS);
 	  if (get_reload_reg (curr_static_id->operand[nop].type, mode, reg,
 			      rclass, TRUE, "slow mem", &new_reg))
 	    {
@@ -1559,6 +1570,7 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
 	 the memory.  Typical case is when the index scale should
 	 correspond the memory.  */
       *curr_id->operand_loc[nop] = operand;
+      return false;
     }
   else if (REG_P (reg) && REGNO (reg) < FIRST_PSEUDO_REGISTER)
     {
@@ -3078,7 +3090,11 @@ process_address_1 (int nop, bool check_only_p,
 
   if (insn_extra_address_constraint (cn))
     decompose_lea_address (&ad, curr_id->operand_loc[nop]);
-  else if (MEM_P (op))
+  /* Do not attempt to decompose arbitrary addresses generated by combine
+     for asm operands with loose constraints, e.g 'X'.  */
+  else if (MEM_P (op)
+	   && !(get_constraint_type (cn) == CT_FIXED_FORM
+	        && constraint_satisfied_p (op, cn)))
     decompose_mem_address (&ad, op);
   else if (GET_CODE (op) == SUBREG
 	   && MEM_P (SUBREG_REG (op)))
@@ -4733,7 +4749,7 @@ lra_constraints_finish (void)
 
 
 /* Structure describes invariants for ineheritance.  */
-struct invariant
+struct lra_invariant
 {
   /* The order number of the invariant.  */
   int num;
@@ -4743,7 +4759,7 @@ struct invariant
   rtx_insn *insn;
 };
 
-typedef struct invariant invariant_t;
+typedef lra_invariant invariant_t;
 typedef invariant_t *invariant_ptr_t;
 typedef const invariant_t *const_invariant_ptr_t;
 
@@ -4751,7 +4767,7 @@ typedef const invariant_t *const_invariant_ptr_t;
 static vec<invariant_ptr_t> invariants;
 
 /* Allocation pool for the invariants.  */
-static object_allocator<struct invariant> *invariants_pool;
+static object_allocator<lra_invariant> *invariants_pool;
 
 /* Hash table for the invariants.  */
 static htab_t invariant_table;
@@ -4801,7 +4817,8 @@ static void
 initiate_invariants (void)
 {
   invariants.create (100);
-  invariants_pool = new object_allocator<struct invariant> ("Inheritance invariants");
+  invariants_pool
+    = new object_allocator<lra_invariant> ("Inheritance invariants");
   invariant_table = htab_create (100, invariant_hash, invariant_eq_p, NULL);
 }
 
@@ -5886,7 +5903,9 @@ inherit_in_ebb (rtx_insn *head, rtx_insn *tail)
 	       && dst_regno >= lra_constraint_new_regno_start
 	       && invariant_p (SET_SRC (curr_set))
 	       && (cl = lra_get_allocno_class (dst_regno)) != NO_REGS
-	       && ! bitmap_bit_p (&invalid_invariant_regs, dst_regno))
+	       && ! bitmap_bit_p (&invalid_invariant_regs, dst_regno)
+	       && ! bitmap_bit_p (&invalid_invariant_regs,
+				  ORIGINAL_REGNO(regno_reg_rtx[dst_regno])))
 	{
 	  /* 'reload_pseudo <- invariant'.  */
 	  if (ira_class_hard_regs_num[cl] <= max_small_class_regs_num)
@@ -6157,16 +6176,20 @@ inherit_in_ebb (rtx_insn *head, rtx_insn *tail)
 	  curr_id = lra_get_insn_recog_data (curr_insn);
 	  for (reg = curr_id->regs; reg != NULL; reg = reg->next)
 	    if (reg->type != OP_IN)
-	      bitmap_set_bit (&invalid_invariant_regs, reg->regno);
+	      {
+		bitmap_set_bit (&invalid_invariant_regs, reg->regno);
+		bitmap_set_bit (&invalid_invariant_regs,
+				ORIGINAL_REGNO (regno_reg_rtx[reg->regno]));
+	      }
 	  curr_static_id = curr_id->insn_static_data;
 	  for (reg = curr_static_id->hard_regs; reg != NULL; reg = reg->next)
 	    if (reg->type != OP_IN)
 	      bitmap_set_bit (&invalid_invariant_regs, reg->regno);
 	  if (curr_id->arg_hard_regs != NULL)
 	    for (i = 0; (regno = curr_id->arg_hard_regs[i]) >= 0; i++)
+	      if (regno >= FIRST_PSEUDO_REGISTER)
 		bitmap_set_bit (&invalid_invariant_regs,
-				regno >= FIRST_PSEUDO_REGISTER
-				? regno : regno - FIRST_PSEUDO_REGISTER);
+				regno - FIRST_PSEUDO_REGISTER);
 	}
       /* We reached the start of the current basic block.  */
       if (prev_insn == NULL_RTX || prev_insn == PREV_INSN (head)

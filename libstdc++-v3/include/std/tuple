@@ -1,6 +1,6 @@
 // <tuple> -*- C++ -*-
 
-// Copyright (C) 2007-2016 Free Software Foundation, Inc.
+// Copyright (C) 2007-2017 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -951,7 +951,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
         enable_if<_TMC::template
                     _MoveConstructibleTuple<_U1, _U2>()
                   && _TMC::template
-                    _ImplicitlyMoveConvertibleTuple<_U1, _U2>(),
+                    _ImplicitlyMoveConvertibleTuple<_U1, _U2>()
+	          && !is_same<typename decay<_U1>::type,
+			      allocator_arg_t>::value,
 	bool>::type = true>
         constexpr tuple(_U1&& __a1, _U2&& __a2)
 	: _Inherited(std::forward<_U1>(__a1), std::forward<_U2>(__a2)) { }
@@ -960,7 +962,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
         enable_if<_TMC::template
                     _MoveConstructibleTuple<_U1, _U2>()
                   && !_TMC::template
-                    _ImplicitlyMoveConvertibleTuple<_U1, _U2>(),
+                    _ImplicitlyMoveConvertibleTuple<_U1, _U2>()
+	          && !is_same<typename decay<_U1>::type,
+			      allocator_arg_t>::value,
 	bool>::type = false>
         explicit constexpr tuple(_U1&& __a1, _U2&& __a2)
 	: _Inherited(std::forward<_U1>(__a1), std::forward<_U2>(__a2)) { }
@@ -1442,17 +1446,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     forward_as_tuple(_Elements&&... __args) noexcept
     { return tuple<_Elements&&...>(std::forward<_Elements>(__args)...); }
 
-  template<typename... _Tps>
-    struct __is_tuple_like_impl<tuple<_Tps...>> : true_type
-    { };
-
-  // Internal type trait that allows us to sfinae-protect tuple_cat.
-  template<typename _Tp>
-    struct __is_tuple_like
-    : public __is_tuple_like_impl<typename std::remove_cv
-            <typename std::remove_reference<_Tp>::type>::type>::type
-    { };
-
   template<size_t, typename, typename, size_t>
     struct __make_tuple_impl;
 
@@ -1596,6 +1589,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     swap(tuple<_Elements...>& __x, tuple<_Elements...>& __y)
     noexcept(noexcept(__x.swap(__y)))
     { __x.swap(__y); }
+
+#if __cplusplus > 201402L || !defined(__STRICT_ANSI__) // c++1z or gnu++11
+  template<typename... _Elements>
+    typename enable_if<!__and_<__is_swappable<_Elements>...>::value>::type
+    swap(tuple<_Elements...>&, tuple<_Elements...>&) = delete;
+#endif
 
   // A class (and instance) which can be used in 'tie' when an element
   // of a tuple is not required

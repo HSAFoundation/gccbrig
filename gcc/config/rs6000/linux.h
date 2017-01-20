@@ -1,6 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for PowerPC machines running Linux.
-   Copyright (C) 1996-2016 Free Software Foundation, Inc.
+   Copyright (C) 1996-2017 Free Software Foundation, Inc.
    Contributed by Michael Meissner (meissner@cygnus.com).
 
    This file is part of GCC.
@@ -138,7 +138,3 @@
   || (TARGET_GLIBC_MAJOR == 2 && TARGET_GLIBC_MINOR >= 19)
 #define RS6000_GLIBC_ATOMIC_FENV 1
 #endif
-
-/* The format string to which "%p" corresponds.  */
-#undef TARGET_PRINTF_POINTER_FORMAT
-#define TARGET_PRINTF_POINTER_FORMAT linux_printf_pointer_format

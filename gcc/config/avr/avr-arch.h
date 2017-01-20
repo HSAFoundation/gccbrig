@@ -1,6 +1,6 @@
 /* Definitions of types that are used to store AVR architecture and
    device information.
-   Copyright (C) 2012-2016 Free Software Foundation, Inc.
+   Copyright (C) 2012-2017 Free Software Foundation, Inc.
    Contributed by Georg-Johann Lay (avr@gjlay.de)
 
 This file is part of GCC.
@@ -120,8 +120,8 @@ typedef struct
   /* Start of text section. */
   int text_section_start;
 
-  /* Number of 64k segments in the flash.  */
-  int n_flash;
+  /* Flash size in bytes.  */
+  int flash_size;
 } avr_mcu_t;
 
 /* AVR device specific features.

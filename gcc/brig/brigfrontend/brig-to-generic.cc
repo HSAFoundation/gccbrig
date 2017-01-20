@@ -151,24 +151,20 @@ brig_to_generic::parse (const char *brig_blob)
       const BrigSectionHeader *section_header
 	= (const BrigSectionHeader *) (brig_blob + offset);
 
-      char *name = strndup ((const char *) (&section_header->name),
-			    section_header->nameLength);
+      std::string name ((const char *) (&section_header->name),
+			section_header->nameLength);
 
-      if (sec == BRIG_SECTION_INDEX_DATA
-	  && strncmp (name, "hsa_data", section_header->nameLength) == 0)
+      if (sec == BRIG_SECTION_INDEX_DATA && name == "hsa_data")
 	{
 	  m_data = (const char *) section_header;
 	  m_data_size = section_header->byteCount;
 	}
-      else if (sec == BRIG_SECTION_INDEX_CODE
-	       && strncmp (name, "hsa_code", section_header->nameLength) == 0)
+      else if (sec == BRIG_SECTION_INDEX_CODE && name == "hsa_code")
 	{
 	  m_code = (const char *) section_header;
 	  m_code_size = section_header->byteCount;
 	}
-      else if (sec == BRIG_SECTION_INDEX_OPERAND
-	       && strncmp (name, "hsa_operand", section_header->nameLength)
-		    == 0)
+      else if (sec == BRIG_SECTION_INDEX_OPERAND && name == "hsa_operand")
 	{
 	  m_operand = (const char *) section_header;
 	  m_operand_size = section_header->byteCount;
@@ -177,7 +173,6 @@ brig_to_generic::parse (const char *brig_blob)
 	{
 	  gcc_unreachable ();
 	}
-      free (name);
     }
 
   if (m_code == NULL)
@@ -412,16 +407,6 @@ brig_to_generic::get_mangled_name
       func_name = "gccbrig." + m_module_name + "." + func_name;
     }
   return func_name;
-}
-
-/* Returns a string from the data section as a zero terminated
-   string.  Owned by the callee.  */
-
-char *
-brig_to_generic::get_c_string (size_t entry_offset) const
-{
-  const BrigData *data_item = get_brig_data_entry (entry_offset);
-  return strndup ((const char *) &data_item->bytes, data_item->byteCount);
 }
 
 std::string

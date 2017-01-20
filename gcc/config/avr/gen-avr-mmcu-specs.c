@@ -1,4 +1,4 @@
-/* Copyright (C) 1998-2016 Free Software Foundation, Inc.
+/* Copyright (C) 1998-2017 Free Software Foundation, Inc.
    Contributed by Joern Rennecke
 
    This file is part of GCC.
@@ -179,8 +179,10 @@ print_mcu (const avr_mcu_t *mcu)
 
   // avr-gcc specific specs for the compilation / the compiler proper.
 
+  int n_flash = 1 + (mcu->flash_size - 1) / 0x10000;
+
   fprintf (f, "*cc1_n_flash:\n"
-           "\t%%{!mn-flash=*:-mn-flash=%d}\n\n", mcu->n_flash);
+           "\t%%{!mn-flash=*:-mn-flash=%d}\n\n", n_flash);
 
   fprintf (f, "*cc1_rmw:\n%s\n\n", rmw
            ? "\t%{!mno-rmw: -mrmw}"
@@ -215,17 +217,16 @@ print_mcu (const avr_mcu_t *mcu)
   // avr-specific specs for linking / the linker.
 
   int wrap_k =
-    str_prefix_p (mcu->name, "at90usb8") ? 8
-    : str_prefix_p (mcu->name, "atmega16") ? 16
-    : (str_prefix_p (mcu->name, "atmega32")
-       || str_prefix_p (mcu->name, "at90can32")) ? 32
-    : (str_prefix_p (mcu->name, "atmega64")
-       || str_prefix_p (mcu->name, "at90can64")
-       || str_prefix_p (mcu->name, "at90usb64")) ? 64
+    mcu->flash_size == 0x2000 ? 8
+    : mcu->flash_size == 0x4000 ? 16
+    : mcu->flash_size == 0x8000 ? 32
+    : mcu->flash_size == 0x10000 ? 64
     : 0;
 
   fprintf (f, "*link_pmem_wrap:\n");
-  if (wrap_k)
+  if (wrap_k == 8)
+    fprintf (f, "\t%%{!mno-pmem-wrap-around: --pmem-wrap-around=8k}");
+  else if (wrap_k > 8)
     fprintf (f, "\t%%{mpmem-wrap-around: --pmem-wrap-around=%dk}", wrap_k);
   fprintf (f, "\n\n");
 

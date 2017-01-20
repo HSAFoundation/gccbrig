@@ -1,5 +1,5 @@
 /* Machine description for AArch64 architecture.
-   Copyright (C) 2009-2016 Free Software Foundation, Inc.
+   Copyright (C) 2009-2017 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -64,6 +64,8 @@
 #include "sched-int.h"
 #include "target-globals.h"
 #include "common/common-target.h"
+#include "selftest.h"
+#include "selftest-rtl.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -141,6 +143,10 @@ static bool aarch64_vector_mode_supported_p (machine_mode);
 static bool aarch64_vectorize_vec_perm_const_ok (machine_mode vmode,
 						 const unsigned char *sel);
 static int aarch64_address_cost (rtx, machine_mode, addr_space_t, bool);
+static bool aarch64_builtin_support_vector_misalignment (machine_mode mode,
+							 const_tree type,
+							 int misalignment,
+							 bool is_packed);
 
 /* Major revision number of the ARM Architecture implemented by the target.  */
 unsigned aarch64_architecture_version;
@@ -264,7 +270,7 @@ static const struct cpu_addrcost_table qdf24xx_addrcost_table =
   0 /* imm_offset  */
 };
 
-static const struct cpu_addrcost_table vulcan_addrcost_table =
+static const struct cpu_addrcost_table thunderx2t99_addrcost_table =
 {
     {
       0, /* hi  */
@@ -347,7 +353,7 @@ static const struct cpu_regmove_cost qdf24xx_regmove_cost =
   4 /* FP2FP  */
 };
 
-static const struct cpu_regmove_cost vulcan_regmove_cost =
+static const struct cpu_regmove_cost thunderx2t99_regmove_cost =
 {
   1, /* GP2GP  */
   /* Avoid the use of int<->fp moves for spilling.  */
@@ -446,7 +452,7 @@ static const struct cpu_vector_cost xgene1_vector_cost =
 };
 
 /* Costs for vector insn classes for Vulcan.  */
-static const struct cpu_vector_cost vulcan_vector_cost =
+static const struct cpu_vector_cost thunderx2t99_vector_cost =
 {
   6, /* scalar_stmt_cost  */
   4, /* scalar_load_cost  */
@@ -478,7 +484,7 @@ static const struct cpu_branch_cost cortexa57_branch_cost =
 };
 
 /* Branch costs for Vulcan.  */
-static const struct cpu_branch_cost vulcan_branch_cost =
+static const struct cpu_branch_cost thunderx2t99_branch_cost =
 {
   1,  /* Predictable.  */
   3   /* Unpredictable.  */
@@ -764,13 +770,13 @@ static const struct tune_params qdf24xx_tunings =
   (AARCH64_EXTRA_TUNE_NONE)		/* tune_flags.  */
 };
 
-static const struct tune_params vulcan_tunings =
+static const struct tune_params thunderx2t99_tunings =
 {
-  &vulcan_extra_costs,
-  &vulcan_addrcost_table,
-  &vulcan_regmove_cost,
-  &vulcan_vector_cost,
-  &vulcan_branch_cost,
+  &thunderx2t99_extra_costs,
+  &thunderx2t99_addrcost_table,
+  &thunderx2t99_regmove_cost,
+  &thunderx2t99_vector_cost,
+  &thunderx2t99_branch_cost,
   &generic_approx_modes,
   4, /* memmov_cost.  */
   4, /* issue_rate.  */
@@ -831,7 +837,7 @@ static const struct processor all_architectures[] =
 /* Processor cores implementing AArch64.  */
 static const struct processor all_cores[] =
 {
-#define AARCH64_CORE(NAME, IDENT, SCHED, ARCH, FLAGS, COSTS, IMP, PART) \
+#define AARCH64_CORE(NAME, IDENT, SCHED, ARCH, FLAGS, COSTS, IMP, PART, VARIANT) \
   {NAME, IDENT, SCHED, AARCH64_ARCH_##ARCH,				\
   all_architectures[AARCH64_ARCH_##ARCH].architecture_version,	\
   FLAGS, &COSTS##_tunings},
@@ -1137,7 +1143,7 @@ aarch64_is_extend_from_extract (machine_mode mode, rtx mult_imm,
 
 /* Emit an insn that's a simple single-set.  Both the operands must be
    known to be valid.  */
-inline static rtx
+inline static rtx_insn *
 emit_set_insn (rtx x, rtx y)
 {
   return emit_insn (gen_rtx_SET (x, y));
@@ -1298,7 +1304,8 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	    emit_move_insn (gp_rtx, gen_rtx_HIGH (Pmode, s));
 
 	    if (mode != GET_MODE (gp_rtx))
-	      gp_rtx = simplify_gen_subreg (mode, gp_rtx, GET_MODE (gp_rtx), 0);
+             gp_rtx = gen_lowpart (mode, gp_rtx);
+
 	  }
 
 	if (mode == ptr_mode)
@@ -1374,10 +1381,14 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
     case SYMBOL_SMALL_TLSGD:
       {
 	rtx_insn *insns;
-	rtx result = gen_rtx_REG (Pmode, R0_REGNUM);
+	machine_mode mode = GET_MODE (dest);
+	rtx result = gen_rtx_REG (mode, R0_REGNUM);
 
 	start_sequence ();
-	aarch64_emit_call_insn (gen_tlsgd_small (result, imm));
+	if (TARGET_ILP32)
+	  aarch64_emit_call_insn (gen_tlsgd_small_si (result, imm));
+	else
+	  aarch64_emit_call_insn (gen_tlsgd_small_di (result, imm));
 	insns = get_insns ();
 	end_sequence ();
 
@@ -2751,6 +2762,10 @@ aarch64_frame_pointer_required (void)
       && (!crtl->is_leaf || df_regs_ever_live_p (LR_REGNUM)))
     return true;
 
+  /* Force a frame pointer for EH returns so the return address is at FP+8.  */
+  if (crtl->calls_eh_return)
+    return true;
+
   return false;
 }
 
@@ -3108,6 +3123,22 @@ aarch64_gen_load_pair (machine_mode mode, rtx reg1, rtx mem1, rtx reg2,
     }
 }
 
+/* Return TRUE if return address signing should be enabled for the current
+   function, otherwise return FALSE.  */
+
+bool
+aarch64_return_address_signing_enabled (void)
+{
+  /* This function should only be called after frame laid out.   */
+  gcc_assert (cfun->machine->frame.laid_out);
+
+  /* If signing scope is AARCH64_FUNCTION_NON_LEAF, we only sign a leaf function
+     if it's LR is pushed onto stack.  */
+  return (aarch64_ra_sign_scope == AARCH64_FUNCTION_ALL
+	  || (aarch64_ra_sign_scope == AARCH64_FUNCTION_NON_LEAF
+	      && cfun->machine->frame.reg_offset[LR_REGNUM] >= 0));
+}
+
 /* Emit code to save the callee-saved registers from register number START
    to LIMIT to the stack at the location starting at offset START_OFFSET,
    skipping any write-back candidates if SKIP_WB is true.  */
@@ -3134,6 +3165,9 @@ aarch64_save_callee_saves (machine_mode mode, HOST_WIDE_INT start_offset,
 	      || regno == cfun->machine->frame.wb_candidate2))
 	continue;
 
+      if (cfun->machine->reg_is_wrapped_separately[regno])
+       continue;
+
       reg = gen_rtx_REG (mode, regno);
       offset = start_offset + cfun->machine->frame.reg_offset[regno];
       mem = gen_mem_ref (mode, plus_constant (Pmode, stack_pointer_rtx,
@@ -3142,6 +3176,7 @@ aarch64_save_callee_saves (machine_mode mode, HOST_WIDE_INT start_offset,
       regno2 = aarch64_next_callee_save (regno + 1, limit);
 
       if (regno2 <= limit
+	  && !cfun->machine->reg_is_wrapped_separately[regno2]
 	  && ((cfun->machine->frame.reg_offset[regno] + UNITS_PER_WORD)
 	      == cfun->machine->frame.reg_offset[regno2]))
 
@@ -3190,6 +3225,9 @@ aarch64_restore_callee_saves (machine_mode mode,
        regno <= limit;
        regno = aarch64_next_callee_save (regno + 1, limit))
     {
+      if (cfun->machine->reg_is_wrapped_separately[regno])
+       continue;
+
       rtx reg, mem;
 
       if (skip_wb
@@ -3204,6 +3242,7 @@ aarch64_restore_callee_saves (machine_mode mode,
       regno2 = aarch64_next_callee_save (regno + 1, limit);
 
       if (regno2 <= limit
+	  && !cfun->machine->reg_is_wrapped_separately[regno2]
 	  && ((cfun->machine->frame.reg_offset[regno] + UNITS_PER_WORD)
 	      == cfun->machine->frame.reg_offset[regno2]))
 	{
@@ -3221,6 +3260,245 @@ aarch64_restore_callee_saves (machine_mode mode,
 	emit_move_insn (reg, mem);
       *cfi_ops = alloc_reg_note (REG_CFA_RESTORE, reg, *cfi_ops);
     }
+}
+
+static inline bool
+offset_9bit_signed_unscaled_p (machine_mode mode ATTRIBUTE_UNUSED,
+			       HOST_WIDE_INT offset)
+{
+  return offset >= -256 && offset < 256;
+}
+
+static inline bool
+offset_12bit_unsigned_scaled_p (machine_mode mode, HOST_WIDE_INT offset)
+{
+  return (offset >= 0
+	  && offset < 4096 * GET_MODE_SIZE (mode)
+	  && offset % GET_MODE_SIZE (mode) == 0);
+}
+
+bool
+aarch64_offset_7bit_signed_scaled_p (machine_mode mode, HOST_WIDE_INT offset)
+{
+  return (offset >= -64 * GET_MODE_SIZE (mode)
+	  && offset < 64 * GET_MODE_SIZE (mode)
+	  && offset % GET_MODE_SIZE (mode) == 0);
+}
+
+/* Implement TARGET_SHRINK_WRAP_GET_SEPARATE_COMPONENTS.  */
+
+static sbitmap
+aarch64_get_separate_components (void)
+{
+  aarch64_layout_frame ();
+
+  sbitmap components = sbitmap_alloc (LAST_SAVED_REGNUM + 1);
+  bitmap_clear (components);
+
+  /* The registers we need saved to the frame.  */
+  for (unsigned regno = 0; regno <= LAST_SAVED_REGNUM; regno++)
+    if (aarch64_register_saved_on_entry (regno))
+      {
+	HOST_WIDE_INT offset = cfun->machine->frame.reg_offset[regno];
+	if (!frame_pointer_needed)
+	  offset += cfun->machine->frame.frame_size
+		    - cfun->machine->frame.hard_fp_offset;
+	/* Check that we can access the stack slot of the register with one
+	   direct load with no adjustments needed.  */
+	if (offset_12bit_unsigned_scaled_p (DImode, offset))
+	  bitmap_set_bit (components, regno);
+      }
+
+  /* Don't mess with the hard frame pointer.  */
+  if (frame_pointer_needed)
+    bitmap_clear_bit (components, HARD_FRAME_POINTER_REGNUM);
+
+  unsigned reg1 = cfun->machine->frame.wb_candidate1;
+  unsigned reg2 = cfun->machine->frame.wb_candidate2;
+  /* If aarch64_layout_frame has chosen registers to store/restore with
+     writeback don't interfere with them to avoid having to output explicit
+     stack adjustment instructions.  */
+  if (reg2 != INVALID_REGNUM)
+    bitmap_clear_bit (components, reg2);
+  if (reg1 != INVALID_REGNUM)
+    bitmap_clear_bit (components, reg1);
+
+  bitmap_clear_bit (components, LR_REGNUM);
+  bitmap_clear_bit (components, SP_REGNUM);
+
+  return components;
+}
+
+/* Implement TARGET_SHRINK_WRAP_COMPONENTS_FOR_BB.  */
+
+static sbitmap
+aarch64_components_for_bb (basic_block bb)
+{
+  bitmap in = DF_LIVE_IN (bb);
+  bitmap gen = &DF_LIVE_BB_INFO (bb)->gen;
+  bitmap kill = &DF_LIVE_BB_INFO (bb)->kill;
+
+  sbitmap components = sbitmap_alloc (LAST_SAVED_REGNUM + 1);
+  bitmap_clear (components);
+
+  /* GPRs are used in a bb if they are in the IN, GEN, or KILL sets.  */
+  for (unsigned regno = 0; regno <= LAST_SAVED_REGNUM; regno++)
+    if ((!call_used_regs[regno])
+       && (bitmap_bit_p (in, regno)
+	   || bitmap_bit_p (gen, regno)
+	   || bitmap_bit_p (kill, regno)))
+	  bitmap_set_bit (components, regno);
+
+  return components;
+}
+
+/* Implement TARGET_SHRINK_WRAP_DISQUALIFY_COMPONENTS.
+   Nothing to do for aarch64.  */
+
+static void
+aarch64_disqualify_components (sbitmap, edge, sbitmap, bool)
+{
+}
+
+/* Return the next set bit in BMP from START onwards.  Return the total number
+   of bits in BMP if no set bit is found at or after START.  */
+
+static unsigned int
+aarch64_get_next_set_bit (sbitmap bmp, unsigned int start)
+{
+  unsigned int nbits = SBITMAP_SIZE (bmp);
+  if (start == nbits)
+    return start;
+
+  gcc_assert (start < nbits);
+  for (unsigned int i = start; i < nbits; i++)
+    if (bitmap_bit_p (bmp, i))
+      return i;
+
+  return nbits;
+}
+
+/* Do the work for aarch64_emit_prologue_components and
+   aarch64_emit_epilogue_components.  COMPONENTS is the bitmap of registers
+   to save/restore, PROLOGUE_P indicates whether to emit the prologue sequence
+   for these components or the epilogue sequence.  That is, it determines
+   whether we should emit stores or loads and what kind of CFA notes to attach
+   to the insns.  Otherwise the logic for the two sequences is very
+   similar.  */
+
+static void
+aarch64_process_components (sbitmap components, bool prologue_p)
+{
+  rtx ptr_reg = gen_rtx_REG (Pmode, frame_pointer_needed
+			     ? HARD_FRAME_POINTER_REGNUM
+			     : STACK_POINTER_REGNUM);
+
+  unsigned last_regno = SBITMAP_SIZE (components);
+  unsigned regno = aarch64_get_next_set_bit (components, R0_REGNUM);
+  rtx_insn *insn = NULL;
+
+  while (regno != last_regno)
+    {
+      /* AAPCS64 section 5.1.2 requires only the bottom 64 bits to be saved
+	 so DFmode for the vector registers is enough.  */
+      machine_mode mode = GP_REGNUM_P (regno) ? DImode : DFmode;
+      rtx reg = gen_rtx_REG (mode, regno);
+      HOST_WIDE_INT offset = cfun->machine->frame.reg_offset[regno];
+      if (!frame_pointer_needed)
+	offset += cfun->machine->frame.frame_size
+		  - cfun->machine->frame.hard_fp_offset;
+      rtx addr = plus_constant (Pmode, ptr_reg, offset);
+      rtx mem = gen_frame_mem (mode, addr);
+
+      rtx set = prologue_p ? gen_rtx_SET (mem, reg) : gen_rtx_SET (reg, mem);
+      unsigned regno2 = aarch64_get_next_set_bit (components, regno + 1);
+      /* No more registers to handle after REGNO.
+	 Emit a single save/restore and exit.  */
+      if (regno2 == last_regno)
+	{
+	  insn = emit_insn (set);
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  if (prologue_p)
+	    add_reg_note (insn, REG_CFA_OFFSET, copy_rtx (set));
+	  else
+	    add_reg_note (insn, REG_CFA_RESTORE, reg);
+	  break;
+	}
+
+      HOST_WIDE_INT offset2 = cfun->machine->frame.reg_offset[regno2];
+      /* The next register is not of the same class or its offset is not
+	 mergeable with the current one into a pair.  */
+      if (!satisfies_constraint_Ump (mem)
+	  || GP_REGNUM_P (regno) != GP_REGNUM_P (regno2)
+	  || (offset2 - cfun->machine->frame.reg_offset[regno])
+		!= GET_MODE_SIZE (mode))
+	{
+	  insn = emit_insn (set);
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  if (prologue_p)
+	    add_reg_note (insn, REG_CFA_OFFSET, copy_rtx (set));
+	  else
+	    add_reg_note (insn, REG_CFA_RESTORE, reg);
+
+	  regno = regno2;
+	  continue;
+	}
+
+      /* REGNO2 can be saved/restored in a pair with REGNO.  */
+      rtx reg2 = gen_rtx_REG (mode, regno2);
+      if (!frame_pointer_needed)
+	offset2 += cfun->machine->frame.frame_size
+		  - cfun->machine->frame.hard_fp_offset;
+      rtx addr2 = plus_constant (Pmode, ptr_reg, offset2);
+      rtx mem2 = gen_frame_mem (mode, addr2);
+      rtx set2 = prologue_p ? gen_rtx_SET (mem2, reg2)
+			     : gen_rtx_SET (reg2, mem2);
+
+      if (prologue_p)
+	insn = emit_insn (aarch64_gen_store_pair (mode, mem, reg, mem2, reg2));
+      else
+	insn = emit_insn (aarch64_gen_load_pair (mode, reg, mem, reg2, mem2));
+
+      RTX_FRAME_RELATED_P (insn) = 1;
+      if (prologue_p)
+	{
+	  add_reg_note (insn, REG_CFA_OFFSET, set);
+	  add_reg_note (insn, REG_CFA_OFFSET, set2);
+	}
+      else
+	{
+	  add_reg_note (insn, REG_CFA_RESTORE, reg);
+	  add_reg_note (insn, REG_CFA_RESTORE, reg2);
+	}
+
+      regno = aarch64_get_next_set_bit (components, regno2 + 1);
+    }
+}
+
+/* Implement TARGET_SHRINK_WRAP_EMIT_PROLOGUE_COMPONENTS.  */
+
+static void
+aarch64_emit_prologue_components (sbitmap components)
+{
+  aarch64_process_components (components, true);
+}
+
+/* Implement TARGET_SHRINK_WRAP_EMIT_EPILOGUE_COMPONENTS.  */
+
+static void
+aarch64_emit_epilogue_components (sbitmap components)
+{
+  aarch64_process_components (components, false);
+}
+
+/* Implement TARGET_SHRINK_WRAP_SET_HANDLED_COMPONENTS.  */
+
+static void
+aarch64_set_handled_components (sbitmap components)
+{
+  for (unsigned regno = 0; regno <= LAST_SAVED_REGNUM; regno++)
+    if (bitmap_bit_p (components, regno))
+      cfun->machine->reg_is_wrapped_separately[regno] = true;
 }
 
 /* AArch64 stack frames generated by this compiler look like:
@@ -3278,6 +3556,14 @@ aarch64_expand_prologue (void)
   unsigned reg1 = cfun->machine->frame.wb_candidate1;
   unsigned reg2 = cfun->machine->frame.wb_candidate2;
   rtx_insn *insn;
+
+  /* Sign return address for functions.  */
+  if (aarch64_return_address_signing_enabled ())
+    {
+      insn = emit_insn (gen_pacisp ());
+      add_reg_note (insn, REG_CFA_TOGGLE_RA_MANGLE, const0_rtx);
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
 
   if (flag_stack_usage_info)
     current_function_static_stack_size = frame_size;
@@ -3362,7 +3648,8 @@ aarch64_expand_epilogue (bool for_sibcall)
 			 + cfun->machine->frame.saved_varargs_size) != 0;
 
   /* Emit a barrier to prevent loads from a deallocated stack.  */
-  if (final_adjust > crtl->outgoing_args_size || cfun->calls_alloca)
+  if (final_adjust > crtl->outgoing_args_size || cfun->calls_alloca
+      || crtl->calls_eh_return)
     {
       emit_insn (gen_stack_tie (stack_pointer_rtx, stack_pointer_rtx));
       need_barrier_p = false;
@@ -3414,6 +3701,29 @@ aarch64_expand_epilogue (bool for_sibcall)
       RTX_FRAME_RELATED_P (insn) = 1;
     }
 
+  /* We prefer to emit the combined return/authenticate instruction RETAA,
+     however there are three cases in which we must instead emit an explicit
+     authentication instruction.
+
+	1) Sibcalls don't return in a normal way, so if we're about to call one
+	   we must authenticate.
+
+	2) The RETAA instruction is not available before ARMv8.3-A, so if we are
+	   generating code for !TARGET_ARMV8_3 we can't use it and must
+	   explicitly authenticate.
+
+	3) On an eh_return path we make extra stack adjustments to update the
+	   canonical frame address to be the exception handler's CFA.  We want
+	   to authenticate using the CFA of the function which calls eh_return.
+    */
+  if (aarch64_return_address_signing_enabled ()
+      && (for_sibcall || !TARGET_ARMV8_3 || crtl->calls_eh_return))
+    {
+      insn = emit_insn (gen_autisp ());
+      add_reg_note (insn, REG_CFA_TOGGLE_RA_MANGLE, const0_rtx);
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
+
   /* Stack adjustment for exception handler.  */
   if (crtl->calls_eh_return)
     {
@@ -3430,52 +3740,40 @@ aarch64_expand_epilogue (bool for_sibcall)
     emit_jump_insn (ret_rtx);
 }
 
-/* Return the place to copy the exception unwinding return address to.
-   This will probably be a stack slot, but could (in theory be the
-   return register).  */
+/* Implement EH_RETURN_HANDLER_RTX.  EH returns need to either return
+   normally or return to a previous frame after unwinding.
+
+   An EH return uses a single shared return sequence.  The epilogue is
+   exactly like a normal epilogue except that it has an extra input
+   register (EH_RETURN_STACKADJ_RTX) which contains the stack adjustment
+   that must be applied after the frame has been destroyed.  An extra label
+   is inserted before the epilogue which initializes this register to zero,
+   and this is the entry point for a normal return.
+
+   An actual EH return updates the return address, initializes the stack
+   adjustment and jumps directly into the epilogue (bypassing the zeroing
+   of the adjustment).  Since the return address is typically saved on the
+   stack when a function makes a call, the saved LR must be updated outside
+   the epilogue.
+
+   This poses problems as the store is generated well before the epilogue,
+   so the offset of LR is not known yet.  Also optimizations will remove the
+   store as it appears dead, even after the epilogue is generated (as the
+   base or offset for loading LR is different in many cases).
+
+   To avoid these problems this implementation forces the frame pointer
+   in eh_return functions so that the location of LR is fixed and known early.
+   It also marks the store volatile, so no optimization is permitted to
+   remove the store.  */
 rtx
-aarch64_final_eh_return_addr (void)
+aarch64_eh_return_handler_rtx (void)
 {
-  HOST_WIDE_INT fp_offset;
+  rtx tmp = gen_frame_mem (Pmode,
+    plus_constant (Pmode, hard_frame_pointer_rtx, UNITS_PER_WORD));
 
-  aarch64_layout_frame ();
-
-  fp_offset = cfun->machine->frame.frame_size
-	      - cfun->machine->frame.hard_fp_offset;
-
-  if (cfun->machine->frame.reg_offset[LR_REGNUM] < 0)
-    return gen_rtx_REG (DImode, LR_REGNUM);
-
-  /* DSE and CSELIB do not detect an alias between sp+k1 and fp+k2.  This can
-     result in a store to save LR introduced by builtin_eh_return () being
-     incorrectly deleted because the alias is not detected.
-     So in the calculation of the address to copy the exception unwinding
-     return address to, we note 2 cases.
-     If FP is needed and the fp_offset is 0, it means that SP = FP and hence
-     we return a SP-relative location since all the addresses are SP-relative
-     in this case.  This prevents the store from being optimized away.
-     If the fp_offset is not 0, then the addresses will be FP-relative and
-     therefore we return a FP-relative location.  */
-
-  if (frame_pointer_needed)
-    {
-      if (fp_offset)
-        return gen_frame_mem (DImode,
-			      plus_constant (Pmode, hard_frame_pointer_rtx, UNITS_PER_WORD));
-      else
-        return gen_frame_mem (DImode,
-			      plus_constant (Pmode, stack_pointer_rtx, UNITS_PER_WORD));
-    }
-
-  /* If FP is not needed, we calculate the location of LR, which would be
-     at the top of the saved registers block.  */
-
-  return gen_frame_mem (DImode,
-			plus_constant (Pmode,
-				       stack_pointer_rtx,
-				       fp_offset
-				       + cfun->machine->frame.saved_regs_size
-				       - 2 * UNITS_PER_WORD));
+  /* Mark the store volatile, so no optimization is permitted to remove it.  */
+  MEM_VOLATILE_P (tmp) = true;
+  return tmp;
 }
 
 /* Output code to add DELTA to the first argument, and then jump
@@ -3981,29 +4279,6 @@ aarch64_classify_index (struct aarch64_address_info *info, rtx x,
   return false;
 }
 
-bool
-aarch64_offset_7bit_signed_scaled_p (machine_mode mode, HOST_WIDE_INT offset)
-{
-  return (offset >= -64 * GET_MODE_SIZE (mode)
-	  && offset < 64 * GET_MODE_SIZE (mode)
-	  && offset % GET_MODE_SIZE (mode) == 0);
-}
-
-static inline bool
-offset_9bit_signed_unscaled_p (machine_mode mode ATTRIBUTE_UNUSED,
-			       HOST_WIDE_INT offset)
-{
-  return offset >= -256 && offset < 256;
-}
-
-static inline bool
-offset_12bit_unsigned_scaled_p (machine_mode mode, HOST_WIDE_INT offset)
-{
-  return (offset >= 0
-	  && offset < 4096 * GET_MODE_SIZE (mode)
-	  && offset % GET_MODE_SIZE (mode) == 0);
-}
-
 /* Return true if MODE is one of the modes for which we
    support LDP/STP operations.  */
 
@@ -4040,8 +4315,11 @@ aarch64_classify_address (struct aarch64_address_info *info,
   enum rtx_code code = GET_CODE (x);
   rtx op0, op1;
 
-  /* On BE, we use load/store pair for all large int mode load/stores.  */
+  /* On BE, we use load/store pair for all large int mode load/stores.
+     TI/TFmode may also use a load/store pair.  */
   bool load_store_pair_p = (outer_code == PARALLEL
+			    || mode == TImode
+			    || mode == TFmode
 			    || (BYTES_BIG_ENDIAN
 				&& aarch64_vect_struct_mode_p (mode)));
 
@@ -4102,7 +4380,8 @@ aarch64_classify_address (struct aarch64_address_info *info,
 	     instruction memory accesses.  */
 	  if (mode == TImode || mode == TFmode)
 	    return (aarch64_offset_7bit_signed_scaled_p (DImode, offset)
-		    && offset_9bit_signed_unscaled_p (mode, offset));
+		    && (offset_9bit_signed_unscaled_p (mode, offset)
+			|| offset_12bit_unsigned_scaled_p (mode, offset)));
 
 	  /* A 7bit offset check because OImode will emit a ldp/stp
 	     instruction (only big endian will get here).
@@ -4306,18 +4585,19 @@ aarch64_legitimate_address_p (machine_mode mode, rtx x,
 /* Split an out-of-range address displacement into a base and offset.
    Use 4KB range for 1- and 2-byte accesses and a 16KB range otherwise
    to increase opportunities for sharing the base address of different sizes.
-   For TI/TFmode and unaligned accesses use a 256-byte range.  */
+   For unaligned accesses and TI/TF mode use the signed 9-bit range.  */
 static bool
 aarch64_legitimize_address_displacement (rtx *disp, rtx *off, machine_mode mode)
 {
-  HOST_WIDE_INT mask = GET_MODE_SIZE (mode) < 4 ? 0xfff : 0x3fff;
+  HOST_WIDE_INT offset = INTVAL (*disp);
+  HOST_WIDE_INT base = offset & ~(GET_MODE_SIZE (mode) < 4 ? 0xfff : 0x3ffc);
 
-  if (mode == TImode || mode == TFmode ||
-      (INTVAL (*disp) & (GET_MODE_SIZE (mode) - 1)) != 0)
-    mask = 0xff;
+  if (mode == TImode || mode == TFmode
+      || (offset & (GET_MODE_SIZE (mode) - 1)) != 0)
+    base = (offset + 0x100) & ~0x1ff;
 
-  *off = GEN_INT (INTVAL (*disp) & ~mask);
-  *disp = GEN_INT (INTVAL (*disp) & mask);
+  *off = GEN_INT (base);
+  *disp = GEN_INT (offset - base);
   return true;
 }
 
@@ -5184,12 +5464,10 @@ aarch64_legitimize_address (rtx x, rtx /* orig_x  */, machine_mode mode)
 	  x = gen_rtx_PLUS (Pmode, base, offset_rtx);
 	}
 
-      /* Does it look like we'll need a load/store-pair operation?  */
+      /* Does it look like we'll need a 16-byte load/store-pair operation?  */
       HOST_WIDE_INT base_offset;
-      if (GET_MODE_SIZE (mode) > 16
-	  || mode == TImode)
-	base_offset = ((offset + 64 * GET_MODE_SIZE (mode))
-		       & ~((128 * GET_MODE_SIZE (mode)) - 1));
+      if (GET_MODE_SIZE (mode) > 16)
+	base_offset = (offset + 0x400) & ~0x7f0;
       /* For offsets aren't a multiple of the access size, the limit is
 	 -256...255.  */
       else if (offset & (GET_MODE_SIZE (mode) - 1))
@@ -5203,6 +5481,8 @@ aarch64_legitimize_address (rtx x, rtx /* orig_x  */, machine_mode mode)
       /* Small negative offsets are supported.  */
       else if (IN_RANGE (offset, -256, 0))
 	base_offset = 0;
+      else if (mode == TImode || mode == TFmode)
+	base_offset = (offset + 0x100) & ~0x1ff;
       /* Use 12-bit offset by access size.  */
       else
 	base_offset = offset & (~0xfff * GET_MODE_SIZE (mode));
@@ -8656,6 +8936,9 @@ aarch64_override_options (void)
     error ("Assembler does not support -mabi=ilp32");
 #endif
 
+  if (aarch64_ra_sign_scope != AARCH64_FUNCTION_NONE && TARGET_ILP32)
+    sorry ("Return address signing is only supported for -mabi=lp64");
+
   /* Make sure we properly set up the explicit options.  */
   if ((aarch64_cpu_string && valid_cpu)
        || (aarch64_tune_string && valid_tune))
@@ -9039,6 +9322,8 @@ static const struct aarch64_attribute_info aarch64_attributes[] =
   { "cpu", aarch64_attr_custom, false, aarch64_handle_attr_cpu, OPT_mcpu_ },
   { "tune", aarch64_attr_custom, false, aarch64_handle_attr_tune,
      OPT_mtune_ },
+  { "sign-return-address", aarch64_attr_enum, false, NULL,
+     OPT_msign_return_address_ },
   { NULL, aarch64_attr_custom, false, NULL, OPT____ }
 };
 
@@ -11004,14 +11289,16 @@ aarch64_mov_operand_p (rtx x, machine_mode mode)
 
 /* Return a const_int vector of VAL.  */
 rtx
-aarch64_simd_gen_const_vector_dup (machine_mode mode, int val)
+aarch64_simd_gen_const_vector_dup (machine_mode mode, HOST_WIDE_INT val)
 {
   int nunits = GET_MODE_NUNITS (mode);
   rtvec v = rtvec_alloc (nunits);
   int i;
 
+  rtx cache = GEN_INT (val);
+
   for (i=0; i < nunits; i++)
-    RTVEC_ELT (v, i) = GEN_INT (val);
+    RTVEC_ELT (v, i) = cache;
 
   return gen_rtx_CONST_VECTOR (mode, v);
 }
@@ -11186,6 +11473,37 @@ aarch64_simd_vector_alignment_reachable (const_tree type, bool is_packed)
 
   /* Vectors whose size is <= BIGGEST_ALIGNMENT are naturally aligned.  */
   return true;
+}
+
+/* Return true if the vector misalignment factor is supported by the
+   target.  */
+static bool
+aarch64_builtin_support_vector_misalignment (machine_mode mode,
+					     const_tree type, int misalignment,
+					     bool is_packed)
+{
+  if (TARGET_SIMD && STRICT_ALIGNMENT)
+    {
+      /* Return if movmisalign pattern is not supported for this mode.  */
+      if (optab_handler (movmisalign_optab, mode) == CODE_FOR_nothing)
+        return false;
+
+      if (misalignment == -1)
+	{
+	  /* Misalignment factor is unknown at compile time but we know
+	     it's word aligned.  */
+	  if (aarch64_simd_vector_alignment_reachable (type, is_packed))
+            {
+              int element_size = TREE_INT_CST_LOW (TYPE_SIZE (type));
+
+              if (element_size != 64)
+                return true;
+            }
+	  return false;
+	}
+    }
+  return default_builtin_support_vector_misalignment (mode, type, misalignment,
+						      is_packed);
 }
 
 /* If VALS is a vector constant that can be loaded into a register
@@ -13806,6 +14124,26 @@ aarch64_sched_fusion_priority (rtx_insn *insn, int max_pri,
   return;
 }
 
+/* Implement the TARGET_SCHED_ADJUST_PRIORITY hook.
+   Adjust priority of sha1h instructions so they are scheduled before
+   other SHA1 instructions.  */
+
+static int
+aarch64_sched_adjust_priority (rtx_insn *insn, int priority)
+{
+  rtx x = PATTERN (insn);
+
+  if (GET_CODE (x) == SET)
+    {
+      x = SET_SRC (x);
+
+      if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_SHA1H)
+	return priority + 10;
+    }
+
+  return priority;
+}
+
 /* Given OPERANDS of consecutive load/store, check if we can merge
    them into ldp/stp.  LOAD is true if they are load instructions.
    MODE is the mode of memory operands.  */
@@ -14336,6 +14674,52 @@ aarch64_excess_precision (enum excess_precision_type type)
   return FLT_EVAL_METHOD_UNPREDICTABLE;
 }
 
+/* Target-specific selftests.  */
+
+#if CHECKING_P
+
+namespace selftest {
+
+/* Selftest for the RTL loader.
+   Verify that the RTL loader copes with a dump from
+   print_rtx_function.  This is essentially just a test that class
+   function_reader can handle a real dump, but it also verifies
+   that lookup_reg_by_dump_name correctly handles hard regs.
+   The presence of hard reg names in the dump means that the test is
+   target-specific, hence it is in this file.  */
+
+static void
+aarch64_test_loading_full_dump ()
+{
+  rtl_dump_test t (SELFTEST_LOCATION, locate_file ("aarch64/times-two.rtl"));
+
+  ASSERT_STREQ ("times_two", IDENTIFIER_POINTER (DECL_NAME (cfun->decl)));
+
+  rtx_insn *insn_1 = get_insn_by_uid (1);
+  ASSERT_EQ (NOTE, GET_CODE (insn_1));
+
+  rtx_insn *insn_15 = get_insn_by_uid (15);
+  ASSERT_EQ (INSN, GET_CODE (insn_15));
+  ASSERT_EQ (USE, GET_CODE (PATTERN (insn_15)));
+
+  /* Verify crtl->return_rtx.  */
+  ASSERT_EQ (REG, GET_CODE (crtl->return_rtx));
+  ASSERT_EQ (0, REGNO (crtl->return_rtx));
+  ASSERT_EQ (SImode, GET_MODE (crtl->return_rtx));
+}
+
+/* Run all target-specific selftests.  */
+
+static void
+aarch64_run_selftests (void)
+{
+  aarch64_test_loading_full_dump ();
+}
+
+} // namespace selftest
+
+#endif /* #if CHECKING_P */
+
 #undef TARGET_ADDRESS_COST
 #define TARGET_ADDRESS_COST aarch64_address_cost
 
@@ -14567,6 +14951,30 @@ aarch64_libgcc_floating_mode_supported_p
 #define TARGET_SCHED_FIRST_CYCLE_MULTIPASS_DFA_LOOKAHEAD_GUARD \
   aarch64_first_cycle_multipass_dfa_lookahead_guard
 
+#undef TARGET_SHRINK_WRAP_GET_SEPARATE_COMPONENTS
+#define TARGET_SHRINK_WRAP_GET_SEPARATE_COMPONENTS \
+  aarch64_get_separate_components
+
+#undef TARGET_SHRINK_WRAP_COMPONENTS_FOR_BB
+#define TARGET_SHRINK_WRAP_COMPONENTS_FOR_BB \
+  aarch64_components_for_bb
+
+#undef TARGET_SHRINK_WRAP_DISQUALIFY_COMPONENTS
+#define TARGET_SHRINK_WRAP_DISQUALIFY_COMPONENTS \
+  aarch64_disqualify_components
+
+#undef TARGET_SHRINK_WRAP_EMIT_PROLOGUE_COMPONENTS
+#define TARGET_SHRINK_WRAP_EMIT_PROLOGUE_COMPONENTS \
+  aarch64_emit_prologue_components
+
+#undef TARGET_SHRINK_WRAP_EMIT_EPILOGUE_COMPONENTS
+#define TARGET_SHRINK_WRAP_EMIT_EPILOGUE_COMPONENTS \
+  aarch64_emit_epilogue_components
+
+#undef TARGET_SHRINK_WRAP_SET_HANDLED_COMPONENTS
+#define TARGET_SHRINK_WRAP_SET_HANDLED_COMPONENTS \
+  aarch64_set_handled_components
+
 #undef TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT aarch64_trampoline_init
 
@@ -14575,6 +14983,10 @@ aarch64_libgcc_floating_mode_supported_p
 
 #undef TARGET_VECTOR_MODE_SUPPORTED_P
 #define TARGET_VECTOR_MODE_SUPPORTED_P aarch64_vector_mode_supported_p
+
+#undef TARGET_VECTORIZE_SUPPORT_VECTOR_MISALIGNMENT
+#define TARGET_VECTORIZE_SUPPORT_VECTOR_MISALIGNMENT \
+  aarch64_builtin_support_vector_misalignment
 
 #undef TARGET_ARRAY_MODE_SUPPORTED_P
 #define TARGET_ARRAY_MODE_SUPPORTED_P aarch64_array_mode_supported_p
@@ -14653,6 +15065,9 @@ aarch64_libgcc_floating_mode_supported_p
 #undef TARGET_CAN_USE_DOLOOP_P
 #define TARGET_CAN_USE_DOLOOP_P can_use_doloop_if_innermost
 
+#undef TARGET_SCHED_ADJUST_PRIORITY
+#define TARGET_SCHED_ADJUST_PRIORITY aarch64_sched_adjust_priority
+
 #undef TARGET_SCHED_MACRO_FUSION_P
 #define TARGET_SCHED_MACRO_FUSION_P aarch64_macro_fusion_p
 
@@ -14679,6 +15094,15 @@ aarch64_libgcc_floating_mode_supported_p
 
 #undef TARGET_OMIT_STRUCT_RETURN_REG
 #define TARGET_OMIT_STRUCT_RETURN_REG true
+
+/* The architecture reserves bits 0 and 1 so use bit 2 for descriptors.  */
+#undef TARGET_CUSTOM_FUNCTION_DESCRIPTORS
+#define TARGET_CUSTOM_FUNCTION_DESCRIPTORS 4
+
+#if CHECKING_P
+#undef TARGET_RUN_TARGET_SELFTESTS
+#define TARGET_RUN_TARGET_SELFTESTS selftest::aarch64_run_selftests
+#endif /* #if CHECKING_P */
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

@@ -1,5 +1,5 @@
 /* A self-testing framework, for use by -fself-test.
-   Copyright (C) 2015-2016 Free Software Foundation, Inc.
+   Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -198,6 +198,62 @@ read_file (const location &loc, const char *path)
   return result;
 }
 
+/* The path of SRCDIR/testsuite/selftests.  */
+
+const char *path_to_selftest_files = NULL;
+
+/* Convert a path relative to SRCDIR/testsuite/selftests
+   to a real path (either absolute, or relative to pwd).
+   The result should be freed by the caller.  */
+
+char *
+locate_file (const char *name)
+{
+  ASSERT_NE (NULL, path_to_selftest_files);
+  return concat (path_to_selftest_files, "/", name, NULL);
+}
+
+/* Selftests for libiberty.  */
+
+/* Verify that xstrndup generates EXPECTED when called on SRC and N.  */
+
+static void
+assert_xstrndup_eq (const char *expected, const char *src, size_t n)
+{
+  char *buf = xstrndup (src, n);
+  ASSERT_STREQ (expected, buf);
+  free (buf);
+}
+
+/* Verify that xstrndup works as expected.  */
+
+static void
+test_xstrndup ()
+{
+  assert_xstrndup_eq ("", "test", 0);
+  assert_xstrndup_eq ("t", "test", 1);
+  assert_xstrndup_eq ("te", "test", 2);
+  assert_xstrndup_eq ("tes", "test", 3);
+  assert_xstrndup_eq ("test", "test", 4);
+  assert_xstrndup_eq ("test", "test", 5);
+
+  /* Test on an string without zero termination.  */
+  const char src[4] = {'t', 'e', 's', 't'};
+  assert_xstrndup_eq ("", src, 0);
+  assert_xstrndup_eq ("t", src, 1);
+  assert_xstrndup_eq ("te", src, 2);
+  assert_xstrndup_eq ("tes", src, 3);
+  assert_xstrndup_eq ("test", src, 4);
+}
+
+/* Run selftests for libiberty.  */
+
+static void
+test_libiberty ()
+{
+  test_xstrndup ();
+}
+
 /* Selftests for the selftest system itself.  */
 
 /* Sanity-check the ASSERT_ macros with various passing cases.  */
@@ -240,14 +296,28 @@ test_read_file ()
   free (buf);
 }
 
+/* Verify locate_file (and read_file).  */
+
+static void
+test_locate_file ()
+{
+  char *path = locate_file ("example.txt");
+  char *buf = read_file (SELFTEST_LOCATION, path);
+  ASSERT_STREQ ("example of a selftest file\n", buf);
+  free (buf);
+  free (path);
+}
+
 /* Run all of the selftests within this file.  */
 
 void
 selftest_c_tests ()
 {
+  test_libiberty ();
   test_assertions ();
   test_named_temp_file ();
   test_read_file ();
+  test_locate_file ();
 }
 
 } // namespace selftest

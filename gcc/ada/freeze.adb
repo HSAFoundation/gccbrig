@@ -1446,18 +1446,30 @@ package body Freeze is
          Prim := Node (Op_Node);
          if not Comes_From_Source (Prim) and then Present (Alias (Prim)) then
             Par_Prim := Alias (Prim);
-            A_Pre    := Find_Aspect (Par_Prim, Aspect_Pre);
+
+            --  Analyze the contract items of the parent operation, before
+            --  they are rewritten when inherited.
+
+            Analyze_Entry_Or_Subprogram_Contract (Par_Prim);
+
+            A_Pre := Get_Pragma (Par_Prim, Pragma_Precondition);
 
             if Present (A_Pre) and then Class_Present (A_Pre) then
                Build_Class_Wide_Expression
-                 (Expression (A_Pre), Prim, Par_Prim, Adjust_Sloc => False);
+                 (Prag        => New_Copy_Tree (A_Pre),
+                  Subp        => Prim,
+                  Par_Subp    => Par_Prim,
+                  Adjust_Sloc => False);
             end if;
 
-            A_Post := Find_Aspect (Par_Prim, Aspect_Post);
+            A_Post := Get_Pragma (Par_Prim, Pragma_Postcondition);
 
             if Present (A_Post) and then Class_Present (A_Post) then
                Build_Class_Wide_Expression
-                 (Expression (A_Post), Prim, Par_Prim, Adjust_Sloc => False);
+                 (Prag        => New_Copy_Tree (A_Post),
+                  Subp        => Prim,
+                  Par_Subp    => Par_Prim,
+                  Adjust_Sloc => False);
             end if;
          end if;
 
@@ -1676,9 +1688,6 @@ package body Freeze is
    --  as they are generated.
 
    procedure Freeze_All (From : Entity_Id; After : in out Node_Id) is
-      E     : Entity_Id;
-      Decl  : Node_Id;
-
       procedure Freeze_All_Ent (From : Entity_Id; After : in out Node_Id);
       --  This is the internal recursive routine that does freezing of entities
       --  (but NOT the analysis of default expressions, which should not be
@@ -1851,10 +1860,10 @@ package body Freeze is
                   --  current package, but this body does not freeze incomplete
                   --  types that may be declared in this private part.
 
-                  if (Nkind_In (Bod, N_Subprogram_Body,
-                                     N_Entry_Body,
+                  if (Nkind_In (Bod, N_Entry_Body,
                                      N_Package_Body,
                                      N_Protected_Body,
+                                     N_Subprogram_Body,
                                      N_Task_Body)
                         or else Nkind (Bod) in N_Body_Stub)
                     and then
@@ -1872,6 +1881,12 @@ package body Freeze is
             Next_Entity (E);
          end loop;
       end Freeze_All_Ent;
+
+      --  Local variables
+
+      Decl : Node_Id;
+      E    : Entity_Id;
+      Item : Entity_Id;
 
    --  Start of processing for Freeze_All
 
@@ -1913,33 +1928,28 @@ package body Freeze is
                elsif Nkind (Decl) = N_Subprogram_Declaration
                  and then Present (Corresponding_Body (Decl))
                  and then
-                   Nkind (Unit_Declaration_Node (Corresponding_Body (Decl)))
-                                          = N_Subprogram_Renaming_Declaration
+                   Nkind (Unit_Declaration_Node (Corresponding_Body (Decl))) =
+                     N_Subprogram_Renaming_Declaration
                then
                   Build_And_Analyze_Renamed_Body
                     (Decl, Corresponding_Body (Decl), After);
                end if;
             end if;
 
-         elsif Ekind (E) in Task_Kind
-           and then Nkind_In (Parent (E), N_Task_Type_Declaration,
-                                          N_Single_Task_Declaration)
-         then
-            declare
-               Ent : Entity_Id;
+         --  Freeze the default expressions of entries, entry families, and
+         --  protected subprograms.
 
-            begin
-               Ent := First_Entity (E);
-               while Present (Ent) loop
-                  if Is_Entry (Ent)
-                    and then not Default_Expressions_Processed (Ent)
-                  then
-                     Process_Default_Expressions (Ent, After);
-                  end if;
+         elsif Is_Concurrent_Type (E) then
+            Item := First_Entity (E);
+            while Present (Item) loop
+               if (Is_Entry (Item) or else Is_Subprogram (Item))
+                 and then not Default_Expressions_Processed (Item)
+               then
+                  Process_Default_Expressions (Item, After);
+               end if;
 
-                  Next_Entity (Ent);
-               end loop;
-            end;
+               Next_Entity (Item);
+            end loop;
          end if;
 
          --  Historical note: We used to create a finalization master for an
@@ -2002,6 +2012,10 @@ package body Freeze is
    -- Freeze_Entity --
    -------------------
 
+   --  WARNING: This routine manages Ghost regions. Return statements must be
+   --  replaced by gotos which jump to the end of the routine and restore the
+   --  Ghost mode.
+
    function Freeze_Entity
      (E                 : Entity_Id;
       N                 : Node_Id;
@@ -2035,6 +2049,13 @@ package body Freeze is
       --  which is the current instance type can only be applied when the type
       --  is limited.
 
+      procedure Check_Suspicious_Convention (Rec_Type : Entity_Id);
+      --  Give a warning for pragma Convention with language C or C++ applied
+      --  to a discriminated record type. This is suppressed for the unchecked
+      --  union case, since the whole point in this case is interface C. We
+      --  also do not generate this within instantiations, since we will have
+      --  generated a message on the template.
+
       procedure Check_Suspicious_Modulus (Utype : Entity_Id);
       --  Give warning for modulus of 8, 16, 32, or 64 given as an explicit
       --  integer literal without an explicit corresponding size clause. The
@@ -2064,8 +2085,11 @@ package body Freeze is
       --  Determine whether an arbitrary entity is subject to Boolean aspect
       --  Import and its value is specified as True.
 
-      function New_Freeze_Node return Node_Id;
-      --  Create a new freeze node for entity E
+      procedure Inherit_Freeze_Node
+        (Fnod : Node_Id;
+         Typ  : Entity_Id);
+      --  Set type Typ's freeze node to refer to Fnode. This routine ensures
+      --  that any attributes attached to Typ's original node are preserved.
 
       procedure Wrap_Imported_Subprogram (E : Entity_Id);
       --  If E is an entity for an imported subprogram with pre/post-conditions
@@ -2230,7 +2254,8 @@ package body Freeze is
                      return OK;
                   end if;
 
-               when others => return OK;
+               when others =>
+                  return OK;
             end case;
          end Process;
 
@@ -2248,6 +2273,49 @@ package body Freeze is
             Traverse (Comp_Decl);
          end if;
       end Check_Current_Instance;
+
+      ---------------------------------
+      -- Check_Suspicious_Convention --
+      ---------------------------------
+
+      procedure Check_Suspicious_Convention (Rec_Type : Entity_Id) is
+      begin
+         if Has_Discriminants (Rec_Type)
+           and then Is_Base_Type (Rec_Type)
+           and then not Is_Unchecked_Union (Rec_Type)
+           and then (Convention (Rec_Type) = Convention_C
+                       or else
+                     Convention (Rec_Type) = Convention_CPP)
+           and then Comes_From_Source (Rec_Type)
+           and then not In_Instance
+           and then not Has_Warnings_Off (Rec_Type)
+         then
+            declare
+               Cprag : constant Node_Id :=
+                         Get_Rep_Pragma (Rec_Type, Name_Convention);
+               A2    : Node_Id;
+
+            begin
+               if Present (Cprag) then
+                  A2 := Next (First (Pragma_Argument_Associations (Cprag)));
+
+                  if Convention (Rec_Type) = Convention_C then
+                     Error_Msg_N
+                       ("?x?discriminated record has no direct equivalent in "
+                        & "C", A2);
+                  else
+                     Error_Msg_N
+                       ("?x?discriminated record has no direct equivalent in "
+                        & "C++", A2);
+                  end if;
+
+                  Error_Msg_NE
+                    ("\?x?use of convention for type& is dubious",
+                     A2, Rec_Type);
+               end if;
+            end;
+         end if;
+      end Check_Suspicious_Convention;
 
       ------------------------------
       -- Check_Suspicious_Modulus --
@@ -2375,13 +2443,14 @@ package body Freeze is
             end if;
 
             --  The array type requires its own invariant procedure in order to
-            --  verify the component invariant over all elements.
+            --  verify the component invariant over all elements. In GNATprove
+            --  mode, the component invariants are checked by other means. They
+            --  should not be added to the array type invariant procedure, so
+            --  that the procedure can be used to check the array type
+            --  invariants if any.
 
             if Has_Invariants (Component_Type (Arr))
-              or else
-                (Is_Access_Type (Component_Type (Arr))
-                  and then Has_Invariants
-                             (Designated_Type (Component_Type (Arr))))
+              and then not GNATprove_Mode
             then
                Set_Has_Own_Invariants (Arr);
 
@@ -3393,12 +3462,11 @@ package body Freeze is
 
             R_Type := Etype (E);
 
-            --  AI05-0151: the return type may have been incomplete
-            --  at the point of declaration. Replace it with the full
-            --  view, unless the current type is a limited view. In
-            --  that case the full view is in a different unit, and
-            --  gigi finds the non-limited view after the other unit
-            --  is elaborated.
+            --  AI05-0151: the return type may have been incomplete at the
+            --  point of declaration. Replace it with the full view, unless the
+            --  current type is a limited view. In that case the full view is
+            --  in a different unit, and gigi finds the non-limited view after
+            --  the other unit is elaborated.
 
             if Ekind (R_Type) = E_Incomplete_Type
               and then Present (Full_View (R_Type))
@@ -3425,8 +3493,9 @@ package body Freeze is
                  and then not Has_Warnings_Off (E)
                  and then not Has_Warnings_Off (R_Type)
                then
-                  Error_Msg_N ("?x?return type of& does not "
-                     & "correspond to C pointer!", E);
+                  Error_Msg_N
+                    ("?x?return type of& does not correspond to C pointer!",
+                     E);
 
                --  Check suspicious return of boolean
 
@@ -4303,14 +4372,14 @@ package body Freeze is
                --  order to verify the invariant of each individual component.
                --  Do not consider internal components such as _parent because
                --  parent class-wide invariants are always inherited.
+               --  In GNATprove mode, the component invariants are checked by
+               --  other means. They should not be added to the record type
+               --  invariant procedure, so that the procedure can be used to
+               --  check the recordy type invariants if any.
 
                if Comes_From_Source (Comp)
-                 and then
-                   (Has_Invariants (Etype (Comp))
-                     or else
-                       (Is_Access_Type (Etype (Comp))
-                         and then Has_Invariants
-                                    (Designated_Type (Etype (Comp)))))
+                 and then Has_Invariants (Etype (Comp))
+                   and then not GNATprove_Mode
                then
                   Set_Has_Own_Invariants (Rec);
                end if;
@@ -4356,46 +4425,6 @@ package body Freeze is
 
                Next_Component (Comp);
             end loop;
-         end if;
-
-         --  Generate warning for applying C or C++ convention to a record
-         --  with discriminants. This is suppressed for the unchecked union
-         --  case, since the whole point in this case is interface C. We also
-         --  do not generate this within instantiations, since we will have
-         --  generated a message on the template.
-
-         if Has_Discriminants (E)
-           and then not Is_Unchecked_Union (E)
-           and then (Convention (E) = Convention_C
-                       or else
-                     Convention (E) = Convention_CPP)
-           and then Comes_From_Source (E)
-           and then not In_Instance
-           and then not Has_Warnings_Off (E)
-           and then not Has_Warnings_Off (Base_Type (E))
-         then
-            declare
-               Cprag : constant Node_Id := Get_Rep_Pragma (E, Name_Convention);
-               A2    : Node_Id;
-
-            begin
-               if Present (Cprag) then
-                  A2 := Next (First (Pragma_Argument_Associations (Cprag)));
-
-                  if Convention (E) = Convention_C then
-                     Error_Msg_N
-                       ("?x?variant record has no direct equivalent in C",
-                        A2);
-                  else
-                     Error_Msg_N
-                       ("?x?variant record has no direct equivalent in C++",
-                        A2);
-                  end if;
-
-                  Error_Msg_NE
-                    ("\?x?use of convention for type& is dubious", A2, E);
-               end if;
-            end;
          end if;
 
          --  See if Size is too small as is (and implicit packing might help)
@@ -4701,38 +4730,59 @@ package body Freeze is
          return False;
       end Has_Boolean_Aspect_Import;
 
-      ---------------------
-      -- New_Freeze_Node --
-      ---------------------
+      -------------------------
+      -- Inherit_Freeze_Node --
+      -------------------------
 
-      function New_Freeze_Node return Node_Id is
-         Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
-         Result          : Node_Id;
+      procedure Inherit_Freeze_Node
+        (Fnod : Node_Id;
+         Typ  : Entity_Id)
+      is
+         Typ_Fnod : constant Node_Id := Freeze_Node (Typ);
 
       begin
-         --  Handle the case where an ignored Ghost subprogram freezes the type
-         --  of one of its formals. The type can either be non-Ghost or checked
-         --  Ghost. Since the freeze node for the type is generated in the
-         --  context of the subprogram, the node will be incorrectly flagged as
-         --  ignored Ghost and erroneously removed from the tree.
+         Set_Freeze_Node (Typ, Fnod);
+         Set_Entity (Fnod, Typ);
 
-         --    type Typ is ...;
-         --    procedure Ignored_Ghost_Proc (Formal : Typ) with Ghost;
+         --  The input type had an existing node. Propagate relevant attributes
+         --  from the old freeze node to the inherited freeze node.
 
-         --  Reset the Ghost mode to "none". This preserves the freeze node.
+         --  ??? if both freeze nodes have attributes, would they differ?
 
-         if Ghost_Mode = Ignore
-           and then not Is_Ignored_Ghost_Entity (E)
-           and then not Is_Ignored_Ghost_Node (E)
-         then
-            Ghost_Mode := None;
+         if Present (Typ_Fnod) then
+
+            --  Attribute Access_Types_To_Process
+
+            if Present (Access_Types_To_Process (Typ_Fnod))
+              and then No (Access_Types_To_Process (Fnod))
+            then
+               Set_Access_Types_To_Process (Fnod,
+                 Access_Types_To_Process (Typ_Fnod));
+            end if;
+
+            --  Attribute Actions
+
+            if Present (Actions (Typ_Fnod)) and then No (Actions (Fnod)) then
+               Set_Actions (Fnod, Actions (Typ_Fnod));
+            end if;
+
+            --  Attribute First_Subtype_Link
+
+            if Present (First_Subtype_Link (Typ_Fnod))
+              and then No (First_Subtype_Link (Fnod))
+            then
+               Set_First_Subtype_Link (Fnod, First_Subtype_Link (Typ_Fnod));
+            end if;
+
+            --  Attribute TSS_Elist
+
+            if Present (TSS_Elist (Typ_Fnod))
+              and then No (TSS_Elist (Fnod))
+            then
+               Set_TSS_Elist (Fnod, TSS_Elist (Typ_Fnod));
+            end if;
          end if;
-
-         Result := New_Node (N_Freeze_Entity, Loc);
-
-         Ghost_Mode := Save_Ghost_Mode;
-         return Result;
-      end New_Freeze_Node;
+      end Inherit_Freeze_Node;
 
       ------------------------------
       -- Wrap_Imported_Subprogram --
@@ -4925,7 +4975,7 @@ package body Freeze is
 
       --  Local variables
 
-      Save_Ghost_Mode : constant Ghost_Mode_Type := Ghost_Mode;
+      Mode : Ghost_Mode_Type;
 
    --  Start of processing for Freeze_Entity
 
@@ -4934,7 +4984,7 @@ package body Freeze is
       --  now to ensure that any nodes generated during freezing are properly
       --  flagged as Ghost.
 
-      Set_Ghost_Mode_From_Entity (E);
+      Set_Ghost_Mode (E, Mode);
 
       --  We are going to test for various reasons why this entity need not be
       --  frozen here, but in the case of an Itype that's defined within a
@@ -4951,14 +5001,12 @@ package body Freeze is
       --  Do not freeze if already frozen since we only need one freeze node
 
       if Is_Frozen (E) then
-         Ghost_Mode := Save_Ghost_Mode;
-         return No_List;
+         Result := No_List;
+         goto Leave;
 
       elsif Ekind (E) = E_Generic_Package then
          Result := Freeze_Generic_Entities (E);
-
-         Ghost_Mode := Save_Ghost_Mode;
-         return Result;
+         goto Leave;
 
       --  It is improper to freeze an external entity within a generic because
       --  its freeze node will appear in a non-valid context. The entity will
@@ -4972,8 +5020,8 @@ package body Freeze is
             Analyze_Aspects_At_Freeze_Point (E);
          end if;
 
-         Ghost_Mode := Save_Ghost_Mode;
-         return No_List;
+         Result := No_List;
+         goto Leave;
 
       --  AI05-0213: A formal incomplete type does not freeze the actual. In
       --  the instance, the same applies to the subtype renaming the actual.
@@ -4983,20 +5031,20 @@ package body Freeze is
         and then No (Full_View (Base_Type (E)))
         and then Ada_Version >= Ada_2012
       then
-         Ghost_Mode := Save_Ghost_Mode;
-         return No_List;
+         Result := No_List;
+         goto Leave;
 
       --  Formal subprograms are never frozen
 
       elsif Is_Formal_Subprogram (E) then
-         Ghost_Mode := Save_Ghost_Mode;
-         return No_List;
+         Result := No_List;
+         goto Leave;
 
       --  Generic types are never frozen as they lack delayed semantic checks
 
       elsif Is_Generic_Type (E) then
-         Ghost_Mode := Save_Ghost_Mode;
-         return No_List;
+         Result := No_List;
+         goto Leave;
 
       --  Do not freeze a global entity within an inner scope created during
       --  expansion. A call to subprogram E within some internal procedure
@@ -5029,8 +5077,8 @@ package body Freeze is
                   then
                      exit;
                   else
-                     Ghost_Mode := Save_Ghost_Mode;
-                     return No_List;
+                     Result := No_List;
+                     goto Leave;
                   end if;
                end if;
 
@@ -5065,8 +5113,8 @@ package body Freeze is
             end loop;
 
             if No (S) then
-               Ghost_Mode := Save_Ghost_Mode;
-               return No_List;
+               Result := No_List;
+               goto Leave;
             end if;
          end;
       end if;
@@ -5151,8 +5199,7 @@ package body Freeze is
 
             if not Is_Internal (E) and then Do_Freeze_Profile then
                if not Freeze_Profile (E) then
-                  Ghost_Mode := Save_Ghost_Mode;
-                  return Result;
+                  goto Leave;
                end if;
             end if;
 
@@ -5187,9 +5234,10 @@ package body Freeze is
 
                begin
                   while Present (Prag) loop
-                     if Nam_In (Pragma_Name (Prag), Name_Post,
-                                                    Name_Postcondition,
-                                                    Name_Refined_Post)
+                     if Nam_In (Pragma_Name_Unmapped (Prag),
+                                Name_Post,
+                                Name_Postcondition,
+                                Name_Refined_Post)
                      then
                         Exp :=
                           Expression
@@ -5326,6 +5374,9 @@ package body Freeze is
          --  trigger the analysis of aspect expressions, so in this case we
          --  want to continue the freezing process.
 
+         --  Is_Generic_Unit (Scope (E)) is dubious here, do we want instead
+         --  In_Generic_Scope (E)???
+
          if Present (Scope (E))
            and then Is_Generic_Unit (Scope (E))
            and then
@@ -5333,8 +5384,8 @@ package body Freeze is
                and then not Has_Delayed_Freeze (E))
          then
             Check_Compile_Time_Size (E);
-            Ghost_Mode := Save_Ghost_Mode;
-            return No_List;
+            Result := No_List;
+            goto Leave;
          end if;
 
          --  Check for error of Type_Invariant'Class applied to an untagged
@@ -5604,8 +5655,7 @@ package body Freeze is
 
             if not Is_Frozen (Root_Type (E)) then
                Set_Is_Frozen (E, False);
-               Ghost_Mode := Save_Ghost_Mode;
-               return Result;
+               goto Leave;
             end if;
 
             --  The equivalent type associated with a class-wide subtype needs
@@ -5652,11 +5702,17 @@ package body Freeze is
          --  for the case of a private type with record extension (we will do
          --  that later when the full type is frozen).
 
-         elsif Ekind_In (E, E_Record_Type, E_Record_Subtype)
-           and then not (Present (Scope (E))
-                          and then Is_Generic_Unit (Scope (E)))
-         then
-            Freeze_Record_Type (E);
+         elsif Ekind_In (E, E_Record_Type, E_Record_Subtype) then
+            if not In_Generic_Scope (E) then
+               Freeze_Record_Type (E);
+            end if;
+
+            --  Report a warning if a discriminated record base type has a
+            --  convention with language C or C++ applied to it. This check is
+            --  done even within generic scopes (but not in instantiations),
+            --  which is why we don't do it as part of Freeze_Record_Type.
+
+            Check_Suspicious_Convention (E);
 
          --  For a concurrent type, freeze corresponding record type. This does
          --  not correspond to any specific rule in the RM, but the record type
@@ -5740,8 +5796,7 @@ package body Freeze is
               and then not Present (Full_View (E))
             then
                Set_Is_Frozen (E, False);
-               Ghost_Mode := Save_Ghost_Mode;
-               return Result;
+               goto Leave;
 
             --  Case of full view present
 
@@ -5779,9 +5834,9 @@ package body Freeze is
                         F_Node := Freeze_Node (Full);
 
                         if Present (F_Node) then
-                           Set_Freeze_Node (Full_View (E), F_Node);
-                           Set_Entity (F_Node, Full_View (E));
-
+                           Inherit_Freeze_Node
+                             (Fnod => F_Node,
+                              Typ  => Full_View (E));
                         else
                            Set_Has_Delayed_Freeze (Full_View (E), False);
                            Set_Freeze_Node (Full_View (E), Empty);
@@ -5792,9 +5847,9 @@ package body Freeze is
                         F_Node := Freeze_Node (Full_View (E));
 
                         if Present (F_Node) then
-                           Set_Freeze_Node (E, F_Node);
-                           Set_Entity (F_Node, E);
-
+                           Inherit_Freeze_Node
+                             (Fnod => F_Node,
+                              Typ  => E);
                         else
                            --  {Incomplete,Private}_Subtypes with Full_Views
                            --  constrained by discriminants.
@@ -5832,8 +5887,7 @@ package body Freeze is
                   Set_RM_Size   (E, RM_Size (Full_View (E)));
                end if;
 
-               Ghost_Mode := Save_Ghost_Mode;
-               return Result;
+               goto Leave;
 
             --  Case of underlying full view present
 
@@ -5851,9 +5905,9 @@ package body Freeze is
                   F_Node := Freeze_Node (Underlying_Full_View (E));
 
                   if Present (F_Node) then
-                     Set_Freeze_Node (E, F_Node);
-                     Set_Entity (F_Node, E);
-
+                     Inherit_Freeze_Node
+                       (Fnod => F_Node,
+                        Typ  => E);
                   else
                      Set_Has_Delayed_Freeze (E, False);
                      Set_Freeze_Node (E, Empty);
@@ -5862,8 +5916,7 @@ package body Freeze is
 
                Check_Debug_Info_Needed (E);
 
-               Ghost_Mode := Save_Ghost_Mode;
-               return Result;
+               goto Leave;
 
             --  Case of no full view present. If entity is derived or subtype,
             --  it is safe to freeze, correctness depends on the frozen status
@@ -5876,8 +5929,8 @@ package body Freeze is
 
             else
                Set_Is_Frozen (E, False);
-               Ghost_Mode := Save_Ghost_Mode;
-               return No_List;
+               Result := No_List;
+               goto Leave;
             end if;
 
          --  For access subprogram, freeze types of all formals, the return
@@ -5924,8 +5977,7 @@ package body Freeze is
          --  generic processing), so we never need freeze nodes for them.
 
          if Is_Generic_Type (E) then
-            Ghost_Mode := Save_Ghost_Mode;
-            return Result;
+            goto Leave;
          end if;
 
          --  Some special processing for non-generic types to complete
@@ -6456,7 +6508,7 @@ package body Freeze is
             Set_Sloc (F_Node, Loc);
 
          else
-            F_Node := New_Freeze_Node;
+            F_Node := New_Node (N_Freeze_Entity, Loc);
             Set_Freeze_Node (E, F_Node);
             Set_Access_Types_To_Process (F_Node, No_Elist);
             Set_TSS_Elist (F_Node, No_Elist);
@@ -6538,7 +6590,8 @@ package body Freeze is
          end if;
       end if;
 
-      Ghost_Mode := Save_Ghost_Mode;
+   <<Leave>>
+      Restore_Ghost_Mode (Mode);
       return Result;
    end Freeze_Entity;
 
@@ -6807,10 +6860,10 @@ package body Freeze is
                Desig_Typ := Find_Aggregate_Component_Desig_Type;
             end if;
 
-         when N_Selected_Component |
-            N_Indexed_Component    |
-            N_Slice                =>
-
+         when N_Indexed_Component
+            | N_Selected_Component
+            | N_Slice
+         =>
             if Is_Access_Type (Etype (Prefix (N))) then
                Desig_Typ := Designated_Type (Etype (Prefix (N)));
             end if;
@@ -7022,35 +7075,37 @@ package body Freeze is
             --  is a statement or declaration and we can insert the freeze node
             --  before it.
 
-            when N_Block_Statement       |
-                 N_Entry_Body            |
-                 N_Package_Body          |
-                 N_Package_Specification |
-                 N_Protected_Body        |
-                 N_Subprogram_Body       |
-                 N_Task_Body             => exit;
+            when N_Block_Statement
+               | N_Entry_Body
+               | N_Package_Body
+               | N_Package_Specification
+               | N_Protected_Body
+               | N_Subprogram_Body
+               | N_Task_Body
+            =>
+               exit;
 
             --  The expander is allowed to define types in any statements list,
             --  so any of the following parent nodes also mark a freezing point
             --  if the actual node is in a list of statements or declarations.
 
-            when N_Abortable_Part             |
-                 N_Accept_Alternative         |
-                 N_And_Then                   |
-                 N_Case_Statement_Alternative |
-                 N_Compilation_Unit_Aux       |
-                 N_Conditional_Entry_Call     |
-                 N_Delay_Alternative          |
-                 N_Elsif_Part                 |
-                 N_Entry_Call_Alternative     |
-                 N_Exception_Handler          |
-                 N_Extended_Return_Statement  |
-                 N_Freeze_Entity              |
-                 N_If_Statement               |
-                 N_Or_Else                    |
-                 N_Selective_Accept           |
-                 N_Triggering_Alternative     =>
-
+            when N_Abortable_Part
+               | N_Accept_Alternative
+               | N_And_Then
+               | N_Case_Statement_Alternative
+               | N_Compilation_Unit_Aux
+               | N_Conditional_Entry_Call
+               | N_Delay_Alternative
+               | N_Elsif_Part
+               | N_Entry_Call_Alternative
+               | N_Exception_Handler
+               | N_Extended_Return_Statement
+               | N_Freeze_Entity
+               | N_If_Statement
+               | N_Or_Else
+               | N_Selective_Accept
+               | N_Triggering_Alternative
+            =>
                exit when Is_List_Member (P);
 
             --  Freeze nodes produced by an expression coming from the Actions

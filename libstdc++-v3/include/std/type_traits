@@ -1,6 +1,6 @@
 // C++11 <type_traits> -*- C++ -*-
 
-// Copyright (C) 2007-2016 Free Software Foundation, Inc.
+// Copyright (C) 2007-2017 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -641,13 +641,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : public __or_<is_object<_Tp>, is_reference<_Tp>>::type
     { };
 
-  template<typename _Res, typename... _Args>
-    struct __is_referenceable<_Res(_Args...)>
+  template<typename _Res, typename... _Args _GLIBCXX_NOEXCEPT_PARM>
+    struct __is_referenceable<_Res(_Args...) _GLIBCXX_NOEXCEPT_QUAL>
     : public true_type
     { };
 
-  template<typename _Res, typename... _Args>
-    struct __is_referenceable<_Res(_Args......)>
+  template<typename _Res, typename... _Args _GLIBCXX_NOEXCEPT_PARM>
+    struct __is_referenceable<_Res(_Args......) _GLIBCXX_NOEXCEPT_QUAL>
     : public true_type
     { };
 
@@ -2565,12 +2565,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     using __detected_or_t
       = typename __detected_or<_Default, _Op, _Args...>::type;
 
-  // _Op<_Args...> if that is a valid type, otherwise _Default<_Args...>.
-  template<template<typename...> class _Default,
-	   template<typename...> class _Op, typename... _Args>
-    using __detected_or_t_ =
-      __detected_or_t<_Default<_Args...>, _Op, _Args...>;
-
   /// @} group metaprogramming
 
   /**
@@ -2593,9 +2587,28 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template <typename _Tp>
     struct __is_nothrow_swappable;
 
+  template<typename... _Elements>
+    class tuple;
+
+  template<typename>
+    struct __is_tuple_like_impl : false_type
+    { };
+
+  template<typename... _Tps>
+    struct __is_tuple_like_impl<tuple<_Tps...>> : true_type
+    { };
+
+  // Internal type trait that allows us to sfinae-protect tuple_cat.
+  template<typename _Tp>
+    struct __is_tuple_like
+    : public __is_tuple_like_impl<typename remove_cv<
+      typename remove_reference<_Tp>::type>::type>::type
+    { };
+
   template<typename _Tp>
     inline
-    typename enable_if<__and_<is_move_constructible<_Tp>,
+    typename enable_if<__and_<__not_<__is_tuple_like<_Tp>>,
+			      is_move_constructible<_Tp>,
 			      is_move_assignable<_Tp>>::value>::type
     swap(_Tp&, _Tp&)
     noexcept(__and_<is_nothrow_move_constructible<_Tp>,

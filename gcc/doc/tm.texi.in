@@ -1,4 +1,4 @@
-@c Copyright (C) 1988-2016 Free Software Foundation, Inc.
+@c Copyright (C) 1988-2017 Free Software Foundation, Inc.
 @c This is part of the GCC manual.
 @c For copying conditions, see the file gcc.texi.
 
@@ -3820,6 +3820,8 @@ generic code.
 
 @hook TARGET_STACK_PROTECT_FAIL
 
+@hook TARGET_STACK_PROTECT_RUNTIME_ENABLED_P
+
 @hook TARGET_SUPPORTS_SPLIT_STACK
 
 @node Miscellaneous Register Hooks
@@ -4103,8 +4105,6 @@ selector to the method-lookup function, which returns a pointer to the method.
 In either case, it remains possible to select code-generation for the alternate
 scheme, by means of compiler command line switches.
 @end defmac
-
-@hook TARGET_PRINTF_POINTER_FORMAT
 
 @node Addressing Modes
 @section Addressing Modes

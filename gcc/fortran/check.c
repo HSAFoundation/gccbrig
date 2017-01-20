@@ -1,5 +1,5 @@
 /* Check functions
-   Copyright (C) 2002-2016 Free Software Foundation, Inc.
+   Copyright (C) 2002-2017 Free Software Foundation, Inc.
    Contributed by Andy Vaught & Katherine Holcomb
 
 This file is part of GCC.
@@ -851,6 +851,17 @@ gfc_check_all_any (gfc_expr *mask, gfc_expr *dim)
 bool
 gfc_check_allocated (gfc_expr *array)
 {
+  /* Tests on allocated components of coarrays need to detour the check to
+     argument of the _caf_get.  */
+  if (flag_coarray == GFC_FCOARRAY_LIB && array->expr_type == EXPR_FUNCTION
+      && array->value.function.isym
+      && array->value.function.isym->id == GFC_ISYM_CAF_GET)
+    {
+      array = array->value.function.actual->expr;
+      if (!array->ref)
+	return false;
+    }
+
   if (!variable_check (array, 0, false))
     return false;
   if (!allocatable_check (array, 0))
@@ -3656,7 +3667,7 @@ gfc_check_range (gfc_expr *x)
 
 
 bool
-gfc_check_rank (gfc_expr *a ATTRIBUTE_UNUSED)
+gfc_check_rank (gfc_expr *a)
 {
   /* Any data object is allowed; a "data object" is a "constant (4.1.3),
      variable (6), or subobject of a constant (2.4.3.2.3)" (F2008, 1.3.45).  */

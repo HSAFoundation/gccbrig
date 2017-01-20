@@ -31,9 +31,8 @@ brig_directive_comment_handler::operator () (const BrigBase *base)
 
   if (gccbrig_verbose)
     {
-      char *cmnt = m_parent.get_c_string (brig_comment->name);
-      fprintf (stderr, "brig: Comment: '%s'\n", cmnt);
-      free (cmnt);
+      std::string cmnt = m_parent.get_string (brig_comment->name);
+      fprintf (stderr, "brig: Comment: '%s'\n", cmnt.c_str());
     }
   return base->byteCount;
 }

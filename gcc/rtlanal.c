@@ -1,5 +1,5 @@
 /* Analyze RTL for GNU compiler.
-   Copyright (C) 1987-2016 Free Software Foundation, Inc.
+   Copyright (C) 1987-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -683,6 +683,19 @@ int
 rtx_addr_can_trap_p (const_rtx x)
 {
   return rtx_addr_can_trap_p_1 (x, 0, 0, VOIDmode, false);
+}
+
+/* Return true if X contains a MEM subrtx.  */
+
+bool
+contains_mem_rtx_p (rtx x)
+{
+  subrtx_iterator::array_type array;
+  FOR_EACH_SUBRTX (iter, array, x, ALL)
+    if (MEM_P (*iter))
+      return true;
+
+  return false;
 }
 
 /* Return true if X is an address that is known to not be zero.  */
@@ -2351,22 +2364,28 @@ remove_note (rtx_insn *insn, const_rtx note)
     }
 }
 
-/* Remove REG_EQUAL and/or REG_EQUIV notes if INSN has such notes.  */
+/* Remove REG_EQUAL and/or REG_EQUIV notes if INSN has such notes.
+   Return true if any note has been removed.  */
 
-void
+bool
 remove_reg_equal_equiv_notes (rtx_insn *insn)
 {
   rtx *loc;
+  bool ret = false;
 
   loc = &REG_NOTES (insn);
   while (*loc)
     {
       enum reg_note kind = REG_NOTE_KIND (*loc);
       if (kind == REG_EQUAL || kind == REG_EQUIV)
-	*loc = XEXP (*loc, 1);
+	{
+	  *loc = XEXP (*loc, 1);
+	  ret = true;
+	}
       else
 	loc = &XEXP (*loc, 1);
     }
+  return ret;
 }
 
 /* Remove all REG_EQUAL and REG_EQUIV notes referring to REGNO.  */
@@ -4834,6 +4853,8 @@ num_sign_bit_copies1 (const_rtx x, machine_mode mode, const_rtx known_x,
   if (mode == VOIDmode)
     mode = GET_MODE (x);
 
+  gcc_checking_assert (mode != BLKmode);
+
   if (mode == VOIDmode || FLOAT_MODE_P (mode) || FLOAT_MODE_P (GET_MODE (x))
       || VECTOR_MODE_P (GET_MODE (x)) || VECTOR_MODE_P (mode))
     return 1;
@@ -5237,7 +5258,7 @@ insn_rtx_cost (rtx pat, bool speed)
   else
     return 0;
 
-  cost = set_rtx_cost (set, speed);
+  cost = set_src_cost (SET_SRC (set), GET_MODE (SET_DEST (set)), speed);
   return cost > 0 ? cost : COSTS_N_INSNS (1);
 }
 

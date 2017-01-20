@@ -47,7 +47,8 @@ brig_directive_function_handler::operator () (const BrigBase *base)
 
   if (gccbrig_verbose)
     {
-      printf ("brig: function name %s\n", m_parent.get_c_string (exec->name));
+      printf ("brig: function name %s\n",
+	      m_parent.get_string (exec->name).c_str());
       printf ("brig: inargs %d outargs %d name offset %d\n", exec->inArgCount,
 	      exec->outArgCount, exec->name);
     }

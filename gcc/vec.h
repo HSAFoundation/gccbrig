@@ -1,5 +1,5 @@
 /* Vector API for GNU compiler.
-   Copyright (C) 2004-2016 Free Software Foundation, Inc.
+   Copyright (C) 2004-2017 Free Software Foundation, Inc.
    Contributed by Nathan Sidwell <nathan@codesourcery.com>
    Re-implemented in C++ by Diego Novillo <dnovillo@google.com>
 
@@ -1092,8 +1092,10 @@ inline void
 vec<T, A, vl_embed>::quick_grow_cleared (unsigned len)
 {
   unsigned oldlen = length ();
+  size_t sz = sizeof (T) * (len - oldlen);
   quick_grow (len);
-  memset (&(address ()[oldlen]), 0, sizeof (T) * (len - oldlen));
+  if (sz != 0)
+    memset (&(address ()[oldlen]), 0, sz);
 }
 
 
@@ -1605,8 +1607,10 @@ inline void
 vec<T, va_heap, vl_ptr>::safe_grow_cleared (unsigned len MEM_STAT_DECL)
 {
   unsigned oldlen = length ();
+  size_t sz = sizeof (T) * (len - oldlen);
   safe_grow (len PASS_MEM_STAT);
-  memset (&(address ()[oldlen]), 0, sizeof (T) * (len - oldlen));
+  if (sz != 0)
+    memset (&(address ()[oldlen]), 0, sz);
 }
 
 

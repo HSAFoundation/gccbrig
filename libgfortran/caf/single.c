@@ -1,5 +1,5 @@
 /* Single-image implementation of GNU Fortran Coarray Library
-   Copyright (C) 2011-2016 Free Software Foundation, Inc.
+   Copyright (C) 2011-2017 Free Software Foundation, Inc.
    Contributed by Tobias Burnus <burnus@net-b.de>
 
 This file is part of the GNU Fortran Coarray Runtime Library (libcaf).
@@ -141,14 +141,23 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
   caf_single_token_t single_token;
 
   if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
-      || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
-      || type == CAF_REGTYPE_EVENT_ALLOC)
+      || type == CAF_REGTYPE_CRITICAL)
     local = calloc (size, sizeof (bool));
+  else if (type == CAF_REGTYPE_EVENT_STATIC || type == CAF_REGTYPE_EVENT_ALLOC)
+    /* In the event_(wait|post) function the counter for events is a uint32,
+       so better allocate enough memory here.  */
+    local = calloc (size, sizeof (uint32_t));
+  else if (type == CAF_REGTYPE_COARRAY_ALLOC_REGISTER_ONLY)
+    local = NULL;
   else
     local = malloc (size);
-  *token = malloc (sizeof (struct caf_single_token));
 
-  if (unlikely (local == NULL || *token == NULL))
+  if (type != CAF_REGTYPE_COARRAY_ALLOC_ALLOCATE_ONLY)
+    *token = malloc (sizeof (struct caf_single_token));
+
+  if (unlikely (*token == NULL
+		|| (local == NULL
+		    && type != CAF_REGTYPE_COARRAY_ALLOC_REGISTER_ONLY)))
     {
       /* Freeing the memory conditionally seems pointless, but
 	 caf_internal_error () may return, when a stat is given and then the
@@ -163,7 +172,7 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 
   single_token = TOKEN (*token);
   single_token->memptr = local;
-  single_token->owning_memory = true;
+  single_token->owning_memory = type != CAF_REGTYPE_COARRAY_ALLOC_REGISTER_ONLY;
   single_token->desc = GFC_DESCRIPTOR_RANK (data) > 0 ? data : NULL;
 
 
@@ -184,7 +193,7 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 
 
 void
-_gfortran_caf_deregister (caf_token_t *token, int *stat,
+_gfortran_caf_deregister (caf_token_t *token, caf_deregister_t type, int *stat,
 			  char *errmsg __attribute__ ((unused)),
 			  int errmsg_len __attribute__ ((unused)))
 {
@@ -193,7 +202,16 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat,
   if (single_token->owning_memory && single_token->memptr)
     free (single_token->memptr);
 
-  free (TOKEN (*token));
+  if (type != CAF_DEREGTYPE_COARRAY_DEALLOCATE_ONLY)
+    {
+      free (TOKEN (*token));
+      *token = NULL;
+    }
+  else
+    {
+      single_token->memptr = NULL;
+      single_token->owning_memory = false;
+    }
 
   if (stat)
     *stat = 0;
@@ -1456,7 +1474,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   size_t dst_index[GFC_MAX_DIMENSIONS];
   int dst_rank = GFC_DESCRIPTOR_RANK (dst);
   int dst_cur_dim = 0;
-  size_t src_size;
+  size_t src_size = 0;
   caf_single_token_t single_token = TOKEN (token);
   void *memptr = single_token->memptr;
   gfc_descriptor_t *src = single_token->desc;
@@ -1938,11 +1956,24 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 		}
 	      else
 		{
-		  ds = GFC_DESCRIPTOR_DATA (dst);
-		  dst_type = GFC_DESCRIPTOR_TYPE (dst);
+		  single_token = *(caf_single_token_t *)
+					       (ds + ref->u.c.caf_token_offset);
+		  dst = single_token->desc;
+		  if (dst)
+		    {
+		      ds = GFC_DESCRIPTOR_DATA (dst);
+		      dst_type = GFC_DESCRIPTOR_TYPE (dst);
+		    }
+		  else
+		    {
+		      /* When no destination descriptor is present, assume that
+			 source and dest type are identical.  */
+		      dst_type = GFC_DESCRIPTOR_TYPE (src);
+		      ds = *(void **)(ds + ref->u.c.offset);
+		    }
 		}
 	      copy_data (ds, sr, dst_type, GFC_DESCRIPTOR_TYPE (src),
-		  dst_kind, src_kind, ref->item_size, src_size, 1, stat);
+			 dst_kind, src_kind, ref->item_size, src_size, 1, stat);
 	    }
 	  else
 	    copy_data (ds + ref->u.c.offset, sr,
@@ -2040,7 +2071,7 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	  return;
 	}
       /* Only when on the left most index switch the data pointer to
-	     the array's data pointer.  And only for non-static arrays.  */
+	 the array's data pointer.  And only for non-static arrays.  */
       if (dst_dim == 0 && ref->type != CAF_REF_STATIC_ARRAY)
 	ds = GFC_DESCRIPTOR_DATA (dst);
       switch (ref->u.a.mode[dst_dim])
@@ -2310,7 +2341,7 @@ _gfortran_caf_send_by_ref (caf_token_t token,
   size_t dst_index[GFC_MAX_DIMENSIONS];
   int src_rank = GFC_DESCRIPTOR_RANK (src);
   int src_cur_dim = 0;
-  size_t src_size;
+  size_t src_size = 0;
   caf_single_token_t single_token = TOKEN (token);
   void *memptr = single_token->memptr;
   gfc_descriptor_t *dst = single_token->desc;
@@ -2881,4 +2912,105 @@ _gfortran_caf_unlock (caf_token_t token, size_t index,
       return;
     }
   _gfortran_caf_error_stop_str (msg, (int32_t) strlen (msg));
+}
+
+int
+_gfortran_caf_is_present (caf_token_t token,
+			  int image_index __attribute__ ((unused)),
+			  caf_reference_t *refs)
+{
+  const char arraddressingnotallowed[] = "libcaf_single::caf_is_present(): "
+				   "only scalar indexes allowed.\n";
+  const char unknownreftype[] = "libcaf_single::caf_get_by_ref(): "
+				"unknown reference type.\n";
+  const char unknownarrreftype[] = "libcaf_single::caf_get_by_ref(): "
+				   "unknown array reference type.\n";
+  size_t i;
+  caf_single_token_t single_token = TOKEN (token);
+  void *memptr = single_token->memptr;
+  gfc_descriptor_t *src = single_token->desc;
+  caf_reference_t *riter = refs;
+
+  while (riter)
+    {
+      switch (riter->type)
+	{
+	case CAF_REF_COMPONENT:
+	  if (riter->u.c.caf_token_offset)
+	    {
+	      single_token = *(caf_single_token_t*)
+					 (memptr + riter->u.c.caf_token_offset);
+	      memptr = single_token->memptr;
+	      src = single_token->desc;
+	    }
+	  else
+	    {
+	      memptr += riter->u.c.offset;
+	      src = (gfc_descriptor_t *)memptr;
+	    }
+	  break;
+	case CAF_REF_ARRAY:
+	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
+	    {
+	      switch (riter->u.a.mode[i])
+		{
+		case CAF_ARR_REF_SINGLE:
+		  memptr += (riter->u.a.dim[i].s.start
+			     - GFC_DIMENSION_LBOUND (src->dim[i]))
+		      * GFC_DIMENSION_STRIDE (src->dim[i])
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_FULL:
+		  /* A full array ref is allowed on the last reference only.  */
+		  if (riter->next == NULL)
+		    break;
+		  /* else fall through reporting an error.  */
+		  /* FALLTHROUGH */
+		case CAF_ARR_REF_VECTOR:
+		case CAF_ARR_REF_RANGE:
+		case CAF_ARR_REF_OPEN_END:
+		case CAF_ARR_REF_OPEN_START:
+		  caf_internal_error (arraddressingnotallowed, 0, NULL, 0);
+		  return 0;
+		default:
+		  caf_internal_error (unknownarrreftype, 0, NULL, 0);
+		  return 0;
+		}
+	    }
+	  break;
+	case CAF_REF_STATIC_ARRAY:
+	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
+	    {
+	      switch (riter->u.a.mode[i])
+		{
+		case CAF_ARR_REF_SINGLE:
+		  memptr += riter->u.a.dim[i].s.start
+		      * riter->u.a.dim[i].s.stride
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_FULL:
+		  /* A full array ref is allowed on the last reference only.  */
+		  if (riter->next == NULL)
+		    break;
+		  /* else fall through reporting an error.  */
+		  /* FALLTHROUGH */
+		case CAF_ARR_REF_VECTOR:
+		case CAF_ARR_REF_RANGE:
+		case CAF_ARR_REF_OPEN_END:
+		case CAF_ARR_REF_OPEN_START:
+		  caf_internal_error (arraddressingnotallowed, 0, NULL, 0);
+		  return 0;
+		default:
+		  caf_internal_error (unknownarrreftype, 0, NULL, 0);
+		  return 0;
+		}
+	    }
+	  break;
+	default:
+	  caf_internal_error (unknownreftype, 0, NULL, 0);
+	  return 0;
+	}
+      riter = riter->next;
+    }
+  return memptr != NULL;
 }

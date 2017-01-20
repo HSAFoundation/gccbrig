@@ -1,5 +1,5 @@
 /* Declaration statement matcher
-   Copyright (C) 2002-2016 Free Software Foundation, Inc.
+   Copyright (C) 2002-2017 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -922,7 +922,8 @@ char_len_param_value (gfc_expr **expr, bool *deferred)
 
       if (!t && e->ts.type == BT_UNKNOWN
 	  && e->symtree->n.sym->attr.untyped == 1
-	  && (e->symtree->n.sym->ns->seen_implicit_none == 1
+	  && (flag_implicit_none
+	      || e->symtree->n.sym->ns->seen_implicit_none == 1
 	      || e->symtree->n.sym->ns->parent->seen_implicit_none == 1))
 	{
 	  gfc_free_expr (e);
@@ -1119,12 +1120,12 @@ get_proc_name (const char *name, gfc_symbol **result, bool module_fcn_entry)
     {
       /* Create a partially populated interface symbol to carry the
 	 characteristics of the procedure and the result.  */
-      sym->ts.interface = gfc_new_symbol (name, sym->ns);
-      gfc_add_type (sym->ts.interface, &(sym->ts),
+      sym->tlink = gfc_new_symbol (name, sym->ns);
+      gfc_add_type (sym->tlink, &(sym->ts),
 		    &gfc_current_locus);
-      gfc_copy_attr (&sym->ts.interface->attr, &sym->attr, NULL);
+      gfc_copy_attr (&sym->tlink->attr, &sym->attr, NULL);
       if (sym->attr.dimension)
-	sym->ts.interface->as = gfc_copy_array_spec (sym->as);
+	sym->tlink->as = gfc_copy_array_spec (sym->as);
 
       /* Ideally, at this point, a copy would be made of the formal
 	 arguments and their namespace. However, this does not appear
@@ -1133,12 +1134,12 @@ get_proc_name (const char *name, gfc_symbol **result, bool module_fcn_entry)
 
       if (sym->result && sym->result != sym)
 	{
-	  sym->ts.interface->result = sym->result;
+	  sym->tlink->result = sym->result;
 	  sym->result = NULL;
 	}
       else if (sym->result)
 	{
-	  sym->ts.interface->result = sym->ts.interface;
+	  sym->tlink->result = sym->tlink;
 	}
     }
   else if (sym && !sym->gfc_new
@@ -1850,7 +1851,6 @@ build_struct (const char *name, gfc_charlen *cl, gfc_expr **init,
 {
   gfc_state_data *s;
   gfc_component *c;
-  bool t = true;
 
   /* F03:C438/C439. If the current symbol is of the same derived type that we're
      constructing, it must have the pointer attribute.  */
@@ -1952,7 +1952,7 @@ build_struct (const char *name, gfc_charlen *cl, gfc_expr **init,
 	{
 	  gfc_error ("Pointer array component of structure at %C must have a "
 		     "deferred shape");
-	  t = false;
+	  return false;
 	}
     }
   else if (c->attr.allocatable)
@@ -1961,7 +1961,7 @@ build_struct (const char *name, gfc_charlen *cl, gfc_expr **init,
 	{
 	  gfc_error ("Allocatable component of structure at %C must have a "
 		     "deferred shape");
-	  t = false;
+	  return false;
 	}
     }
   else
@@ -1970,20 +1970,15 @@ build_struct (const char *name, gfc_charlen *cl, gfc_expr **init,
 	{
 	  gfc_error ("Array component of structure at %C must have an "
 		     "explicit shape");
-	  t = false;
+	  return false;
 	}
     }
 
 scalar:
   if (c->ts.type == BT_CLASS)
-    {
-      bool t2 = gfc_build_class_symbol (&c->ts, &c->attr, &c->as);
+    return gfc_build_class_symbol (&c->ts, &c->attr, &c->as);
 
-      if (t)
-	t = t2;
-    }
-
-  return t;
+  return true;
 }
 
 
@@ -6069,7 +6064,6 @@ gfc_match_function_decl (void)
 	  sym->result = result;
 	}
 
-
       /* Warn if this procedure has the same name as an intrinsic.  */
       do_warn_intrinsic_shadow (sym, true);
 
@@ -7133,7 +7127,7 @@ attr_decl1 (void)
       if (current_attr.dimension && sym->value)
 	{
 	  gfc_error ("Dimensions specified for %s at %L after its "
-		     "initialisation", sym->name, &var_locus);
+		     "initialization", sym->name, &var_locus);
 	  m = MATCH_ERROR;
 	  goto cleanup;
 	}
@@ -8260,11 +8254,11 @@ gfc_match_submod_proc (void)
 
   /* Make sure that the result field is appropriately filled, even though
      the result symbol will be replaced later on.  */
-  if (sym->ts.interface && sym->ts.interface->attr.function)
+  if (sym->tlink && sym->tlink->attr.function)
     {
-      if (sym->ts.interface->result
-	  && sym->ts.interface->result != sym->ts.interface)
-	sym->result= sym->ts.interface->result;
+      if (sym->tlink->result
+	  && sym->tlink->result != sym->tlink)
+	sym->result= sym->tlink->result;
       else
 	sym->result = sym;
     }

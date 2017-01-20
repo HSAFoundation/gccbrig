@@ -1,6 +1,6 @@
 ; Options for the SPARC port of the compiler
 ;
-; Copyright (C) 2005-2016 Free Software Foundation, Inc.
+; Copyright (C) 2005-2017 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -56,6 +56,10 @@ Use hardware quad FP instructions.
 msoft-quad-float
 Target Report RejectNegative InverseMask(HARD_QUAD)
 Do not use hardware quad fp instructions.
+
+mlra
+Target Report Mask(LRA)
+Enable Local Register Allocation.
 
 mv8plus
 Target Report Mask(V8PLUS)

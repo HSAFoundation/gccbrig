@@ -1,5 +1,5 @@
 /* Register Transfer Language (RTL) definitions for GCC
-   Copyright (C) 1987-2016 Free Software Foundation, Inc.
+   Copyright (C) 1987-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2694,6 +2694,16 @@ get_full_set_src_cost (rtx x, machine_mode mode, struct full_rtx_costs *c)
 }
 #endif
 
+/* A convenience macro to validate the arguments of a zero_extract
+   expression.  It determines whether SIZE lies inclusively within
+   [1, RANGE], POS lies inclusively within between [0, RANGE - 1]
+   and the sum lies inclusively within [1, RANGE].  RANGE must be
+   >= 1, but SIZE and POS may be negative.  */
+#define EXTRACT_ARGS_IN_RANGE(SIZE, POS, RANGE) \
+  (IN_RANGE ((POS), 0, (unsigned HOST_WIDE_INT) (RANGE) - 1) \
+   && IN_RANGE ((SIZE), 1, (unsigned HOST_WIDE_INT) (RANGE) \
+			   - (unsigned HOST_WIDE_INT)(POS)))
+
 /* In explow.c */
 extern HOST_WIDE_INT trunc_int_for_mode	(HOST_WIDE_INT, machine_mode);
 extern rtx plus_constant (machine_mode, rtx, HOST_WIDE_INT, bool = false);
@@ -3057,7 +3067,7 @@ extern void add_int_reg_note (rtx_insn *, enum reg_note, int);
 extern void add_shallow_copy_of_reg_note (rtx_insn *, rtx);
 extern rtx duplicate_reg_note (rtx);
 extern void remove_note (rtx_insn *, const_rtx);
-extern void remove_reg_equal_equiv_notes (rtx_insn *);
+extern bool remove_reg_equal_equiv_notes (rtx_insn *);
 extern void remove_reg_equal_equiv_notes_for_regno (unsigned int);
 extern int side_effects_p (const_rtx);
 extern int volatile_refs_p (const_rtx);
@@ -3080,6 +3090,7 @@ extern bool rtx_referenced_p (const_rtx, const_rtx);
 extern bool tablejump_p (const rtx_insn *, rtx_insn **, rtx_jump_table_data **);
 extern int computed_jump_p (const rtx_insn *);
 extern bool tls_referenced_p (const_rtx);
+extern bool contains_mem_rtx_p (rtx x);
 
 /* Overload for refers_to_regno_p for checking a single register.  */
 inline bool
@@ -3345,7 +3356,7 @@ extern struct target_rtl *this_target_rtl;
 
 #ifndef GENERATOR_FILE
 /* Return the attributes of a MEM rtx.  */
-static inline struct mem_attrs *
+static inline const struct mem_attrs *
 get_mem_attrs (const_rtx x)
 {
   struct mem_attrs *attrs;
@@ -3701,7 +3712,9 @@ extern void init_varasm_once (void);
 extern rtx make_debug_expr_from_rtl (const_rtx);
 
 /* In read-rtl.c */
+#ifdef GENERATOR_FILE
 extern bool read_rtx (const char *, vec<rtx> *);
+#endif
 
 /* In alias.c */
 extern rtx canon_rtx (rtx);

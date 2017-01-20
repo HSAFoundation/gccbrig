@@ -1,5 +1,5 @@
 /* Definitions for the shared dumpfile.
-   Copyright (C) 2004-2016 Free Software Foundation, Inc.
+   Copyright (C) 2004-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -29,6 +29,7 @@ enum tree_dump_index
   TDI_none,			/* No dump */
   TDI_cgraph,                   /* dump function call graph.  */
   TDI_inheritance,              /* dump type inheritance graph.  */
+  TDI_clones,			/* dump IPA cloning decisions.  */
   TDI_tu,			/* dump the whole translation unit.  */
   TDI_class,			/* dump class hierarchy.  */
   TDI_original,			/* dump each function before optimizing it */

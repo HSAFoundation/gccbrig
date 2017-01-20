@@ -1,5 +1,5 @@
 /* Parser for C and Objective-C.
-   Copyright (C) 1987-2016 Free Software Foundation, Inc.
+   Copyright (C) 1987-2017 Free Software Foundation, Inc.
 
    Parser actions based on the old Bison parser; structure somewhat
    influenced by and fragments based on the C++ parser.
@@ -52,7 +52,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "c-lang.h"
 #include "c-family/c-objc.h"
 #include "plugin.h"
-#include "omp-low.h"
+#include "omp-general.h"
+#include "omp-offload.h"
 #include "builtins.h"
 #include "gomp-constants.h"
 #include "c-family/c-indentation.h"
@@ -1846,8 +1847,9 @@ c_parser_declaration_or_fndef (c_parser *parser, bool fndef_ok,
 	      c_parser_consume_token (parser);
 	      if (auto_type_p)
 		{
-		  start_init (NULL_TREE, asm_name, global_bindings_p ());
 		  init_loc = c_parser_peek_token (parser)->location;
+		  rich_location richloc (line_table, init_loc);
+		  start_init (NULL_TREE, asm_name, global_bindings_p (), &richloc);
 		  init = c_parser_expr_no_commas (parser, NULL);
 		  if (TREE_CODE (init.value) == COMPONENT_REF
 		      && DECL_C_BIT_FIELD (TREE_OPERAND (init.value, 1)))
@@ -1903,8 +1905,9 @@ c_parser_declaration_or_fndef (c_parser *parser, bool fndef_ok,
 		      || !vec_safe_is_empty (parser->cilk_simd_fn_tokens))
 		    c_finish_omp_declare_simd (parser, d, NULL_TREE,
 					       omp_declare_simd_clauses);
-		  start_init (d, asm_name, global_bindings_p ());
 		  init_loc = c_parser_peek_token (parser)->location;
+		  rich_location richloc (line_table, init_loc);
+		  start_init (d, asm_name, global_bindings_p (), &richloc);
 		  init = c_parser_initializer (parser);
 		  finish_init ();
 		}
@@ -4324,6 +4327,11 @@ c_parser_initializer (c_parser *parser)
     }
 }
 
+/* The location of the last comma within the current initializer list,
+   or UNKNOWN_LOCATION if not within one.  */
+
+location_t last_init_list_comma;
+
 /* Parse a braced initializer list.  TYPE is the type specified for a
    compound literal, and NULL_TREE for other initializers and for
    nested braced lists.  NESTED_P is true for nested braced lists,
@@ -4361,7 +4369,10 @@ c_parser_braced_init (c_parser *parser, tree type, bool nested_p,
 	  if (parser->error)
 	    break;
 	  if (c_parser_next_token_is (parser, CPP_COMMA))
-	    c_parser_consume_token (parser);
+	    {
+	      last_init_list_comma = c_parser_peek_token (parser)->location;
+	      c_parser_consume_token (parser);
+	    }
 	  else
 	    break;
 	  if (c_parser_next_token_is (parser, CPP_CLOSE_BRACE))
@@ -4375,13 +4386,13 @@ c_parser_braced_init (c_parser *parser, tree type, bool nested_p,
       ret.original_code = ERROR_MARK;
       ret.original_type = NULL;
       c_parser_skip_until_found (parser, CPP_CLOSE_BRACE, "expected %<}%>");
-      pop_init_level (brace_loc, 0, &braced_init_obstack);
+      pop_init_level (brace_loc, 0, &braced_init_obstack, last_init_list_comma);
       obstack_free (&braced_init_obstack, NULL);
       return ret;
     }
   location_t close_loc = next_tok->location;
   c_parser_consume_token (parser);
-  ret = pop_init_level (brace_loc, 0, &braced_init_obstack);
+  ret = pop_init_level (brace_loc, 0, &braced_init_obstack, close_loc);
   obstack_free (&braced_init_obstack, NULL);
   set_c_expr_source_range (&ret, brace_loc, close_loc);
   return ret;
@@ -7529,6 +7540,9 @@ c_parser_postfix_expression (c_parser *parser)
     case CPP_CHAR32:
     case CPP_WCHAR:
       expr.value = c_parser_peek_token (parser)->value;
+      /* For the purpose of warning when a pointer is compared with
+	 a zero character constant.  */
+      expr.original_type = char_type_node;
       set_c_expr_source_range (&expr, tok_range);
       c_parser_consume_token (parser);
       break;
@@ -8217,7 +8231,8 @@ c_parser_postfix_expression_after_paren_type (c_parser *parser,
   tree type_expr = NULL_TREE;
   bool type_expr_const = true;
   check_compound_literal_type (type_loc, type_name);
-  start_init (NULL_TREE, NULL, 0);
+  rich_location richloc (line_table, type_loc);
+  start_init (NULL_TREE, NULL, 0, &richloc);
   type = groktypename (type_name, &type_expr, &type_expr_const);
   start_loc = c_parser_peek_token (parser)->location;
   if (type != error_mark_node && C_TYPE_VARIABLE_SIZE (type))
@@ -10145,10 +10160,24 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
       return false;
 
     case PRAGMA_OACC_ENTER_DATA:
+      if (context != pragma_compound)
+	{
+	  if (context == pragma_stmt)
+	    c_parser_error (parser, "%<#pragma acc enter data%> may only be "
+			    "used in compound statements");
+	  goto bad_stmt;
+	}
       c_parser_oacc_enter_exit_data (parser, true);
       return false;
 
     case PRAGMA_OACC_EXIT_DATA:
+      if (context != pragma_compound)
+	{
+	  if (context == pragma_stmt)
+	    c_parser_error (parser, "%<#pragma acc exit data%> may only be "
+			    "used in compound statements");
+	  goto bad_stmt;
+	}
       c_parser_oacc_enter_exit_data (parser, false);
       return false;
 
@@ -10304,6 +10333,16 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
 	}
       c_parser_cilk_grainsize (parser, if_p);
       return false;
+
+    case PRAGMA_OACC_WAIT:
+      if (context != pragma_compound)
+	{
+	  if (context == pragma_stmt)
+	    c_parser_error (parser, "%<#pragma acc enter data%> may only be "
+			    "used in compound statements");
+	  goto bad_stmt;
+	}
+	/* FALL THROUGH.  */
 
     default:
       if (id < PRAGMA_FIRST_EXTERNAL)
@@ -13871,27 +13910,25 @@ c_parser_oacc_enter_exit_data (c_parser *parser, bool enter)
 {
   location_t loc = c_parser_peek_token (parser)->location;
   tree clauses, stmt;
+  const char *p = "";
 
   c_parser_consume_pragma (parser);
 
-  if (!c_parser_next_token_is (parser, CPP_NAME))
+  if (c_parser_next_token_is (parser, CPP_NAME))
     {
-      c_parser_error (parser, enter
-		      ? "expected %<data%> in %<#pragma acc enter data%>"
-		      : "expected %<data%> in %<#pragma acc exit data%>");
-      c_parser_skip_to_pragma_eol (parser);
-      return;
+      p = IDENTIFIER_POINTER (c_parser_peek_token (parser)->value);
+      c_parser_consume_token (parser);
     }
 
-  const char *p = IDENTIFIER_POINTER (c_parser_peek_token (parser)->value);
   if (strcmp (p, "data") != 0)
     {
-      c_parser_error (parser, "invalid pragma");
+      error_at (loc, enter
+		? "expected %<data%> after %<#pragma acc enter%>"
+		: "expected %<data%> after %<#pragma acc exit%>");
+      parser->error = true;
       c_parser_skip_to_pragma_eol (parser);
       return;
     }
-
-  c_parser_consume_token (parser);
 
   if (enter)
     clauses = c_parser_oacc_all_clauses (parser, OACC_ENTER_DATA_CLAUSE_MASK,
@@ -13900,7 +13937,7 @@ c_parser_oacc_enter_exit_data (c_parser *parser, bool enter)
     clauses = c_parser_oacc_all_clauses (parser, OACC_EXIT_DATA_CLAUSE_MASK,
 					 "#pragma acc exit data");
 
-  if (find_omp_clause (clauses, OMP_CLAUSE_MAP) == NULL_TREE)
+  if (omp_find_clause (clauses, OMP_CLAUSE_MAP) == NULL_TREE)
     {
       error_at (loc, enter
 		? "%<#pragma acc enter data%> has no data movement clause"
@@ -14219,7 +14256,7 @@ c_finish_oacc_routine (struct oacc_routine_data *data, tree fndecl,
       return;
     }
 
-  if (get_oacc_fn_attrib (fndecl))
+  if (oacc_get_fn_attrib (fndecl))
     {
       error_at (data->loc,
 		"%<#pragma acc routine%> already applied to %qD", fndecl);
@@ -14237,8 +14274,8 @@ c_finish_oacc_routine (struct oacc_routine_data *data, tree fndecl,
     }
 
   /* Process the routine's dimension clauses.  */
-  tree dims = build_oacc_routine_dims (data->clauses);
-  replace_oacc_fn_attrib (fndecl, dims);
+  tree dims = oacc_build_routine_dims (data->clauses);
+  oacc_replace_fn_attrib (fndecl, dims);
 
   /* Add an "omp declare target" attribute.  */
   DECL_ATTRIBUTES (fndecl)
@@ -14270,7 +14307,7 @@ c_parser_oacc_update (c_parser *parser)
 
   tree clauses = c_parser_oacc_all_clauses (parser, OACC_UPDATE_CLAUSE_MASK,
 					    "#pragma acc update");
-  if (find_omp_clause (clauses, OMP_CLAUSE_MAP) == NULL_TREE)
+  if (omp_find_clause (clauses, OMP_CLAUSE_MAP) == NULL_TREE)
     {
       error_at (loc,
 		"%<#pragma acc update%> must contain at least one "
@@ -15241,7 +15278,7 @@ c_parser_omp_simd (location_t loc, c_parser *parser,
     {
       omp_split_clauses (loc, OMP_SIMD, mask, clauses, cclauses);
       clauses = cclauses[C_OMP_CLAUSE_SPLIT_SIMD];
-      tree c = find_omp_clause (cclauses[C_OMP_CLAUSE_SPLIT_FOR],
+      tree c = omp_find_clause (cclauses[C_OMP_CLAUSE_SPLIT_FOR],
 				OMP_CLAUSE_ORDERED);
       if (c && OMP_CLAUSE_ORDERED_EXPR (c))
 	{
@@ -16085,8 +16122,8 @@ c_parser_omp_target_update (location_t loc, c_parser *parser,
   tree clauses
     = c_parser_omp_all_clauses (parser, OMP_TARGET_UPDATE_CLAUSE_MASK,
 				"#pragma omp target update");
-  if (find_omp_clause (clauses, OMP_CLAUSE_TO) == NULL_TREE
-      && find_omp_clause (clauses, OMP_CLAUSE_FROM) == NULL_TREE)
+  if (omp_find_clause (clauses, OMP_CLAUSE_TO) == NULL_TREE
+      && omp_find_clause (clauses, OMP_CLAUSE_FROM) == NULL_TREE)
     {
       error_at (loc,
 		"%<#pragma omp target update%> must contain at least one "
@@ -17117,8 +17154,9 @@ c_parser_omp_declare_reduction (c_parser *parser, enum pragma_context context)
 	      else
 		{
 		  tree st = push_stmt_list ();
-		  start_init (omp_priv, NULL_TREE, 0);
 		  location_t loc = c_parser_peek_token (parser)->location;
+		  rich_location richloc (line_table, loc);
+		  start_init (omp_priv, NULL_TREE, 0, &richloc);
 		  struct c_expr init = c_parser_initializer (parser);
 		  finish_init ();
 		  finish_decl (omp_priv, loc, init.value,

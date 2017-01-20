@@ -1,6 +1,6 @@
 // Components for manipulating sequences of characters -*- C++ -*-
 
-// Copyright (C) 1997-2016 Free Software Foundation, Inc.
+// Copyright (C) 1997-2017 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -1186,21 +1186,34 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     find(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       const size_type __size = this->size();
-      const _CharT* __data = _M_data();
 
       if (__n == 0)
 	return __pos <= __size ? __pos : npos;
+      if (__pos >= __size)
+	return npos;
 
-      if (__n <= __size)
+      const _CharT __elem0 = __s[0];
+      const _CharT* const __data = data();
+      const _CharT* __first = __data + __pos;
+      const _CharT* const __last = __data + __size;
+      size_type __len = __size - __pos;
+
+      while (__len >= __n)
 	{
-	  for (; __pos <= __size - __n; ++__pos)
-	    if (traits_type::eq(__data[__pos], __s[0])
-		&& traits_type::compare(__data + __pos + 1,
-					__s + 1, __n - 1) == 0)
-	      return __pos;
+	  // Find the first occurrence of __elem0:
+	  __first = traits_type::find(__first, __len - __n + 1, __elem0);
+	  if (!__first)
+	    return npos;
+	  // Compare the full strings from the first occurrence of __elem0.
+	  // We already know that __first[0] == __s[0] but compare them again
+	  // anyway because __s is probably aligned, which helps memcmp.
+	  if (traits_type::compare(__first, __s, __n) == 0)
+	    return __first - __data;
+	  __len = __last - ++__first;
 	}
       return npos;
     }
@@ -1227,6 +1240,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     rfind(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       const size_type __size = this->size();
@@ -1265,6 +1279,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     find_first_of(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       for (; __n && __pos < this->size(); ++__pos)
@@ -1280,6 +1295,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     find_last_of(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       size_type __size = this->size();
@@ -1301,6 +1317,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     find_first_not_of(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       for (; __pos < this->size(); ++__pos)
@@ -1324,6 +1341,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     typename basic_string<_CharT, _Traits, _Alloc>::size_type
     basic_string<_CharT, _Traits, _Alloc>::
     find_last_not_of(const _CharT* __s, size_type __pos, size_type __n) const
+    _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string_len(__s, __n);
       size_type __size = this->size();
@@ -1397,7 +1415,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _CharT, typename _Traits, typename _Alloc>
     int
     basic_string<_CharT, _Traits, _Alloc>::
-    compare(const _CharT* __s) const
+    compare(const _CharT* __s) const _GLIBCXX_NOEXCEPT
     {
       __glibcxx_requires_string(__s);
       const size_type __size = this->size();

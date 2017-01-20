@@ -1,6 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for 64 bit PowerPC linux.
-   Copyright (C) 2000-2016 Free Software Foundation, Inc.
+   Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -640,7 +640,3 @@ extern int dot_symbols;
    enabling the __float128 keyword.  */
 #undef	TARGET_FLOAT128_ENABLE_TYPE
 #define TARGET_FLOAT128_ENABLE_TYPE 1
-
-/* The format string to which "%p" corresponds.  */
-#undef TARGET_PRINTF_POINTER_FORMAT
-#define TARGET_PRINTF_POINTER_FORMAT linux_printf_pointer_format

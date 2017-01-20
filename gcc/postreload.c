@@ -1,5 +1,5 @@
 /* Perform simple optimizations to clean up the result of reload.
-   Copyright (C) 1987-2016 Free Software Foundation, Inc.
+   Copyright (C) 1987-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -89,6 +89,11 @@ reload_cse_simplify (rtx_insn *insn, rtx testreg)
   rtx body = PATTERN (insn);
   basic_block insn_bb = BLOCK_FOR_INSN (insn);
   unsigned insn_bb_succs = EDGE_COUNT (insn_bb->succs);
+
+  /* If NO_FUNCTION_CSE has been set by the target, then we should not try
+     to cse function calls.  */
+  if (NO_FUNCTION_CSE && CALL_P (insn))
+    return false;
 
   if (GET_CODE (body) == SET)
     {
@@ -1192,10 +1197,11 @@ reload_combine_recognize_pattern (rtx_insn *insn)
 	      /* Delete the reg-reg addition.  */
 	      delete_insn (insn);
 
-	      if (reg_state[regno].offset != const0_rtx)
-		/* Previous REG_EQUIV / REG_EQUAL notes for PREV
-		   are now invalid.  */
-		remove_reg_equal_equiv_notes (prev);
+	      if (reg_state[regno].offset != const0_rtx
+		  /* Previous REG_EQUIV / REG_EQUAL notes for PREV
+		     are now invalid.  */
+		  && remove_reg_equal_equiv_notes (prev))
+		df_notes_rescan (prev);
 
 	      reg_state[regno].use_index = RELOAD_COMBINE_MAX_USES;
 	      return true;

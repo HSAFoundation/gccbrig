@@ -1,5 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003-2016 Free Software Foundation, Inc.
+   Copyright (C) 2003-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -190,10 +190,6 @@ extern bool default_have_conditional_execution (void);
 extern bool default_libc_has_function (enum function_class);
 extern bool no_c99_libc_has_function (enum function_class);
 extern bool gnu_libc_has_function (enum function_class);
-
-extern const char* default_printf_pointer_format (tree, const char **);
-extern const char* linux_printf_pointer_format (tree, const char **);
-extern const char* solaris_printf_pointer_format (tree, const char **);
 
 extern tree default_builtin_tm_load_store (tree);
 

@@ -37,13 +37,6 @@
 #endif
 
 
-/* Define to 0/1 if you want also extra run-time checking that might affect
-   code generation. */
-#ifndef USED_FOR_TARGET
-#undef ENABLE_EXTRA_CHECKING
-#endif
-
-
 /* Define 0/1 to force the choice for exception handling model. */
 #ifndef USED_FOR_TARGET
 #undef CONFIG_SJLJ_EXCEPTIONS
@@ -118,6 +111,13 @@
 /* Define if you want more run-time sanity checks for dataflow. */
 #ifndef USED_FOR_TARGET
 #undef ENABLE_DF_CHECKING
+#endif
+
+
+/* Define to 0/1 if you want extra run-time checking that might affect code
+   generation. */
+#ifndef USED_FOR_TARGET
+#undef ENABLE_EXTRA_CHECKING
 #endif
 
 
@@ -567,6 +567,13 @@
 /* Define if your assembler supports mffgpr and mftgpr. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_MFPGPR
+#endif
+
+
+/* Define if your Mac OS X assembler supports the -mmacos-version-min option.
+   */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_MMACOSX_VERSION_MIN_OPTION
 #endif
 
 
@@ -1949,6 +1956,18 @@
 /* Define if int64_t uses long as underlying type. */
 #ifndef USED_FOR_TARGET
 #undef INT64_T_IS_LONG
+#endif
+
+
+/* Define to 1 if ld64 supports '-export_dynamic'. */
+#ifndef USED_FOR_TARGET
+#undef LD64_HAS_EXPORT_DYNAMIC
+#endif
+
+
+/* Define to ld64 version. */
+#ifndef USED_FOR_TARGET
+#undef LD64_VERSION
 #endif
 
 

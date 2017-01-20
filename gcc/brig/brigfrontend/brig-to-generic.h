@@ -60,7 +60,6 @@ public:
 
   void write_globals ();
 
-  char *get_c_string (size_t entry_offset) const;
   std::string get_string (size_t entry_offset) const;
 
   const BrigData *get_brig_data_entry (size_t entry_offset) const;

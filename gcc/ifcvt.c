@@ -1,5 +1,5 @@
 /* If-conversion support.
-   Copyright (C) 2000-2016 Free Software Foundation, Inc.
+   Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -3010,19 +3010,6 @@ noce_operand_ok (const_rtx op)
   return ! may_trap_p (op);
 }
 
-/* Return true if X contains a MEM subrtx.  */
-
-static bool
-contains_mem_rtx_p (rtx x)
-{
-  subrtx_iterator::array_type array;
-  FOR_EACH_SUBRTX (iter, array, x, ALL)
-    if (MEM_P (*iter))
-      return true;
-
-  return false;
-}
-
 /* Return true iff basic block TEST_BB is valid for noce if-conversion.
    The condition used in this if-conversion is in COND.
    In practice, check that TEST_BB ends with a single set
@@ -4698,6 +4685,11 @@ find_cond_trap (basic_block test_bb, edge then_edge, edge else_edge)
 				 TRAP_CODE (PATTERN (trap)));
   if (seq == NULL)
     return FALSE;
+
+  /* If that results in an invalid insn, back out.  */
+  for (rtx_insn *x = seq; x; x = NEXT_INSN (x))
+    if (recog_memoized (x) < 0)
+      return FALSE;
 
   /* Emit the new insns before cond_earliest.  */
   emit_insn_before_setloc (seq, cond_earliest, INSN_LOCATION (trap));

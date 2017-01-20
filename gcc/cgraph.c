@@ -1,5 +1,5 @@
 /* Callgraph handling code.
-   Copyright (C) 2003-2016 Free Software Foundation, Inc.
+   Copyright (C) 2003-2017 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -263,6 +263,9 @@ symbol_table::initialize (void)
 {
   if (!dump_file)
     dump_file = dump_begin (TDI_cgraph, NULL);
+
+  if (!ipa_clones_dump_file)
+    ipa_clones_dump_file = dump_begin (TDI_clones, NULL);
 }
 
 /* Allocate new callgraph node and insert it into basic data structures.  */
@@ -1268,7 +1271,6 @@ cgraph_edge::redirect_call_stmt_to_callee (void)
   cgraph_edge *e = this;
 
   tree decl = gimple_call_fndecl (e->call_stmt);
-  tree lhs = gimple_call_lhs (e->call_stmt);
   gcall *new_stmt;
   gimple_stmt_iterator gsi;
   bool skip_bounds = false;
@@ -1523,6 +1525,7 @@ cgraph_edge::redirect_call_stmt_to_callee (void)
     gimple_call_set_fntype (new_stmt, TREE_TYPE (e->callee->decl));
 
   /* If the call becomes noreturn, remove the LHS if possible.  */
+  tree lhs = gimple_call_lhs (new_stmt);
   if (lhs
       && gimple_call_noreturn_p (new_stmt)
       && (VOID_TYPE_P (TREE_TYPE (gimple_call_fntype (new_stmt)))
@@ -1814,6 +1817,12 @@ cgraph_node::remove (void)
 {
   cgraph_node *n;
   int uid = this->uid;
+
+  if (symtab->ipa_clones_dump_file && symtab->cloned_nodes.contains (this))
+    fprintf (symtab->ipa_clones_dump_file,
+	     "Callgraph removal;%s;%d;%s;%d;%d\n", asm_name (), order,
+	     DECL_SOURCE_FILE (decl), DECL_SOURCE_LINE (decl),
+	     DECL_SOURCE_COLUMN (decl));
 
   symtab->call_cgraph_removal_hooks (this);
   remove_callers ();

@@ -2,7 +2,7 @@
    constexpr functions.  These routines are used both during actual parsing
    and during the instantiation of template functions.
 
-   Copyright (C) 1998-2016 Free Software Foundation, Inc.
+   Copyright (C) 1998-2017 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -2149,6 +2149,27 @@ diag_array_subscript (const constexpr_ctx *ctx, tree array, tree index)
     }
 }
 
+/* Extract element INDEX consisting of CHARS_PER_ELT chars from
+   STRING_CST STRING.  */
+
+static tree
+extract_string_elt (tree string, unsigned chars_per_elt, unsigned index)
+{
+  tree type = cv_unqualified (TREE_TYPE (TREE_TYPE (string)));
+  tree r;
+
+  if (chars_per_elt == 1)
+    r = build_int_cst (type, TREE_STRING_POINTER (string)[index]);
+  else
+    {
+      const unsigned char *ptr
+	= ((const unsigned char *)TREE_STRING_POINTER (string)
+	   + index * chars_per_elt);
+      r = native_interpret_expr (type, ptr, chars_per_elt);
+    }
+  return r;
+}
+
 /* Subroutine of cxx_eval_constant_expression.
    Attempt to reduce a reference to an array slot.  */
 
@@ -2162,9 +2183,9 @@ cxx_eval_array_reference (const constexpr_ctx *ctx, tree t,
 					   lval,
 					   non_constant_p, overflow_p);
   tree index, oldidx;
-  HOST_WIDE_INT i;
-  tree elem_type;
-  unsigned len, elem_nchars = 1;
+  HOST_WIDE_INT i = 0;
+  tree elem_type = NULL_TREE;
+  unsigned len = 0, elem_nchars = 1;
   if (*non_constant_p)
     return t;
   oldidx = TREE_OPERAND (t, 1);
@@ -2172,39 +2193,38 @@ cxx_eval_array_reference (const constexpr_ctx *ctx, tree t,
 					false,
 					non_constant_p, overflow_p);
   VERIFY_CONSTANT (index);
-  if (lval && ary == oldary && index == oldidx)
-    return t;
-  else if (lval)
-    return build4 (ARRAY_REF, TREE_TYPE (t), ary, index, NULL, NULL);
-  elem_type = TREE_TYPE (TREE_TYPE (ary));
-  if (TREE_CODE (ary) == VIEW_CONVERT_EXPR
-      && VECTOR_TYPE_P (TREE_TYPE (TREE_OPERAND (ary, 0)))
-      && TREE_TYPE (t) == TREE_TYPE (TREE_TYPE (TREE_OPERAND (ary, 0))))
-    ary = TREE_OPERAND (ary, 0);
-  if (TREE_CODE (ary) == CONSTRUCTOR)
-    len = CONSTRUCTOR_NELTS (ary);
-  else if (TREE_CODE (ary) == STRING_CST)
+  if (!lval)
     {
-      elem_nchars = (TYPE_PRECISION (elem_type)
-		     / TYPE_PRECISION (char_type_node));
-      len = (unsigned) TREE_STRING_LENGTH (ary) / elem_nchars;
-    }
-  else if (TREE_CODE (ary) == VECTOR_CST)
-    len = VECTOR_CST_NELTS (ary);
-  else
-    {
-      /* We can't do anything with other tree codes, so use
-	 VERIFY_CONSTANT to complain and fail.  */
-      VERIFY_CONSTANT (ary);
-      gcc_unreachable ();
-    }
+      elem_type = TREE_TYPE (TREE_TYPE (ary));
+      if (TREE_CODE (ary) == VIEW_CONVERT_EXPR
+	  && VECTOR_TYPE_P (TREE_TYPE (TREE_OPERAND (ary, 0)))
+	  && TREE_TYPE (t) == TREE_TYPE (TREE_TYPE (TREE_OPERAND (ary, 0))))
+	ary = TREE_OPERAND (ary, 0);
+      if (TREE_CODE (ary) == CONSTRUCTOR)
+	len = CONSTRUCTOR_NELTS (ary);
+      else if (TREE_CODE (ary) == STRING_CST)
+	{
+	  elem_nchars = (TYPE_PRECISION (elem_type)
+			 / TYPE_PRECISION (char_type_node));
+	  len = (unsigned) TREE_STRING_LENGTH (ary) / elem_nchars;
+	}
+      else if (TREE_CODE (ary) == VECTOR_CST)
+	len = VECTOR_CST_NELTS (ary);
+      else
+	{
+	  /* We can't do anything with other tree codes, so use
+	     VERIFY_CONSTANT to complain and fail.  */
+	  VERIFY_CONSTANT (ary);
+	  gcc_unreachable ();
+	}
 
-  if (!tree_fits_shwi_p (index)
-      || (i = tree_to_shwi (index)) < 0)
-    {
-      diag_array_subscript (ctx, ary, index);
-      *non_constant_p = true;
-      return t;
+      if (!tree_fits_shwi_p (index)
+	  || (i = tree_to_shwi (index)) < 0)
+	{
+	  diag_array_subscript (ctx, ary, index);
+	  *non_constant_p = true;
+	  return t;
+	}
     }
 
   tree nelts;
@@ -2219,12 +2239,19 @@ cxx_eval_array_reference (const constexpr_ctx *ctx, tree t,
   nelts = cxx_eval_constant_expression (ctx, nelts, false, non_constant_p,
 					overflow_p);
   VERIFY_CONSTANT (nelts);
-  if (!tree_int_cst_lt (index, nelts))
+  if (lval
+      ? !tree_int_cst_le (index, nelts)
+      : !tree_int_cst_lt (index, nelts))
     {
       diag_array_subscript (ctx, ary, index);
       *non_constant_p = true;
       return t;
     }
+
+  if (lval && ary == oldary && index == oldidx)
+    return t;
+  else if (lval)
+    return build4 (ARRAY_REF, TREE_TYPE (t), ary, index, NULL, NULL);
 
   bool found;
   if (TREE_CODE (ary) == CONSTRUCTOR)
@@ -2244,16 +2271,9 @@ cxx_eval_array_reference (const constexpr_ctx *ctx, tree t,
 	r = (*CONSTRUCTOR_ELTS (ary))[i].value;
       else if (TREE_CODE (ary) == VECTOR_CST)
 	r = VECTOR_CST_ELT (ary, i);
-      else if (elem_nchars == 1)
-	r = build_int_cst (cv_unqualified (TREE_TYPE (TREE_TYPE (ary))),
-			   TREE_STRING_POINTER (ary)[i]);
       else
-	{
-	  tree type = cv_unqualified (TREE_TYPE (TREE_TYPE (ary)));
-	  r = native_interpret_expr (type, (const unsigned char *)
-				     TREE_STRING_POINTER (ary)
-				     + i * elem_nchars, elem_nchars);
-	}
+	r = extract_string_elt (ary, elem_nchars, i);
+
       if (r)
 	/* Don't VERIFY_CONSTANT here.  */
 	return r;
@@ -3267,6 +3287,47 @@ cxx_eval_store_expression (const constexpr_ctx *ctx, tree t,
   if (*non_constant_p)
     return t;
 
+  /* cxx_eval_array_reference for lval = true allows references one past
+     end of array, because it does not know if it is just taking address
+     (which is valid), or actual dereference.  Here we know it is
+     a dereference, so diagnose it here.  */
+  for (tree probe = target; probe; )
+    {
+      switch (TREE_CODE (probe))
+	{
+	case ARRAY_REF:
+	  tree nelts, ary;
+	  ary = TREE_OPERAND (probe, 0);
+	  if (TREE_CODE (TREE_TYPE (ary)) == ARRAY_TYPE)
+	    nelts = array_type_nelts_top (TREE_TYPE (ary));
+	  else if (VECTOR_TYPE_P (TREE_TYPE (ary)))
+	    nelts = size_int (TYPE_VECTOR_SUBPARTS (TREE_TYPE (ary)));
+	  else
+	    gcc_unreachable ();
+	  nelts = cxx_eval_constant_expression (ctx, nelts, false,
+						non_constant_p, overflow_p);
+	  VERIFY_CONSTANT (nelts);
+	  gcc_assert (TREE_CODE (nelts) == INTEGER_CST
+		      && TREE_CODE (TREE_OPERAND (probe, 1)) == INTEGER_CST);
+	  if (wi::eq_p (TREE_OPERAND (probe, 1), nelts))
+	    {
+	      diag_array_subscript (ctx, ary, TREE_OPERAND (probe, 1));
+	      *non_constant_p = true;
+	      return t;
+	    }
+	  /* FALLTHRU */
+
+	case BIT_FIELD_REF:
+	case COMPONENT_REF:
+	  probe = TREE_OPERAND (probe, 0);
+	  continue;
+
+	default:
+	  probe = NULL_TREE;
+	  continue;
+	}
+    }
+
   if (!same_type_ignoring_top_level_qualifiers_p (TREE_TYPE (target), type))
     {
       /* For initialization of an empty base, the original target will be
@@ -3326,6 +3387,35 @@ cxx_eval_store_expression (const constexpr_ctx *ctx, tree t,
 	  *valp = build_constructor (type, NULL);
 	  CONSTRUCTOR_NO_IMPLICIT_ZERO (*valp) = no_zero_init;
 	}
+      else if (TREE_CODE (*valp) == STRING_CST)
+	{
+	  /* An array was initialized with a string constant, and now
+	     we're writing into one of its elements.  Explode the
+	     single initialization into a set of element
+	     initializations.  */
+	  gcc_assert (TREE_CODE (type) == ARRAY_TYPE);
+
+	  tree string = *valp;
+	  tree elt_type = TREE_TYPE (type);
+	  unsigned chars_per_elt = (TYPE_PRECISION (elt_type)
+				    / TYPE_PRECISION (char_type_node));
+	  unsigned num_elts = TREE_STRING_LENGTH (string) / chars_per_elt;
+	  tree ary_ctor = build_constructor (type, NULL);
+
+	  vec_safe_reserve (CONSTRUCTOR_ELTS (ary_ctor), num_elts);
+	  for (unsigned ix = 0; ix != num_elts; ix++)
+	    {
+	      constructor_elt elt = 
+		{
+		  build_int_cst (size_type_node, ix),
+		  extract_string_elt (string, chars_per_elt, ix)
+		};
+	      CONSTRUCTOR_ELTS (ary_ctor)->quick_push (elt);
+	    }
+	  
+	  *valp = ary_ctor;
+	}
+
       /* If the value of object is already zero-initialized, any new ctors for
 	 subobjects will also be zero-initialized.  */
       no_zero_init = CONSTRUCTOR_NO_IMPLICIT_ZERO (*valp);
@@ -4226,7 +4316,7 @@ cxx_eval_constant_expression (const constexpr_ctx *ctx, tree t,
 	  {
 	    if (same_type_ignoring_top_level_qualifiers_p (type,
 							   TREE_TYPE (op)))
-	      STRIP_NOPS (t);
+	      return cp_fold_convert (type, op);
 	    else
 	      {
 		if (!ctx->quiet)
@@ -5571,6 +5661,7 @@ potential_constant_expression_1 (tree t, bool want_rval, bool strict,
       /* We can see these in statement-expressions.  */
       return true;
 
+    case CLEANUP_STMT:
     case EMPTY_CLASS_EXPR:
       return false;
 

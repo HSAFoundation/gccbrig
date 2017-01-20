@@ -1,5 +1,5 @@
 /* Top-level LTO routines.
-   Copyright (C) 2009-2016 Free Software Foundation, Inc.
+   Copyright (C) 2009-2017 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -1707,7 +1707,13 @@ lto_read_decls (struct lto_file_decl_data *decl_data, const void *data,
 	      && (TREE_CODE (first) == IDENTIFIER_NODE
 		  || TREE_CODE (first) == INTEGER_CST
 		  || TREE_CODE (first) == TRANSLATION_UNIT_DECL))
-	    continue;
+	    {
+	      /* For TRANSLATION_UNIT_DECL we need to accept location cache now
+	         to avoid possible reverting during following unify_scc call.  */
+	      if (TREE_CODE (first) == TRANSLATION_UNIT_DECL)
+		data_in->location_cache.accept_location_cache ();
+	      continue;
+	    }
 
 	  /* Try to unify the SCC with already existing ones.  */
 	  if (!flag_ltrans

@@ -1,5 +1,5 @@
 /* Interprocedural analyses.
-   Copyright (C) 2005-2016 Free Software Foundation, Inc.
+   Copyright (C) 2005-2017 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1177,29 +1177,37 @@ compute_complex_assign_jump_func (struct ipa_func_body_info *fbi,
 
   if (index >= 0)
     {
-      tree op2 = gimple_assign_rhs2 (stmt);
-
-      if (op2)
+      switch (gimple_assign_rhs_class (stmt))
 	{
-	  if (!is_gimple_ip_invariant (op2)
-	      || (TREE_CODE_CLASS (gimple_expr_code (stmt)) != tcc_comparison
-		  && !useless_type_conversion_p (TREE_TYPE (name),
-						 TREE_TYPE (op1))))
-	    return;
+	case GIMPLE_BINARY_RHS:
+	  {
+	    tree op2 = gimple_assign_rhs2 (stmt);
+	    if (!is_gimple_ip_invariant (op2)
+		|| ((TREE_CODE_CLASS (gimple_assign_rhs_code (stmt))
+		     != tcc_comparison)
+		    && !useless_type_conversion_p (TREE_TYPE (name),
+						   TREE_TYPE (op1))))
+	      return;
 
-	  ipa_set_jf_arith_pass_through (jfunc, index, op2,
-					 gimple_assign_rhs_code (stmt));
+	    ipa_set_jf_arith_pass_through (jfunc, index, op2,
+					   gimple_assign_rhs_code (stmt));
+	    break;
+	  }
+	case GIMPLE_SINGLE_RHS:
+	  {
+	    bool agg_p = parm_ref_data_pass_through_p (fbi, index, call,
+						       tc_ssa);
+	    ipa_set_jf_simple_pass_through (jfunc, index, agg_p);
+	    break;
+	  }
+	case GIMPLE_UNARY_RHS:
+	  if (is_gimple_assign (stmt2)
+	      && gimple_assign_rhs_class (stmt2) == GIMPLE_UNARY_RHS
+	      && ! CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (stmt2)))
+	    ipa_set_jf_unary_pass_through (jfunc, index,
+					   gimple_assign_rhs_code (stmt2));
+	default:;
 	}
-      else if (gimple_assign_single_p (stmt))
-	{
-	  bool agg_p = parm_ref_data_pass_through_p (fbi, index, call, tc_ssa);
-	  ipa_set_jf_simple_pass_through (jfunc, index, agg_p);
-	}
-      else if (is_gimple_assign (stmt2)
-	       && (gimple_expr_code (stmt2) != NOP_EXPR)
-	       && (TREE_CODE_CLASS (gimple_expr_code (stmt2)) == tcc_unary))
-	ipa_set_jf_unary_pass_through (jfunc, index,
-				       gimple_assign_rhs_code (stmt2));
       return;
     }
 
@@ -4767,7 +4775,7 @@ ipa_write_jump_function (struct output_block *ob,
     {
       streamer_write_widest_int (ob, jump_func->bits.value);
       streamer_write_widest_int (ob, jump_func->bits.mask);
-    }   
+    }
   bp_pack_value (&bp, jump_func->vr_known, 1);
   streamer_write_bitpack (&bp);
   if (jump_func->vr_known)
@@ -4965,7 +4973,10 @@ ipa_write_node_info (struct output_block *ob, struct cgraph_node *node)
     bp_pack_value (&bp, ipa_is_param_used (info, j), 1);
   streamer_write_bitpack (&bp);
   for (j = 0; j < ipa_get_param_count (info); j++)
-    streamer_write_hwi (ob, ipa_get_controlled_uses (info, j));
+    {
+      streamer_write_hwi (ob, ipa_get_controlled_uses (info, j));
+      stream_write_tree (ob, ipa_get_type (info, j), true);
+    }
   for (e = node->callees; e; e = e->next_callee)
     {
       struct ipa_edge_args *args = IPA_EDGE_REF (e);
@@ -5012,7 +5023,7 @@ ipa_read_node_info (struct lto_input_block *ib, struct cgraph_node *node,
 
   for (k = 0; k < ipa_get_param_count (info); k++)
     info->descriptors[k].move_cost = streamer_read_uhwi (ib);
-    
+
   bp = streamer_read_bitpack (ib);
   if (ipa_get_param_count (info) != 0)
     info->analysis_done = true;
@@ -5020,7 +5031,10 @@ ipa_read_node_info (struct lto_input_block *ib, struct cgraph_node *node,
   for (k = 0; k < ipa_get_param_count (info); k++)
     ipa_set_param_used (info, k, bp_unpack_value (&bp, 1));
   for (k = 0; k < ipa_get_param_count (info); k++)
-    ipa_set_controlled_uses (info, k, streamer_read_hwi (ib));
+    {
+      ipa_set_controlled_uses (info, k, streamer_read_hwi (ib));
+      info->descriptors[k].decl_or_type = stream_read_tree (ib, data_in);
+    }
   for (e = node->callees; e; e = e->next_callee)
     {
       struct ipa_edge_args *args = IPA_EDGE_REF (e);

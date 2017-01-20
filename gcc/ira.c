@@ -1,5 +1,5 @@
 /* Integrated Register Allocator (IRA) entry point.
-   Copyright (C) 2006-2016 Free Software Foundation, Inc.
+   Copyright (C) 2006-2017 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -2266,6 +2266,10 @@ ira_setup_eliminable_regset (void)
   int i;
   static const struct {const int from, to; } eliminables[] = ELIMINABLE_REGS;
 
+  /* Setup is_leaf as frame_pointer_required may use it.  This function
+     is called by sched_init before ira if scheduling is enabled.  */
+  crtl->is_leaf = leaf_function_p ();
+
   /* FIXME: If EXIT_IGNORE_STACK is set, we will not save and restore
      sp for alloca.  So we can't eliminate the frame pointer in that
      case.  At some point, we should improve this by emitting the
@@ -2647,7 +2651,7 @@ ira_update_equiv_info_by_shuffle_insn (int to_regno, int from_regno, rtx_insn *i
 	}
       if (find_reg_note (insn, REG_EQUIV, x) == NULL_RTX)
 	{
-	  note = set_unique_reg_note (insn, REG_EQUIV, x);
+	  note = set_unique_reg_note (insn, REG_EQUIV, copy_rtx (x));
 	  gcc_assert (note != NULL_RTX);
 	  if (internal_flag_ira_verbose > 3 && ira_dump_file != NULL)
 	    {
@@ -3669,6 +3673,11 @@ combine_and_move_insns (void)
       if (JUMP_P (use_insn))
 	continue;
 
+      /* Also don't substitute into a conditional trap insn -- it can become
+	 an unconditional trap, and that is a flow control insn.  */
+      if (GET_CODE (PATTERN (use_insn)) == TRAP_IF)
+	continue;
+
       df_ref def = DF_REG_DEF_CHAIN (regno);
       gcc_assert (DF_REG_DEF_COUNT (regno) == 1 && DF_REF_INSN_INFO (def));
       rtx_insn *def_insn = DF_REF_INSN (def);
@@ -3705,6 +3714,14 @@ combine_and_move_insns (void)
 	  remove_death (regno, use_insn);
 	  SET_REG_N_REFS (regno, 0);
 	  REG_FREQ (regno) = 0;
+	  df_ref use;
+	  FOR_EACH_INSN_USE (use, def_insn)
+	    {
+	      unsigned int use_regno = DF_REF_REGNO (use);
+	      if (!HARD_REGISTER_NUM_P (use_regno))
+		reg_equiv[use_regno].replace = 0;
+	    }
+
 	  delete_insn (def_insn);
 
 	  reg_equiv[regno].init_insns = NULL;
@@ -5074,6 +5091,13 @@ ira (FILE *f)
 
   clear_bb_flags ();
 
+  /* Determine if the current function is a leaf before running IRA
+     since this can impact optimizations done by the prologue and
+     epilogue thus changing register elimination offsets.
+     Other target callbacks may use crtl->is_leaf too, including
+     SHRINK_WRAPPING_ENABLED, so initialize as early as possible.  */
+  crtl->is_leaf = leaf_function_p ();
+
   /* Perform target specific PIC register initialization.  */
   targetm.init_pic_reg ();
 
@@ -5158,11 +5182,6 @@ ira (FILE *f)
      to generate these warnings.  */
   if (warn_clobbered)
     generate_setjmp_warnings ();
-
-  /* Determine if the current function is a leaf before running IRA
-     since this can impact optimizations done by the prologue and
-     epilogue thus changing register elimination offsets.  */
-  crtl->is_leaf = leaf_function_p ();
 
   if (resize_reg_info () && flag_ira_loop_pressure)
     ira_set_pseudo_classes (true, ira_dump_file);

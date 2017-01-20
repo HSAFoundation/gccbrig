@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2016 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2017 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -33,6 +33,83 @@
 #pragma GCC target("avx512dq")
 #define __DISABLE_AVX512DQ__
 #endif /* __AVX512DQ__ */
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kadd_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_kaddqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline unsigned int
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_cvtmask8_u32 (__mmask8 __A)
+{
+  return (unsigned int) __builtin_ia32_kmovb ((__mmask8 ) __A);
+}
+	
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_cvtu32_mask8 (unsigned int __A)
+{
+  return (__mmask8) __builtin_ia32_kmovb ((__mmask8) __A);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_load_mask8 (__mmask8 *__A)
+{
+  return (__mmask8) __builtin_ia32_kmovb (*(__mmask8 *) __A);
+}
+
+extern __inline void
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_store_mask8 (__mmask8 *__A, __mmask8 __B)
+{
+  *(__mmask8 *) __A = __builtin_ia32_kmovb (__B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_knot_mask8 (__mmask8 __A)
+{
+  return (__mmask8) __builtin_ia32_knotqi ((__mmask8) __A);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kor_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_korqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kxnor_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_kxnorqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kxor_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_kxorqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kand_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_kandqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kandn_mask8 (__mmask8 __A, __mmask8 __B)
+{
+  return (__mmask8) __builtin_ia32_kandnqi ((__mmask8) __A, (__mmask8) __B);
+}
 
 extern __inline __m512d
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
@@ -920,6 +997,20 @@ _mm512_maskz_cvtepu64_pd (__mmask8 __U, __m512i __A)
 }
 
 #ifdef __OPTIMIZE__
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kshiftli_mask8 (__mmask8 __A, unsigned int __B)
+{
+  return (__mmask8) __builtin_ia32_kshiftliqi ((__mmask8) __A, (__mmask8) __B);
+}
+
+extern __inline __mmask8
+__attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
+_kshiftri_mask8 (__mmask8 __A, unsigned int __B)
+{
+  return (__mmask8) __builtin_ia32_kshiftriqi ((__mmask8) __A, (__mmask8) __B);
+}
+
 extern __inline __m512d
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
 _mm512_range_pd (__m512d __A, __m512d __B, int __C)
@@ -1931,6 +2022,12 @@ _mm512_fpclass_ps_mask (__m512 __A, const int __imm)
 }
 
 #else
+#define _kshiftli_mask8(X, Y)						\
+  ((__mmask8) __builtin_ia32_kshiftliqi ((__mmask8)(X), (__mmask8)(Y)))
+
+#define _kshiftri_mask8(X, Y)						\
+  ((__mmask8) __builtin_ia32_kshiftriqi ((__mmask8)(X), (__mmask8)(Y)))
+
 #define _mm_range_sd(A, B, C)						\
   ((__m128d) __builtin_ia32_rangesd128_round ((__v2df)(__m128d)(A),	\
     (__v2df)(__m128d)(B), (int)(C),					\

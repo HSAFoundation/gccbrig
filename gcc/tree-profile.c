@@ -1,5 +1,5 @@
 /* Calculate branch probabilities, and basic block execution counts.
-   Copyright (C) 1990-2016 Free Software Foundation, Inc.
+   Copyright (C) 1990-2017 Free Software Foundation, Inc.
    Contributed by James E. Wilson, UC Berkeley/Cygnus Support;
    based on some ideas from Dain Samples of UC Berkeley.
    Further mangling by Bob Manson, Cygnus Support.
@@ -94,8 +94,6 @@ init_ic_make_global_vars (void)
   if (targetm.have_tls)
     set_decl_tls_model (ic_void_ptr_var, decl_default_tls_model (ic_void_ptr_var));
 
-  varpool_node::finalize_decl (ic_void_ptr_var);
-
   gcov_type_ptr = build_pointer_type (get_gcov_type ());
 
   ic_gcov_type_ptr_var
@@ -112,8 +110,6 @@ init_ic_make_global_vars (void)
   DECL_INITIAL (ic_gcov_type_ptr_var) = NULL;
   if (targetm.have_tls)
     set_decl_tls_model (ic_gcov_type_ptr_var, decl_default_tls_model (ic_gcov_type_ptr_var));
-
-  varpool_node::finalize_decl (ic_gcov_type_ptr_var);
 }
 
 /* Create the type and function decls for the interface with gcov.  */
@@ -209,8 +205,6 @@ gimple_init_gcov_profiler (void)
       TREE_STATIC (tree_time_profiler_counter) = 1;
       DECL_ARTIFICIAL (tree_time_profiler_counter) = 1;
       DECL_INITIAL (tree_time_profiler_counter) = NULL;
-
-      varpool_node::finalize_decl (tree_time_profiler_counter);
 
       /* void (*) (gcov_type *, gcov_type)  */
       average_profiler_fn_type
@@ -461,10 +455,10 @@ void
 gimple_gen_time_profiler (unsigned tag, unsigned base)
 {
   tree type = get_gcov_type ();
-  basic_block cond_bb
-    = split_edge (single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
-
+  basic_block entry = ENTRY_BLOCK_PTR_FOR_FN (cfun);
+  basic_block cond_bb = split_edge (single_succ_edge (entry));
   basic_block update_bb = split_edge (single_succ_edge (cond_bb));
+  split_edge (single_succ_edge (update_bb));
 
   edge true_edge = single_succ_edge (cond_bb);
   true_edge->flags = EDGE_TRUE_VALUE;

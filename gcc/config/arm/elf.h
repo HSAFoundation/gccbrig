@@ -1,6 +1,6 @@
 /* Definitions of target machine for GNU compiler.
    For ARM with ELF obj format.
-   Copyright (C) 1995-2016 Free Software Foundation, Inc.
+   Copyright (C) 1995-2017 Free Software Foundation, Inc.
    Contributed by Philip Blundell <philb@gnu.org> and
    Catherine Moore <clm@cygnus.com>
    
@@ -75,16 +75,7 @@
 
 /* We might need a ARM specific header to function declarations.  */
 #undef  ASM_DECLARE_FUNCTION_NAME
-#define ASM_DECLARE_FUNCTION_NAME(FILE, NAME, DECL)		\
-  do								\
-    {								\
-      ARM_DECLARE_FUNCTION_NAME (FILE, NAME, DECL);		\
-      ASM_OUTPUT_TYPE_DIRECTIVE (FILE, NAME, "function");	\
-      ASM_DECLARE_RESULT (FILE, DECL_RESULT (DECL));		\
-      ASM_OUTPUT_LABEL(FILE, NAME);				\
-      ARM_OUTPUT_FN_UNWIND (FILE, TRUE);			\
-    }								\
-  while (0)
+#define ASM_DECLARE_FUNCTION_NAME arm_asm_declare_function_name
 
 /* We might need an ARM specific trailer for function declarations.  */
 #undef  ASM_DECLARE_FUNCTION_SIZE
