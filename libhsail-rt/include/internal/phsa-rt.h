@@ -30,7 +30,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "hsa-interface.h"
+#include "hsa.h"
 
 #define PHSA_MAX_WG_SIZE 1024 * 10
 

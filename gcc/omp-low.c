@@ -82,7 +82,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gomp-constants.h"
 #include "gimple-pretty-print.h"
 #include "symbol-summary.h"
-#include "hsa.h"
+#include "hsa-common.h"
 #include "params.h"
 
 /* Lowering of OMP parallel and workshare constructs proceeds in two
