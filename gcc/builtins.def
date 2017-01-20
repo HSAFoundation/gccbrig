@@ -999,8 +999,6 @@ DEF_GCC_BUILTIN (BUILT_IN_LINE, "LINE", BT_FN_INT, ATTR_NOTHROW_LEAF_LIST)
 /* Pointer Bounds Checker builtins.  */
 #include "chkp-builtins.def"
 
-#ifdef ENABLE_BRIG_FE
-
 /* Do not expose the BRIG builtins by default gcc-wide, but only privately in
    the BRIG FE as long as there are no references for them in the middle end
    or any of the upstream backends.  */
@@ -1043,7 +1041,6 @@ DEF_GCC_BUILTIN (BUILT_IN_LINE, "LINE", BT_FN_INT, ATTR_NOTHROW_LEAF_LIST)
 
 /* HSAIL/BRIG frontend builtins.  */
 #include "brig-builtins.def"
-#endif
 
 #undef DEF_BUILTIN_CHKP
 #undef DEF_BUILTIN

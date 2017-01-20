@@ -7738,12 +7738,6 @@ $as_echo "#define ENABLE_HSA 1" >>confdefs.h
 
 fi
 
-if echo "$enable_languages" | grep "brig" > /dev/null; then
-
-$as_echo "#define ENABLE_BRIG_FE 1" >>confdefs.h
-
-fi
-
 
 # Check whether --with-multilib-list was given.
 if test "${with_multilib_list+set}" = set; then :

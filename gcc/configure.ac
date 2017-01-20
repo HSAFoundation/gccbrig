@@ -996,11 +996,6 @@ if test x"$enable_hsa" = x1 ; then
     [Define this to enable support for generating HSAIL.])
 fi
 
-if echo "$enable_languages" | grep "brig" > /dev/null; then
-  AC_DEFINE(ENABLE_BRIG_FE, 1,
-    [Define this to enable the BRIG (HSAIL) frontend.])
-fi
-
 AC_ARG_WITH(multilib-list,
 [AS_HELP_STRING([--with-multilib-list], [select multilibs (AArch64, SH and x86-64 only)])],
 :,
