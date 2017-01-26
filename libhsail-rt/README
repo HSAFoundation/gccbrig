@@ -8,4 +8,3 @@ rt/workitems.c contains the runtime entry function that manages multiple
 work-item execution using fibers or simple for-loops (in case of work groups
 without barriers).  Otherwise, the rest of the source files mostly contain
 functions that typically map directly to HSAIL instructions.
-
