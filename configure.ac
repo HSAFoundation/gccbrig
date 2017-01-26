@@ -817,6 +817,8 @@ fi
 # broken systems. Currently it has been tested only on x86_64 Linux
 # of the upstream gcc targets. More targets shall be added after testing.
 case "${target}" in
+  i[[3456789]]86-*-linux*)
+    ;;
   x86_64-*-linux*)
     ;;
     *)
