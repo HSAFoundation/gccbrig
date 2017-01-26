@@ -1,3 +1,7 @@
+2017-01-26  Pekka Jääskeläinen <pekka.jaaskelainen@parmance.com>
+
+	Removed stale target-libbrig reference from config-lang.in
+
 2017-01-26  Jakub Jelinek  <jakub@redhat.com>
 
 	Update copyright years.

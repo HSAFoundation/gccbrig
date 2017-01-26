@@ -1,3 +1,9 @@
+2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* configure.ac: Added i[3456789]86-*-linux* as a supported env
+	for the BRIG FE.
+	* configure: Regenerated.
+
 2017-01-24  Pekka Jääskeläinen <pekka@parmance.com>
 	    Martin Jambor  <mjambor@suse.cz>
 
