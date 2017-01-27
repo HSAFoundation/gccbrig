@@ -1,3 +1,8 @@
+2017-01-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* configure.ac: Loosened the pattern to enable BRIG FE also for
+	i686-linux-gnu.
+
 2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* configure.ac: Added i[3456789]86-*-linux* as a supported env
