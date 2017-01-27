@@ -1,4 +1,9 @@
-2017-01-26  Pekka Jääskeläinen <pekka.jaaskelainen@parmance.com>
+2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* configure.tgt: Moved the white list of supported targets here
+	from configure.ac.
+
+2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* README: Added a proper description of what libhsail-rt is.
 

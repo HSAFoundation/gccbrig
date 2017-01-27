@@ -1,7 +1,7 @@
 2017-01-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
-	* configure.ac: Loosened the pattern to enable BRIG FE also for
-	i686-linux-gnu.
+	* configure.ac: Moved the white list of enabling BRIG FE to
+	libhsail-rt/configure.tgt.
 
 2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
@@ -9,7 +9,7 @@
 	for the BRIG FE.
 	* configure: Regenerated.
 
-2017-01-24  Pekka Jääskeläinen <pekka@parmance.com>
+2017-01-24  Pekka Jääskeläinen  <pekka@parmance.com>
 	    Martin Jambor  <mjambor@suse.cz>
 
 
