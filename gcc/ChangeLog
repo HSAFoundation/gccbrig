@@ -1,6 +1,7 @@
 2017-01-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* builtin-types.def: Use unsigned_char_type_node for BT_UINT8.
+	* MAINTAINERS: Updated maintainers for BRIG FE and libhsail-rt.
 
 2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
