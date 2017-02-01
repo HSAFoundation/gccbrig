@@ -1,3 +1,283 @@
+2017-02-01  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71824
+	* gcc.dg/graphite/pr71824.c: New testcase.
+
+2017-01-31  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/79304
+	* g++.dg/diagnostic/pr79304.C: New test.
+
+2017-01-31  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/79298
+	* g++.dg/spellcheck-pr79298.C: New test case.
+
+2017-01-31  David Malcolm  <dmalcolm@redhat.com>
+
+	PR preprocessor/79210
+	* gcc.dg/format/pr79210.c: New test case.
+	* gcc.dg/plugin/diagnostic-test-string-literals-2.c (test_pr79210):
+	New function.
+
+2017-01-31  Nathan Sidwell  <nathan@acm.org>
+
+	PR c++/79290
+	* g++.dg/warn/pr79290.C: New.
+
+	PR c++/67273
+	PR c++/79253
+	* g++.dg/cpp1y/pr67273.C: New.
+	* g++.dg/cpp1y/pr79253.C: New.
+
+2017-01-31  Nathan Sidwell  <nathan@acm.org>
+
+	PR c++/79264
+	* g++.dg/cpp1y/pr61636-1.C: Augment.
+
+2017-01-31  Christophe Lyon  <christophe.lyon@linaro.org>
+
+	* gcc.dg/memcmp-1.c (static void test_driver_memcmp): Call
+	rand() instead of random().
+
+2017-01-30  Aldy Hernandez  <aldyh@redhat.com>
+
+	PR tree-optimization/71691
+	* gcc.dg/loop-unswitch-5.c: Test that we actually unswitch a loop.
+
+2017-01-31  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* gcc.target/s390/s390.exp: Rename __S390_ARCH_LEVEL__ to
+	__ARCH__.
+
+2017-01-31  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/79267
+	* g++.dg/opt/pr79267.C: New test.
+
+2017-01-30  Alexandre Oliva <aoliva@redhat.com>
+
+	PR debug/63238
+	* gcc.dg/debug/dwarf2/align-1.c: New.
+	* gcc.dg/debug/dwarf2/align-2.c: New.
+	* gcc.dg/debug/dwarf2/align-3.c: New.
+	* gcc.dg/debug/dwarf2/align-4.c: New.
+	* gcc.dg/debug/dwarf2/align-5.c: New.
+	* gcc.dg/debug/dwarf2/align-6.c: New.
+	* gcc.dg/debug/dwarf2/align-as-1.c: New.
+	* g++.dg/debug/dwarf2/align-1.C: New.
+	* g++.dg/debug/dwarf2/align-2.C: New.
+	* g++.dg/debug/dwarf2/align-3.C: New.
+	* g++.dg/debug/dwarf2/align-4.C: New.
+	* g++.dg/debug/dwarf2/align-5.C: New.
+	* g++.dg/debug/dwarf2/align-6.C: New.
+
+2017-01-30  Aaron Sawdey  <acsawdey@linux.vnet.ibm.com>
+
+	PR target/79170
+	* gcc.dg/memcmp-1.c: Improved to catch failures seen in PR 79170.
+
+2017-01-30  Martin Sebor  <msebor@redhat.com>
+
+	PR testsuite/79293
+	* gcc.dg/tree-ssa/builtin-sprintf.c: Relax long double test.
+
+2017-01-30  Martin Liska  <mliska@suse.cz>
+
+	PR gcov-profile/79259
+	* g++.dg/tree-prof/pr79259.C: New test.
+
+2017-01-30  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/79276
+	* gcc.dg/torture/pr79276.c: New testcase.
+
+2017-01-30  Dominik Vogt  <vogt@linux.vnet.ibm.com>
+
+	PR target/79240
+	* gcc.target/s390/pr79240.c: New test.
+
+2017-01-29  Bill Schmidt  <wschmidt@linux.vnet.ibm.com>
+
+	PR target/79268
+	* gcc.target/powerpc/pr79268.c: New file.
+	* gcc.target/powerpc/vsx-elemrev-1.c: Delete file.
+	* gcc.target/powerpc/vsx-elemrev-2.c: Likewise.
+	* gcc.target/powerpc/vsx-elemrev-3.c: Likewise.
+	* gcc.target/powerpc/vsx-elemrev-4.c: Likewise.
+
+2017-01-28  John David Anglin  <danglin@gcc.gnu.org>
+
+	* gnat.dg/trampoline4.adb: Skip on hppa*-*-*.
+
+	PR testsuite/70583
+	* g++.old-deja/g++.abi/vtable2.C: Adjust CMP_VPTR define on hppa.
+
+	* gnat.dg/debug7.adb: Skip on hppa*-*-hpux*.
+	* gnat.dg/debug9.adb: Likewise.
+
+	* gcc.dg/torture/pr78515.c: Add -fno-common option on hppa*-*-hpux*.
+
+	* gfortran.dg/coarray_41.f90: Add "-latomic" option if
+	libatomic_available.
+	* gfortran.dg/coarray_42.f90: Likewise.
+	* gfortran.dg/coarray_alloc_comp_3.f08: Likewise.
+	* gfortran.dg/coarray_alloc_comp_4.f08: Likewise.
+	* gfortran.dg/coarray_lib_alloc_4.f90: Likewise.
+
+2017-01-27  Martin Sebor  <msebor@redhat.com>
+
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-1.c: Add test cases.
+
+2017-01-27  Bernd Schmidt  <bschmidt@redhat.com>
+
+	PR rtl-optimization/79194
+	* gcc.dg/torture/pr79194.c: New test.
+
+2017-01-27  Vladimir Makarov  <vmakarov@redhat.com>
+
+	PR tree-optimization/71374
+	* testsuite/gcc.target/i386/pr71374.c: New.
+
+2017-01-27  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/71290
+	* obj-c++.dg/property/at-property-23.mm: Remove an escaped newline from
+	a dg-error directive.
+
+2017-01-27  Vladimir Makarov  <vmakarov@redhat.com>
+
+	PR target/79131
+	* gcc.target/arm/pr79131.c: Rename to gcc.target/arm/pr79131-1.c.
+	* gcc.target/arm/pr79131-2.c: New.
+
+2017-01-27  Bill Schmidt  <wschmidt@linux.vnet.ibm.com>
+
+	PR target/65484
+	* g++.dg/vect/pr36648.cc: Modify to reflect that the loop is not
+	vectorized on POWER unless hardware misaligned loads are
+	available.
+
+2017-01-27  Bin Cheng  <bin.cheng@arm.com>
+
+	PR rtl-optimization/78559
+	* gcc.c-torture/execute/pr78559.c: New test.
+
+2017-01-27  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/79245
+	* gcc.dg/tree-ssa/ldist-23.c: XFAIL.
+	* gcc.dg/tree-ssa/ldist-25.c: New testcase.
+
+2017-01-27  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/79199
+	* c-c++-common/Wduplicated-branches-13.c: Require int32plus effective
+	target.  Use 4294967293U instead of 4294967293.
+
+2017-01-27  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/71433
+	* gcc.dg/Warray-bounds-21.c: New testcase.
+
+2017-01-27  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/79244
+	* gcc.dg/torture/pr79244.c: New testcase.
+
+2017-01-27  Jakub Jelinek  <jakub@redhat.com>
+
+	* g++.dg/cilk-plus/CK/fib-opr-overload.cc (main): Change
+	all occurrences of 40 to 32.
+
+2017-01-27  Richard Earnshaw  <rearnsha@arm.com>
+
+	PR target/79239
+	* gcc.target/arm/pr79239.c: New test.
+
+2017-01-27  Dominik Vogt  <vogt@linux.vnet.ibm.com>
+
+	* gcc.target/s390/md/setmem_long-1.c: Remove xfail, skip with -O0.
+
+2017-01-27  Adam Butcher  <adam@jessamine.co.uk>
+
+	PR c++/64382
+	* g++.dg/cpp1y/pr64382.C: New test.
+
+2017-01-26  Martin Sebor  <msebor@redhat.com>
+
+	PR middle-end/78703
+	* gcc.dg/tree-ssa/builtin-snprintf-warn-1.c: Update
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-9.c: Rename...
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-10.c: ...to this.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-9.c: New test.
+
+2017-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR debug/79129
+	* g++.dg/debug/dwarf2/pr79129.C: New test.
+
+	PR debug/78835
+	* g++.dg/debug/dwarf2/pr78835.C: New test.
+
+2017-01-26  Martin Sebor  <msebor@redhat.com>
+
+	PR middle-end/78703
+	* gcc.dg/format/pr78569.c: Adjust.
+	* gcc.dg/tree-ssa/builtin-snprintf-warn-2.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-2.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-5.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-1.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-2.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-3.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-4.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-6.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-7.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf-warn-9.c: Same.
+	* gcc.dg/tree-ssa/builtin-sprintf.c: Same.
+
+2017-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/68727
+	* g++.dg/other/offsetof8.C: Add expected error.
+	* g++.dg/other/offsetof9.C: New test.
+
+2017-01-26  David Edelsohn  <dje.gcc@gmail.com>
+
+	* g++.dg/opt/declone3.C: Require LTO.
+
+2017-01-26  Vladimir Makarov  <vmakarov@redhat.com>
+
+	PR target/79131
+	* gcc.target/arm/pr79131.c: New.
+
+2017-01-26  Bin Cheng  <bin.cheng@arm.com>
+
+	* gcc.target/aarch64/ldp_vec_64_1.c: Xfail.
+
+2017-01-26  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/79190
+	* g++.dg/cpp1z/aligned-new3.C: Replace operator new so behaviour
+	matches replaced operator delete.
+
+2017-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.target/i386/avx512f-kaddw-1.c: Renamed to ...
+	* gcc.target/i386/avx512dq-kaddw-1.c: ... this.  New test.  Replace
+	avx512f with avx512dq.
+	* gcc.target/i386/avx512f-ktestw-1.c: Renamed to ...
+	* gcc.target/i386/avx512dq-ktestw-1.c: ... this.  New test.  Replace
+	avx512f with avx512dq.
+	* gcc.target/i386/avx512f-ktestw-2.c: Renamed to ...
+	* gcc.target/i386/avx512dq-ktestw-2.c: ... this.  New test.  Replace
+	avx512f with avx512dq.
+
+2017-01-26  Marek Polacek  <polacek@redhat.com>
+
+	PR c/79199
+	* c-c++-common/Wduplicated-branches-13.c: New test.
+
 2017-01-26  David Sherwood  <david.sherwood@arm.com>
 
 	PR middle-end/79212

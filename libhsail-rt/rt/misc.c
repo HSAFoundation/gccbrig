@@ -69,7 +69,7 @@ uint32_t
 __hsail_groupbaseptr (PHSAWorkItem *wi)
 {
   return (uint32_t) (uintptr_t) (wi->wg->group_base_ptr
-                                - wi->launch_data->group_segment_start_addr);
+				 - wi->launch_data->group_segment_start_addr);
 }
 
 uint64_t

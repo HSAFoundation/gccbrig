@@ -1,17 +1,14 @@
-2017-01-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+2017-02-01  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* configure.ac: Moved the white list of enabling BRIG FE to
 	libhsail-rt/configure.tgt.
-
-2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
-
 	* configure.ac: Added i[3456789]86-*-linux* as a supported env
 	for the BRIG FE.
 	* configure: Regenerated.
+	* MAINTAINERS: Updated maintainers for BRIG FE and libhsail-rt.
 
 2017-01-24  Pekka Jääskeläinen  <pekka@parmance.com>
 	    Martin Jambor  <mjambor@suse.cz>
-
 
 	* Makefile.def (target_modules): Added libhsail-rt.
 	(languages): Added language brig.
@@ -19,11 +16,6 @@
 	* configure.ac (TOPLEVEL_CONFIGURE_ARGUMENTS): Added
 	tgarget-libhsail-rt.  Make brig unsupported on untested architectures.
 	* configure: Regenerated.
-
-2017-01-19  Uros Bizjak  <ubizjak@gmail.com>
-
-	PR target/78478
-	* config/ax_check_define.m4: New file.
 
 2017-01-17  Jakub Jelinek  <jakub@redhat.com>
 

@@ -2962,6 +2962,12 @@ finish_member_declaration (tree decl)
   /* We should see only one DECL at a time.  */
   gcc_assert (DECL_CHAIN (decl) == NULL_TREE);
 
+  /* Don't add decls after definition.  */
+  gcc_assert (TYPE_BEING_DEFINED (current_class_type)
+	      /* We can add lambda types when late parsing default
+		 arguments.  */
+	      || LAMBDA_TYPE_P (TREE_TYPE (decl)));
+
   /* Set up access control for DECL.  */
   TREE_PRIVATE (decl)
     = (current_access_specifier == access_private_node);
@@ -3563,9 +3569,13 @@ finish_id_expression (tree id_expression,
 		    ? CP_ID_KIND_UNQUALIFIED_DEPENDENT
 		    : CP_ID_KIND_UNQUALIFIED)));
 
-      /* If the name was dependent on a template parameter, we will
-	 resolve the name at instantiation time.  */
-      if (dependent_p)
+      /* If the name was dependent on a template parameter and we're not in a
+	 default capturing generic lambda within a template, we will resolve the
+	 name at instantiation time.  FIXME: For lambdas, we should defer
+	 building the closure type until instantiation time then we won't need
+	 the extra test here.  */
+      if (dependent_p
+	  && !parsing_default_capturing_generic_lambda_in_template ())
 	{
 	  if (DECL_P (decl)
 	      && any_dependent_type_attributes_p (DECL_ATTRIBUTES (decl)))
@@ -3995,13 +4005,13 @@ finish_bases (tree type, bool direct)
    fold_offsetof.  */
 
 tree
-finish_offsetof (tree expr, location_t loc)
+finish_offsetof (tree object_ptr, tree expr, location_t loc)
 {
   /* If we're processing a template, we can't finish the semantics yet.
      Otherwise we can fold the entire expression now.  */
   if (processing_template_decl)
     {
-      expr = build1 (OFFSETOF_EXPR, size_type_node, expr);
+      expr = build2 (OFFSETOF_EXPR, size_type_node, expr, object_ptr);
       SET_EXPR_LOCATION (expr, loc);
       return expr;
     }
@@ -4031,19 +4041,15 @@ finish_offsetof (tree expr, location_t loc)
     }
   if (REFERENCE_REF_P (expr))
     expr = TREE_OPERAND (expr, 0);
-  if (TREE_CODE (expr) == COMPONENT_REF)
-    {
-      tree object = TREE_OPERAND (expr, 0);
-      if (!complete_type_or_else (TREE_TYPE (object), object))
-	return error_mark_node;
-      if (warn_invalid_offsetof
-	  && CLASS_TYPE_P (TREE_TYPE (object))
-	  && CLASSTYPE_NON_STD_LAYOUT (TREE_TYPE (object))
-	  && cp_unevaluated_operand == 0)
-	pedwarn (loc, OPT_Winvalid_offsetof,
-		 "offsetof within non-standard-layout type %qT is undefined",
-		 TREE_TYPE (object));
-    }
+  if (!complete_type_or_else (TREE_TYPE (TREE_TYPE (object_ptr)), object_ptr))
+    return error_mark_node;
+  if (warn_invalid_offsetof
+      && CLASS_TYPE_P (TREE_TYPE (TREE_TYPE (object_ptr)))
+      && CLASSTYPE_NON_STD_LAYOUT (TREE_TYPE (TREE_TYPE (object_ptr)))
+      && cp_unevaluated_operand == 0)
+    pedwarn (loc, OPT_Winvalid_offsetof,
+	     "offsetof within non-standard-layout type %qT is undefined",
+	     TREE_TYPE (TREE_TYPE (object_ptr)));
   return fold_offsetof (expr);
 }
 
@@ -5107,7 +5113,7 @@ omp_reduction_id (enum tree_code reduction_code, tree reduction_id, tree type)
     case BIT_IOR_EXPR:
     case TRUTH_ANDIF_EXPR:
     case TRUTH_ORIF_EXPR:
-      reduction_id = ansi_opname (reduction_code);
+      reduction_id = cp_operator_id (reduction_code);
       break;
     case MIN_EXPR:
       p = "min";
@@ -9012,7 +9018,7 @@ classtype_has_nothrow_assign_or_copy_p (tree type, bool assign_p)
   if (assign_p)
     {
       int ix;
-      ix = lookup_fnfields_1 (type, ansi_assopname (NOP_EXPR));
+      ix = lookup_fnfields_1 (type, cp_assignment_operator_id (NOP_EXPR));
       if (ix < 0)
 	return false;
       fns = (*CLASSTYPE_METHOD_VEC (type))[ix];
@@ -9295,7 +9301,8 @@ is_this_parameter (tree t)
 {
   if (!DECL_P (t) || DECL_NAME (t) != this_identifier)
     return false;
-  gcc_assert (TREE_CODE (t) == PARM_DECL || is_capture_proxy (t));
+  gcc_assert (TREE_CODE (t) == PARM_DECL || is_capture_proxy (t)
+	      || (cp_binding_oracle && TREE_CODE (t) == VAR_DECL));
   return true;
 }
 

@@ -1,3 +1,105 @@
+2017-01-31  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/79304
+	* error.c (dump_expr) <case COMPONENT_REF>: Don't print .
+	after ARROW_EXPR.
+
+2017-01-31  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/79298
+	* name-lookup.c (suggest_alternative_in_explicit_scope): Resolve
+	any namespace aliases.
+
+2017-01-31  Nathan Sidwell  <nathan@acm.org>
+
+	PR c++/79290
+	* typeck.c (build_ptrmemfunc_access_expr): Set TREE_NO_WARNING.
+
+	PR c++/67273
+	PR c++/79253
+	* pt.c: (instantiate_decl): Push to top level when current
+	function scope doesn't match.  Only push lmabda scope stack when
+	pushing to top.
+
+	* cp-tree.h (instantiate_decl): Make defer_ok bool.
+	* pt.c: Fix instantiate_decl calls to pass true/false not 0/1
+	(instantiate_decl): Simplify and reorder state saving and restoration.
+
+	PR c++/79264
+	* lambda.c (maybe_generic_this_capture): Deal with template-id-exprs.
+	* semantics.c (finish_member_declaration): Assert class is being
+	defined.
+
+2017-01-30  Alexandre Oliva <aoliva@redhat.com>
+
+	Introduce C++ support in libcc1.
+	* cp-tree.h (struct lang_identifier): Add oracle_looked_up.
+	(ansi_opname): Rename to...
+	(cp_operator_id): ... this.  Adjust all callers.
+	(ansi_assopname): Rename to...
+	(cp_assignment_operator_id): ... this.  Adjust all callers.
+	(cp_literal_operator_id): Declare.
+	(set_global_friend): Declare.
+	(is_global_friend): Declare.
+	(enum cp_oracle_request): New type.
+	(cp_binding_oracle_function): New type.
+	(cp_binding_oracle): Declare.
+	(cp_finish_injected_record_type): Declare.
+	* friend.c (global_friend): New var.
+	(set_global_friend): New fn.
+	(is_global_friend): New fn.
+	(is_friend): Call is_global_friend.
+	* name-lookup.c (cp_binding_oracle): New var.
+	(query_oracle): New fn.
+	(qualified_lookup_using_namespace): Call query_oracle.
+	(lookup_name_real_1): Likewise.
+	* parser.c (cp_literal_operator_id): Drop static.
+	* search.c (friend_accessible_p): Call is_global_friend.
+	* semantics.c (is_this_parameter): Accept a variable if the
+	binding oracle is enabled.
+
+2017-01-27  Jason Merrill  <jason@redhat.com>
+
+	PR c++/78771 - ICE with inherited constructor.
+	* call.c (build_over_call): Call deduce_inheriting_ctor here.
+	* pt.c (tsubst_decl): Not here.
+	* class.c (add_method): Or here.
+	* method.c (deduce_inheriting_ctor): Handle clones.
+	(implicitly_declare_fn): Don't deduce inheriting ctors yet.
+
+2017-01-27  Adam Butcher  <adam@jessamine.co.uk>
+
+	PR c++/64382
+	* cp/parser.c (parsing_default_capturing_generic_lambda_in_template):
+	New function.
+	* cp/cp-tree.h: Declare it.
+	* cp/semantics.c (finish_id_expression): Resolve names within a default
+	capturing generic lambda defined within a template prior to
+	instantiation to allow for captures to be added to the closure type.
+
+2017-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/68727
+	* cp-tree.def (OFFSETOF_EXPR): Bump number of operands to 2.
+	* cp-tree.h (finish_offsetof): Add OBJECT_PTR argument.
+	* parser.c (cp_parser_builtin_offsetof): Pass result of
+	build_static_cast of null_pointer_node to finish_offsetof.
+	* semantics.c (finish_offsetof): Add OBJECT_PTR argument, use
+	it for -Winvalid-offsetof pedwarn instead of trying to guess
+	original offsetof type from EXPR.  Save OBJECT_PTR as a new
+	second operand to OFFSETOF_EXPR.
+	* pt.c (tsubst_copy_and_build) <case OFFSETOF_EXPR>: Adjust
+	finish_offsetof caller, pass the second operand of OFFSETOF_EXPR
+	as OBJECT_PTR.
+
+2017-01-26  Jason Merrill  <jason@redhat.com>
+
+	* name-lookup.c (parse_using_directive): Deprecate strong using.
+
+	PR c++/79176 - lambda ICE with -flto -Os
+	* decl2.c (vague_linkage_p): Handle decloned 'tors.
+	* tree.c (decl_linkage): Likewise.
+
 2017-01-25  Martin Sebor  <msebor@redhat.com>
 
 	* decl.c (grokdeclarator): Fix a typo in a comment.

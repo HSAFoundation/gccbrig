@@ -1,3 +1,72 @@
+2017-01-30  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement LWG 2825, LWG 2756 breaks class template argument
+	deduction for optional.
+	* include/std/optional: Add a deduction guide.
+	* testsuite/20_util/optional/cons/deduction_guide.cc: New.
+
+2017-01-27  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/79254
+	* config/abi/pre/gnu.ver: Add new symbols.
+	* include/bits/basic_string.h [_GLIBCXX_USE_CXX11_ABI]
+	(basic_string::_M_copy_assign): New overloaded functions to perform
+	copy assignment.
+	(basic_string::operator=(const basic_string&)): Dispatch to
+	_M_copy_assign.
+	* include/bits/basic_string.tcc [_GLIBCXX_USE_CXX11_ABI]
+	(basic_string::_M_copy_assign(const basic_string&, true_type)):
+	Define, performing rollback on exception.
+	* testsuite/21_strings/basic_string/allocator/char/copy_assign.cc:
+	Test exception-safety guarantee.
+	* testsuite/21_strings/basic_string/allocator/wchar_t/copy_assign.cc:
+	Likewise.
+	* testsuite/util/testsuite_allocator.h (uneq_allocator::swap): Make
+	std::swap visible.
+
+2017-01-26  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/70607
+	* include/tr1/complex (conj): Remove using-declaration and restore
+	overloads, reverting previous change.
+
+	* testsuite/23_containers/list/operations/78389.cc: Fix for C++11
+	mode.
+	* testsuite/23_containers/priority_queue/requirements/constructible.cc:
+	Mark as unsupported in C++98 mode.
+	* testsuite/23_containers/queue/requirements/constructible.cc:
+	Likewise.
+	* testsuite/23_containers/stack/requirements/constructible.cc:
+	Likewise.
+	* testsuite/25_algorithms/make_heap/movable.cc: Fix for C++11 mode.
+
+	PR libstdc++/79243
+	* include/bits/c++config (literals::string_view_literals::__7): Add.
+	Only declare versioned namespaces for the relevant C++ dialects.
+	* include/experimental/bits/erase_if.h (fundamentals_v2::__detail):
+	Add versioning macros.
+	* include/experimental/bits/lfts_config.h:
+	(fundamentals_v1::__detail::__7, fundamentals_v2::__detail::__7): Add.
+	* include/experimental/string_view (fundamentals_v2::__detail):
+	Add versioning macros.
+	(fundamentals_v2::__detail::__identity): Remove.
+	(fundamentals_v2::__detail::__idt): Use common_type instead of
+	__detail::__identity.
+	* include/std/string_view (__detail::__identity, __detail::__idt):
+	Likewise.
+	(literals::string_view_literals): Fix nesting of versioning macros.
+
+	PR libstdc++/79190
+	* libsupc++/del_opa.cc (operator delete(void*, std::align_val_t))
+	[!_GLIBCXX_HAVE_ALIGNED_ALLOC && !_GLIBCXX_HAVE_POSIX_MEMALIGN
+	&& !_GLIBCXX_HAVE_MEMALIGN && !_GLIBCXX_HAVE__ALIGNED_MALLOC]:
+	Retrieve original pointer value allocated by malloc.
+	* libsupc++/new_opa.cc [!_GLIBCXX_HAVE_ALIGNED_ALLOC
+	&& !_GLIBCXX_HAVE_POSIX_MEMALIGN && !_GLIBCXX_HAVE_MEMALIGN
+	&& !_GLIBCXX_HAVE__ALIGNED_MALLOC] (aligned_alloc(size_t, size_t)):
+	Define, adjusting pointer value allocated by malloc and storing for
+	retrieval by operator delete.
+
 2017-01-26  Jakub Jelinek  <jakub@redhat.com>
 
 	* libsupc++/eh_atomics.h: Update copyright years.

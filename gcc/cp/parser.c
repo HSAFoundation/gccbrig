@@ -249,9 +249,6 @@ static cp_token_cache *cp_token_cache_new
 static void cp_parser_initial_pragma
   (cp_token *);
 
-static tree cp_literal_operator_id
-  (const char *);
-
 static void cp_parser_cilk_simd
   (cp_parser *, cp_token *, bool *);
 static tree cp_parser_cilk_for
@@ -9498,11 +9495,12 @@ cp_parser_builtin_offsetof (cp_parser *parser)
   token = cp_lexer_peek_token (parser->lexer);
 
   /* Build the (type *)null that begins the traditional offsetof macro.  */
-  expr = build_static_cast (build_pointer_type (type), null_pointer_node,
-                            tf_warning_or_error);
+  tree object_ptr
+    = build_static_cast (build_pointer_type (type), null_pointer_node,
+			 tf_warning_or_error);
 
   /* Parse the offsetof-member-designator.  We begin as if we saw "expr->".  */
-  expr = cp_parser_postfix_dot_deref_expression (parser, CPP_DEREF, expr,
+  expr = cp_parser_postfix_dot_deref_expression (parser, CPP_DEREF, object_ptr,
 						 true, &dummy, token->location);
   while (true)
     {
@@ -9554,7 +9552,7 @@ cp_parser_builtin_offsetof (cp_parser *parser)
   loc = make_location (loc, start_loc, finish_loc);
   /* The result will be an INTEGER_CST, so we need to explicitly
      preserve the location.  */
-  expr = cp_expr (finish_offsetof (expr, loc), loc);
+  expr = cp_expr (finish_offsetof (object_ptr, expr, loc), loc);
 
  failure:
   parser->integral_constant_expression_p = save_ice_p;
@@ -10278,7 +10276,7 @@ cp_parser_lambda_declarator_opt (cp_parser* parser, tree lambda_expr)
 
     p = obstack_alloc (&declarator_obstack, 0);
 
-    declarator = make_id_declarator (NULL_TREE, ansi_opname (CALL_EXPR),
+    declarator = make_id_declarator (NULL_TREE, cp_operator_id (CALL_EXPR),
 				     sfk_none);
 
     quals = (LAMBDA_EXPR_MUTABLE_P (lambda_expr)
@@ -14296,7 +14294,7 @@ cp_parser_operator_function_id (cp_parser* parser)
 /* Return an identifier node for a user-defined literal operator.
    The suffix identifier is chained to the operator name identifier.  */
 
-static tree
+tree
 cp_literal_operator_id (const char* name)
 {
   tree identifier;
@@ -14365,12 +14363,12 @@ cp_parser_operator (cp_parser* parser)
 	    if (cp_token *close_token
 		= cp_parser_require (parser, CPP_CLOSE_SQUARE, RT_CLOSE_SQUARE))
 	      end_loc = close_token->location;
-	    id = ansi_opname (op == NEW_EXPR
+	    id = cp_operator_id (op == NEW_EXPR
 			      ? VEC_NEW_EXPR : VEC_DELETE_EXPR);
 	  }
 	/* Otherwise, we have the non-array variant.  */
 	else
-	  id = ansi_opname (op);
+	  id = cp_operator_id (op);
 
 	location_t loc = make_location (start_loc, start_loc, end_loc);
 
@@ -14378,147 +14376,147 @@ cp_parser_operator (cp_parser* parser)
       }
 
     case CPP_PLUS:
-      id = ansi_opname (PLUS_EXPR);
+      id = cp_operator_id (PLUS_EXPR);
       break;
 
     case CPP_MINUS:
-      id = ansi_opname (MINUS_EXPR);
+      id = cp_operator_id (MINUS_EXPR);
       break;
 
     case CPP_MULT:
-      id = ansi_opname (MULT_EXPR);
+      id = cp_operator_id (MULT_EXPR);
       break;
 
     case CPP_DIV:
-      id = ansi_opname (TRUNC_DIV_EXPR);
+      id = cp_operator_id (TRUNC_DIV_EXPR);
       break;
 
     case CPP_MOD:
-      id = ansi_opname (TRUNC_MOD_EXPR);
+      id = cp_operator_id (TRUNC_MOD_EXPR);
       break;
 
     case CPP_XOR:
-      id = ansi_opname (BIT_XOR_EXPR);
+      id = cp_operator_id (BIT_XOR_EXPR);
       break;
 
     case CPP_AND:
-      id = ansi_opname (BIT_AND_EXPR);
+      id = cp_operator_id (BIT_AND_EXPR);
       break;
 
     case CPP_OR:
-      id = ansi_opname (BIT_IOR_EXPR);
+      id = cp_operator_id (BIT_IOR_EXPR);
       break;
 
     case CPP_COMPL:
-      id = ansi_opname (BIT_NOT_EXPR);
+      id = cp_operator_id (BIT_NOT_EXPR);
       break;
 
     case CPP_NOT:
-      id = ansi_opname (TRUTH_NOT_EXPR);
+      id = cp_operator_id (TRUTH_NOT_EXPR);
       break;
 
     case CPP_EQ:
-      id = ansi_assopname (NOP_EXPR);
+      id = cp_assignment_operator_id (NOP_EXPR);
       break;
 
     case CPP_LESS:
-      id = ansi_opname (LT_EXPR);
+      id = cp_operator_id (LT_EXPR);
       break;
 
     case CPP_GREATER:
-      id = ansi_opname (GT_EXPR);
+      id = cp_operator_id (GT_EXPR);
       break;
 
     case CPP_PLUS_EQ:
-      id = ansi_assopname (PLUS_EXPR);
+      id = cp_assignment_operator_id (PLUS_EXPR);
       break;
 
     case CPP_MINUS_EQ:
-      id = ansi_assopname (MINUS_EXPR);
+      id = cp_assignment_operator_id (MINUS_EXPR);
       break;
 
     case CPP_MULT_EQ:
-      id = ansi_assopname (MULT_EXPR);
+      id = cp_assignment_operator_id (MULT_EXPR);
       break;
 
     case CPP_DIV_EQ:
-      id = ansi_assopname (TRUNC_DIV_EXPR);
+      id = cp_assignment_operator_id (TRUNC_DIV_EXPR);
       break;
 
     case CPP_MOD_EQ:
-      id = ansi_assopname (TRUNC_MOD_EXPR);
+      id = cp_assignment_operator_id (TRUNC_MOD_EXPR);
       break;
 
     case CPP_XOR_EQ:
-      id = ansi_assopname (BIT_XOR_EXPR);
+      id = cp_assignment_operator_id (BIT_XOR_EXPR);
       break;
 
     case CPP_AND_EQ:
-      id = ansi_assopname (BIT_AND_EXPR);
+      id = cp_assignment_operator_id (BIT_AND_EXPR);
       break;
 
     case CPP_OR_EQ:
-      id = ansi_assopname (BIT_IOR_EXPR);
+      id = cp_assignment_operator_id (BIT_IOR_EXPR);
       break;
 
     case CPP_LSHIFT:
-      id = ansi_opname (LSHIFT_EXPR);
+      id = cp_operator_id (LSHIFT_EXPR);
       break;
 
     case CPP_RSHIFT:
-      id = ansi_opname (RSHIFT_EXPR);
+      id = cp_operator_id (RSHIFT_EXPR);
       break;
 
     case CPP_LSHIFT_EQ:
-      id = ansi_assopname (LSHIFT_EXPR);
+      id = cp_assignment_operator_id (LSHIFT_EXPR);
       break;
 
     case CPP_RSHIFT_EQ:
-      id = ansi_assopname (RSHIFT_EXPR);
+      id = cp_assignment_operator_id (RSHIFT_EXPR);
       break;
 
     case CPP_EQ_EQ:
-      id = ansi_opname (EQ_EXPR);
+      id = cp_operator_id (EQ_EXPR);
       break;
 
     case CPP_NOT_EQ:
-      id = ansi_opname (NE_EXPR);
+      id = cp_operator_id (NE_EXPR);
       break;
 
     case CPP_LESS_EQ:
-      id = ansi_opname (LE_EXPR);
+      id = cp_operator_id (LE_EXPR);
       break;
 
     case CPP_GREATER_EQ:
-      id = ansi_opname (GE_EXPR);
+      id = cp_operator_id (GE_EXPR);
       break;
 
     case CPP_AND_AND:
-      id = ansi_opname (TRUTH_ANDIF_EXPR);
+      id = cp_operator_id (TRUTH_ANDIF_EXPR);
       break;
 
     case CPP_OR_OR:
-      id = ansi_opname (TRUTH_ORIF_EXPR);
+      id = cp_operator_id (TRUTH_ORIF_EXPR);
       break;
 
     case CPP_PLUS_PLUS:
-      id = ansi_opname (POSTINCREMENT_EXPR);
+      id = cp_operator_id (POSTINCREMENT_EXPR);
       break;
 
     case CPP_MINUS_MINUS:
-      id = ansi_opname (PREDECREMENT_EXPR);
+      id = cp_operator_id (PREDECREMENT_EXPR);
       break;
 
     case CPP_COMMA:
-      id = ansi_opname (COMPOUND_EXPR);
+      id = cp_operator_id (COMPOUND_EXPR);
       break;
 
     case CPP_DEREF_STAR:
-      id = ansi_opname (MEMBER_REF);
+      id = cp_operator_id (MEMBER_REF);
       break;
 
     case CPP_DEREF:
-      id = ansi_opname (COMPONENT_REF);
+      id = cp_operator_id (COMPONENT_REF);
       break;
 
     case CPP_OPEN_PAREN:
@@ -14526,14 +14524,14 @@ cp_parser_operator (cp_parser* parser)
       cp_lexer_consume_token (parser->lexer);
       /* Look for the matching `)'.  */
       cp_parser_require (parser, CPP_CLOSE_PAREN, RT_CLOSE_PAREN);
-      return ansi_opname (CALL_EXPR);
+      return cp_operator_id (CALL_EXPR);
 
     case CPP_OPEN_SQUARE:
       /* Consume the `['.  */
       cp_lexer_consume_token (parser->lexer);
       /* Look for the matching `]'.  */
       cp_parser_require (parser, CPP_CLOSE_SQUARE, RT_CLOSE_SQUARE);
-      return ansi_opname (ARRAY_REF);
+      return cp_operator_id (ARRAY_REF);
 
     case CPP_UTF8STRING:
     case CPP_UTF8STRING_USERDEF:
@@ -20451,6 +20449,33 @@ parsing_nsdmi (void)
       && DECL_CONTEXT (current_class_ptr) == NULL_TREE)
     return true;
   return false;
+}
+
+/* Return true iff our current scope is a default capturing generic lambda
+   defined within a template.  FIXME: This is part of a workaround (see
+   semantics.c) to handle building lambda closure types correctly in templates
+   which we ultimately want to defer to instantiation time. */
+
+bool
+parsing_default_capturing_generic_lambda_in_template (void)
+{
+  if (!processing_template_decl || !current_class_type)
+    return false;
+
+  tree lam = CLASSTYPE_LAMBDA_EXPR (current_class_type);
+  if (!lam || LAMBDA_EXPR_DEFAULT_CAPTURE_MODE (lam) == CPLD_NONE)
+    return false;
+
+  tree callop = lambda_function (lam);
+  if (!callop)
+    return false;
+
+  return (DECL_TEMPLATE_INFO (callop)
+	  && (DECL_TEMPLATE_RESULT (DECL_TI_TEMPLATE (callop)) == callop)
+	  && ((current_nonlambda_class_type ()
+	       && CLASSTYPE_TEMPLATE_INFO (current_nonlambda_class_type ()))
+	      || ((current_nonlambda_function ()
+		   && DECL_TEMPLATE_INFO (current_nonlambda_function ())))));
 }
 
 /* Parse a late-specified return type, if any.  This is not a separate
@@ -31963,21 +31988,21 @@ cp_parser_omp_clause_reduction (cp_parser *parser, tree list)
 	    code = MIN_EXPR;
 	  else if (strcmp (p, "max") == 0)
 	    code = MAX_EXPR;
-	  else if (id == ansi_opname (PLUS_EXPR))
+	  else if (id == cp_operator_id (PLUS_EXPR))
 	    code = PLUS_EXPR;
-	  else if (id == ansi_opname (MULT_EXPR))
+	  else if (id == cp_operator_id (MULT_EXPR))
 	    code = MULT_EXPR;
-	  else if (id == ansi_opname (MINUS_EXPR))
+	  else if (id == cp_operator_id (MINUS_EXPR))
 	    code = MINUS_EXPR;
-	  else if (id == ansi_opname (BIT_AND_EXPR))
+	  else if (id == cp_operator_id (BIT_AND_EXPR))
 	    code = BIT_AND_EXPR;
-	  else if (id == ansi_opname (BIT_IOR_EXPR))
+	  else if (id == cp_operator_id (BIT_IOR_EXPR))
 	    code = BIT_IOR_EXPR;
-	  else if (id == ansi_opname (BIT_XOR_EXPR))
+	  else if (id == cp_operator_id (BIT_XOR_EXPR))
 	    code = BIT_XOR_EXPR;
-	  else if (id == ansi_opname (TRUTH_ANDIF_EXPR))
+	  else if (id == cp_operator_id (TRUTH_ANDIF_EXPR))
 	    code = TRUTH_ANDIF_EXPR;
-	  else if (id == ansi_opname (TRUTH_ORIF_EXPR))
+	  else if (id == cp_operator_id (TRUTH_ORIF_EXPR))
 	    code = TRUTH_ORIF_EXPR;
 	  id = omp_reduction_id (code, id, NULL_TREE);
 	  tree scope = parser->scope;

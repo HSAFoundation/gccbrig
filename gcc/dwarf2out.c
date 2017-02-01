@@ -3510,6 +3510,7 @@ static void add_bound_info (dw_die_ref, enum dwarf_attribute, tree,
 			    struct loc_descr_context *);
 static void add_subscript_info (dw_die_ref, tree, bool);
 static void add_byte_size_attribute (dw_die_ref, tree);
+static void add_alignment_attribute (dw_die_ref, tree);
 static inline void add_bit_offset_attribute (dw_die_ref, tree,
 					     struct vlr_context *);
 static void add_bit_size_attribute (dw_die_ref, tree);
@@ -7706,6 +7707,7 @@ clone_as_declaration (dw_die_ref die)
           add_dwarf_attr (clone, a);
           break;
         case DW_AT_byte_size:
+	case DW_AT_alignment:
         default:
           break;
         }
@@ -7918,6 +7920,19 @@ generate_skeleton_bottom_up (skeleton_chain_node *parent)
 	    add_child_die (parent->new_die, c);
 	    c = prev;
 	  }
+	else if (c->comdat_type_p)
+	  {
+	    /* This is the skeleton of earlier break_out_comdat_types
+	       type.  Clone the existing DIE, but keep the children
+	       under the original (which is in the main CU).  */
+	    dw_die_ref clone = clone_die (c);
+
+	    replace_child (c, clone, prev);
+	    generate_skeleton_ancestor_tree (parent);
+	    add_child_die (parent->new_die, c);
+	    c = clone;
+	    continue;
+	  }
 	else
 	  {
 	    /* Clone the existing DIE, move the original to the skeleton
@@ -7936,6 +7951,7 @@ generate_skeleton_bottom_up (skeleton_chain_node *parent)
 	    replace_child (c, clone, prev);
 	    generate_skeleton_ancestor_tree (parent);
 	    add_child_die (parent->new_die, c);
+	    node.old_die = clone;
 	    node.new_die = c;
 	    c = clone;
 	  }
@@ -12092,6 +12108,8 @@ base_type_die (tree type, bool reverse)
     add_AT_unsigned (base_type_result, DW_AT_endianity,
 		     BYTES_BIG_ENDIAN ? DW_END_little : DW_END_big);
 
+  add_alignment_attribute (base_type_result, type);
+
   if (fpt_used)
     {
       switch (fpt_info.scale_factor_kind)
@@ -12254,6 +12272,8 @@ subrange_type_die (tree type, tree low, tree high, tree bias,
 	 so we need to generate a size attribute for the subrange type.  */
       add_AT_unsigned (subrange_die, DW_AT_byte_size, size_in_bytes);
     }
+
+  add_alignment_attribute (subrange_die, type);
 
   if (low)
     add_bound_info (subrange_die, DW_AT_lower_bound, low, NULL);
@@ -12572,6 +12592,7 @@ modified_type_die (tree type, int cv_quals, bool reverse,
 
       add_AT_unsigned (mod_type_die, DW_AT_byte_size,
 		       simple_type_size_in_bits (type) / BITS_PER_UNIT);
+      add_alignment_attribute (mod_type_die, type);
       item_type = TREE_TYPE (type);
 
       addr_space_t as = TYPE_ADDR_SPACE (item_type);
@@ -19932,6 +19953,37 @@ add_byte_size_attribute (dw_die_ref die, tree tree_node)
     add_AT_unsigned (die, DW_AT_byte_size, size);
 }
 
+/* Add a DW_AT_alignment attribute to DIE with TREE_NODE's non-default
+   alignment.  */
+
+static void
+add_alignment_attribute (dw_die_ref die, tree tree_node)
+{
+  if (dwarf_version < 5 && dwarf_strict)
+    return;
+
+  unsigned align;
+
+  if (DECL_P (tree_node))
+    {
+      if (!DECL_USER_ALIGN (tree_node))
+	return;
+
+      align = DECL_ALIGN_UNIT (tree_node);
+    }
+  else if (TYPE_P (tree_node))
+    {
+      if (!TYPE_USER_ALIGN (tree_node))
+	return;
+
+      align = TYPE_ALIGN_UNIT (tree_node);
+    }
+  else
+    gcc_unreachable ();
+
+  add_AT_unsigned (die, DW_AT_alignment, align);
+}
+
 /* For a FIELD_DECL node which represents a bit-field, output an attribute
    which specifies the distance in bits from the highest order bit of the
    "containing object" for the bit-field to the highest order bit of the
@@ -20751,6 +20803,8 @@ gen_array_type_die (tree type, dw_die_ref context_die)
 
   if (get_AT (array_die, DW_AT_name))
     add_pubtype (type, array_die);
+
+  add_alignment_attribute (array_die, type);
 }
 
 /* After all arguments are created, adjust any DW_TAG_string_type
@@ -20890,6 +20944,8 @@ gen_descr_array_type_die (tree type, struct array_descr_info *info,
 
   if (get_AT (array_die, DW_AT_name))
     add_pubtype (type, array_die);
+
+  add_alignment_attribute (array_die, type);
 }
 
 #if 0
@@ -20999,6 +21055,7 @@ gen_enumeration_type_die (tree type, dw_die_ref context_die)
 
       TREE_ASM_WRITTEN (type) = 1;
       add_byte_size_attribute (type_die, type);
+      add_alignment_attribute (type_die, type);
       if (dwarf_version >= 3 || !dwarf_strict)
 	{
 	  tree underlying = lang_hooks.types.enum_underlying_base_type (type);
@@ -21056,6 +21113,8 @@ gen_enumeration_type_die (tree type, dw_die_ref context_die)
     }
   else
     add_AT_flag (type_die, DW_AT_declaration, 1);
+
+  add_alignment_attribute (type_die, type);
 
   add_pubtype (type, type_die);
 
@@ -21957,6 +22016,8 @@ gen_subprogram_die (tree decl, dw_die_ref context_die)
       if (TREE_THIS_VOLATILE (decl) && (dwarf_version >= 5 || !dwarf_strict))
 	add_AT_flag (subr_die, DW_AT_noreturn, 1);
 
+      add_alignment_attribute (subr_die, decl);
+
       add_accessibility_attribute (subr_die, decl);
     }
 
@@ -22681,6 +22742,7 @@ gen_variable_die (tree decl, tree origin, dw_die_ref context_die)
       add_type_attribute (var_die, TREE_TYPE (decl_or_origin),
 			  decl_quals (decl_or_origin), false,
 			  context_die);
+      add_alignment_attribute (var_die, decl);
       add_AT_flag (var_die, DW_AT_external, 1);
       if (loc)
 	{
@@ -22807,6 +22869,8 @@ gen_variable_die (tree decl, tree origin, dw_die_ref context_die)
 
       if (DECL_ARTIFICIAL (decl))
 	add_AT_flag (var_die, DW_AT_artificial, 1);
+
+      add_alignment_attribute (var_die, decl);
 
       add_accessibility_attribute (var_die, decl);
     }
@@ -23172,6 +23236,8 @@ gen_field_die (tree decl, struct vlr_context *ctx, dw_die_ref context_die)
       add_bit_offset_attribute (decl_die, decl, ctx);
     }
 
+  add_alignment_attribute (decl_die, decl);
+
   /* If we have a variant part offset, then we are supposed to process a member
      of a QUAL_UNION_TYPE, which is how we represent variant parts in
      trees.  */
@@ -23247,6 +23313,7 @@ gen_ptr_to_mbr_type_die (tree type, dw_die_ref context_die)
 		  lookup_type_die (TYPE_OFFSET_BASETYPE (type)));
   add_type_attribute (ptr_die, TREE_TYPE (type), TYPE_UNQUALIFIED, false,
 		      context_die);
+  add_alignment_attribute (ptr_die, type);
 
   if (TREE_CODE (TREE_TYPE (type)) != FUNCTION_TYPE
       && TREE_CODE (TREE_TYPE (type)) != METHOD_TYPE)
@@ -24125,6 +24192,7 @@ gen_struct_or_union_type_die (tree type, dw_die_ref context_die,
 	 this type is expressed in terms of this type itself.  */
       TREE_ASM_WRITTEN (type) = 1;
       add_byte_size_attribute (type_die, type);
+      add_alignment_attribute (type_die, type);
       if (TYPE_STUB_DECL (type) != NULL_TREE)
 	{
 	  add_src_coords_attributes (type_die, TYPE_STUB_DECL (type));
@@ -24182,6 +24250,7 @@ gen_subroutine_type_die (tree type, dw_die_ref context_die)
   add_prototyped_attribute (subr_die, type);
   add_type_attribute (subr_die, return_type, TYPE_UNQUALIFIED, false,
 		      context_die);
+  add_alignment_attribute (subr_die, type);
   gen_formal_types_die (type, subr_die);
 
   if (get_AT (subr_die, DW_AT_name))
@@ -24217,7 +24286,10 @@ gen_typedef_die (tree decl, dw_die_ref context_die)
     add_abstract_origin_attribute (type_die, origin);
   else
     {
-      tree type;
+      tree type = TREE_TYPE (decl);
+
+      if (type == error_mark_node)
+	return;
 
       add_name_and_src_coords_attributes (type_die, decl);
       if (DECL_ORIGINAL_TYPE (decl))
@@ -24232,11 +24304,6 @@ gen_typedef_die (tree decl, dw_die_ref context_die)
 	}
       else
 	{
-	  type = TREE_TYPE (decl);
-
-	  if (type == error_mark_node)
-	    return;
-
 	  if (is_naming_typedef_decl (TYPE_NAME (type)))
 	    {
 	      /* Here, we are in the case of decl being a typedef naming
@@ -24274,6 +24341,10 @@ gen_typedef_die (tree decl, dw_die_ref context_die)
 	   TYPE in argument yield the DW_TAG_typedef we have just
 	   created.  */
 	equate_type_number_to_die (type, type_die);
+
+      type = TREE_TYPE (decl);
+
+      add_alignment_attribute (type_die, type);
 
       add_accessibility_attribute (type_die, decl);
     }
@@ -24439,8 +24510,13 @@ gen_type_die_with_usage (tree type, dw_die_ref context_die,
 	 but try to canonicalize.  */
       tree main = TYPE_MAIN_VARIANT (type);
       for (tree t = main; t; t = TYPE_NEXT_VARIANT (t))
-	if (check_base_type (t, main) && check_lang_type (t, type))
-	  type = t;
+	{
+	  if (check_base_type (t, main) && check_lang_type (t, type))
+	    {
+	      type = t;
+	      break;
+	    }
+	}
     }
   else if (TREE_CODE (type) != VECTOR_TYPE
 	   && TREE_CODE (type) != ARRAY_TYPE)
@@ -27793,6 +27869,25 @@ prune_unused_types (void)
   for (i = 0; base_types.iterate (i, &base_type); i++)
     prune_unused_types_mark (base_type, 1);
 
+  /* For -fvar-tracking-assignments, also set the mark on nodes that could be
+     referenced by DW_TAG_call_site DW_AT_call_origin (i.e. direct call
+     callees).  */
+  cgraph_node *cnode;
+  FOR_EACH_FUNCTION (cnode)
+    if (cnode->referred_to_p (false))
+      {
+	dw_die_ref die = lookup_decl_die (cnode->decl);
+	if (die == NULL || die->die_mark)
+	  continue;
+	for (cgraph_edge *e = cnode->callers; e; e = e->next_caller)
+	  if (e->caller != cnode
+	      && opt_for_fn (e->caller->decl, flag_var_tracking_assignments))
+	    {
+	      prune_unused_types_mark (die, 1);
+	      break;
+	    }
+      }
+
   if (debug_str_hash)
     debug_str_hash->empty ();
   if (skeleton_debug_str_hash)
@@ -27931,6 +28026,7 @@ base_type_cmp (const void *x, const void *y)
   dw_die_ref dy = *(const dw_die_ref *) y;
   unsigned int byte_size1, byte_size2;
   unsigned int encoding1, encoding2;
+  unsigned int align1, align2;
   if (dx->die_mark > dy->die_mark)
     return -1;
   if (dx->die_mark < dy->die_mark)
@@ -27946,6 +28042,12 @@ base_type_cmp (const void *x, const void *y)
   if (encoding1 < encoding2)
     return 1;
   if (encoding1 > encoding2)
+    return -1;
+  align1 = get_AT_unsigned (dx, DW_AT_alignment);
+  align2 = get_AT_unsigned (dy, DW_AT_alignment);
+  if (align1 < align2)
+    return 1;
+  if (align1 > align2)
     return -1;
   return 0;
 }
@@ -28694,16 +28796,27 @@ resolve_addr (dw_die_ref die)
 		&& DECL_ABSTRACT_ORIGIN (tdecl) == NULL_TREE
 		&& (cdie = lookup_context_die (DECL_CONTEXT (tdecl))))
 	      {
-		/* Creating a full DIE for tdecl is overly expensive and
-		   at this point even wrong when in the LTO phase
-		   as it can end up generating new type DIEs we didn't
-		   output and thus optimize_external_refs will crash.  */
-		tdie = new_die (DW_TAG_subprogram, cdie, NULL_TREE);
-		add_AT_flag (tdie, DW_AT_external, 1);
-		add_AT_flag (tdie, DW_AT_declaration, 1);
-		add_linkage_attr (tdie, tdecl);
-		add_name_and_src_coords_attributes (tdie, tdecl);
-		equate_decl_number_to_die (tdecl, tdie);
+		dw_die_ref pdie = cdie;
+		/* Make sure we don't add these DIEs into type units.
+		   We could emit skeleton DIEs for context (namespaces,
+		   outer structs/classes) and a skeleton DIE for the
+		   innermost context with DW_AT_signature pointing to the
+		   type unit.  See PR78835.  */
+		while (pdie && pdie->die_tag != DW_TAG_type_unit)
+		  pdie = pdie->die_parent;
+		if (pdie == NULL)
+		  {
+		    /* Creating a full DIE for tdecl is overly expensive and
+		       at this point even wrong when in the LTO phase
+		       as it can end up generating new type DIEs we didn't
+		       output and thus optimize_external_refs will crash.  */
+		    tdie = new_die (DW_TAG_subprogram, cdie, NULL_TREE);
+		    add_AT_flag (tdie, DW_AT_external, 1);
+		    add_AT_flag (tdie, DW_AT_declaration, 1);
+		    add_linkage_attr (tdie, tdecl);
+		    add_name_and_src_coords_attributes (tdie, tdecl);
+		    equate_decl_number_to_die (tdecl, tdie);
+		  }
 	      }
 	    if (tdie)
 	      {

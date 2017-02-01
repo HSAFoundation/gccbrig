@@ -1,6 +1,12 @@
-2017-01-26  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+2017-02-01  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	Removed stale target-libbrig reference from config-lang.in
+
+2017-01-30  Jakub Jelinek  <jakub@redhat.com>
+
+	* brigfrontend/brig-code-entry-handler.cc
+	(brig_code_entry_handler::get_tree_cst_for_hsa_operand): For %lu
+	cast size_t arguments to unsigned long.
 
 2017-01-26  Jakub Jelinek  <jakub@redhat.com>
 
