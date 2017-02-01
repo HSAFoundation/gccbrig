@@ -1,9 +1,3 @@
-2017-02-01  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
-
-	* configure.tgt: Moved the white list of supported targets here
-	from configure.ac.
-	* README: Added a proper description of what libhsail-rt is.
-
 2017-02-01  Jakub Jelinek  <jakub@redhat.com>
 
 	* configure.tgt: Fix i?86-*-linux* entry.
@@ -34,6 +28,7 @@
 	* configure.tgt: Moved the white list of supported targets here
 	from configure.ac.  Added i[3456789]86-*-linux* as a supported env
 	for the BRIG FE.
+	* README: Added a proper description of what libhsail-rt is.
 
 2017-01-26  Jakub Jelinek  <jakub@redhat.com>
 

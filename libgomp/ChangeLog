@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 2017-01-31  Thomas Schwinge  <thomas@codesourcery.com>
 
 	* libgomp-plugin.h: #include <stdbool.h>.
@@ -40,7 +38,6 @@
 	* testsuite/libgomp.fortran/declare-simd-4.f90: Add cleanup-modules
 	directive.
 
->>>>>>> gcc-master
 2017-01-24  Pekka Jääskeläinen  <pekka@parmance.com>
 	    Martin Jambor  <mjambor@suse.cz>
 

@@ -1,9 +1,7 @@
-2017-02-01  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+2017-01-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* configure.ac: Moved the white list of enabling BRIG FE to
 	libhsail-rt/configure.tgt.
-	* configure.ac: Added i[3456789]86-*-linux* as a supported env
-	for the BRIG FE.
 	* configure: Regenerated.
 	* MAINTAINERS: Updated maintainers for BRIG FE and libhsail-rt.
 

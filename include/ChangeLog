@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 2017-01-30  Alexandre Oliva <aoliva@redhat.com>
 
 	Introduce C++ support in libcc1.
@@ -31,7 +29,6 @@
 	* gcc-interface.h (enum gcc_base_api_version): Add
 	GCC_FE_VERSION_1.
 
->>>>>>> gcc-master
 2017-01-24  Pekka Jääskeläinen  <pekka@parmance.com>
 	    Martin Jambor  <mjambor@suse.cz>
 
