@@ -64,6 +64,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-parser.h"
 #include "read-rtl-function.h"
 #include "run-rtl-passes.h"
+#include "intl.h"
 
 /* We need to walk over decls with incomplete struct/union/enum types
    after parsing the whole translation unit.
@@ -1858,7 +1859,13 @@ c_parser_declaration_or_fndef (c_parser *parser, bool fndef_ok,
 		  init_loc = c_parser_peek_token (parser)->location;
 		  rich_location richloc (line_table, init_loc);
 		  start_init (NULL_TREE, asm_name, global_bindings_p (), &richloc);
+		  /* A parameter is initialized, which is invalid.  Don't
+		     attempt to instrument the initializer.  */
+		  int flag_sanitize_save = flag_sanitize;
+		  if (nested && !empty_ok)
+		    flag_sanitize = 0;
 		  init = c_parser_expr_no_commas (parser, NULL);
+		  flag_sanitize = flag_sanitize_save;
 		  if (TREE_CODE (init.value) == COMPONENT_REF
 		      && DECL_C_BIT_FIELD (TREE_OPERAND (init.value, 1)))
 		    error_at (here,
@@ -1916,7 +1923,13 @@ c_parser_declaration_or_fndef (c_parser *parser, bool fndef_ok,
 		  init_loc = c_parser_peek_token (parser)->location;
 		  rich_location richloc (line_table, init_loc);
 		  start_init (d, asm_name, global_bindings_p (), &richloc);
+		  /* A parameter is initialized, which is invalid.  Don't
+		     attempt to instrument the initializer.  */
+		  int flag_sanitize_save = flag_sanitize;
+		  if (TREE_CODE (d) == PARM_DECL)
+		    flag_sanitize = 0;
 		  init = c_parser_initializer (parser);
+		  flag_sanitize = flag_sanitize_save;
 		  finish_init ();
 		}
 	      if (oacc_routine_data)
@@ -6159,8 +6172,8 @@ c_parser_asm_statement (c_parser *parser)
     {
       if (!c_parser_require (parser, CPP_COLON,
 			     is_goto
-			     ? "expected %<:%>"
-			     : "expected %<:%> or %<)%>"))
+			     ? G_("expected %<:%>")
+			     : G_("expected %<:%> or %<)%>")))
 	goto error_close_paren;
 
       /* Once past any colon, we're no longer a simple asm.  */
@@ -7451,7 +7464,7 @@ c_parser_generic_selection (c_parser *parser)
 	  else
 	    {
 	      error_at (assoc.type_location,
-			"%<_Generic> selector matches multiple associations");
+			"%<_Generic%> selector matches multiple associations");
 	      inform (matched_assoc.type_location,
 		      "other match is here");
 	    }
@@ -8416,28 +8429,6 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	      tree arg0 = (*exprlist)[0];
 	      tree arg2 = (*exprlist)[2];
 	      warn_for_memset (expr_loc, arg0, arg2, literal_zero_mask);
-	    }
-
-	  if (TREE_CODE (expr.value) == FUNCTION_DECL && warn_restrict)
-	    {
-	      unsigned i;
-	      tree arg;
-	      FOR_EACH_VEC_SAFE_ELT (exprlist, i, arg)
-		TREE_VISITED (arg) = 0;
-
-	      unsigned param_pos = 0;
-	      function_args_iterator iter;
-	      tree t;
-	      FOREACH_FUNCTION_ARGS (TREE_TYPE (expr.value), t, iter)
-		{
-		  if (POINTER_TYPE_P (t) && TYPE_RESTRICT (t)
-		      && !TYPE_READONLY (TREE_TYPE (t)))
-		    warn_for_restrict (param_pos, exprlist);
-		  param_pos++;
-		}
-
-	      FOR_EACH_VEC_SAFE_ELT (exprlist, i, arg)
-		TREE_VISITED (arg) = 0;
 	    }
 
 	  start = expr.get_start ();
@@ -10178,6 +10169,7 @@ static bool
 c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
 {
   unsigned int id;
+  const char *construct = NULL;
 
   id = c_parser_peek_token (parser)->pragma_kind;
   gcc_assert (id != PRAGMA_NONE);
@@ -10191,9 +10183,16 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OACC_ENTER_DATA:
       if (context != pragma_compound)
 	{
+	  construct = "acc enter data";
+	in_compound:
 	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma acc enter data%> may only be "
-			    "used in compound statements");
+	    {
+	      error_at (c_parser_peek_token (parser)->location,
+			"%<#pragma %s%> may only be used in compound "
+			"statements", construct);
+	      c_parser_skip_until_found (parser, CPP_PRAGMA_EOL, NULL);
+	      return false;
+	    }
 	  goto bad_stmt;
 	}
       c_parser_oacc_enter_exit_data (parser, true);
@@ -10202,10 +10201,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OACC_EXIT_DATA:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma acc exit data%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "acc exit data";
+	  goto in_compound;
 	}
       c_parser_oacc_enter_exit_data (parser, false);
       return false;
@@ -10224,10 +10221,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OACC_UPDATE:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma acc update%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "acc update";
+	  goto in_compound;
 	}
       c_parser_oacc_update (parser);
       return false;
@@ -10235,10 +10230,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OMP_BARRIER:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp barrier%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "omp barrier";
+	  goto in_compound;
 	}
       c_parser_omp_barrier (parser);
       return false;
@@ -10246,10 +10239,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OMP_FLUSH:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp flush%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "omp flush";
+	  goto in_compound;
 	}
       c_parser_omp_flush (parser);
       return false;
@@ -10257,10 +10248,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OMP_TASKWAIT:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp taskwait%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "omp taskwait";
+	  goto in_compound;
 	}
       c_parser_omp_taskwait (parser);
       return false;
@@ -10268,10 +10257,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OMP_TASKYIELD:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp taskyield%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "omp taskyield";
+	  goto in_compound;
 	}
       c_parser_omp_taskyield (parser);
       return false;
@@ -10279,10 +10266,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OMP_CANCEL:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma omp cancel%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "omp cancel";
+	  goto in_compound;
 	}
       c_parser_omp_cancel (parser);
       return false;
@@ -10366,10 +10351,8 @@ c_parser_pragma (c_parser *parser, enum pragma_context context, bool *if_p)
     case PRAGMA_OACC_WAIT:
       if (context != pragma_compound)
 	{
-	  if (context == pragma_stmt)
-	    c_parser_error (parser, "%<#pragma acc enter data%> may only be "
-			    "used in compound statements");
-	  goto bad_stmt;
+	  construct = "acc wait";
+	  goto in_compound;
 	}
 	/* FALL THROUGH.  */
 
@@ -11023,6 +11006,7 @@ c_parser_omp_clause_collapse (c_parser *parser, tree list)
   location_t loc;
 
   check_no_duplicate_clause (list, OMP_CLAUSE_COLLAPSE, "collapse");
+  check_no_duplicate_clause (list, OMP_CLAUSE_TILE, "tile");
 
   loc = c_parser_peek_token (parser)->location;
   if (c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
@@ -11836,7 +11820,7 @@ c_parser_oacc_shape_clause (c_parser *parser, omp_clause_code kind,
 	  if (c == boolean_true_node)
 	    {
 	      warning_at (loc, 0,
-			  "%<%s%> value must be positive", str);
+			  "%qs value must be positive", str);
 	      expr = integer_one_node;
 	    }
 
@@ -11933,10 +11917,11 @@ static tree
 c_parser_oacc_clause_tile (c_parser *parser, tree list)
 {
   tree c, expr = error_mark_node;
-  location_t loc, expr_loc;
+  location_t loc;
   tree tile = NULL_TREE;
 
   check_no_duplicate_clause (list, OMP_CLAUSE_TILE, "tile");
+  check_no_duplicate_clause (list, OMP_CLAUSE_COLLAPSE, "collapse");
 
   loc = c_parser_peek_token (parser)->location;
   if (!c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
@@ -11944,16 +11929,19 @@ c_parser_oacc_clause_tile (c_parser *parser, tree list)
 
   do
     {
+      if (tile && !c_parser_require (parser, CPP_COMMA, "expected %<,%>"))
+	return list;
+
       if (c_parser_next_token_is (parser, CPP_MULT)
 	  && (c_parser_peek_2nd_token (parser)->type == CPP_COMMA
 	      || c_parser_peek_2nd_token (parser)->type == CPP_CLOSE_PAREN))
 	{
 	  c_parser_consume_token (parser);
-	  expr = integer_minus_one_node;
+	  expr = integer_zero_node;
 	}
       else
 	{
-	  expr_loc = c_parser_peek_token (parser)->location;
+	  location_t expr_loc = c_parser_peek_token (parser)->location;
 	  c_expr cexpr = c_parser_expr_no_commas (parser, NULL);
 	  cexpr = convert_lvalue_to_rvalue (expr_loc, cexpr, false, true);
 	  expr = cexpr.value;
@@ -11965,28 +11953,19 @@ c_parser_oacc_clause_tile (c_parser *parser, tree list)
 	      return list;
 	    }
 
-	  if (!INTEGRAL_TYPE_P (TREE_TYPE (expr)))
-	    {
-	      c_parser_error (parser, "%<tile%> value must be integral");
-	      return list;
-	    }
-
 	  expr = c_fully_fold (expr, false, NULL);
 
-	  /* Attempt to statically determine when expr isn't positive.  */
-	  c = fold_build2_loc (expr_loc, LE_EXPR, boolean_type_node, expr,
-			       build_int_cst (TREE_TYPE (expr), 0));
-	  protected_set_expr_location (c, expr_loc);
-	  if (c == boolean_true_node)
+	  if (!INTEGRAL_TYPE_P (TREE_TYPE (expr))
+	      || !tree_fits_shwi_p (expr)
+	      || tree_to_shwi (expr) <= 0)
 	    {
-	      warning_at (expr_loc, 0,"%<tile%> value must be positive");
-	      expr = integer_one_node;
+	      error_at (expr_loc, "%<tile%> argument needs positive"
+			" integral constant");
+	      expr = integer_zero_node;
 	    }
 	}
 
       tile = tree_cons (NULL_TREE, expr, tile);
-      if (c_parser_next_token_is (parser, CPP_COMMA))
-	c_parser_consume_token (parser);
     }
   while (c_parser_next_token_is_not (parser, CPP_CLOSE_PAREN));
 
@@ -12137,7 +12116,7 @@ c_parser_omp_clause_reduction (c_parser *parser, tree list)
 	default:
 	  c_parser_error (parser,
 			  "expected %<+%>, %<*%>, %<-%>, %<&%>, "
-			  "%<^%>, %<|%>, %<&&%>, %<||%>, %<min%> or %<max%>");
+			  "%<^%>, %<|%>, %<&&%>, %<||%> or identifier");
 	  c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, 0);
 	  return list;
 	}
@@ -13821,7 +13800,7 @@ c_parser_oacc_declare (c_parser *parser)
 	       || !DECL_EXTERNAL (decl)))
 	    {
 	      error_at (loc,
-			"%qD must be a global variable in"
+			"%qD must be a global variable in "
 			"%<#pragma acc declare link%>",
 			decl);
 	      error = true;
@@ -13951,9 +13930,8 @@ c_parser_oacc_enter_exit_data (c_parser *parser, bool enter)
 
   if (strcmp (p, "data") != 0)
     {
-      error_at (loc, enter
-		? "expected %<data%> after %<#pragma acc enter%>"
-		: "expected %<data%> after %<#pragma acc exit%>");
+      error_at (loc, "expected %<data%> after %<#pragma acc %s%>",
+		enter ? "enter" : "exit");
       parser->error = true;
       c_parser_skip_to_pragma_eol (parser);
       return;
@@ -13968,9 +13946,8 @@ c_parser_oacc_enter_exit_data (c_parser *parser, bool enter)
 
   if (omp_find_clause (clauses, OMP_CLAUSE_MAP) == NULL_TREE)
     {
-      error_at (loc, enter
-		? "%<#pragma acc enter data%> has no data movement clause"
-		: "%<#pragma acc exit data%> has no data movement clause");
+      error_at (loc, "%<#pragma acc %s data%> has no data movement clause",
+		enter ? "enter" : "exit");
       return;
     }
 
@@ -14296,8 +14273,10 @@ c_finish_oacc_routine (struct oacc_routine_data *data, tree fndecl,
   if (TREE_USED (fndecl) || (!is_defn && DECL_SAVED_TREE (fndecl)))
     {
       error_at (data->loc,
-		"%<#pragma acc routine%> must be applied before %s",
-		TREE_USED (fndecl) ? "use" : "definition");
+		TREE_USED (fndecl)
+		? G_("%<#pragma acc routine%> must be applied before use")
+		: G_("%<#pragma acc routine%> must be applied before "
+		     "definition"));
       data->error_seen = true;
       return;
     }
@@ -14910,11 +14889,17 @@ c_parser_omp_for_loop (location_t loc, c_parser *parser, enum tree_code code,
   bool fail = false, open_brace_parsed = false;
   int i, collapse = 1, ordered = 0, count, nbraces = 0;
   location_t for_loc;
+  bool tiling = false;
   vec<tree, va_gc> *for_block = make_tree_vector ();
 
   for (cl = clauses; cl; cl = OMP_CLAUSE_CHAIN (cl))
     if (OMP_CLAUSE_CODE (cl) == OMP_CLAUSE_COLLAPSE)
       collapse = tree_to_shwi (OMP_CLAUSE_COLLAPSE_EXPR (cl));
+    else if (OMP_CLAUSE_CODE (cl) == OMP_CLAUSE_TILE)
+      {
+	tiling = true;
+	collapse = list_length (OMP_CLAUSE_TILE_LIST (cl));
+      }
     else if (OMP_CLAUSE_CODE (cl) == OMP_CLAUSE_ORDERED
 	     && OMP_CLAUSE_ORDERED_EXPR (cl))
       {
@@ -14944,7 +14929,7 @@ c_parser_omp_for_loop (location_t loc, c_parser *parser, enum tree_code code,
 	  pc = &OMP_CLAUSE_CHAIN (*pc);
     }
 
-  gcc_assert (collapse >= 1 && ordered >= 0);
+  gcc_assert (tiling || (collapse >= 1 && ordered >= 0));
   count = ordered ? ordered : collapse;
 
   declv = make_tree_vec (count);
@@ -15460,7 +15445,7 @@ c_parser_omp_ordered (c_parser *parser, enum pragma_context context,
   if (context != pragma_stmt && context != pragma_compound)
     {
       c_parser_error (parser, "expected declaration specifiers");
-      c_parser_skip_until_found (parser, CPP_PRAGMA_EOL, NULL);
+      c_parser_skip_to_pragma_eol (parser, false);
       return false;
     }
 
@@ -15473,7 +15458,7 @@ c_parser_omp_ordered (c_parser *parser, enum pragma_context context,
 	  if (context == pragma_stmt)
 	    {
 	      error_at (loc,
-			"%<#pragma omp ordered%> with %<depend> clause may "
+			"%<#pragma omp ordered%> with %<depend%> clause may "
 			"only be used in compound statements");
 	      c_parser_skip_to_pragma_eol (parser, false);
 	      return false;
@@ -15883,8 +15868,9 @@ c_parser_omp_cancellation_point (c_parser *parser, enum pragma_context context)
   if (context != pragma_compound)
     {
       if (context == pragma_stmt)
-	error_at (loc, "%<#pragma omp cancellation point%> may only be used in"
-		  " compound statements");
+	error_at (loc,
+		  "%<#pragma %s%> may only be used in compound statements",
+		  "omp cancellation point");
       else
 	c_parser_error (parser, "expected declaration specifiers");
       c_parser_skip_to_pragma_eol (parser, false);
@@ -16141,9 +16127,8 @@ c_parser_omp_target_update (location_t loc, c_parser *parser,
 {
   if (context == pragma_stmt)
     {
-      error_at (loc,
-		"%<#pragma omp target update%> may only be "
-		"used in compound statements");
+      error_at (loc, "%<#pragma %s%> may only be used in compound statements",
+		"omp target update");
       c_parser_skip_to_pragma_eol (parser, false);
       return false;
     }
@@ -16201,9 +16186,8 @@ c_parser_omp_target_enter_data (location_t loc, c_parser *parser,
 
   if (context == pragma_stmt)
     {
-      error_at (loc,
-		"%<#pragma omp target enter data%> may only be "
-		"used in compound statements");
+      error_at (loc, "%<#pragma %s%> may only be used in compound statements",
+		"omp target enter data");
       c_parser_skip_to_pragma_eol (parser, false);
       return NULL_TREE;
     }
@@ -16286,9 +16270,8 @@ c_parser_omp_target_exit_data (location_t loc, c_parser *parser,
 
   if (context == pragma_stmt)
     {
-      error_at (loc,
-		"%<#pragma omp target exit data%> may only be "
-		"used in compound statements");
+      error_at (loc, "%<#pragma %s%> may only be used in compound statements",
+		"omp target exit data");
       c_parser_skip_to_pragma_eol (parser, false);
       return NULL_TREE;
     }
@@ -16316,7 +16299,7 @@ c_parser_omp_target_exit_data (location_t loc, c_parser *parser,
 	    map_seen |= 1;
 	    error_at (OMP_CLAUSE_LOCATION (*pc),
 		      "%<#pragma omp target exit data%> with map-type other "
-		      "than %<from%>, %<release> or %<delete%> on %<map%>"
+		      "than %<from%>, %<release%> or %<delete%> on %<map%>"
 		      " clause");
 	    *pc = OMP_CLAUSE_CHAIN (*pc);
 	    continue;
@@ -16502,6 +16485,11 @@ c_parser_omp_target (c_parser *parser, enum pragma_context context, bool *if_p)
 	  c_parser_consume_token (parser);
 	  return c_parser_omp_target_update (loc, parser, context);
 	}
+    }
+  if (!flag_openmp) /* flag_openmp_simd  */
+    {
+      c_parser_skip_to_pragma_eol (parser, false);
+      return false;
     }
 
   stmt = make_node (OMP_TARGET);
@@ -16847,8 +16835,11 @@ c_parser_omp_declare_target (c_parser *parser)
 	}
       if (!at1)
 	{
-	  symtab_node *node = symtab_node::get (t);
 	  DECL_ATTRIBUTES (t) = tree_cons (id, NULL_TREE, DECL_ATTRIBUTES (t));
+	  if (TREE_CODE (t) != FUNCTION_DECL && !is_global_var (t))
+	    continue;
+
+	  symtab_node *node = symtab_node::get (t);
 	  if (node != NULL)
 	    {
 	      node->offloadable = 1;
@@ -16971,7 +16962,7 @@ c_parser_omp_declare_reduction (c_parser *parser, enum pragma_context context)
     default:
       c_parser_error (parser,
 		      "expected %<+%>, %<*%>, %<-%>, %<&%>, "
-		      "%<^%>, %<|%>, %<&&%>, %<||%>, %<min%> or identifier");
+		      "%<^%>, %<|%>, %<&&%>, %<||%> or identifier");
       goto fail;
     }
 

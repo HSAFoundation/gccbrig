@@ -3510,7 +3510,7 @@ finish_id_expression (tree id_expression,
 	  && DECL_CONTEXT (decl) == NULL_TREE
 	  && !cp_unevaluated_operand)
 	{
-	  *error_msg = "use of parameter outside function body";
+	  *error_msg = G_("use of parameter outside function body");
 	  return error_mark_node;
 	}
     }
@@ -3520,13 +3520,13 @@ finish_id_expression (tree id_expression,
   if (TREE_CODE (decl) == TEMPLATE_DECL
       && !DECL_FUNCTION_TEMPLATE_P (decl))
     {
-      *error_msg = "missing template arguments";
+      *error_msg = G_("missing template arguments");
       return error_mark_node;
     }
   else if (TREE_CODE (decl) == TYPE_DECL
 	   || TREE_CODE (decl) == NAMESPACE_DECL)
     {
-      *error_msg = "expected primary-expression";
+      *error_msg = G_("expected primary-expression");
       return error_mark_node;
     }
 
@@ -3743,7 +3743,15 @@ finish_id_expression (tree id_expression,
 	  if (TREE_CODE (first_fn) == TEMPLATE_DECL)
 	    first_fn = DECL_TEMPLATE_RESULT (first_fn);
 
-	  if (!really_overloaded_fn (decl)
+	  /* [basic.def.odr]: "A function whose name appears as a
+	     potentially-evaluated expression is odr-used if it is the unique
+	     lookup result".
+
+	     But only mark it if it's a complete postfix-expression; in a call,
+	     ADL might select a different function, and we'll call mark_used in
+	     build_over_call.  */
+	  if (done
+	      && !really_overloaded_fn (decl)
 	      && !mark_used (first_fn))
 	    return error_mark_node;
 
@@ -3830,7 +3838,8 @@ finish_underlying_type (tree type)
       return underlying_type;
     }
 
-  complete_type (type);
+  if (!complete_type_or_else (type, NULL_TREE))
+    return error_mark_node;
 
   if (TREE_CODE (type) != ENUMERAL_TYPE)
     {
@@ -7099,7 +7108,8 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	      else if (!type_dependent_expression_p (t)
 		       && !INTEGRAL_TYPE_P (TREE_TYPE (t)))
 		{
-		  error ("%<tile%> value must be integral");
+		  error_at (OMP_CLAUSE_LOCATION (c),
+			    "%<tile%> argument needs integral type");
 		  remove = true;
 		}
 	      else
@@ -7107,14 +7117,16 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 		  t = mark_rvalue_use (t);
 		  if (!processing_template_decl)
 		    {
+		      /* Zero is used to indicate '*', we permit you
+			 to get there via an ICE of value zero.  */
 		      t = maybe_constant_value (t);
-		      if (TREE_CODE (t) == INTEGER_CST
-			  && tree_int_cst_sgn (t) != 1
-			  && t != integer_minus_one_node)
+		      if (!tree_fits_shwi_p (t)
+			  || tree_to_shwi (t) < 0)
 			{
-			  warning_at (OMP_CLAUSE_LOCATION (c), 0,
-				      "%<tile%> value must be positive");
-			  t = integer_one_node;
+			  error_at (OMP_CLAUSE_LOCATION (c),
+				    "%<tile%> argument needs positive "
+				    "integral constant");
+			  remove = true;
 			}
 		    }
 		  t = fold_build_cleanup_point_expr (TREE_TYPE (t), t);
@@ -8013,11 +8025,19 @@ finish_omp_for (location_t locus, enum tree_code code, tree declv,
   gcc_assert (TREE_VEC_LENGTH (declv) == TREE_VEC_LENGTH (incrv));
   if (TREE_VEC_LENGTH (declv) > 1)
     {
-      tree c = omp_find_clause (clauses, OMP_CLAUSE_COLLAPSE);
+      tree c;
+
+      c = omp_find_clause (clauses, OMP_CLAUSE_TILE);
       if (c)
-	collapse = tree_to_shwi (OMP_CLAUSE_COLLAPSE_EXPR (c));
-      if (collapse != TREE_VEC_LENGTH (declv))
-	ordered = TREE_VEC_LENGTH (declv);
+	collapse = list_length (OMP_CLAUSE_TILE_LIST (c));
+      else
+	{
+	  c = omp_find_clause (clauses, OMP_CLAUSE_COLLAPSE);
+	  if (c)
+	    collapse = tree_to_shwi (OMP_CLAUSE_COLLAPSE_EXPR (c));
+	  if (collapse != TREE_VEC_LENGTH (declv))
+	    ordered = TREE_VEC_LENGTH (declv);
+	}
     }
   for (i = 0; i < TREE_VEC_LENGTH (declv); i++)
     {
@@ -9426,7 +9446,7 @@ finish_unary_fold_expr (tree expr, int op, tree_code dir)
 
   // Build the fold expression.
   tree code = build_int_cstu (integer_type_node, abs (op));
-  tree fold = build_min (dir, unknown_type_node, code, pack);
+  tree fold = build_min_nt_loc (UNKNOWN_LOCATION, dir, code, pack);
   FOLD_EXPR_MODIFY_P (fold) = (op < 0);
   return fold;
 }
@@ -9452,7 +9472,7 @@ finish_binary_fold_expr (tree pack, tree init, int op, tree_code dir)
 {
   pack = make_pack_expansion (pack);
   tree code = build_int_cstu (integer_type_node, abs (op));
-  tree fold = build_min (dir, unknown_type_node, code, pack, init);
+  tree fold = build_min_nt_loc (UNKNOWN_LOCATION, dir, code, pack, init);
   FOLD_EXPR_MODIFY_P (fold) = (op < 0);
   return fold;
 }

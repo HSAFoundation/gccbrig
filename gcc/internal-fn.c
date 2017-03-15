@@ -413,86 +413,6 @@ expand_FALLTHROUGH (internal_fn, gcall *call)
 	    "invalid use of attribute %<fallthrough%>");
 }
 
-/* Helper function for expand_addsub_overflow.  Return 1
-   if ARG interpreted as signed in its precision is known to be always
-   positive or 2 if ARG is known to be always negative, or 3 if ARG may
-   be positive or negative.  */
-
-static int
-get_range_pos_neg (tree arg)
-{
-  if (arg == error_mark_node)
-    return 3;
-
-  int prec = TYPE_PRECISION (TREE_TYPE (arg));
-  int cnt = 0;
-  if (TREE_CODE (arg) == INTEGER_CST)
-    {
-      wide_int w = wi::sext (arg, prec);
-      if (wi::neg_p (w))
-	return 2;
-      else
-	return 1;
-    }
-  while (CONVERT_EXPR_P (arg)
-	 && INTEGRAL_TYPE_P (TREE_TYPE (TREE_OPERAND (arg, 0)))
-	 && TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (arg, 0))) <= prec)
-    {
-      arg = TREE_OPERAND (arg, 0);
-      /* Narrower value zero extended into wider type
-	 will always result in positive values.  */
-      if (TYPE_UNSIGNED (TREE_TYPE (arg))
-	  && TYPE_PRECISION (TREE_TYPE (arg)) < prec)
-	return 1;
-      prec = TYPE_PRECISION (TREE_TYPE (arg));
-      if (++cnt > 30)
-	return 3;
-    }
-
-  if (TREE_CODE (arg) != SSA_NAME)
-    return 3;
-  wide_int arg_min, arg_max;
-  while (get_range_info (arg, &arg_min, &arg_max) != VR_RANGE)
-    {
-      gimple *g = SSA_NAME_DEF_STMT (arg);
-      if (is_gimple_assign (g)
-	  && CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (g)))
-	{
-	  tree t = gimple_assign_rhs1 (g);
-	  if (INTEGRAL_TYPE_P (TREE_TYPE (t))
-	      && TYPE_PRECISION (TREE_TYPE (t)) <= prec)
-	    {
-	      if (TYPE_UNSIGNED (TREE_TYPE (t))
-		  && TYPE_PRECISION (TREE_TYPE (t)) < prec)
-		return 1;
-	      prec = TYPE_PRECISION (TREE_TYPE (t));
-	      arg = t;
-	      if (++cnt > 30)
-		return 3;
-	      continue;
-	    }
-	}
-      return 3;
-    }
-  if (TYPE_UNSIGNED (TREE_TYPE (arg)))
-    {
-      /* For unsigned values, the "positive" range comes
-	 below the "negative" range.  */
-      if (!wi::neg_p (wi::sext (arg_max, prec), SIGNED))
-	return 1;
-      if (wi::neg_p (wi::sext (arg_min, prec), SIGNED))
-	return 2;
-    }
-  else
-    {
-      if (!wi::neg_p (wi::sext (arg_min, prec), SIGNED))
-	return 1;
-      if (wi::neg_p (wi::sext (arg_max, prec), SIGNED))
-	return 2;
-    }
-  return 3;
-}
-
 /* Return minimum precision needed to represent all values
    of ARG in SIGNed integral type.  */
 
@@ -1909,7 +1829,7 @@ expand_vector_ubsan_overflow (location_t loc, enum tree_code code, tree lhs,
     {
       optab op;
       lhsr = expand_expr (lhs, NULL_RTX, VOIDmode, EXPAND_WRITE);
-      if (GET_MODE (lhsr) == BLKmode
+      if (!VECTOR_MODE_P (GET_MODE (lhsr))
 	  || (op = optab_for_tree_code (code, TREE_TYPE (arg0),
 					optab_default)) == unknown_optab
 	  || (optab_handler (op, TYPE_MODE (TREE_TYPE (arg0)))
@@ -1949,12 +1869,20 @@ expand_vector_ubsan_overflow (location_t loc, enum tree_code code, tree lhs,
       if (cnt > 4)
 	{
 	  tree atype = build_array_type_nelts (eltype, cnt);
-	  op0 = fold_build1_loc (loc, VIEW_CONVERT_EXPR, atype, arg0);
-	  op0 = build4_loc (loc, ARRAY_REF, eltype, op0, cntv,
-			    NULL_TREE, NULL_TREE);
-	  op1 = fold_build1_loc (loc, VIEW_CONVERT_EXPR, atype, arg1);
-	  op1 = build4_loc (loc, ARRAY_REF, eltype, op1, cntv,
-			    NULL_TREE, NULL_TREE);
+	  op0 = uniform_vector_p (arg0);
+	  if (op0 == NULL_TREE)
+	    {
+	      op0 = fold_build1_loc (loc, VIEW_CONVERT_EXPR, atype, arg0);
+	      op0 = build4_loc (loc, ARRAY_REF, eltype, op0, cntv,
+				NULL_TREE, NULL_TREE);
+	    }
+	  op1 = uniform_vector_p (arg1);
+	  if (op1 == NULL_TREE)
+	    {
+	      op1 = fold_build1_loc (loc, VIEW_CONVERT_EXPR, atype, arg1);
+	      op1 = build4_loc (loc, ARRAY_REF, eltype, op1, cntv,
+				NULL_TREE, NULL_TREE);
+	    }
 	  if (resv)
 	    {
 	      res = fold_build1_loc (loc, VIEW_CONVERT_EXPR, atype, resv);
@@ -2475,6 +2403,14 @@ expand_GOACC_LOOP (internal_fn, gcall *)
 
 static void
 expand_GOACC_REDUCTION (internal_fn, gcall *)
+{
+  gcc_unreachable ();
+}
+
+/* This is expanded by oacc_device_lower pass.  */
+
+static void
+expand_GOACC_TILE (internal_fn, gcall *)
 {
   gcc_unreachable ();
 }

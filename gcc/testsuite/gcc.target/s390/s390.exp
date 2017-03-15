@@ -121,7 +121,7 @@ proc check_effective_target_s390_useable_hw { } {
 	    asm ("etnd %0" : "=d" (nd));
 	  }
 	#endif
-	#ifdef __S390_VX__
+	#ifdef __VX__
 	    asm ("vzero %%v0" : : );
 	#endif
 	  return 0;
@@ -217,7 +217,7 @@ set md_tests $srcdir/$subdir/md/*.c
 dg-runtest [lsort [prune [glob -nocomplain $srcdir/$subdir/*.{c,S,C}] \
 			 $md_tests]] "" $DEFAULT_CFLAGS
 
-dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/*vector*/*.]] \
+dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/*vector*/*.{c,S,C}]] \
 	"" $DEFAULT_CFLAGS
 
 dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/target-attribute/*.{c,S,C}]] \

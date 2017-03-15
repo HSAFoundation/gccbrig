@@ -3986,21 +3986,21 @@ compute_avail (void)
 			{
 			  ref->set = set;
 			  if (ref1->opcode == MEM_REF)
-			    ref1->op0 = fold_convert (TREE_TYPE (ref2->op0),
-						      ref1->op0);
+			    ref1->op0 = wide_int_to_tree (TREE_TYPE (ref2->op0),
+							  ref1->op0);
 			  else
-			    ref1->op2 = fold_convert (TREE_TYPE (ref2->op2),
-						      ref1->op2);
+			    ref1->op2 = wide_int_to_tree (TREE_TYPE (ref2->op2),
+							  ref1->op2);
 			}
 		      else
 			{
 			  ref->set = 0;
 			  if (ref1->opcode == MEM_REF)
-			    ref1->op0 = fold_convert (ptr_type_node,
-						      ref1->op0);
+			    ref1->op0 = wide_int_to_tree (ptr_type_node,
+							  ref1->op0);
 			  else
-			    ref1->op2 = fold_convert (ptr_type_node,
-						      ref1->op2);
+			    ref1->op2 = wide_int_to_tree (ptr_type_node,
+							  ref1->op2);
 			}
 		      operands.release ();
 
@@ -4099,11 +4099,17 @@ eliminate_push_avail (tree op)
 static tree
 eliminate_insert (gimple_stmt_iterator *gsi, tree val)
 {
-  gimple *stmt = gimple_seq_first_stmt (VN_INFO (val)->expr);
-  if (!is_gimple_assign (stmt)
+  /* We can insert a sequence with a single assignment only.  */
+  gimple_seq stmts = VN_INFO (val)->expr;
+  if (!gimple_seq_singleton_p (stmts))
+    return NULL_TREE;
+  gassign *stmt = dyn_cast <gassign *> (gimple_seq_first_stmt (stmts));
+  if (!stmt
       || (!CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (stmt))
 	  && gimple_assign_rhs_code (stmt) != VIEW_CONVERT_EXPR
-	  && gimple_assign_rhs_code (stmt) != BIT_FIELD_REF))
+	  && gimple_assign_rhs_code (stmt) != BIT_FIELD_REF
+	  && (gimple_assign_rhs_code (stmt) != BIT_AND_EXPR
+	      || TREE_CODE (gimple_assign_rhs2 (stmt)) != INTEGER_CST)))
     return NULL_TREE;
 
   tree op = gimple_assign_rhs1 (stmt);
@@ -4114,21 +4120,55 @@ eliminate_insert (gimple_stmt_iterator *gsi, tree val)
   if (!leader)
     return NULL_TREE;
 
-  gimple_seq stmts = NULL;
   tree res;
+  stmts = NULL;
   if (gimple_assign_rhs_code (stmt) == BIT_FIELD_REF)
     res = gimple_build (&stmts, BIT_FIELD_REF,
 			TREE_TYPE (val), leader,
 			TREE_OPERAND (gimple_assign_rhs1 (stmt), 1),
 			TREE_OPERAND (gimple_assign_rhs1 (stmt), 2));
+  else if (gimple_assign_rhs_code (stmt) == BIT_AND_EXPR)
+    res = gimple_build (&stmts, BIT_AND_EXPR,
+			TREE_TYPE (val), leader, gimple_assign_rhs2 (stmt));
   else
     res = gimple_build (&stmts, gimple_assign_rhs_code (stmt),
 			TREE_TYPE (val), leader);
-  gsi_insert_seq_before (gsi, stmts, GSI_SAME_STMT);
-  VN_INFO_GET (res)->valnum = val;
+  if (TREE_CODE (res) != SSA_NAME
+      || SSA_NAME_IS_DEFAULT_DEF (res)
+      || gimple_bb (SSA_NAME_DEF_STMT (res)))
+    {
+      gimple_seq_discard (stmts);
 
-  if (TREE_CODE (leader) == SSA_NAME)
-    gimple_set_plf (SSA_NAME_DEF_STMT (leader), NECESSARY, true);
+      /* During propagation we have to treat SSA info conservatively
+         and thus we can end up simplifying the inserted expression
+	 at elimination time to sth not defined in stmts.  */
+      /* But then this is a redundancy we failed to detect.  Which means
+         res now has two values.  That doesn't play well with how
+	 we track availability here, so give up.  */
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	{
+	  if (TREE_CODE (res) == SSA_NAME)
+	    res = eliminate_avail (res);
+	  if (res)
+	    {
+	      fprintf (dump_file, "Failed to insert expression for value ");
+	      print_generic_expr (dump_file, val, 0);
+	      fprintf (dump_file, " which is really fully redundant to ");
+	      print_generic_expr (dump_file, res, 0);
+	      fprintf (dump_file, "\n");
+	    }
+	}
+
+      return NULL_TREE;
+    }
+  else
+    {
+      gsi_insert_seq_before (gsi, stmts, GSI_SAME_STMT);
+      VN_INFO_GET (res)->valnum = val;
+
+      if (TREE_CODE (leader) == SSA_NAME)
+	gimple_set_plf (SSA_NAME_DEF_STMT (leader), NECESSARY, true);
+    }
 
   pre_stats.insertions++;
   if (dump_file && (dump_flags & TDF_DETAILS))

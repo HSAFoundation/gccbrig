@@ -13,7 +13,7 @@ For general information about GCC, please visit:
 
 To report problems in GCC, please visit:
 
-  http://gcc.gnu.org/bugs.html
+  http://gcc.gnu.org/bugs/
 
 Maintainers
 ===========
@@ -220,7 +220,6 @@ docstring relicensing	Joseph Myers		<joseph@codesourcery.com>
 predict.def		Jan Hubicka		<hubicka@ucw.cz>
 gcov			Jan Hubicka		<hubicka@ucw.cz>
 gcov			Nathan Sidwell		<nathan@acm.org>
-option handling		Neil Booth		<neil@daikokuya.co.uk>
 option handling		Joseph Myers		<joseph@codesourcery.com>
 middle-end		Jeff Law		<law@redhat.com>
 middle-end		Ian Lance Taylor	<ian@airs.com>
@@ -338,7 +337,6 @@ Julian Brown					<julian@codesourcery.com>
 Christian Bruel					<christian.bruel@st.com>
 Iain Buclaw					<ibuclaw@gdcproject.org>
 Kevin Buettner					<kevinb@redhat.com>
-Andrew Burgess					<andrew.burgess@embecosm.com>
 Adam Butcher					<adam@jessamine.co.uk>
 Andrew Cagney					<cagney@gnu.org>
 Daniel Carrera					<dcarrera@gmail.com>
@@ -393,6 +391,7 @@ Gary Funck					<gary@intrepid.com>
 Pompapathi V Gadad				<Pompapathi.V.Gadad@nsc.com>
 Gopalasubramanian Ganesh			<Ganesh.Gopalasubramanian@amd.com>
 Kaveh Ghazi					<ghazi@gcc.gnu.org>
+Doug Gilmore					<Doug.Gilmore@imgtec.com>
 Matthew Gingell					<gingell@gnat.com>
 Tristan Gingold					<gingold@adacore.com>
 Jan-Benedict Glaw				<jbglaw@lug-owl.de>

@@ -69,6 +69,7 @@
 #include "tree-phinodes.h"
 #include "cfgloop.h"
 #include "fold-const.h"
+#include "intl.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -1123,13 +1124,15 @@ write_omp_entry (FILE *file, const char *name, const char *orig)
       func_decls << ".extern .func gomp_nvptx_main (.param.u" << POINTER_SIZE
         << " %in_ar1, .param.u" << POINTER_SIZE << " %in_ar2);\n";
     }
+  /* PR79332.  Single out this string; it confuses gcc.pot generation.  */
+#define NTID_Y "%ntid.y"
 #define ENTRY_TEMPLATE(PS, PS_BYTES, MAD_PS_32) "\
  (.param.u" PS " %arg, .param.u" PS " %stack, .param.u" PS " %sz)\n\
 {\n\
 	.reg.u32 %r<3>;\n\
 	.reg.u" PS " %R<4>;\n\
 	mov.u32 %r0, %tid.y;\n\
-	mov.u32 %r1, %ntid.y;\n\
+	mov.u32 %r1, " NTID_Y ";\n\
 	mov.u32 %r2, %ctaid.x;\n\
 	cvt.u" PS ".u32 %R1, %r0;\n\
 	" MAD_PS_32 " %R1, %r1, %r2, %R1;\n\
@@ -1157,6 +1160,7 @@ write_omp_entry (FILE *file, const char *name, const char *orig)
   static const char entry64[] = ENTRY_TEMPLATE ("64", "8", "mad.wide.u32");
   static const char entry32[] = ENTRY_TEMPLATE ("32", "4", "mad.lo.u32  ");
 #undef ENTRY_TEMPLATE
+#undef NTID_Y
   const char *entry_1 = TARGET_ABI64 ? entry64 : entry32;
   /* Position ENTRY_2 after the embedded nul using strlen of the prefix.  */
   const char *entry_2 = entry_1 + strlen (entry64) + 1;
@@ -4539,8 +4543,8 @@ nvptx_goacc_validate_dims (tree decl, int dims[], int fn_level)
       if (fn_level < 0 && dims[GOMP_DIM_VECTOR] >= 0)
 	warning_at (decl ? DECL_SOURCE_LOCATION (decl) : UNKNOWN_LOCATION, 0,
 		    dims[GOMP_DIM_VECTOR]
-		    ? "using vector_length (%d), ignoring %d"
-		    : "using vector_length (%d), ignoring runtime setting",
+		    ? G_("using vector_length (%d), ignoring %d")
+		    : G_("using vector_length (%d), ignoring runtime setting"),
 		    PTX_VECTOR_LENGTH, dims[GOMP_DIM_VECTOR]);
       dims[GOMP_DIM_VECTOR] = PTX_VECTOR_LENGTH;
       changed = true;

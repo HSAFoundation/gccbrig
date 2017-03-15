@@ -1654,6 +1654,10 @@ extern void protected_set_expr_location (tree, location_t);
 
 #define OMP_CLAUSE_TILE_LIST(NODE) \
   OMP_CLAUSE_OPERAND (OMP_CLAUSE_SUBCODE_CHECK (NODE, OMP_CLAUSE_TILE), 0)
+#define OMP_CLAUSE_TILE_ITERVAR(NODE) \
+  OMP_CLAUSE_OPERAND (OMP_CLAUSE_SUBCODE_CHECK (NODE, OMP_CLAUSE_TILE), 1)
+#define OMP_CLAUSE_TILE_COUNT(NODE) \
+  OMP_CLAUSE_OPERAND (OMP_CLAUSE_SUBCODE_CHECK (NODE, OMP_CLAUSE_TILE), 2)
 
 #define OMP_CLAUSE__GRIDDIM__DIMENSION(NODE) \
   (OMP_CLAUSE_SUBCODE_CHECK (NODE, OMP_CLAUSE__GRIDDIM_)\
@@ -4855,8 +4859,10 @@ extern tree array_ref_low_bound (tree);
 
 /* Returns true if REF is an array reference to an array at the end of
    a structure.  If this is the case, the array may be allocated larger
-   than its upper bound implies.  */
-extern bool array_at_struct_end_p (tree);
+   than its upper bound implies.  When second argument is true considers
+   REF when it's a COMPONENT_REF in addition ARRAY_REF and
+   ARRAY_RANGE_REF.  */
+extern bool array_at_struct_end_p (tree, bool = false);
 
 /* Return a tree representing the offset, in bytes, of the field referenced
    by EXP.  This does not include any offset in DECL_FIELD_BIT_OFFSET.  */
@@ -4870,6 +4876,7 @@ extern bool gimple_canonical_types_compatible_p (const_tree, const_tree,
 						 bool trust_type_canonical = true);
 extern bool type_with_interoperable_signedness (const_tree);
 extern bitmap get_nonnull_args (const_tree);
+extern int get_range_pos_neg (tree);
 
 /* Return simplified tree code of type that is used for canonical type
    merging.  */

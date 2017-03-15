@@ -3110,7 +3110,8 @@ build_function_call_vec (location_t loc, vec<location_t> arg_loc,
     return error_mark_node;
 
   /* Check that the arguments to the function are valid.  */
-  bool warned_p = check_function_arguments (loc, fntype, nargs, argarray);
+  bool warned_p = check_function_arguments (loc, fundecl, fntype,
+					    nargs, argarray);
 
   if (name != NULL_TREE
       && !strncmp (IDENTIFIER_POINTER (name), "__builtin_", 10))
@@ -3437,15 +3438,18 @@ convert_arguments (location_t loc, vec<location_t> arg_loc, tree typelist,
 		  /* Detect integer changing in width or signedness.
 		     These warnings are only activated with
 		     -Wtraditional-conversion, not with -Wtraditional.  */
-		  else if (warn_traditional_conversion && INTEGRAL_TYPE_P (type)
+		  else if (warn_traditional_conversion
+			   && INTEGRAL_TYPE_P (type)
 			   && INTEGRAL_TYPE_P (valtype))
 		    {
 		      tree would_have_been = default_conversion (val);
 		      tree type1 = TREE_TYPE (would_have_been);
 
-		      if (TREE_CODE (type) == ENUMERAL_TYPE
-			  && (TYPE_MAIN_VARIANT (type)
-			      == TYPE_MAIN_VARIANT (valtype)))
+		      if (val == error_mark_node)
+			/* VAL could have been of incomplete type.  */;
+		      else if (TREE_CODE (type) == ENUMERAL_TYPE
+			       && (TYPE_MAIN_VARIANT (type)
+				   == TYPE_MAIN_VARIANT (valtype)))
 			/* No warning if function asks for enum
 			   and the actual arg is that enum type.  */
 			;

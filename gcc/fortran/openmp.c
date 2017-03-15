@@ -3732,7 +3732,7 @@ check_symbol_not_pointer (gfc_symbol *sym, locus loc, const char *name)
     gfc_error ("POINTER object %qs of derived type in %s clause at %L",
 	       sym->name, name, &loc);
   if (sym->ts.type == BT_DERIVED && sym->attr.cray_pointer)
-    gfc_error ("Cray pointer object of derived type %qs in %s clause at %L",
+    gfc_error ("Cray pointer object %qs of derived type in %s clause at %L",
 	       sym->name, name, &loc);
   if (sym->ts.type == BT_DERIVED && sym->attr.cray_pointee)
     gfc_error ("Cray pointee object of derived type %qs in %s clause at %L",
@@ -4754,6 +4754,8 @@ resolve_omp_clauses (gfc_code *code, gfc_omp_clauses *omp_clauses,
     if (omp_clauses->wait_list)
       for (el = omp_clauses->wait_list; el; el = el->next)
 	resolve_scalar_int_expr (el->expr, "WAIT");
+  if (omp_clauses->collapse && omp_clauses->tile_list)
+    gfc_error ("Incompatible use of TILE and COLLAPSE at %L", &code->loc);
   if (omp_clauses->depend_source && code->op != EXEC_OMP_ORDERED)
     gfc_error ("SOURCE dependence type only allowed "
 	       "on ORDERED directive at %L", &code->loc);
@@ -5900,11 +5902,11 @@ resolve_oacc_loop_blocks (gfc_code *code)
 	  if (el->expr == NULL)
 	    {
 	      /* NULL expressions are used to represent '*' arguments.
-		 Convert those to a -1 expressions.  */
+		 Convert those to a 0 expressions.  */
 	      el->expr = gfc_get_constant_expr (BT_INTEGER,
 						gfc_default_integer_kind,
 						&code->loc);
-	      mpz_set_si (el->expr->value.integer, -1);
+	      mpz_set_si (el->expr->value.integer, 0);
 	    }
 	  else
 	    {

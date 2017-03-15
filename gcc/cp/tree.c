@@ -1548,29 +1548,40 @@ strip_typedefs (tree t, bool *remove_attributes)
 	result = TYPE_MAIN_VARIANT (t);
     }
   gcc_assert (!typedef_variant_p (result));
-  if (TYPE_USER_ALIGN (t) != TYPE_USER_ALIGN (result)
-      || TYPE_ALIGN (t) != TYPE_ALIGN (result))
+
+  if (COMPLETE_TYPE_P (result) && !COMPLETE_TYPE_P (t))
+  /* If RESULT is complete and T isn't, it's likely the case that T
+     is a variant of RESULT which hasn't been updated yet.  Skip the
+     attribute handling.  */;
+  else
     {
-      gcc_assert (TYPE_USER_ALIGN (t));
-      if (remove_attributes)
-	*remove_attributes = true;
-      else
+      if (TYPE_USER_ALIGN (t) != TYPE_USER_ALIGN (result)
+	  || TYPE_ALIGN (t) != TYPE_ALIGN (result))
 	{
-	  if (TYPE_ALIGN (t) == TYPE_ALIGN (result))
-	    result = build_variant_type_copy (result);
+	  gcc_assert (TYPE_USER_ALIGN (t));
+	  if (remove_attributes)
+	    *remove_attributes = true;
 	  else
-	    result = build_aligned_type (result, TYPE_ALIGN (t));
-	  TYPE_USER_ALIGN (result) = true;
+	    {
+	      if (TYPE_ALIGN (t) == TYPE_ALIGN (result))
+		result = build_variant_type_copy (result);
+	      else
+		result = build_aligned_type (result, TYPE_ALIGN (t));
+	      TYPE_USER_ALIGN (result) = true;
+	    }
+	}
+
+      if (TYPE_ATTRIBUTES (t))
+	{
+	  if (remove_attributes)
+	    result = apply_identity_attributes (result, TYPE_ATTRIBUTES (t),
+						remove_attributes);
+	  else
+	    result = cp_build_type_attribute_variant (result,
+						      TYPE_ATTRIBUTES (t));
 	}
     }
-  if (TYPE_ATTRIBUTES (t))
-    {
-      if (remove_attributes)
-	result = apply_identity_attributes (result, TYPE_ATTRIBUTES (t),
-					    remove_attributes);
-      else
-	result = cp_build_type_attribute_variant (result, TYPE_ATTRIBUTES (t));
-    }
+
   return cp_build_qualified_type (result, cp_type_quals (t));
 }
 
@@ -2728,13 +2739,20 @@ build_ctor_subob_ref (tree index, tree type, tree obj)
   return obj;
 }
 
+struct replace_placeholders_t
+{
+  tree obj;	    /* The object to be substituted for a PLACEHOLDER_EXPR.  */
+  bool seen;	    /* Whether we've encountered a PLACEHOLDER_EXPR.  */
+};
+
 /* Like substitute_placeholder_in_expr, but handle C++ tree codes and
    build up subexpressions as we go deeper.  */
 
 static tree
 replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 {
-  tree obj = static_cast<tree>(data_);
+  replace_placeholders_t *d = static_cast<replace_placeholders_t*>(data_);
+  tree obj = d->obj;
 
   if (TREE_CONSTANT (*t))
     {
@@ -2753,6 +2771,7 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 	  gcc_assert (TREE_CODE (x) == COMPONENT_REF);
 	*t = x;
 	*walk_subtrees = false;
+	d->seen = true;
       }
       break;
 
@@ -2778,9 +2797,10 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 		if (TREE_CODE (*valp) == TARGET_EXPR)
 		  valp = &TARGET_EXPR_INITIAL (*valp);
 	      }
-
+	    d->obj = subob;
 	    cp_walk_tree (valp, replace_placeholders_r,
-			  subob, NULL);
+			  data_, NULL);
+	    d->obj = obj;
 	  }
 	*walk_subtrees = false;
 	break;
@@ -2794,12 +2814,15 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 }
 
 tree
-replace_placeholders (tree exp, tree obj)
+replace_placeholders (tree exp, tree obj, bool *seen_p)
 {
   tree *tp = &exp;
+  replace_placeholders_t data = { obj, false };
   if (TREE_CODE (exp) == TARGET_EXPR)
     tp = &TARGET_EXPR_INITIAL (exp);
-  cp_walk_tree (tp, replace_placeholders_r, obj, NULL);
+  cp_walk_tree (tp, replace_placeholders_r, &data, NULL);
+  if (seen_p)
+    *seen_p = data.seen;
   return exp;
 }
 
@@ -2884,7 +2907,7 @@ build_min_non_dep (enum tree_code code, tree non_dep, ...)
 
   t = make_node (code);
   length = TREE_CODE_LENGTH (code);
-  TREE_TYPE (t) = TREE_TYPE (non_dep);
+  TREE_TYPE (t) = unlowered_expr_type (non_dep);
   TREE_SIDE_EFFECTS (t) = TREE_SIDE_EFFECTS (non_dep);
 
   for (i = 0; i < length; i++)
@@ -2938,8 +2961,10 @@ build_min_non_dep_op_overload (enum tree_code op,
   nargs = call_expr_nargs (non_dep);
 
   expected_nargs = cp_tree_code_length (op);
-  if (op == POSTINCREMENT_EXPR
-      || op == POSTDECREMENT_EXPR)
+  if ((op == POSTINCREMENT_EXPR
+       || op == POSTDECREMENT_EXPR)
+      /* With -fpermissive non_dep could be operator++().  */
+      && (!flag_permissive || nargs != expected_nargs))
     expected_nargs += 1;
   gcc_assert (nargs == expected_nargs);
 
@@ -4372,6 +4397,8 @@ special_function_p (const_tree decl)
     return sfk_deleting_destructor;
   if (DECL_CONV_FN_P (decl))
     return sfk_conversion;
+  if (deduction_guide_p (decl))
+    return sfk_deduction_guide;
 
   return sfk_none;
 }

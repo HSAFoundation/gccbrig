@@ -692,6 +692,16 @@ struct directive
   {
     get_int_range (arg, integer_type_node, prec, prec + 1, false, -1);
   }
+
+  /* Return true if both width and precision are known to be
+     either constant or in some range, false otherwise.  */
+  bool known_width_and_precision () const
+  {
+    return ((width[1] < 0
+	     || (unsigned HOST_WIDE_INT)width[1] <= target_int_max ())
+	    && (prec[1] < 0
+		|| (unsigned HOST_WIDE_INT)prec[1] < target_int_max ()));
+  }
 };
 
 /* Return the logarithm of X in BASE.  */
@@ -762,7 +772,9 @@ tree_digits (tree x, int base, HOST_WIDE_INT prec, bool plus, bool prefix)
 
   res += prec < ndigs ? ndigs : prec;
 
-  if (prefix && absval)
+  /* Adjust a non-zero value for the base prefix, either hexadecimal,
+     or, unless precision has resulted in a leading zero, also octal.  */
+  if (prefix && absval && (base == 16 || prec <= ndigs))
     {
       if (base == 8)
 	res += 1;
@@ -1014,8 +1026,8 @@ get_int_range (tree arg, tree type, HOST_WIDE_INT *pmin, HOST_WIDE_INT *pmax,
    determined by checking for the actual argument being in the range
    of the type of the directive.  If it isn't it must be assumed to
    take on the full range of the directive's type.
-   Return true when the range has been adjusted to the full unsigned
-   range of DIRTYPE, or [0, DIRTYPE_MAX], and false otherwise.  */
+   Return true when the range has been adjusted to the full range
+   of DIRTYPE, and false otherwise.  */
 
 static bool
 adjust_range_for_overflow (tree dirtype, tree *argmin, tree *argmax)
@@ -1051,20 +1063,8 @@ adjust_range_for_overflow (tree dirtype, tree *argmin, tree *argmax)
 	return false;
     }
 
-  tree dirmin = TYPE_MIN_VALUE (dirtype);
-  tree dirmax = TYPE_MAX_VALUE (dirtype);
-
-  if (TYPE_UNSIGNED (dirtype))
-    {
-      *argmin = dirmin;
-      *argmax = dirmax;
-    }
-  else
-    {
-      *argmin = integer_zero_node;
-      *argmax = dirmin;
-    }
-
+  *argmin = TYPE_MIN_VALUE (dirtype);
+  *argmax = TYPE_MAX_VALUE (dirtype);
   return true;
 }
 
@@ -1190,10 +1190,10 @@ format_integer (const directive &dir, tree arg)
 	  /* As a special case, a precision of zero with a zero argument
 	     results in zero bytes except in base 8 when the '#' flag is
 	     specified, and for signed conversions in base 8 and 10 when
-	     flags when either the space or '+' flag has been specified
-	     when it results in just one byte (with width having the normal
-	     effect).  This must extend to the case of a specified precision
-	     with an unknown value because it can be zero.  */
+	     either the space or '+' flag has been specified and it results
+	     in just one byte (with width having the normal effect).  This
+	     must extend to the case of a specified precision with
+	     an unknown value because it can be zero.  */
 	  res.range.min = ((base == 8 && dir.get_flag ('#')) || maybesign);
 	  if (res.range.min == 0 && dir.prec[0] != dir.prec[1])
 	    {
@@ -1260,16 +1260,16 @@ format_integer (const directive &dir, tree arg)
       enum value_range_type range_type = get_range_info (arg, &min, &max);
       if (range_type == VR_RANGE)
 	{
-	  argmin = build_int_cst (argtype, wi::fits_uhwi_p (min)
-				  ? min.to_uhwi () : min.to_shwi ());
-	  argmax = build_int_cst (argtype, wi::fits_uhwi_p (max)
-				  ? max.to_uhwi () : max.to_shwi ());
+	  argmin = wide_int_to_tree (argtype, min);
+	  argmax = wide_int_to_tree (argtype, max);
 
 	  /* Set KNOWNRANGE if the argument is in a known subrange
-	     of the directive's type (KNOWNRANGE may be reset below).  */
+	     of the directive's type and neither width nor precision
+	     is unknown.  (KNOWNRANGE may be reset below).  */
 	  res.knownrange
-	    = (!tree_int_cst_equal (TYPE_MIN_VALUE (dirtype), argmin)
-	       || !tree_int_cst_equal (TYPE_MAX_VALUE (dirtype), argmax));
+	    = ((!tree_int_cst_equal (TYPE_MIN_VALUE (dirtype), argmin)
+		|| !tree_int_cst_equal (TYPE_MAX_VALUE (dirtype), argmax))
+	       && dir.known_width_and_precision ());
 
 	  res.argmin = argmin;
 	  res.argmax = argmax;
@@ -1307,47 +1307,16 @@ format_integer (const directive &dir, tree arg)
 
   if (!argmin)
     {
-      /* For an unknown argument (e.g., one passed to a vararg function)
-	 or one whose value range cannot be determined, create a T_MIN
-	 constant if the argument's type is signed and T_MAX otherwise,
-	 and use those to compute the range of bytes that the directive
-	 can output.  When precision may be zero, use zero as the minimum
-	 since it results in no bytes on output (unless width is specified
-	 to be greater than 0).  */
-      bool zero = dir.prec[0] <= 0 && dir.prec[1] >= 0;
-      argmin = build_int_cst (argtype, !zero);
-
-      int typeprec = TYPE_PRECISION (dirtype);
-      int argprec = TYPE_PRECISION (argtype);
-
-      if (argprec < typeprec)
+      if (TREE_CODE (argtype) == POINTER_TYPE)
 	{
-	  if (POINTER_TYPE_P (argtype))
-	    argmax = build_all_ones_cst (argtype);
-	  else if (TYPE_UNSIGNED (argtype))
-	    argmax = TYPE_MAX_VALUE (argtype);
-	  else
-	    argmax = TYPE_MIN_VALUE (argtype);
+	  argmin = build_int_cst (pointer_sized_int_node, 0);
+	  argmax = build_all_ones_cst (pointer_sized_int_node);
 	}
       else
 	{
-	  if (POINTER_TYPE_P (dirtype))
-	    argmax = build_all_ones_cst (dirtype);
-	  else if (TYPE_UNSIGNED (dirtype))
-	    argmax = TYPE_MAX_VALUE (dirtype);
-	  else
-	    argmax = TYPE_MIN_VALUE (dirtype);
+	  argmin = TYPE_MIN_VALUE (argtype);
+	  argmax = TYPE_MAX_VALUE (argtype);
 	}
-
-      res.argmin = argmin;
-      res.argmax = argmax;
-    }
-
-  if (tree_int_cst_lt (argmax, argmin))
-    {
-      tree tmp = argmax;
-      argmax = argmin;
-      argmin = tmp;
     }
 
   /* Clear KNOWNRANGE if the range has been adjusted to the maximum
@@ -1361,37 +1330,59 @@ format_integer (const directive &dir, tree arg)
       res.argmax = argmax;
     }
 
-  /* Recursively compute the minimum and maximum from the known range,
-     taking care to swap them if the lower bound results in longer
-     output than the upper bound (e.g., in the range [-1, 0].  */
-
-  if (TYPE_UNSIGNED (dirtype))
+  /* Recursively compute the minimum and maximum from the known range.  */
+  if (TYPE_UNSIGNED (dirtype) || tree_int_cst_sgn (argmin) >= 0)
     {
-      /* For unsigned conversions/directives, use the minimum (i.e., 0
-	 or 1) and maximum to compute the shortest and longest output,
-	 respectively.  */
+      /* For unsigned conversions/directives or signed when
+	 the minimum is positive, use the minimum and maximum to compute
+	 the shortest and longest output, respectively.  */
       res.range.min = format_integer (dir, argmin).range.min;
       res.range.max = format_integer (dir, argmax).range.max;
     }
-  else
+  else if (tree_int_cst_sgn (argmax) < 0)
     {
-      /* For signed conversions/directives, use the maximum (i.e., 0)
-	 to compute the shortest output and the minimum (i.e., TYPE_MIN)
-	 to compute the longest output.  This is important when precision
-	 is specified but unknown because otherwise both output lengths
-	 would reflect the largest possible precision (i.e., INT_MAX).  */
+      /* For signed conversions/directives if maximum is negative,
+	 use the minimum as the longest output and maximum as the
+	 shortest output.  */
       res.range.min = format_integer (dir, argmax).range.min;
       res.range.max = format_integer (dir, argmin).range.max;
     }
-
-  if (res.range.max < res.range.min)
+  else
     {
-      unsigned HOST_WIDE_INT tmp = res.range.max;
-      res.range.max = res.range.min;
-      res.range.min = tmp;
+      /* Otherwise, 0 is inside of the range and minimum negative.  Use 0
+	 as the shortest output and for the longest output compute the
+	 length of the output of both minimum and maximum and pick the
+	 longer.  */
+      unsigned HOST_WIDE_INT max1 = format_integer (dir, argmin).range.max;
+      unsigned HOST_WIDE_INT max2 = format_integer (dir, argmax).range.max;
+      res.range.min = format_integer (dir, integer_zero_node).range.min;
+      res.range.max = MAX (max1, max2);
     }
 
-  res.range.likely = res.knownrange ? res.range.max : res.range.min;
+  /* If the range is known, use the maximum as the likely length.  */
+  if (res.knownrange)
+    res.range.likely = res.range.max;
+  else
+    {
+      /* Otherwise, use the minimum.  Except for the case where for %#x or
+         %#o the minimum is just for a single value in the range (0) and
+         for all other values it is something longer, like 0x1 or 01.
+	  Use the length for value 1 in that case instead as the likely
+	  length.  */
+      res.range.likely = res.range.min;
+      if (maybebase
+	  && base != 10
+	  && (tree_int_cst_sgn (argmin) < 0 || tree_int_cst_sgn (argmax) > 0))
+	{
+	  if (res.range.min == 1)
+	    res.range.likely += base == 8 ? 1 : 2;
+	  else if (res.range.min == 2
+		   && base == 16
+		   && (dir.width[0] == 2 || dir.prec[0] == 2))
+	    ++res.range.likely;
+	}
+    }
+
   res.range.unlikely = res.range.max;
   res.adjust_for_width_or_precision (dir.width, dirtype, base,
 				     (sign | maybebase) + (base == 16));
@@ -1442,12 +1433,12 @@ get_mpfr_format_length (mpfr_ptr x, const char *flags, HOST_WIDE_INT prec,
 
   HOST_WIDE_INT p = prec;
 
-  if (spec == 'G')
+  if (spec == 'G' && !strchr (flags, '#'))
     {
-      /* For G/g, precision gives the maximum number of significant
-	 digits which is bounded by LDBL_MAX_10_EXP, or, for a 128
-	 bit IEEE extended precision, 4932.  Using twice as much
-	 here should be more than sufficient for any real format.  */
+      /* For G/g without the pound flag, precision gives the maximum number
+	 of significant digits which is bounded by LDBL_MAX_10_EXP, or, for
+	 a 128 bit IEEE extended precision, 4932.  Using twice as much here
+	 should be more than sufficient for any real format.  */
       if ((IEEE_MAX_10_EXP * 2) < prec)
 	prec = IEEE_MAX_10_EXP * 2;
       p = prec;
@@ -1501,15 +1492,20 @@ format_floating_max (tree type, char spec, HOST_WIDE_INT prec)
   mpfr_from_real (x, &rv, GMP_RNDN);
 
   /* Return a value one greater to account for the leading minus sign.  */
-  return 1 + get_mpfr_format_length (x, "", prec, spec, 'D');
+  unsigned HOST_WIDE_INT r
+    = 1 + get_mpfr_format_length (x, "", prec, spec, 'D');
+  mpfr_clear (x);
+  return r;
 }
 
 /* Return a range representing the minimum and maximum number of bytes
-   that the directive DIR will output for any argument.  This function
-   is used when the directive argument or its value isn't known.  */
+   that the directive DIR will output for any argument.  PREC gives
+   the adjusted precision range to account for negative precisions
+   meaning the default 6.  This function is used when the directive
+   argument or its value isn't known.  */
 
 static fmtresult
-format_floating (const directive &dir)
+format_floating (const directive &dir, const HOST_WIDE_INT prec[2])
 {
   tree type;
 
@@ -1538,8 +1534,8 @@ format_floating (const directive &dir)
   /* The minimum output as determined by flags.  It's always at least 1.
      When plus or space are set the output is preceded by either a sign
      or a space.  */
-  int flagmin = (1 /* for the first digit */
-		 + (dir.get_flag ('+') | dir.get_flag (' ')));
+  unsigned flagmin = (1 /* for the first digit */
+		      + (dir.get_flag ('+') | dir.get_flag (' ')));
 
   /* When the pound flag is set the decimal point is included in output
      regardless of precision.  Whether or not a decimal point is included
@@ -1563,14 +1559,13 @@ format_floating (const directive &dir)
 			 + minprec
 			 + 3 /* p+0 */);
 
-	res.range.max = format_floating_max (type, 'a', dir.prec[1]);
+	res.range.max = format_floating_max (type, 'a', prec[1]);
 	res.range.likely = res.range.min;
 
 	/* The unlikely maximum accounts for the longest multibyte
 	   decimal point character.  */
 	res.range.unlikely = res.range.max;
-	if (dir.prec[0] != dir.prec[1]
-	    || dir.prec[0] == -1 || dir.prec[0] > 0)
+	if (dir.prec[1] > 0)
 	  res.range.unlikely += target_mb_len_max () - 1;
 
 	break;
@@ -1579,23 +1574,18 @@ format_floating (const directive &dir)
     case 'E':
     case 'e':
       {
+	/* Minimum output attributable to precision and, when it's
+	   non-zero, decimal point.  */
+	HOST_WIDE_INT minprec = prec[0] ? prec[0] + !radix : 0;
+
 	/* The minimum output is "[-+]1.234567e+00" regardless
 	   of the value of the actual argument.  */
-	HOST_WIDE_INT minprec = 6 + !radix /* decimal point */;
-	if ((dir.prec[0] < 0 && dir.prec[1] > -1) || dir.prec[0] == 0)
-	  minprec = 0;
-	else if (dir.prec[0] > 0)
-	  minprec = dir.prec[0] + !radix /* decimal point */;
-
 	res.range.min = (flagmin
 			 + radix
 			 + minprec
 			 + 2 /* e+ */ + 2);
-	/* MPFR uses a precision of 16 by default for some reason.
-	   Set it to the C default of 6.  */
-	int maxprec = dir.prec[1] < 0 ? 6 : dir.prec[1];
-	res.range.max = format_floating_max (type, 'e', maxprec);
 
+	res.range.max = format_floating_max (type, 'e', prec[1]);
 	res.range.likely = res.range.min;
 
 	/* The unlikely maximum accounts for the longest multibyte
@@ -1611,23 +1601,26 @@ format_floating (const directive &dir)
     case 'F':
     case 'f':
       {
+	/* Minimum output attributable to precision and, when it's non-zero,
+	   decimal point.  */
+	HOST_WIDE_INT minprec = prec[0] ? prec[0] + !radix : 0;
+
 	/* The lower bound when precision isn't specified is 8 bytes
 	   ("1.23456" since precision is taken to be 6).  When precision
 	   is zero, the lower bound is 1 byte (e.g., "1").  Otherwise,
 	   when precision is greater than zero, then the lower bound
 	   is 2 plus precision (plus flags).  */
-	HOST_WIDE_INT minprec = 0;
-	if (dir.prec[0] < 0)
-	  minprec = dir.prec[1] < 0 ? 6 + !radix /* decimal point */ : 0;
-	else if (dir.prec[0])
-	  minprec = dir.prec[0] + !radix /* decimal point */;
-
 	res.range.min = flagmin + radix + minprec;
 
 	/* Compute the upper bound for -TYPE_MAX.  */
-	res.range.max = format_floating_max (type, 'f', dir.prec[1]);
+	res.range.max = format_floating_max (type, 'f', prec[1]);
 
-	res.range.likely = res.range.min;
+	/* The minimum output with unknown precision is a single byte
+	   (e.g., "0") but the more likely output is 3 bytes ("0.0").  */
+	if (dir.prec[0] < 0 && dir.prec[1] > 0)
+	  res.range.likely = 3;
+	else
+	  res.range.likely = res.range.min;
 
 	/* The unlikely maximum accounts for the longest multibyte
 	   decimal point character.  */
@@ -1643,10 +1636,45 @@ format_floating (const directive &dir)
 	/* The %g output depends on precision and the exponent of
 	   the argument.  Since the value of the argument isn't known
 	   the lower bound on the range of bytes (not counting flags
-	   or width) is 1.  */
-	res.range.min = flagmin;
-	res.range.max = format_floating_max (type, 'g', dir.prec[1]);
-	res.range.likely = res.range.max;
+	   or width) is 1 plus radix (i.e., either "0" or "0." for
+	   "%g" and "%#g", respectively, with a zero argument).  */
+	res.range.min = flagmin + radix;
+
+	char spec = 'g';
+	HOST_WIDE_INT maxprec = dir.prec[1];
+	if (radix && maxprec)
+	  {
+	    /* When the pound flag (radix) is set, trailing zeros aren't
+	       trimmed and so the longest output is the same as for %e,
+	       except with precision minus 1 (as specified in C11).  */
+	    spec = 'e';
+	    if (maxprec > 0)
+	      --maxprec;
+	    else if (maxprec < 0)
+	      maxprec = 5;
+	  }
+	else
+	  maxprec = prec[1];
+
+	res.range.max = format_floating_max (type, spec, maxprec);
+
+	/* The likely output is either the maximum computed above
+	   minus 1 (assuming the maximum is positive) when precision
+	   is known (or unspecified), or the same minimum as for %e
+	   (which is computed for a non-negative argument).  Unlike
+	   for the other specifiers above the likely output isn't
+	   the minimum because for %g that's 1 which is unlikely.  */
+	if (dir.prec[1] < 0
+	    || (unsigned HOST_WIDE_INT)dir.prec[1] < target_int_max ())
+	  res.range.likely = res.range.max - 1;
+	else
+	  {
+	    HOST_WIDE_INT minprec = 6 + !radix /* decimal point */;
+	    res.range.likely = (flagmin
+				+ radix
+				+ minprec
+				+ 2 /* e+ */ + 2);
+	  }
 
 	/* The unlikely maximum accounts for the longest multibyte
 	   decimal point character.  */
@@ -1670,31 +1698,70 @@ format_floating (const directive &dir)
 static fmtresult
 format_floating (const directive &dir, tree arg)
 {
-  if (!arg || TREE_CODE (arg) != REAL_CST)
-    return format_floating (dir);
-
   HOST_WIDE_INT prec[] = { dir.prec[0], dir.prec[1] };
 
+  /* For an indeterminate precision the lower bound must be assumed
+     to be zero.  */
   if (TOUPPER (dir.specifier) == 'A')
     {
+      /* Get the number of fractional decimal digits needed to represent
+	 the argument without a loss of accuracy.  */
+      tree type = arg ? TREE_TYPE (arg) :
+	(dir.modifier == FMT_LEN_L || dir.modifier == FMT_LEN_ll
+	 ? long_double_type_node : double_type_node);
+
+      unsigned fmtprec
+	= REAL_MODE_FORMAT (TYPE_MODE (type))->p;
+
+      /* The precision of the IEEE 754 double format is 53.
+	 The precision of all other GCC binary double formats
+	 is 56 or less.  */
+      unsigned maxprec = fmtprec <= 56 ? 13 : 15;
+
       /* For %a, leave the minimum precision unspecified to let
 	 MFPR trim trailing zeros (as it and many other systems
 	 including Glibc happen to do) and set the maximum
 	 precision to reflect what it would be with trailing zeros
 	 present (as Solaris and derived systems do).  */
-      if (prec[0] < 0)
-	prec[0] = -1;
-      if (prec[1] < 0)
+      if (dir.prec[1] < 0)
 	{
-          unsigned fmtprec
-	    = REAL_MODE_FORMAT (TYPE_MODE (TREE_TYPE (arg)))->p;
-
-	       /* The precision of the IEEE 754 double format is 53.
-	     The precision of all other GCC binary double formats
-	     is 56 or less.  */
-	  prec[1] = fmtprec <= 56 ? 13 : 15;
+	  /* Both bounds are negative implies that precision has
+	     not been specified.  */
+	  prec[0] = maxprec;
+	  prec[1] = -1;
+	}
+      else if (dir.prec[0] < 0)
+	{
+	  /* With a negative lower bound and a non-negative upper
+	     bound set the minimum precision to zero and the maximum
+	     to the greater of the maximum precision (i.e., with
+	     trailing zeros present) and the specified upper bound.  */
+	  prec[0] = 0;
+	  prec[1] = dir.prec[1] < maxprec ? maxprec : dir.prec[1];
 	}
     }
+  else if (dir.prec[0] < 0)
+    {
+      if (dir.prec[1] < 0)
+	{
+	  /* A precision in a strictly negative range is ignored and
+	     the default of 6 is used instead.  */
+	  prec[0] = prec[1] = 6;
+	}
+      else
+	{
+	  /* For a precision in a partly negative range, the lower bound
+	     must be assumed to be zero and the new upper bound is the
+	     greater of 6 (the default precision used when the specified
+	     precision is negative) and the upper bound of the specified
+	     range.  */
+	  prec[0] = 0;
+	  prec[1] = dir.prec[1] < 6 ? 6 : dir.prec[1];
+	}
+    }
+
+  if (!arg || TREE_CODE (arg) != REAL_CST)
+    return format_floating (dir, prec);
 
   /* The minimum and maximum number of bytes produced by the directive.  */
   fmtresult res;
@@ -1739,6 +1806,7 @@ format_floating (const directive &dir, tree arg)
 	   of the result struct.  */
 	*minmax[i] = get_mpfr_format_length (mpfrval, fmtstr, prec[i],
 					     dir.specifier, rndspec);
+	mpfr_clear (mpfrval);
       }
   }
 
@@ -1751,12 +1819,23 @@ format_floating (const directive &dir, tree arg)
       res.range.max = tmp;
     }
 
-  res.knownrange = true;
+  /* The range is known unless either width or precision is unknown.  */
+  res.knownrange = dir.known_width_and_precision ();
 
-  /* For the same floating point constant use the longer output
-     as the likely maximum since with round to nearest either is
-     equally likely.  */
-  res.range.likely = res.range.max;
+  /* For the same floating point constant, unless width or precision
+     is unknown, use the longer output as the likely maximum since
+     with round to nearest either is equally likely.  Otheriwse, when
+     precision is unknown, use the greater of the minimum and 3 as
+     the likely output (for "0.0" since zero precision is unlikely).  */
+  if (res.knownrange)
+    res.range.likely = res.range.max;
+  else if (res.range.min < 3
+	   && dir.prec[0] < 0
+	   && (unsigned HOST_WIDE_INT)dir.prec[1] == target_int_max ())
+    res.range.likely = 3;
+  else
+    res.range.likely = res.range.min;
+
   res.range.unlikely = res.range.max;
 
   if (res.range.max > 2 && (prec[0] != 0 || prec[1] != 0))
@@ -1796,7 +1875,7 @@ get_string_length (tree str)
      aren't known to point any such arrays result in LENRANGE[1] set
      to SIZE_MAX.  */
   tree lenrange[2];
-  get_range_strlen (str, lenrange);
+  bool flexarray = get_range_strlen (str, lenrange);
 
   if (lenrange [0] || lenrange [1])
     {
@@ -1832,13 +1911,18 @@ get_string_length (tree str)
 	}
       else
 	{
-	  /* When the upper bound is unknown (as assumed to be excessive)
+	  /* When the upper bound is unknown (it can be zero or excessive)
 	     set the likely length to the greater of 1 and the length of
-	     the shortest string.  */
+	     the shortest string and reset the lower bound to zero.  */
 	  res.range.likely = res.range.min ? res.range.min : warn_level > 1;
+	  res.range.min = 0;
 	}
 
-      res.range.unlikely = res.range.max;
+      /* If the range of string length has been estimated from the size
+	 of an array at the end of a struct assume that it's longer than
+	 the array bound says it is in case it's used as a poor man's
+	 flexible array member, such as in struct S { char a[4]; };  */
+      res.range.unlikely = flexarray ? HOST_WIDE_INT_MAX : res.range.max;
 
       return res;
     }
@@ -1986,43 +2070,89 @@ format_string (const directive &dir, tree arg)
     }
   else
     {
-      /* For a '%s' and '%ls' directive with a non-constant string,
-	 the minimum number of characters is the greater of WIDTH
-	 and either 0 in mode 1 or the smaller of PRECISION and 1
-	 in mode 2, and the maximum is PRECISION or -1 to disable
-	 tracking.  */
+      /* For a '%s' and '%ls' directive with a non-constant string (either
+	 one of a number of strings of known length or an unknown string)
+	 the minimum number of characters is lesser of PRECISION[0] and
+	 the length of the shortest known string or zero, and the maximum
+	 is the lessser of the length of the longest known string or
+	 PTRDIFF_MAX and PRECISION[1].  The likely length is either
+	 the minimum at level 1 and the greater of the minimum and 1
+	 at level 2.  This result is adjust upward for width (if it's
+	 specified).  */
+
+      if (dir.modifier == FMT_LEN_l)
+	{
+	  /* A wide character converts to as few as zero bytes.  */
+	  slen.range.min = 0;
+	  if (slen.range.max < target_int_max ())
+	    slen.range.max *= target_mb_len_max ();
+
+	  if (slen.range.likely < target_int_max ())
+	    slen.range.likely *= 2;
+
+	  if (slen.range.likely < target_int_max ())
+	    slen.range.unlikely *= target_mb_len_max ();
+	}
+
+      res.range = slen.range;
 
       if (dir.prec[0] >= 0)
 	{
+	  /* Adjust the minimum to zero if the string length is unknown,
+	     or at most the lower bound of the precision otherwise.  */
 	  if (slen.range.min >= target_int_max ())
-	    slen.range.min = 0;
+	    res.range.min = 0;
 	  else if ((unsigned HOST_WIDE_INT)dir.prec[0] < slen.range.min)
-	    {
-	      slen.range.min = dir.prec[0];
-	      slen.range.likely = slen.range.min;
-	    }
+	    res.range.min = dir.prec[0];
 
+	  /* Make both maxima no greater than the upper bound of precision.  */
 	  if ((unsigned HOST_WIDE_INT)dir.prec[1] < slen.range.max
 	      || slen.range.max >= target_int_max ())
 	    {
-	      slen.range.max = dir.prec[1];
-	      slen.range.likely = slen.range.max;
+	      res.range.max = dir.prec[1];
+	      res.range.unlikely = dir.prec[1];
 	    }
+
+	  /* If precision is constant, set the likely counter to the lesser
+	     of it and the maximum string length.  Otherwise, if the lower
+	     bound of precision is greater than zero, set the likely counter
+	     to the minimum.  Otherwise set it to zero or one based on
+	     the warning level.  */
+	  if (dir.prec[0] == dir.prec[1])
+	    res.range.likely
+	      = ((unsigned HOST_WIDE_INT)dir.prec[0] < slen.range.max
+		 ? dir.prec[0] : slen.range.max);
+	  else if (dir.prec[0] > 0)
+	    res.range.likely = res.range.min;
+	  else
+	    res.range.likely = warn_level > 1;
+	}
+      else if (dir.prec[1] >= 0)
+	{
+	  res.range.min = 0;
+	  if ((unsigned HOST_WIDE_INT)dir.prec[1] < slen.range.max)
+	    res.range.max = dir.prec[1];
+	  res.range.likely = dir.prec[1] ? warn_level > 1 : 0;
 	}
       else if (slen.range.min >= target_int_max ())
 	{
-	  slen.range.min = 0;
-	  slen.range.max = HOST_WIDE_INT_MAX;
-	  /* At level one strings of unknown length are assumed to be
+	  res.range.min = 0;
+	  res.range.max = HOST_WIDE_INT_MAX;
+	  /* At level 1 strings of unknown length are assumed to be
 	     empty, while at level 1 they are assumed to be one byte
 	     long.  */
-	  slen.range.likely = warn_level > 1;
+	  res.range.likely = warn_level > 1;
+	}
+      else
+	{
+	  /* A string of unknown length unconstrained by precision is
+	     assumed to be empty at level 1 and just one character long
+	     at higher levels.  */
+	  if (res.range.likely >= target_int_max ())
+	    res.range.likely = warn_level > 1;
 	}
 
-      slen.range.unlikely = slen.range.max;
-
-      res.range = slen.range;
-      res.knownrange = slen.knownrange;
+      res.range.unlikely = res.range.max;
     }
 
   /* Bump up the byte counters if WIDTH is greater.  */
@@ -2514,12 +2644,15 @@ format_directive (const pass_sprintf_length::call_info &info,
     res->range.max += fmtres.range.max;
 
   /* Raise the total unlikely maximum by the larger of the maximum
-     and the unlikely maximum.  It doesn't matter if the unlikely
-     maximum overflows.  */
+     and the unlikely maximum.  */
+  unsigned HOST_WIDE_INT save = res->range.unlikely;
   if (fmtres.range.max < fmtres.range.unlikely)
     res->range.unlikely += fmtres.range.unlikely;
   else
     res->range.unlikely += fmtres.range.max;
+
+  if (res->range.unlikely < save)
+    res->range.unlikely = HOST_WIDE_INT_M1U;
 
   res->range.min += fmtres.range.min;
   res->range.likely += fmtres.range.likely;
@@ -2571,7 +2704,12 @@ format_directive (const pass_sprintf_length::call_info &info,
 
   /* Has the likely and maximum directive output exceeded INT_MAX?  */
   bool likelyximax = *dir.beg && res->range.likely > target_int_max ();
-  bool maxximax = *dir.beg && res->range.max > target_int_max ();
+  /* Don't consider the maximum to be in excess when it's the result
+     of a string of unknown length (i.e., whose maximum has been set
+     to be greater than or equal to HOST_WIDE_INT_MAX.  */
+  bool maxximax = (*dir.beg
+		   && res->range.max > target_int_max ()
+		   && res->range.max < HOST_WIDE_INT_MAX);
 
   if (!warned
       /* Warn for the likely output size at level 1.  */
@@ -3398,6 +3536,10 @@ pass_sprintf_length::handle_gimple_call (gimple_stmt_iterator *gsi)
 
   info.format = gimple_call_arg (info.callstmt, idx_format);
 
+  /* True when the destination size is constant as opposed to the lower
+     or upper bound of a range.  */
+  bool dstsize_cst_p = true;
+
   if (idx_dstsize == HOST_WIDE_INT_M1U)
     {
       /* For non-bounded functions like sprintf, determine the size
@@ -3438,8 +3580,8 @@ pass_sprintf_length::handle_gimple_call (gimple_stmt_iterator *gsi)
       else if (TREE_CODE (size) == SSA_NAME)
 	{
 	  /* Try to determine the range of values of the argument
-	     and use the greater of the two at -Wformat-level 1 and
-	     the smaller of them at level 2.  */
+	     and use the greater of the two at level 1 and the smaller
+	     of them at level 2.  */
 	  wide_int min, max;
 	  enum value_range_type range_type
 	    = get_range_info (size, &min, &max);
@@ -3450,6 +3592,11 @@ pass_sprintf_length::handle_gimple_call (gimple_stmt_iterator *gsi)
 		   ? wi::fits_uhwi_p (max) ? max.to_uhwi () : max.to_shwi ()
 		   : wi::fits_uhwi_p (min) ? min.to_uhwi () : min.to_shwi ());
 	    }
+
+	  /* The destination size is not constant.  If the function is
+	     bounded (e.g., snprintf) a lower bound of zero doesn't
+	     necessarily imply it can be eliminated.  */
+	  dstsize_cst_p = false;
 	}
     }
 
@@ -3466,7 +3613,7 @@ pass_sprintf_length::handle_gimple_call (gimple_stmt_iterator *gsi)
 	 without actually producing any.  Pretend the size is
 	 unlimited in this case.  */
       info.objsize = HOST_WIDE_INT_MAX;
-      info.nowrite = true;
+      info.nowrite = dstsize_cst_p;
     }
   else
     {

@@ -240,6 +240,7 @@ static bool arm_can_inline_p (tree, tree);
 static void arm_relayout_function (tree);
 static bool arm_valid_target_attribute_p (tree, tree, tree, int);
 static unsigned HOST_WIDE_INT arm_shift_truncation_mask (machine_mode);
+static bool arm_sched_can_speculate_insn (rtx_insn *);
 static bool arm_macro_fusion_p (void);
 static bool arm_cannot_copy_insn_p (rtx_insn *);
 static int arm_issue_rate (void);
@@ -418,6 +419,9 @@ static const struct attribute_spec arm_attribute_table[] =
 
 #undef  TARGET_COMP_TYPE_ATTRIBUTES
 #define TARGET_COMP_TYPE_ATTRIBUTES arm_comp_type_attributes
+
+#undef TARGET_SCHED_CAN_SPECULATE_INSN
+#define TARGET_SCHED_CAN_SPECULATE_INSN arm_sched_can_speculate_insn
 
 #undef TARGET_SCHED_MACRO_FUSION_P
 #define TARGET_SCHED_MACRO_FUSION_P arm_macro_fusion_p
@@ -755,6 +759,11 @@ static const struct attribute_spec arm_attribute_table[] =
 
 #undef TARGET_C_EXCESS_PRECISION
 #define TARGET_C_EXCESS_PRECISION arm_excess_precision
+
+/* Although the architecture reserves bits 0 and 1, only the former is
+   used for ARM/Thumb ISA selection in v7 and earlier versions.  */
+#undef TARGET_CUSTOM_FUNCTION_DESCRIPTORS
+#define TARGET_CUSTOM_FUNCTION_DESCRIPTORS 2
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -3361,7 +3370,7 @@ arm_option_override (void)
   if (arm_fp16_inst)
     {
       if (arm_fp16_format == ARM_FP16_FORMAT_ALTERNATIVE)
-	error ("selected fp16 options are incompatible.");
+	error ("selected fp16 options are incompatible");
       arm_fp16_format = ARM_FP16_FORMAT_IEEE;
     }
 
@@ -7168,6 +7177,29 @@ arm_function_ok_for_sibcall (tree decl, tree exp)
       && decl
       && DECL_WEAK (decl))
     return false;
+
+  /* We cannot do a tailcall for an indirect call by descriptor if all the
+     argument registers are used because the only register left to load the
+     address is IP and it will already contain the static chain.  */
+  if (!decl && CALL_EXPR_BY_DESCRIPTOR (exp) && !flag_trampolines)
+    {
+      tree fntype = TREE_TYPE (TREE_TYPE (CALL_EXPR_FN (exp)));
+      CUMULATIVE_ARGS cum;
+      cumulative_args_t cum_v;
+
+      arm_init_cumulative_args (&cum, fntype, NULL_RTX, NULL_TREE);
+      cum_v = pack_cumulative_args (&cum);
+
+      for (tree t = TYPE_ARG_TYPES (fntype); t; t = TREE_CHAIN (t))
+	{
+	  tree type = TREE_VALUE (t);
+	  if (!VOID_TYPE_P (type))
+	    arm_function_arg_advance (cum_v, TYPE_MODE (type), type, true);
+	}
+
+      if (!arm_function_arg (cum_v, SImode, integer_type_node, true))
+	return false;
+    }
 
   /* Everything else is ok.  */
   return true;
@@ -25948,46 +25980,55 @@ arm_emit_eabi_attribute (const char *name, int num, int val)
 void
 arm_print_tune_info (void)
 {
-  asm_fprintf (asm_out_file, "\t@.tune parameters\n");
-  asm_fprintf (asm_out_file, "\t\t@constant_limit:\t%d\n",
+  asm_fprintf (asm_out_file, "\t" ASM_COMMENT_START ".tune parameters\n");
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "constant_limit:\t%d\n",
 	       current_tune->constant_limit);
-  asm_fprintf (asm_out_file, "\t\t@max_insns_skipped:\t%d\n",
-	       current_tune->max_insns_skipped);
-  asm_fprintf (asm_out_file, "\t\t@prefetch.num_slots:\t%d\n",
-	       current_tune->prefetch.num_slots);
-  asm_fprintf (asm_out_file, "\t\t@prefetch.l1_cache_size:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "max_insns_skipped:\t%d\n", current_tune->max_insns_skipped);
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefetch.num_slots:\t%d\n", current_tune->prefetch.num_slots);
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefetch.l1_cache_size:\t%d\n",
 	       current_tune->prefetch.l1_cache_size);
-  asm_fprintf (asm_out_file, "\t\t@prefetch.l1_cache_line_size:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefetch.l1_cache_line_size:\t%d\n",
 	       current_tune->prefetch.l1_cache_line_size);
-  asm_fprintf (asm_out_file, "\t\t@prefer_constant_pool:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefer_constant_pool:\t%d\n",
 	       (int) current_tune->prefer_constant_pool);
-  asm_fprintf (asm_out_file, "\t\t@branch_cost:\t(s:speed, p:predictable)\n");
-  asm_fprintf (asm_out_file, "\t\t\t\ts&p\tcost\n");
-  asm_fprintf (asm_out_file, "\t\t\t\t00\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "branch_cost:\t(s:speed, p:predictable)\n");
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "\t\ts&p\tcost\n");
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "\t\t00\t%d\n",
 	       current_tune->branch_cost (false, false));
-  asm_fprintf (asm_out_file, "\t\t\t\t01\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "\t\t01\t%d\n",
 	       current_tune->branch_cost (false, true));
-  asm_fprintf (asm_out_file, "\t\t\t\t10\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "\t\t10\t%d\n",
 	       current_tune->branch_cost (true, false));
-  asm_fprintf (asm_out_file, "\t\t\t\t11\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "\t\t11\t%d\n",
 	       current_tune->branch_cost (true, true));
-  asm_fprintf (asm_out_file, "\t\t@prefer_ldrd_strd:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefer_ldrd_strd:\t%d\n",
 	       (int) current_tune->prefer_ldrd_strd);
-  asm_fprintf (asm_out_file, "\t\t@logical_op_non_short_circuit:\t[%d,%d]\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "logical_op_non_short_circuit:\t[%d,%d]\n",
 	       (int) current_tune->logical_op_non_short_circuit_thumb,
 	       (int) current_tune->logical_op_non_short_circuit_arm);
-  asm_fprintf (asm_out_file, "\t\t@prefer_neon_for_64bits:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "prefer_neon_for_64bits:\t%d\n",
 	       (int) current_tune->prefer_neon_for_64bits);
-  asm_fprintf (asm_out_file,
-	       "\t\t@disparage_flag_setting_t16_encodings:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "disparage_flag_setting_t16_encodings:\t%d\n",
 	       (int) current_tune->disparage_flag_setting_t16_encodings);
-  asm_fprintf (asm_out_file, "\t\t@string_ops_prefer_neon:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "string_ops_prefer_neon:\t%d\n",
 	       (int) current_tune->string_ops_prefer_neon);
-  asm_fprintf (asm_out_file, "\t\t@max_insns_inline_memset:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START
+	       "max_insns_inline_memset:\t%d\n",
 	       current_tune->max_insns_inline_memset);
-  asm_fprintf (asm_out_file, "\t\t@fusible_ops:\t%u\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "fusible_ops:\t%u\n",
 	       current_tune->fusible_ops);
-  asm_fprintf (asm_out_file, "\t\t@sched_autopref:\t%d\n",
+  asm_fprintf (asm_out_file, "\t\t" ASM_COMMENT_START "sched_autopref:\t%d\n",
 	       (int) current_tune->sched_autopref);
 }
 
@@ -30069,6 +30110,35 @@ arm_fusion_enabled_p (tune_params::fuse_ops op)
   return current_tune->fusible_ops & op;
 }
 
+/* Implement TARGET_SCHED_CAN_SPECULATE_INSN.  Return true if INSN can be
+   scheduled for speculative execution.  Reject the long-running division
+   and square-root instructions.  */
+
+static bool
+arm_sched_can_speculate_insn (rtx_insn *insn)
+{
+  switch (get_attr_type (insn))
+    {
+      case TYPE_SDIV:
+      case TYPE_UDIV:
+      case TYPE_FDIVS:
+      case TYPE_FDIVD:
+      case TYPE_FSQRTS:
+      case TYPE_FSQRTD:
+      case TYPE_NEON_FP_SQRT_S:
+      case TYPE_NEON_FP_SQRT_D:
+      case TYPE_NEON_FP_SQRT_S_Q:
+      case TYPE_NEON_FP_SQRT_D_Q:
+      case TYPE_NEON_FP_DIV_S:
+      case TYPE_NEON_FP_DIV_D:
+      case TYPE_NEON_FP_DIV_S_Q:
+      case TYPE_NEON_FP_DIV_D_Q:
+	return false;
+      default:
+	return true;
+    }
+}
+
 /* Implement the TARGET_ASAN_SHADOW_OFFSET hook.  */
 
 static unsigned HOST_WIDE_INT
@@ -30268,7 +30338,9 @@ arm_relayout_function (tree fndecl)
     callee_tree = target_option_default_node;
 
   struct cl_target_option *opts = TREE_TARGET_OPTION (callee_tree);
-  SET_DECL_ALIGN (fndecl, FUNCTION_BOUNDARY_P (opts->x_target_flags));
+  SET_DECL_ALIGN
+    (fndecl,
+     FUNCTION_ALIGNMENT (FUNCTION_BOUNDARY_P (opts->x_target_flags)));
 }
 
 /* Inner function to process the attribute((target(...))), take an argument and

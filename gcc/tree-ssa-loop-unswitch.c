@@ -134,9 +134,7 @@ is_maybe_undefined (const tree name, gimple *stmt, struct loop *loop)
       if (ssa_undefined_value_p (t, true))
 	return true;
 
-      /* A PARM_DECL will not have an SSA_NAME_DEF_STMT.  Parameters
-	 get their initial value from function entry.  */
-      if (SSA_NAME_VAR (t) && TREE_CODE (SSA_NAME_VAR (t)) == PARM_DECL)
+      if (ssa_defined_default_def_p (t))
 	continue;
 
       gimple *def = SSA_NAME_DEF_STMT (t);
@@ -493,7 +491,7 @@ tree_unswitch_loop (struct loop *loop,
   extract_true_false_edges_from_block (unswitch_on, &edge_true, &edge_false);
   prob_true = edge_true->probability;
   return loop_version (loop, unshare_expr (cond),
-		       NULL, prob_true, prob_true,
+		       NULL, prob_true, REG_BR_PROB_BASE - prob_true, prob_true,
 		       REG_BR_PROB_BASE - prob_true, false);
 }
 
@@ -787,6 +785,7 @@ hoist_guard (struct loop *loop, edge guard)
   edge te, fe, e, new_edge;
   gimple *stmt;
   basic_block guard_bb = guard->src;
+  edge not_guard;
   gimple_stmt_iterator gsi;
   int flags = 0;
   bool fix_dom_of_exit;
@@ -818,18 +817,80 @@ hoist_guard (struct loop *loop, edge guard)
   update_stmt (cond_stmt);
   /* Create new loop pre-header.  */
   e = split_block (pre_header, last_stmt (pre_header));
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    fprintf (dump_file, "  Moving guard %i->%i (prob %i) to bb %i, "
+	     "new preheader is %i\n",
+	     guard->src->index, guard->dest->index, guard->probability,
+	     e->src->index, e->dest->index);
+
   gcc_assert (loop_preheader_edge (loop)->src == e->dest);
+
   if (guard == fe)
     {
       e->flags = EDGE_TRUE_VALUE;
       flags |= EDGE_FALSE_VALUE;
+      not_guard = te;
     }
   else
     {
       e->flags = EDGE_FALSE_VALUE;
       flags |= EDGE_TRUE_VALUE;
+      not_guard = fe;
     }
   new_edge = make_edge (pre_header, exit->dest, flags);
+
+  /* Determine the probability that we skip the loop.  Assume that loop has
+     same average number of iterations regardless outcome of guard.  */
+  new_edge->probability = guard->probability;
+  int skip_count = guard->src->count
+		   ? RDIV (guard->count * pre_header->count, guard->src->count)
+		   : apply_probability (guard->count, new_edge->probability);
+
+  if (skip_count > e->count)
+    {
+      fprintf (dump_file, "  Capping count; expect profile inconsistency\n");
+      skip_count = e->count;
+    }
+  new_edge->count = skip_count;
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    fprintf (dump_file, "  Estimated probability of skipping loop is %i\n",
+	     new_edge->probability);
+
+  /* Update profile after the transform:
+
+     First decrease count of path from newly hoisted loop guard
+     to loop header...  */
+  e->count -= skip_count;
+  e->probability = REG_BR_PROB_BASE - new_edge->probability;
+  e->dest->count = e->count;
+  e->dest->frequency = EDGE_FREQUENCY (e);
+
+  /* ... now update profile to represent that original guard will be optimized
+     away ...  */
+  guard->probability = 0;
+  guard->count = 0;
+  not_guard->probability = REG_BR_PROB_BASE;
+  /* This count is wrong (frequency of not_guard does not change),
+     but will be scaled later.  */
+  not_guard->count = guard->src->count;
+
+  /* ... finally scale everything in the loop except for guarded basic blocks
+     where profile does not change.  */
+  basic_block *body = get_loop_body (loop);
+
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    fprintf (dump_file, "  Scaling nonguarded BBs in loop:");
+  for (unsigned int i = 0; i < loop->num_nodes; i++)
+    {
+      basic_block bb = body[i];
+      if (!dominated_by_p (CDI_DOMINATORS, bb, not_guard->dest))
+	{
+	  if (dump_file && (dump_flags & TDF_DETAILS))
+	    fprintf (dump_file, " %i", bb->index);
+          scale_bbs_frequencies_int (&bb, 1, e->probability, REG_BR_PROB_BASE);
+  	}
+    }
+
   if (fix_dom_of_exit)
     set_immediate_dominator (CDI_DOMINATORS, exit->dest, pre_header);
   /* Add NEW_ADGE argument for all phi in post-header block.  */
@@ -856,7 +917,9 @@ hoist_guard (struct loop *loop, edge guard)
     }
 
   if (dump_file && (dump_flags & TDF_DETAILS))
-    fprintf (dump_file, "  guard hoisted.\n");
+    fprintf (dump_file, "\n  guard hoisted.\n");
+
+  free (body);
 }
 
 /* Return true if phi argument for exit edge can be used

@@ -1541,11 +1541,22 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
 	     subregs as we don't substitute such equiv memory (see processing
 	     equivalences in function lra_constraints) and because for spilled
 	     pseudos we allocate stack memory enough for the biggest
-	     corresponding paradoxical subreg.  */
-	  if (!(MEM_ALIGN (subst) < GET_MODE_ALIGNMENT (mode)
-		&& SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (subst)))
-	      || (MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (innermode)
-		  && SLOW_UNALIGNED_ACCESS (innermode, MEM_ALIGN (reg))))
+	     corresponding paradoxical subreg.
+
+	     However, do not blindly simplify a (subreg (mem ...)) for
+	     WORD_REGISTER_OPERATIONS targets as this may lead to loading junk
+	     data into a register when the inner is narrower than outer or
+	     missing important data from memory when the inner is wider than
+	     outer.  This rule only applies to modes that are no wider than
+	     a word.  */
+	  if (!(GET_MODE_PRECISION (mode) != GET_MODE_PRECISION (innermode)
+		&& GET_MODE_SIZE (mode) <= UNITS_PER_WORD
+		&& GET_MODE_SIZE (innermode) <= UNITS_PER_WORD
+		&& WORD_REGISTER_OPERATIONS)
+	      && (!(MEM_ALIGN (subst) < GET_MODE_ALIGNMENT (mode)
+		    && SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (subst)))
+		  || (MEM_ALIGN (reg) < GET_MODE_ALIGNMENT (innermode)
+		      && SLOW_UNALIGNED_ACCESS (innermode, MEM_ALIGN (reg)))))
 	    return true;
 
 	  *curr_id->operand_loc[nop] = operand;
@@ -1600,7 +1611,8 @@ simplify_operand_subreg (int nop, machine_mode reg_mode)
 	 the memory.  Typical case is when the index scale should
 	 correspond the memory.  */
       *curr_id->operand_loc[nop] = operand;
-      return false;
+      /* Do not return false here as the MEM_P (reg) will be processed
+	 later in this function.  */
     }
   else if (REG_P (reg) && REGNO (reg) < FIRST_PSEUDO_REGISTER)
     {
@@ -1855,11 +1867,15 @@ process_alt_operands (int only_alternative)
   /* LOSERS counts the operands that don't fit this alternative and
      would require loading.  */
   int losers;
+  int addr_losers;
   /* REJECT is a count of how undesirable this alternative says it is
      if any reloading is required.  If the alternative matches exactly
      then REJECT is ignored, but otherwise it gets this much counted
      against it in addition to the reloading needed.  */
   int reject;
+  /* This is defined by '!' or '?' alternative constraint and added to
+     reject.  But in some cases it can be ignored.  */
+  int static_reject;
   int op_reject;
   /* The number of elements in the following array.  */
   int early_clobbered_regs_num;
@@ -1936,7 +1952,8 @@ process_alt_operands (int only_alternative)
       if (!TEST_BIT (preferred, nalt))
 	continue;
 
-      overall = losers = reject = reload_nregs = reload_sum = 0;
+      overall = losers = addr_losers = 0;
+      static_reject = reject = reload_nregs = reload_sum = 0;
       for (nop = 0; nop < n_operands; nop++)
 	{
 	  int inc = (curr_static_id
@@ -1944,8 +1961,9 @@ process_alt_operands (int only_alternative)
 	  if (lra_dump_file != NULL && inc != 0)
 	    fprintf (lra_dump_file,
 		     "            Staticly defined alt reject+=%d\n", inc);
-	  reject += inc;
+	  static_reject += inc;
 	}
+      reject += static_reject;
       early_clobbered_regs_num = 0;
 
       for (nop = 0; nop < n_operands; nop++)
@@ -2692,6 +2710,9 @@ process_alt_operands (int only_alternative)
 		       nop);
 		  reject++;
 		}
+
+	      if (MEM_P (op) && offmemok)
+		addr_losers++;
 	    }
 
 	  if (early_clobber_p && ! scratch_p)
@@ -2706,7 +2727,8 @@ process_alt_operands (int only_alternative)
 	     Should we update the cost (may be approximately) here
 	     because of early clobber register reloads or it is a rare
 	     or non-important thing to be worth to do it.  */
-	  overall = losers * LRA_LOSER_COST_FACTOR + reject;
+	  overall = (losers * LRA_LOSER_COST_FACTOR + reject
+		     - (addr_losers == losers ? static_reject : 0));
 	  if ((best_losers == 0 || losers != 0) && best_overall < overall)
             {
               if (lra_dump_file != NULL)
@@ -2730,6 +2752,7 @@ process_alt_operands (int only_alternative)
 	  if (early_clobber_p && operand_reg[nop] != NULL_RTX)
 	    early_clobbered_nops[early_clobbered_regs_num++] = nop;
 	}
+
       if (curr_insn_set != NULL_RTX && n_operands == 2
 	  /* Prevent processing non-move insns.  */
 	  && (GET_CODE (SET_SRC (curr_insn_set)) == SUBREG
@@ -2741,9 +2764,17 @@ process_alt_operands (int only_alternative)
 		   || reg_in_class_p (no_subreg_reg_operand[1], curr_alt[0])))
 	      || (! curr_alt_win[0] && curr_alt_win[1]
 		  && REG_P (no_subreg_reg_operand[1])
+		  /* Check that we reload memory not the memory
+		     address.  */
+		  && ! (curr_alt_offmemok[0]
+			&& MEM_P (no_subreg_reg_operand[0]))
 		  && reg_in_class_p (no_subreg_reg_operand[1], curr_alt[0]))
 	      || (curr_alt_win[0] && ! curr_alt_win[1]
 		  && REG_P (no_subreg_reg_operand[0])
+		  /* Check that we reload memory not the memory
+		     address.  */
+		  && ! (curr_alt_offmemok[1]
+			&& MEM_P (no_subreg_reg_operand[1]))
 		  && reg_in_class_p (no_subreg_reg_operand[0], curr_alt[1])
 		  && (! CONST_POOL_OK_P (curr_operand_mode[1],
 					 no_subreg_reg_operand[1])
@@ -2756,8 +2787,11 @@ process_alt_operands (int only_alternative)
 		  && GET_CODE (no_subreg_reg_operand[1]) != PLUS)))
 	{
 	  /* We have a move insn and a new reload insn will be similar
-	     to the current insn.  We should avoid such situation as it
-	     results in LRA cycling.  */
+	     to the current insn.  We should avoid such situation as
+	     it results in LRA cycling.  */
+	  if (lra_dump_file != NULL)
+	    fprintf (lra_dump_file,
+		     "            Cycle danger: overall += LRA_MAX_REJECT\n");
 	  overall += LRA_MAX_REJECT;
 	}
       ok_p = true;
@@ -2848,7 +2882,7 @@ process_alt_operands (int only_alternative)
 	      if (lra_dump_file != NULL)
 		fprintf
 		  (lra_dump_file,
-		   "            %d Matched conflict early clobber reloads:"
+		   "            %d Matched conflict early clobber reloads: "
 		   "reject--\n",
 		   i);
 	      reject--;
@@ -2915,18 +2949,18 @@ base_to_reg (struct address_info *ad)
   rtx_insn *insn;
   rtx_insn *last_insn = get_last_insn();
 
-  lra_assert (ad->base == ad->base_term && ad->disp == ad->disp_term);
+  lra_assert (ad->disp == ad->disp_term);
   cl = base_reg_class (ad->mode, ad->as, ad->base_outer_code,
                        get_index_code (ad));
-  new_reg = lra_create_new_reg (GET_MODE (*ad->base_term), NULL_RTX,
+  new_reg = lra_create_new_reg (GET_MODE (*ad->base), NULL_RTX,
                                 cl, "base");
   new_inner = simplify_gen_binary (PLUS, GET_MODE (new_reg), new_reg,
                                    ad->disp_term == NULL
-                                   ? gen_int_mode (0, ad->mode)
+                                   ? const0_rtx
                                    : *ad->disp_term);
   if (!valid_address_p (ad->mode, new_inner, ad->as))
     return NULL_RTX;
-  insn = emit_insn (gen_rtx_SET (new_reg, *ad->base_term));
+  insn = emit_insn (gen_rtx_SET (new_reg, *ad->base));
   code = recog_memoized (insn);
   if (code < 0)
     {
@@ -3773,9 +3807,9 @@ curr_insn_transform (bool check_only_p)
 	fatal_insn ("unable to generate reloads for:", curr_insn);
       error_for_asm (curr_insn,
 		     "inconsistent operand constraints in an %<asm%>");
-      /* Avoid further trouble with this insn.	*/
-      PATTERN (curr_insn) = gen_rtx_USE (VOIDmode, const0_rtx);
-      lra_invalidate_insn_data (curr_insn);
+      /* Avoid further trouble with this insn.  Don't generate use
+	 pattern here as we could use the insn SP offset.  */
+      lra_set_insn_deleted (curr_insn);
       return true;
     }
 
@@ -4132,7 +4166,17 @@ curr_insn_transform (bool check_only_p)
 				  (ira_class_hard_regs[goal_alt[i]][0],
 				   GET_MODE (reg), byte, mode) >= 0)))))
 		{
-		  if (type == OP_OUT)
+		  /* An OP_INOUT is required when reloading a subreg of a
+		     mode wider than a word to ensure that data beyond the
+		     word being reloaded is preserved.  Also automatically
+		     ensure that strict_low_part reloads are made into
+		     OP_INOUT which should already be true from the backend
+		     constraints.  */
+		  if (type == OP_OUT
+		      && (curr_static_id->operand[i].strict_low
+			  || (GET_MODE_SIZE (GET_MODE (reg)) > UNITS_PER_WORD
+			      && (GET_MODE_SIZE (mode)
+				  < GET_MODE_SIZE (GET_MODE (reg))))))
 		    type = OP_INOUT;
 		  loc = &SUBREG_REG (*loc);
 		  mode = GET_MODE (*loc);
@@ -5371,6 +5415,26 @@ split_reg (bool before_p, int original_regno, rtx_insn *insn,
 		       reg_class_names[lra_get_allocno_class (original_regno)],
 		       hard_regno,
 		       reg_class_names[REGNO_REG_CLASS (hard_regno)]);
+	      fprintf
+		(lra_dump_file,
+		 "    ))))))))))))))))))))))))))))))))))))))))))))))))\n");
+	    }
+	  return false;
+	}
+      /* Split_if_necessary can split hard registers used as part of a
+	 multi-register mode but splits each register individually.  The
+	 mode used for each independent register may not be supported
+	 so reject the split.  Splitting the wider mode should theoretically
+	 be possible but is not implemented.  */
+      if (! HARD_REGNO_MODE_OK (hard_regno, mode))
+	{
+	  if (lra_dump_file != NULL)
+	    {
+	      fprintf (lra_dump_file,
+		       "    Rejecting split of %d(%s): unsuitable mode %s\n",
+		       original_regno,
+		       reg_class_names[lra_get_allocno_class (original_regno)],
+		       GET_MODE_NAME (mode));
 	      fprintf
 		(lra_dump_file,
 		 "    ))))))))))))))))))))))))))))))))))))))))))))))))\n");
