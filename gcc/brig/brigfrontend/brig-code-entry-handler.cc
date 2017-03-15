@@ -1265,6 +1265,10 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 	  operand_type = uint32_type_node;
 	  half_to_float = false;
 	}
+      else if (brig_inst.opcode == BRIG_OPCODE_ACTIVELANEPERMUTE && i == 4)
+	{
+	  operand_type = uint32_type_node;
+	}
       else if (half_to_float)
 	/* Treat the operands as the storage type at this point.  */
 	operand_type = half_storage_type;
