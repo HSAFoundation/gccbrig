@@ -1617,6 +1617,10 @@ build_aggr_init (tree exp, tree init, int flags, tsubst_flags_t complain)
   if (init == error_mark_node)
     return error_mark_node;
 
+  location_t init_loc = (init
+			 ? EXPR_LOC_OR_LOC (init, input_location)
+			 : location_of (exp));
+
   TREE_READONLY (exp) = 0;
   TREE_THIS_VOLATILE (exp) = 0;
 
@@ -1656,6 +1660,16 @@ build_aggr_init (tree exp, tree init, int flags, tsubst_flags_t complain)
 	    TREE_TYPE (init) = cv_unqualified (itype);
 	  from_array = (itype && same_type_p (TREE_TYPE (init),
 					      TREE_TYPE (exp)));
+
+	  if (init && !from_array
+	      && !BRACE_ENCLOSED_INITIALIZER_P (init))
+	    {
+	      if (complain & tf_error)
+		permerror (init_loc, "array must be initialized "
+			   "with a brace-enclosed initializer");
+	      else
+		return error_mark_node;
+	    }
 	}
 
       stmt_expr = build_vec_init (exp, NULL_TREE, init,
@@ -2693,6 +2707,22 @@ malloc_alignment ()
   return MAX (max_align_t_align(), MALLOC_ABI_ALIGNMENT);
 }
 
+/* Determine whether an allocation function is a namespace-scope
+   non-replaceable placement new function. See DR 1748.
+   TODO: Enable in all standard modes.  */
+static bool
+std_placement_new_fn_p (tree alloc_fn)
+{
+  if ((cxx_dialect > cxx14) && DECL_NAMESPACE_SCOPE_P (alloc_fn))
+    {
+      tree first_arg = TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (alloc_fn)));
+      if ((TREE_VALUE (first_arg) == ptr_type_node)
+	  && TREE_CHAIN (first_arg) == void_list_node)
+	return true;
+    }
+  return false;
+}
+
 /* Generate code for a new-expression, including calling the "operator
    new" function, initializing the object, and, if an exception occurs
    during construction, cleaning up.  The arguments are as for
@@ -3171,7 +3201,8 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
      So check for a null exception spec on the op new we just called.  */
 
   nothrow = TYPE_NOTHROW_P (TREE_TYPE (alloc_fn));
-  check_new = (flag_check_new || nothrow);
+  check_new
+    = flag_check_new || (nothrow && !std_placement_new_fn_p (alloc_fn));
 
   if (cookie_size)
     {
@@ -3342,8 +3373,7 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
 	     object being initialized, replace them now and don't try to
 	     preevaluate.  */
 	  bool had_placeholder = false;
-	  if (cxx_dialect >= cxx14
-	      && !processing_template_decl
+	  if (!processing_template_decl
 	      && TREE_CODE (init_expr) == INIT_EXPR)
 	    TREE_OPERAND (init_expr, 1)
 	      = replace_placeholders (TREE_OPERAND (init_expr, 1),
@@ -3853,6 +3883,35 @@ vec_copy_assign_is_trivial (tree inner_elt_type, tree init)
   return is_trivially_xible (MODIFY_EXPR, inner_elt_type, fromtype);
 }
 
+/* Subroutine of build_vec_init: Check that the array has at least N
+   elements.  Other parameters are local variables in build_vec_init.  */
+
+void
+finish_length_check (tree atype, tree iterator, tree obase, unsigned n)
+{
+  tree nelts = build_int_cst (ptrdiff_type_node, n - 1);
+  if (TREE_CODE (atype) != ARRAY_TYPE)
+    {
+      if (flag_exceptions)
+	{
+	  tree c = fold_build2 (LT_EXPR, boolean_type_node, iterator,
+				nelts);
+	  c = build3 (COND_EXPR, void_type_node, c,
+		      throw_bad_array_new_length (), void_node);
+	  finish_expr_stmt (c);
+	}
+      /* Don't check an array new when -fno-exceptions.  */
+    }
+  else if (flag_sanitize & SANITIZE_BOUNDS
+	   && do_ubsan_in_current_function ())
+    {
+      /* Make sure the last element of the initializer is in bounds. */
+      finish_expr_stmt
+	(ubsan_instrument_bounds
+	 (input_location, obase, &nelts, /*ignore_off_by_one*/false));
+    }
+}
+
 /* `build_vec_init' returns tree structure that performs
    initialization of a vector of aggregate types.
 
@@ -3901,6 +3960,8 @@ build_vec_init (tree base, tree maxindex, tree init,
   tree obase = base;
   bool xvalue = false;
   bool errors = false;
+  location_t loc = (init ? EXPR_LOC_OR_LOC (init, input_location)
+		    : location_of (base));
 
   if (TREE_CODE (atype) == ARRAY_TYPE && TYPE_DOMAIN (atype))
     maxindex = array_type_nelts (atype);
@@ -3932,10 +3993,12 @@ build_vec_init (tree base, tree maxindex, tree init,
 	}
     }
 
-  /* If we have a braced-init-list, make sure that the array
+  /* If we have a braced-init-list or string constant, make sure that the array
      is big enough for all the initializers.  */
-  bool length_check = (init && TREE_CODE (init) == CONSTRUCTOR
-		       && CONSTRUCTOR_NELTS (init) > 0
+  bool length_check = (init
+		       && (TREE_CODE (init) == STRING_CST
+			   || (TREE_CODE (init) == CONSTRUCTOR
+			       && CONSTRUCTOR_NELTS (init) > 0))
 		       && !TREE_CONSTANT (maxindex));
 
   if (init
@@ -3945,6 +4008,9 @@ build_vec_init (tree base, tree maxindex, tree init,
 	  ? vec_copy_assign_is_trivial (inner_elt_type, init)
 	  : !TYPE_NEEDS_CONSTRUCTING (type))
       && ((TREE_CODE (init) == CONSTRUCTOR
+	   && (BRACE_ENCLOSED_INITIALIZER_P (init)
+	       || (same_type_ignoring_top_level_qualifiers_p
+		   (atype, TREE_TYPE (init))))
 	   /* Don't do this if the CONSTRUCTOR might contain something
 	      that might throw and require us to clean up.  */
 	   && (vec_safe_is_empty (CONSTRUCTOR_ELTS (init))
@@ -4071,30 +4137,7 @@ build_vec_init (tree base, tree maxindex, tree init,
       from_array = 0;
 
       if (length_check)
-	{
-	  tree nelts = build_int_cst (ptrdiff_type_node,
-				      CONSTRUCTOR_NELTS (init) - 1);
-	  if (TREE_CODE (atype) != ARRAY_TYPE)
-	    {
-	      if (flag_exceptions)
-		{
-		  tree c = fold_build2 (LT_EXPR, boolean_type_node, iterator,
-					nelts);
-		  c = build3 (COND_EXPR, void_type_node, c,
-			      throw_bad_array_new_length (), void_node);
-		  finish_expr_stmt (c);
-		}
-	      /* Don't check an array new when -fno-exceptions.  */
-	    }
-	  else if (flag_sanitize & SANITIZE_BOUNDS
-		   && do_ubsan_in_current_function ())
-	    {
-	      /* Make sure the last element of the initializer is in bounds. */
-	      finish_expr_stmt
-		(ubsan_instrument_bounds
-		 (input_location, obase, &nelts, /*ignore_off_by_one*/false));
-	    }
-	}
+	finish_length_check (atype, iterator, obase, CONSTRUCTOR_NELTS (init));
 
       if (try_const)
 	vec_alloc (const_vec, CONSTRUCTOR_NELTS (init));
@@ -4161,6 +4204,34 @@ build_vec_init (tree base, tree maxindex, tree init,
 
       /* Any elements without explicit initializers get T{}.  */
       empty_list = true;
+    }
+  else if (init && TREE_CODE (init) == STRING_CST)
+    {
+      /* Check that the array is at least as long as the string.  */
+      if (length_check)
+	finish_length_check (atype, iterator, obase,
+			     TREE_STRING_LENGTH (init));
+      tree length = build_int_cst (ptrdiff_type_node,
+				   TREE_STRING_LENGTH (init));
+
+      /* Copy the string to the first part of the array.  */
+      tree alias_set = build_int_cst (build_pointer_type (type), 0);
+      tree lhs = build2 (MEM_REF, TREE_TYPE (init), base, alias_set);
+      tree stmt = build2 (MODIFY_EXPR, void_type_node, lhs, init);
+      finish_expr_stmt (stmt);
+
+      /* Adjust the counter and pointer.  */
+      stmt = cp_build_binary_op (loc, MINUS_EXPR, iterator, length, complain);
+      stmt = build2 (MODIFY_EXPR, void_type_node, iterator, stmt);
+      finish_expr_stmt (stmt);
+
+      stmt = cp_build_binary_op (loc, PLUS_EXPR, base, length, complain);
+      stmt = build2 (MODIFY_EXPR, void_type_node, base, stmt);
+      finish_expr_stmt (stmt);
+
+      /* And set the rest of the array to NUL.  */
+      from_array = 0;
+      explicit_value_init_p = true;
     }
   else if (from_array)
     {

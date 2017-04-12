@@ -6633,6 +6633,7 @@ struct checksum_attributes
   dw_attr_node *at_friend;
   dw_attr_node *at_accessibility;
   dw_attr_node *at_address_class;
+  dw_attr_node *at_alignment;
   dw_attr_node *at_allocated;
   dw_attr_node *at_artificial;
   dw_attr_node *at_associated;
@@ -6706,6 +6707,9 @@ collect_checksum_attributes (struct checksum_attributes *attrs, dw_die_ref die)
         case DW_AT_address_class:
           attrs->at_address_class = a;
           break;
+	case DW_AT_alignment:
+	  attrs->at_alignment = a;
+	  break;
         case DW_AT_allocated:
           attrs->at_allocated = a;
           break;
@@ -6912,6 +6916,7 @@ die_checksum_ordered (dw_die_ref die, struct md5_ctx *ctx, int *mark)
   CHECKSUM_ATTR (attrs.at_vtable_elem_location);
   CHECKSUM_ATTR (attrs.at_type);
   CHECKSUM_ATTR (attrs.at_friend);
+  CHECKSUM_ATTR (attrs.at_alignment);
 
   /* Checksum the child DIEs.  */
   c = die->die_child;
@@ -24080,6 +24085,10 @@ gen_member_die (tree type, dw_die_ref context_die)
   for (member = TYPE_FIELDS (type); member; member = DECL_CHAIN (member))
     {
       struct vlr_context vlr_ctx = { type, NULL_TREE };
+      bool static_inline_p
+	= (TREE_STATIC (member)
+	   && (lang_hooks.decls.decl_dwarf_attribute (member, DW_AT_inline)
+	       != -1));
 
       /* If we thought we were generating minimal debug info for TYPE
 	 and then changed our minds, some of the member declarations
@@ -24091,9 +24100,33 @@ gen_member_die (tree type, dw_die_ref context_die)
 	{
 	  /* Handle inline static data members, which only have in-class
 	     declarations.  */
+	  dw_die_ref ref = NULL; 
+	  if (child->die_tag == DW_TAG_variable
+	      && child->die_parent == comp_unit_die ())
+	    {
+	      ref = get_AT_ref (child, DW_AT_specification);
+	      /* For C++17 inline static data members followed by redundant
+		 out of class redeclaration, we might get here with
+		 child being the DIE created for the out of class
+		 redeclaration and with its DW_AT_specification being
+		 the DIE created for in-class definition.  We want to
+		 reparent the latter, and don't want to create another
+		 DIE with DW_AT_specification in that case, because
+		 we already have one.  */
+	      if (ref
+		  && static_inline_p
+		  && ref->die_tag == DW_TAG_variable
+		  && ref->die_parent == comp_unit_die ()
+		  && get_AT (ref, DW_AT_specification) == NULL)
+		{
+		  child = ref;
+		  ref = NULL;
+		  static_inline_p = false;
+		}
+	    }
 	  if (child->die_tag == DW_TAG_variable
 	      && child->die_parent == comp_unit_die ()
-	      && get_AT (child, DW_AT_specification) == NULL)
+	      && ref == NULL)
 	    {
 	      reparent_child (child, context_die);
 	      if (dwarf_version < 5)
@@ -24121,9 +24154,7 @@ gen_member_die (tree type, dw_die_ref context_die)
       /* For C++ inline static data members emit immediately a DW_TAG_variable
 	 DIE that will refer to that DW_TAG_member/DW_TAG_variable through
 	 DW_AT_specification.  */
-      if (TREE_STATIC (member)
-	  && (lang_hooks.decls.decl_dwarf_attribute (member, DW_AT_inline)
-	      != -1))
+      if (static_inline_p)
 	{
 	  int old_extern = DECL_EXTERNAL (member);
 	  DECL_EXTERNAL (member) = 0;
@@ -24856,8 +24887,13 @@ decls_for_scope (tree stmt, dw_die_ref context_die)
 	 if we've done it once already.  */
       if (! early_dwarf)
 	for (i = 0; i < BLOCK_NUM_NONLOCALIZED_VARS (stmt); i++)
-	  process_scope_var (stmt, NULL, BLOCK_NONLOCALIZED_VAR (stmt, i),
-			     context_die);
+	  {
+	    decl = BLOCK_NONLOCALIZED_VAR (stmt, i);
+	    if (TREE_CODE (decl) == FUNCTION_DECL)
+	      process_scope_var (stmt, decl, NULL_TREE, context_die);
+	    else
+	      process_scope_var (stmt, NULL_TREE, decl, context_die);
+	  }
     }
 
   /* Even if we're at -g1, we need to process the subblocks in order to get

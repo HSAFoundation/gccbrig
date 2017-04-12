@@ -615,10 +615,11 @@ resolve_contained_fntype (gfc_symbol *sym, gfc_namespace *ns)
 	  gcc_assert (ns->parent && ns->parent->proc_name);
 	  module_proc = (ns->parent->proc_name->attr.flavor == FL_MODULE);
 
-	  gfc_error ("Character-valued %s %qs at %L must not be"
-		     " assumed length",
-		     module_proc ? _("module procedure")
-				 : _("internal function"),
+	  gfc_error (module_proc
+		     ? G_("Character-valued module procedure %qs at %L"
+			  " must not be assumed length")
+		     : G_("Character-valued internal function %qs at %L"
+			  " must not be assumed length"),
 		     sym->name, &sym->declared_at);
 	}
     }
@@ -1341,7 +1342,7 @@ resolve_structure_cons (gfc_expr *expr, int init)
 	    {
 	      t = false;
 	      gfc_error ("Pointer initialization target at %L "
-			 "must not be ALLOCATABLE ", &cons->expr->where);
+			 "must not be ALLOCATABLE", &cons->expr->where);
 	    }
 	  if (!a.save)
 	    {
@@ -2468,7 +2469,7 @@ resolve_global_procedure (gfc_symbol *sym, locus *where,
 	{
 	  gfc_error_opt (OPT_Wargument_mismatch,
 			 "Interface mismatch in global procedure %qs at %L:"
-			 " %s ", sym->name, &sym->declared_at, reason);
+			 " %s", sym->name, &sym->declared_at, reason);
 	  goto done;
 	}
 
@@ -12344,8 +12345,8 @@ resolve_fl_procedure (gfc_symbol *sym, int mp_flag)
       if (!gfc_check_result_characteristics (sym, iface, errmsg, 200))
 	{
 	  gfc_error ("%s between the MODULE PROCEDURE declaration "
-		     "in MODULE '%s' and the declaration at %L in "
-		     "(SUB)MODULE '%s'",
+		     "in MODULE %qs and the declaration at %L in "
+		     "(SUB)MODULE %qs",
 		     errmsg, module_name, &sym->declared_at,
 		     submodule_name ? submodule_name : module_name);
 	  return false;
@@ -14728,7 +14729,7 @@ resolve_symbol (gfc_symbol *sym)
 	  for (; formal; formal = formal->next)
 	    if (formal->sym && formal->sym->attr.flavor == FL_NAMELIST)
 	      {
-		gfc_error ("Namelist '%s' can not be an argument to "
+		gfc_error ("Namelist %qs can not be an argument to "
 			   "subroutine or function at %L",
 			   formal->sym->name, &sym->declared_at);
 		return;

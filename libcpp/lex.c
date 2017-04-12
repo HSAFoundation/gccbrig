@@ -821,7 +821,7 @@ search_line_fast (const uchar *s, const uchar *end ATTRIBUTE_UNUSED)
       v = vorrq_u8 (t, vceqq_u8 (data, repl_bs));
       w = vorrq_u8 (u, vceqq_u8 (data, repl_qm));
       t = vorrq_u8 (v, w);
-      if (__builtin_expect (vpaddd_u64 ((uint64x2_t)t), 0))
+      if (__builtin_expect (vpaddd_u64 ((uint64x2_t)t) != 0, 0))
 	goto done;
     }
 
@@ -912,7 +912,7 @@ search_line_fast (const uchar *s, const uchar *end ATTRIBUTE_UNUSED)
 
 #else
 
-/* We only have one accellerated alternative.  Use a direct call so that
+/* We only have one accelerated alternative.  Use a direct call so that
    we encourage inlining.  */
 
 #define search_line_fast  search_line_acc_char

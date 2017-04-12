@@ -2059,7 +2059,7 @@ gfc_match_oacc_declare (void)
 	  if (n->u.map_op != OMP_MAP_FORCE_ALLOC
 	      && n->u.map_op != OMP_MAP_FORCE_TO)
 	    {
-	      gfc_error ("Invalid clause in module with $!ACC DECLARE at %L",
+	      gfc_error ("Invalid clause in module with !$ACC DECLARE at %L",
 			 &where);
 	      return MATCH_ERROR;
 	    }
@@ -2069,7 +2069,7 @@ gfc_match_oacc_declare (void)
 
       if (s->attr.use_assoc)
 	{
-	  gfc_error ("Variable is USE-associated with $!ACC DECLARE at %L",
+	  gfc_error ("Variable is USE-associated with !$ACC DECLARE at %L",
 		     &where);
 	  return MATCH_ERROR;
 	}
@@ -2077,7 +2077,7 @@ gfc_match_oacc_declare (void)
       if ((s->attr.dimension || s->attr.codimension)
 	  && s->attr.dummy && s->as->type != AS_EXPLICIT)
 	{
-	  gfc_error ("Assumed-size dummy array with $!ACC DECLARE at %L",
+	  gfc_error ("Assumed-size dummy array with !$ACC DECLARE at %L",
 		     &where);
 	  return MATCH_ERROR;
 	}
@@ -2172,7 +2172,7 @@ gfc_match_oacc_wait (void)
       {
 	if (el->expr == NULL)
 	  {
-	    gfc_error ("Invalid argument to $!ACC WAIT at %L",
+	    gfc_error ("Invalid argument to !$ACC WAIT at %L",
 		       &wait_list->expr->where);
 	    return MATCH_ERROR;
 	  }
@@ -3735,7 +3735,7 @@ check_symbol_not_pointer (gfc_symbol *sym, locus loc, const char *name)
     gfc_error ("Cray pointer object %qs of derived type in %s clause at %L",
 	       sym->name, name, &loc);
   if (sym->ts.type == BT_DERIVED && sym->attr.cray_pointee)
-    gfc_error ("Cray pointee object of derived type %qs in %s clause at %L",
+    gfc_error ("Cray pointee object %qs of derived type in %s clause at %L",
 	       sym->name, name, &loc);
 
   if ((sym->ts.type == BT_ASSUMED && sym->attr.pointer)
@@ -3746,12 +3746,12 @@ check_symbol_not_pointer (gfc_symbol *sym, locus loc, const char *name)
   if ((sym->ts.type == BT_ASSUMED && sym->attr.cray_pointer)
       || (sym->ts.type == BT_CLASS && CLASS_DATA (sym)
 	  && CLASS_DATA (sym)->attr.cray_pointer))
-    gfc_error ("Cray pointer object of polymorphic type %qs in %s clause at %L",
+    gfc_error ("Cray pointer object %qs of polymorphic type in %s clause at %L",
 	       sym->name, name, &loc);
   if ((sym->ts.type == BT_ASSUMED && sym->attr.cray_pointee)
       || (sym->ts.type == BT_CLASS && CLASS_DATA (sym)
 	  && CLASS_DATA (sym)->attr.cray_pointee))
-    gfc_error ("Cray pointee object of polymorphic type %qs in %s clause at %L",
+    gfc_error ("Cray pointee object %qs of polymorphic type in %s clause at %L",
 	       sym->name, name, &loc);
 }
 
@@ -3855,7 +3855,7 @@ resolve_omp_udr_callback2 (gfc_expr **e, int *, void *)
       if (!sym->attr.intrinsic
 	  && sym->attr.if_source == IFSRC_UNKNOWN)
 	gfc_error ("Implicitly declared function %s used in "
-		   "!$OMP DECLARE REDUCTION at %L ", sym->name, &(*e)->where);
+		   "!$OMP DECLARE REDUCTION at %L", sym->name, &(*e)->where);
     }
   return 0;
 }
@@ -3904,7 +3904,7 @@ resolve_omp_udr_clause (gfc_omp_namelist *n, gfc_namespace *ns,
 	  && !sym->attr.intrinsic
 	  && sym->attr.if_source == IFSRC_UNKNOWN)
 	gfc_error ("Implicitly declared subroutine %s used in "
-		   "!$OMP DECLARE REDUCTION at %L ", sym->name,
+		   "!$OMP DECLARE REDUCTION at %L", sym->name,
 		   &copy->loc);
     }
   gfc_code_walker (&copy, gfc_dummy_code_callback,
@@ -5985,7 +5985,7 @@ gfc_resolve_oacc_declare (gfc_namespace *ns)
 	    if (n->expr && n->expr->ref->type == REF_ARRAY)
 	      {
 		gfc_error ("Array sections: %qs not allowed in"
-			   " $!ACC DECLARE at %L", n->sym->name, &oc->loc);
+			   " !$ACC DECLARE at %L", n->sym->name, &oc->loc);
 		continue;
 	      }
 	  }

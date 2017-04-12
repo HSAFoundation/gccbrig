@@ -105,6 +105,17 @@ lvalue_kind (const_tree ref)
       return op1_lvalue_kind;
 
     case COMPONENT_REF:
+      if (BASELINK_P (TREE_OPERAND (ref, 1)))
+	{
+	  tree fn = BASELINK_FUNCTIONS (TREE_OPERAND (ref, 1));
+
+	  /* For static member function recurse on the BASELINK, we can get
+	     here e.g. from reference_binding.  If BASELINK_FUNCTIONS is
+	     OVERLOAD, the overload is resolved first if possible through
+	     resolve_address_of_overloaded_function.  */
+	  if (TREE_CODE (fn) == FUNCTION_DECL && DECL_STATIC_FUNCTION_P (fn))
+	    return lvalue_kind (TREE_OPERAND (ref, 1));
+	}
       op1_lvalue_kind = lvalue_kind (TREE_OPERAND (ref, 0));
       /* Look at the member designator.  */
       if (!op1_lvalue_kind)
@@ -938,6 +949,13 @@ build_cplus_array_type (tree elt_type, tree index_type)
   else
     {
       t = build_array_type (elt_type, index_type);
+      if (elt_type == unsigned_char_type_node
+	  || elt_type == signed_char_type_node
+	  || elt_type == char_type_node
+	  || (TREE_CODE (elt_type) == ENUMERAL_TYPE
+	      && TYPE_CONTEXT (elt_type) == std_node
+	      && !strcmp ("byte", TYPE_NAME_STRING (elt_type))))
+	TYPE_TYPELESS_STORAGE (t) = 1;
     }
 
   /* Now check whether we already have this array variant.  */
@@ -961,6 +979,7 @@ build_cplus_array_type (tree elt_type, tree index_type)
 		 as it will overwrite alignment etc. of all variants.  */
 	      TYPE_SIZE (t) = TYPE_SIZE (m);
 	      TYPE_SIZE_UNIT (t) = TYPE_SIZE_UNIT (m);
+	      TYPE_TYPELESS_STORAGE (t) = TYPE_TYPELESS_STORAGE (m);
 	    }
 
 	  TYPE_MAIN_VARIANT (t) = m;
@@ -2813,9 +2832,23 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
   return NULL_TREE;
 }
 
+/* Replace PLACEHOLDER_EXPRs in EXP with object OBJ.  SEEN_P is set if
+   a PLACEHOLDER_EXPR has been encountered.  */
+
 tree
 replace_placeholders (tree exp, tree obj, bool *seen_p)
 {
+  /* This is only relevant for C++14.  */
+  if (cxx_dialect < cxx14)
+    return exp;
+
+  /* If the object isn't a (member of a) class, do nothing.  */
+  tree op0 = obj;
+  while (TREE_CODE (op0) == COMPONENT_REF)
+    op0 = TREE_OPERAND (op0, 0);
+  if (!CLASS_TYPE_P (strip_array_types (TREE_TYPE (op0))))
+    return exp;
+
   tree *tp = &exp;
   replace_placeholders_t data = { obj, false };
   if (TREE_CODE (exp) == TARGET_EXPR)

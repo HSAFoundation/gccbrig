@@ -2525,7 +2525,18 @@ capture::gen_transform (FILE *f, int indent, const char *dest, bool gimple,
 	}
     }
 
-  fprintf_indent (f, indent, "%s = captures[%u];\n", dest, where);
+  /* If in GENERIC some capture is used multiple times, unshare it except
+     when emitting the last use.  */
+  if (!gimple
+      && cinfo->info.exists ()
+      && cinfo->info[cinfo->info[where].same_as].result_use_count > 1)
+    {
+      fprintf_indent (f, indent, "%s = unshare_expr (captures[%u]);\n",
+		      dest, where);
+      cinfo->info[cinfo->info[where].same_as].result_use_count--;
+    }
+  else
+    fprintf_indent (f, indent, "%s = captures[%u];\n", dest, where);
 
   /* ???  Stupid tcc_comparison GENERIC trees in COND_EXPRs.  Deal
      with substituting a capture of that.  */
@@ -3826,8 +3837,7 @@ parser::next ()
     {
       token = cpp_get_token (r);
     }
-  while (token->type == CPP_PADDING
-	 && token->type != CPP_EOF);
+  while (token->type == CPP_PADDING);
   return token;
 }
 
@@ -3842,8 +3852,7 @@ parser::peek (unsigned num)
     {
       token = cpp_peek_token (r, i++);
     }
-  while ((token->type == CPP_PADDING
-	  && token->type != CPP_EOF)
+  while (token->type == CPP_PADDING
 	 || (--num > 0));
   /* If we peek at EOF this is a fatal error as it leaves the
      cpp_reader in unusable state.  Assume we really wanted a

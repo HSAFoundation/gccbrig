@@ -831,8 +831,12 @@ split_tree (location_t loc, tree in, tree type, enum tree_code code,
       /* Now do any needed negations.  */
       if (neg_litp_p)
 	*minus_litp = *litp, *litp = 0;
-      if (neg_conp_p)
-	*conp = negate_expr (*conp);
+      if (neg_conp_p && *conp)
+	{
+	  /* Convert to TYPE before negating.  */
+	  *conp = fold_convert_loc (loc, type, *conp);
+	  *conp = negate_expr (*conp);
+	}
       if (neg_var_p && var)
 	{
 	  /* Convert to TYPE before negating.  */
@@ -859,7 +863,12 @@ split_tree (location_t loc, tree in, tree type, enum tree_code code,
 	*minus_litp = *litp, *litp = 0;
       else if (*minus_litp)
 	*litp = *minus_litp, *minus_litp = 0;
-      *conp = negate_expr (*conp);
+      if (*conp)
+	{
+	  /* Convert to TYPE before negating.  */
+	  *conp = fold_convert_loc (loc, type, *conp);
+	  *conp = negate_expr (*conp);
+	}
       if (var)
 	{
 	  /* Convert to TYPE before negating.  */
@@ -8072,7 +8081,7 @@ fold_truth_andor (location_t loc, enum tree_code code, tree type,
 	  return fold_build2_loc (loc, icode, type, TREE_OPERAND (arg0, 0),
 				  tem);
 	}
-	/* Same as abouve but for (A AND[-IF] (B AND-IF C)) -> ((A AND B) AND-IF C),
+	/* Same as above but for (A AND[-IF] (B AND-IF C)) -> ((A AND B) AND-IF C),
 	   or (A OR[-IF] (B OR-IF C) -> ((A OR B) OR-IF C).  */
       else if (TREE_CODE (arg1) == icode
 	  && simple_operand_p_2 (arg0)
@@ -8704,7 +8713,7 @@ fold_comparison (location_t loc, enum tree_code code, tree type,
 	      if (save_p)
 		{
 		  tem = save_expr (build2 (code, type, cval1, cval2));
-		  SET_EXPR_LOCATION (tem, loc);
+		  protected_set_expr_location (tem, loc);
 		  return tem;
 		}
 	      return fold_build2_loc (loc, code, type, cval1, cval2);
@@ -9907,12 +9916,12 @@ fold_binary_loc (location_t loc,
 	    }
 
 	  if (c3 != c1)
-	    return fold_build2_loc (loc, BIT_IOR_EXPR, type,
-				    fold_build2_loc (loc, BIT_AND_EXPR, type,
-						     TREE_OPERAND (arg0, 0),
-						     wide_int_to_tree (type,
-								       c3)),
-				    arg1);
+	    {
+	      tem = fold_convert_loc (loc, type, TREE_OPERAND (arg0, 0));
+	      tem = fold_build2_loc (loc, BIT_AND_EXPR, type, tem,
+				     wide_int_to_tree (type, c3));
+	      return fold_build2_loc (loc, BIT_IOR_EXPR, type, tem, arg1);
+	    }
 	}
 
       /* See if this can be simplified into a rotate first.  If that
@@ -10196,7 +10205,7 @@ fold_binary_loc (location_t loc,
       /* Convert -A / -B to A / B when the type is signed and overflow is
 	 undefined.  */
       if ((!INTEGRAL_TYPE_P (type) || TYPE_OVERFLOW_UNDEFINED (type))
-	  && TREE_CODE (arg0) == NEGATE_EXPR
+	  && TREE_CODE (op0) == NEGATE_EXPR
 	  && negate_expr_p (op1))
 	{
 	  if (INTEGRAL_TYPE_P (type))
@@ -14006,7 +14015,8 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 
   STRIP_NOPS (sub);
   subtype = TREE_TYPE (sub);
-  if (!POINTER_TYPE_P (subtype))
+  if (!POINTER_TYPE_P (subtype)
+      || TYPE_REF_CAN_ALIAS_ALL (TREE_TYPE (op0)))
     return NULL_TREE;
 
   if (TREE_CODE (sub) == ADDR_EXPR)
@@ -14250,7 +14260,7 @@ round_up_loc (location_t loc, tree value, unsigned int divisor)
 
 	  overflow_p = TREE_OVERFLOW (value);
 	  val += divisor - 1;
-	  val &= - (int) divisor;
+	  val &= (int) -divisor;
 	  if (val == 0)
 	    overflow_p = true;
 
@@ -14339,6 +14349,24 @@ split_address_to_core_and_offset (tree exp,
 				  poffset, &mode, &unsignedp, &reversep,
 				  &volatilep);
       core = build_fold_addr_expr_loc (loc, core);
+    }
+  else if (TREE_CODE (exp) == POINTER_PLUS_EXPR)
+    {
+      core = TREE_OPERAND (exp, 0);
+      STRIP_NOPS (core);
+      *pbitpos = 0;
+      *poffset = TREE_OPERAND (exp, 1);
+      if (TREE_CODE (*poffset) == INTEGER_CST)
+	{
+	  offset_int tem = wi::sext (wi::to_offset (*poffset),
+				     TYPE_PRECISION (TREE_TYPE (*poffset)));
+	  tem <<= LOG2_BITS_PER_UNIT;
+	  if (wi::fits_shwi_p (tem))
+	    {
+	      *pbitpos = tem.to_shwi ();
+	      *poffset = NULL_TREE;
+	    }
+	}
     }
   else
     {

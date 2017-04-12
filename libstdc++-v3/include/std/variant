@@ -91,7 +91,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     : std::integral_constant<size_t, sizeof...(_Types)> {};
 
   template<typename _Variant>
-    constexpr size_t variant_size_v = variant_size<_Variant>::value;
+    inline constexpr size_t variant_size_v = variant_size<_Variant>::value;
 
   template<size_t _Np, typename _Variant>
     struct variant_alternative;
@@ -120,7 +120,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct variant_alternative<_Np, const volatile _Variant>
     { using type = add_cv_t<variant_alternative_t<_Np, _Variant>>; };
 
-  constexpr size_t variant_npos = -1;
+  inline constexpr size_t variant_npos = -1;
 
   template<size_t _Np, typename... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>>&
@@ -151,7 +151,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct __index_of : std::integral_constant<size_t, 0> {};
 
   template<typename _Tp, typename... _Types>
-    constexpr size_t __index_of_v = __index_of<_Tp, _Types...>::value;
+    inline constexpr size_t __index_of_v = __index_of<_Tp, _Types...>::value;
 
   template<typename _Tp, typename _First, typename... _Rest>
     struct __index_of<_Tp, _First, _Rest...> :
@@ -510,7 +510,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     struct __tuple_count;
 
   template<typename _Tp, typename _Tuple>
-    constexpr size_t __tuple_count_v = __tuple_count<_Tp, _Tuple>::value;
+    inline constexpr size_t __tuple_count_v =
+      __tuple_count<_Tp, _Tuple>::value;
 
   template<typename _Tp, typename... _Types>
     struct __tuple_count<_Tp, tuple<_Types...>>
@@ -524,7 +525,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   // TODO: Reuse this in <tuple> ?
   template<typename _Tp, typename... _Types>
-    constexpr bool __exactly_once = __tuple_count_v<_Tp, tuple<_Types...>> == 1;
+    inline constexpr bool __exactly_once =
+      __tuple_count_v<_Tp, tuple<_Types...>> == 1;
 
   // Takes _Types and create an overloaded _S_fun for each type.
   // If a type appears more than once in _Types, create only one overload.
@@ -1007,25 +1009,33 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	}
 
       template<typename _Tp, typename... _Args>
-	enable_if_t<is_constructible_v<_Tp, _Args...> && __exactly_once<_Tp>>
+	enable_if_t<is_constructible_v<_Tp, _Args...> && __exactly_once<_Tp>,
+		    _Tp&>
 	emplace(_Args&&... __args)
 	{
-	  this->emplace<__index_of<_Tp>>(std::forward<_Args>(__args)...);
+	  auto& ret =
+	    this->emplace<__index_of<_Tp>>(std::forward<_Args>(__args)...);
 	  __glibcxx_assert(holds_alternative<_Tp>(*this));
+	  return ret;
 	}
 
       template<typename _Tp, typename _Up, typename... _Args>
 	enable_if_t<is_constructible_v<_Tp, initializer_list<_Up>&, _Args...>
-		    && __exactly_once<_Tp>>
+		    && __exactly_once<_Tp>,
+		    _Tp&>
 	emplace(initializer_list<_Up> __il, _Args&&... __args)
 	{
-	  this->emplace<__index_of<_Tp>>(__il, std::forward<_Args>(__args)...);
+	  auto& ret =
+	    this->emplace<__index_of<_Tp>>(__il,
+					   std::forward<_Args>(__args)...);
 	  __glibcxx_assert(holds_alternative<_Tp>(*this));
+	  return ret;
 	}
 
       template<size_t _Np, typename... _Args>
 	enable_if_t<is_constructible_v<variant_alternative_t<_Np, variant>,
-				       _Args...>>
+				       _Args...>,
+		    variant_alternative_t<_Np, variant>&>
 	emplace(_Args&&... __args)
 	{
 	  static_assert(_Np < sizeof...(_Types),
@@ -1042,11 +1052,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      __throw_exception_again;
 	    }
 	  __glibcxx_assert(index() == _Np);
+	  return std::get<_Np>(*this);
 	}
 
       template<size_t _Np, typename _Up, typename... _Args>
 	enable_if_t<is_constructible_v<variant_alternative_t<_Np, variant>,
-				       initializer_list<_Up>&, _Args...>>
+				       initializer_list<_Up>&, _Args...>,
+		    variant_alternative_t<_Np, variant>&>
 	emplace(initializer_list<_Up> __il, _Args&&... __args)
 	{
 	  static_assert(_Np < sizeof...(_Types),
@@ -1063,6 +1075,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	      __throw_exception_again;
 	    }
 	  __glibcxx_assert(index() == _Np);
+	  return std::get<_Np>(*this);
 	}
 
       constexpr bool valueless_by_exception() const noexcept
