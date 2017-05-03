@@ -3886,15 +3886,29 @@ substitute_in_expr (tree exp, tree f, tree r)
 
 	  new_tree = NULL_TREE;
 
-	  /* If we are trying to replace F with a constant, inline back
+	  /* If we are trying to replace F with a constant or with another
+	     instance of one of the arguments of the call, inline back
 	     functions which do nothing else than computing a value from
 	     the arguments they are passed.  This makes it possible to
 	     fold partially or entirely the replacement expression.  */
-	  if (CONSTANT_CLASS_P (r) && code == CALL_EXPR)
+	  if (code == CALL_EXPR)
 	    {
-	      tree t = maybe_inline_call_in_expr (exp);
-	      if (t)
-		return SUBSTITUTE_IN_EXPR (t, f, r);
+	      bool maybe_inline = false;
+	      if (CONSTANT_CLASS_P (r))
+		maybe_inline = true;
+	      else
+		for (i = 3; i < TREE_OPERAND_LENGTH (exp); i++)
+		  if (operand_equal_p (TREE_OPERAND (exp, i), r, 0))
+		    {
+		      maybe_inline = true;
+		      break;
+		    }
+	      if (maybe_inline)
+		{
+		  tree t = maybe_inline_call_in_expr (exp);
+		  if (t)
+		    return SUBSTITUTE_IN_EXPR (t, f, r);
+		}
 	    }
 
 	  for (i = 1; i < TREE_OPERAND_LENGTH (exp); i++)
@@ -6622,7 +6636,7 @@ get_qualified_type (tree type, int type_quals)
    exist.  This function never returns NULL_TREE.  */
 
 tree
-build_qualified_type (tree type, int type_quals)
+build_qualified_type (tree type, int type_quals MEM_STAT_DECL)
 {
   tree t;
 
@@ -6632,7 +6646,7 @@ build_qualified_type (tree type, int type_quals)
   /* If not, build it.  */
   if (!t)
     {
-      t = build_variant_type_copy (type);
+      t = build_variant_type_copy (type PASS_MEM_STAT);
       set_type_quals (t, type_quals);
 
       if (((type_quals & TYPE_QUAL_ATOMIC) == TYPE_QUAL_ATOMIC))
@@ -6695,9 +6709,9 @@ build_aligned_type (tree type, unsigned int align)
    TYPE_CANONICAL points to itself. */
 
 tree
-build_distinct_type_copy (tree type)
+build_distinct_type_copy (tree type MEM_STAT_DECL)
 {
-  tree t = copy_node (type);
+  tree t = copy_node_stat (type PASS_MEM_STAT);
 
   TYPE_POINTER_TO (t) = 0;
   TYPE_REFERENCE_TO (t) = 0;
@@ -6733,11 +6747,11 @@ build_distinct_type_copy (tree type)
    require structural equality checks). */
 
 tree
-build_variant_type_copy (tree type)
+build_variant_type_copy (tree type MEM_STAT_DECL)
 {
   tree t, m = TYPE_MAIN_VARIANT (type);
 
-  t = build_distinct_type_copy (type);
+  t = build_distinct_type_copy (type PASS_MEM_STAT);
 
   /* Since we're building a variant, assume that it is a non-semantic
      variant. This also propagates TYPE_STRUCTURAL_EQUALITY_P. */
@@ -7073,7 +7087,16 @@ type_cache_hasher::equal (type_hash *a, type_hash *b)
         break;
       return 0;
     case ARRAY_TYPE:
-      return TYPE_DOMAIN (a->type) == TYPE_DOMAIN (b->type);
+      /* Don't compare TYPE_TYPELESS_STORAGE flag on aggregates,
+	 where the flag should be inherited from the element type
+	 and can change after ARRAY_TYPEs are created; on non-aggregates
+	 compare it and hash it, scalars will never have that flag set
+	 and we need to differentiate between arrays created by different
+	 front-ends or middle-end created arrays.  */
+      return (TYPE_DOMAIN (a->type) == TYPE_DOMAIN (b->type)
+	      && (AGGREGATE_TYPE_P (TREE_TYPE (a->type))
+		  || (TYPE_TYPELESS_STORAGE (a->type)
+		      == TYPE_TYPELESS_STORAGE (b->type))));
 
     case RECORD_TYPE:
     case UNION_TYPE:
@@ -8350,10 +8373,12 @@ subrange_type_for_debug_p (const_tree type, tree *lowval, tree *highval)
 
 /* Construct, lay out and return the type of arrays of elements with ELT_TYPE
    and number of elements specified by the range of values of INDEX_TYPE.
+   If TYPELESS_STORAGE is true, TYPE_TYPELESS_STORAGE flag is set on the type.
    If SHARED is true, reuse such a type that has already been constructed.  */
 
 static tree
-build_array_type_1 (tree elt_type, tree index_type, bool shared)
+build_array_type_1 (tree elt_type, tree index_type, bool typeless_storage,
+		    bool shared)
 {
   tree t;
 
@@ -8367,6 +8392,7 @@ build_array_type_1 (tree elt_type, tree index_type, bool shared)
   TREE_TYPE (t) = elt_type;
   TYPE_DOMAIN (t) = index_type;
   TYPE_ADDR_SPACE (t) = TYPE_ADDR_SPACE (elt_type);
+  TYPE_TYPELESS_STORAGE (t) = typeless_storage;
   layout_type (t);
 
   /* If the element type is incomplete at this point we get marked for
@@ -8381,6 +8407,8 @@ build_array_type_1 (tree elt_type, tree index_type, bool shared)
       hstate.add_object (TYPE_HASH (elt_type));
       if (index_type)
 	hstate.add_object (TYPE_HASH (index_type));
+      if (!AGGREGATE_TYPE_P (elt_type))
+	hstate.add_flag (TYPE_TYPELESS_STORAGE (t));
       t = type_hash_canon (hstate.end (), t);
     }
 
@@ -8396,7 +8424,7 @@ build_array_type_1 (tree elt_type, tree index_type, bool shared)
 	  = build_array_type_1 (TYPE_CANONICAL (elt_type),
 				index_type
 				? TYPE_CANONICAL (index_type) : NULL_TREE,
-				shared);
+				typeless_storage, shared);
     }
 
   return t;
@@ -8405,9 +8433,9 @@ build_array_type_1 (tree elt_type, tree index_type, bool shared)
 /* Wrapper around build_array_type_1 with SHARED set to true.  */
 
 tree
-build_array_type (tree elt_type, tree index_type)
+build_array_type (tree elt_type, tree index_type, bool typeless_storage)
 {
-  return build_array_type_1 (elt_type, index_type, true);
+  return build_array_type_1 (elt_type, index_type, typeless_storage, true);
 }
 
 /* Wrapper around build_array_type_1 with SHARED set to false.  */
@@ -8415,7 +8443,7 @@ build_array_type (tree elt_type, tree index_type)
 tree
 build_nonshared_array_type (tree elt_type, tree index_type)
 {
-  return build_array_type_1 (elt_type, index_type, false);
+  return build_array_type_1 (elt_type, index_type, false, false);
 }
 
 /* Return a representation of ELT_TYPE[NELTS], using indices of type
@@ -9605,38 +9633,34 @@ dump_tree_statistics (void)
 
 #define FILE_FUNCTION_FORMAT "_GLOBAL__%s_%s"
 
-/* Generate a crc32 of a byte.  */
+/* Generate a crc32 of the low BYTES bytes of VALUE.  */
 
-static unsigned
-crc32_unsigned_bits (unsigned chksum, unsigned value, unsigned bits)
+unsigned
+crc32_unsigned_n (unsigned chksum, unsigned value, unsigned bytes)
 {
-  unsigned ix;
-
-  for (ix = bits; ix--; value <<= 1)
+  /* This relies on the raw feedback's top 4 bits being zero.  */
+#define FEEDBACK(X) ((X) * 0x04c11db7)
+#define SYNDROME(X) (FEEDBACK ((X) & 1) ^ FEEDBACK ((X) & 2) \
+		     ^ FEEDBACK ((X) & 4) ^ FEEDBACK ((X) & 8))
+  static const unsigned syndromes[16] =
     {
-      unsigned feedback;
-      
-      feedback = (value ^ chksum) & 0x80000000 ? 0x04c11db7 : 0;
-      chksum <<= 1;
-      chksum ^= feedback;
+      SYNDROME(0x0), SYNDROME(0x1), SYNDROME(0x2), SYNDROME(0x3),
+      SYNDROME(0x4), SYNDROME(0x5), SYNDROME(0x6), SYNDROME(0x7),
+      SYNDROME(0x8), SYNDROME(0x9), SYNDROME(0xa), SYNDROME(0xb),
+      SYNDROME(0xc), SYNDROME(0xd), SYNDROME(0xe), SYNDROME(0xf),
+    };
+#undef FEEDBACK
+#undef SYNDROME
+
+  value <<= (32 - bytes * 8);
+  for (unsigned ix = bytes * 2; ix--; value <<= 4)
+    {
+      unsigned feedback = syndromes[((value ^ chksum) >> 28) & 0xf];
+
+      chksum = (chksum << 4) ^ feedback;
     }
+
   return chksum;
-}
-
-/* Generate a crc32 of a 32-bit unsigned.  */
-
-unsigned
-crc32_unsigned (unsigned chksum, unsigned value)
-{
-  return crc32_unsigned_bits (chksum, value, 32);
-}
-
-/* Generate a crc32 of a byte.  */
-
-unsigned
-crc32_byte (unsigned chksum, char byte)
-{
-  return crc32_unsigned_bits (chksum, (unsigned) byte << 24, 8);
 }
 
 /* Generate a crc32 of a string.  */
@@ -9645,9 +9669,7 @@ unsigned
 crc32_string (unsigned chksum, const char *string)
 {
   do
-    {
-      chksum = crc32_byte (chksum, *string);
-    }
+    chksum = crc32_byte (chksum, *string);
   while (*string++);
   return chksum;
 }

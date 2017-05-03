@@ -243,7 +243,8 @@ lvalue_kind (const_tree ref)
     default:
       if (!TREE_TYPE (ref))
 	return clk_none;
-      if (CLASS_TYPE_P (TREE_TYPE (ref)))
+      if (CLASS_TYPE_P (TREE_TYPE (ref))
+	  || TREE_CODE (TREE_TYPE (ref)) == ARRAY_TYPE)
 	return clk_class;
       break;
     }
@@ -948,14 +949,14 @@ build_cplus_array_type (tree elt_type, tree index_type)
     }
   else
     {
-      t = build_array_type (elt_type, index_type);
-      if (elt_type == unsigned_char_type_node
-	  || elt_type == signed_char_type_node
-	  || elt_type == char_type_node
-	  || (TREE_CODE (elt_type) == ENUMERAL_TYPE
-	      && TYPE_CONTEXT (elt_type) == std_node
-	      && !strcmp ("byte", TYPE_NAME_STRING (elt_type))))
-	TYPE_TYPELESS_STORAGE (t) = 1;
+      bool typeless_storage
+	= (elt_type == unsigned_char_type_node
+	   || elt_type == signed_char_type_node
+	   || elt_type == char_type_node
+	   || (TREE_CODE (elt_type) == ENUMERAL_TYPE
+	       && TYPE_CONTEXT (elt_type) == std_node
+	       && !strcmp ("byte", TYPE_NAME_STRING (elt_type))));
+      t = build_array_type (elt_type, index_type, typeless_storage);
     }
 
   /* Now check whether we already have this array variant.  */
@@ -1549,6 +1550,10 @@ strip_typedefs (tree t, bool *remove_attributes)
 		  (result,
 		   DECLTYPE_TYPE_ID_EXPR_OR_MEMBER_ACCESS_P (t),
 		   tf_none));
+      break;
+    case UNDERLYING_TYPE:
+      type = strip_typedefs (UNDERLYING_TYPE_TYPE (t), remove_attributes);
+      result = finish_underlying_type (type);
       break;
     default:
       break;

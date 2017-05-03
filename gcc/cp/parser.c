@@ -5931,8 +5931,11 @@ cp_parser_nested_name_specifier_opt (cp_parser *parser,
 	      && parser->colon_corrects_to_scope_p
 	      && cp_lexer_peek_nth_token (parser->lexer, 3)->type == CPP_NAME)
 	    {
-	      error_at (token->location,
-			"found %<:%> in nested-name-specifier, expected %<::%>");
+	      gcc_rich_location richloc (token->location);
+	      richloc.add_fixit_replace ("::");
+	      error_at_rich_loc (&richloc,
+				 "found %<:%> in nested-name-specifier, "
+				 "expected %<::%>");
 	      token->type = CPP_SCOPE;
 	    }
 
@@ -7805,12 +7808,11 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
 	  {
 	    tree operand, ret;
 	    enum tree_code op;
-	    location_t first_loc;
+	    location_t start_loc = token->location;
 
 	    op = keyword == RID_ALIGNOF ? ALIGNOF_EXPR : SIZEOF_EXPR;
 	    /* Consume the token.  */
 	    cp_lexer_consume_token (parser->lexer);
-	    first_loc = cp_lexer_peek_token (parser->lexer)->location;
 	    /* Parse the operand.  */
 	    operand = cp_parser_sizeof_operand (parser, keyword);
 
@@ -7846,9 +7848,21 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
 		    TREE_SIDE_EFFECTS (ret) = 0;
 		    TREE_READONLY (ret) = 1;
 		  }
-		SET_EXPR_LOCATION (ret, first_loc);
 	      }
-	    return ret;
+
+	    /* Construct a location e.g. :
+	       alignof (expr)
+	       ^~~~~~~~~~~~~~
+	       with start == caret at the start of the "alignof"/"sizeof"
+	       token, with the endpoint at the final closing paren.  */
+	    location_t finish_loc
+	      = cp_lexer_previous_token (parser->lexer)->location;
+	    location_t compound_loc
+	      = make_location (start_loc, start_loc, finish_loc);
+
+	    cp_expr ret_expr (ret);
+	    ret_expr.set_location (compound_loc);
+	    return ret_expr;
 	  }
 
 	case RID_NEW:
@@ -8749,7 +8763,8 @@ cp_parser_cast_expression (cp_parser *parser, bool address_p, bool cast_p,
 		  && !in_system_header_at (input_location)
 		  && !VOID_TYPE_P (type)
 		  && current_lang_name != lang_name_c)
-		warning (OPT_Wold_style_cast, "use of old-style cast");
+		warning (OPT_Wold_style_cast,
+			 "use of old-style cast to %qT", type);
 
 	      /* Only type conversions to integral or enumeration types
 		 can be used in constant-expressions.  */
@@ -14073,7 +14088,7 @@ cp_parser_mem_initializer_list (cp_parser* parser)
               && !TYPE_P (TREE_PURPOSE (mem_initializer)))
             {
               error_at (token->location,
-			"cannot expand initializer for member %<%D%>",
+			"cannot expand initializer for member %qD",
 			TREE_PURPOSE (mem_initializer));
               mem_initializer = error_mark_node;
             }
@@ -17259,12 +17274,16 @@ cp_parser_elaborated_type_specifier (cp_parser* parser,
       tag_type = enum_type;
       /* Issue a warning if the `struct' or `class' key (for C++0x scoped
 	 enums) is used here.  */
-      if (cp_lexer_next_token_is_keyword (parser->lexer, RID_CLASS)
-	  || cp_lexer_next_token_is_keyword (parser->lexer, RID_STRUCT))
+      cp_token *token = cp_lexer_peek_token (parser->lexer);
+      if (cp_parser_is_keyword (token, RID_CLASS)
+	  || cp_parser_is_keyword (token, RID_STRUCT))
 	{
-	    pedwarn (input_location, 0, "elaborated-type-specifier "
-		      "for a scoped enum must not use the %<%D%> keyword",
-		      cp_lexer_peek_token (parser->lexer)->u.value);
+	  gcc_rich_location richloc (token->location);
+	  richloc.add_range (input_location, false);
+	  richloc.add_fixit_remove ();
+	  pedwarn_at_rich_loc (&richloc, 0, "elaborated-type-specifier for "
+			       "a scoped enum must not use the %qD keyword",
+			       token->u.value);
 	  /* Consume the `struct' or `class' and parse it anyway.  */
 	  cp_lexer_consume_token (parser->lexer);
 	}
@@ -20258,7 +20277,9 @@ cp_parser_cv_qualifier_seq_opt (cp_parser* parser)
 
       if (cv_quals & cv_qualifier)
 	{
-	  error_at (token->location, "duplicate cv-qualifier");
+	  gcc_rich_location richloc (token->location);
+	  richloc.add_fixit_remove ();
+	  error_at_rich_loc (&richloc, "duplicate cv-qualifier");
 	  cp_lexer_purge_token (parser->lexer);
 	}
       else
@@ -20405,7 +20426,9 @@ cp_parser_virt_specifier_seq_opt (cp_parser* parser)
 
       if (virt_specifiers & virt_specifier)
 	{
-	  error_at (token->location, "duplicate virt-specifier");
+	  gcc_rich_location richloc (token->location);
+	  richloc.add_fixit_remove ();
+	  error_at_rich_loc (&richloc, "duplicate virt-specifier");
 	  cp_lexer_purge_token (parser->lexer);
 	}
       else
@@ -23112,7 +23135,11 @@ cp_parser_member_declaration (cp_parser* parser)
 	{
 	  cp_token *token = cp_lexer_peek_token (parser->lexer);
 	  if (!in_system_header_at (token->location))
-	    pedwarn (token->location, OPT_Wpedantic, "extra %<;%>");
+	    {
+	      gcc_rich_location richloc (token->location);
+	      richloc.add_fixit_remove ();
+	      pedwarn_at_rich_loc (&richloc, OPT_Wpedantic, "extra %<;%>");
+	    }
 	}
       else
 	{
@@ -23386,7 +23413,15 @@ cp_parser_member_declaration (cp_parser* parser)
 		  token = cp_lexer_peek_token (parser->lexer);
 		  /* If the next token is a semicolon, consume it.  */
 		  if (token->type == CPP_SEMICOLON)
-		    cp_lexer_consume_token (parser->lexer);
+		    {
+		      location_t semicolon_loc
+			= cp_lexer_consume_token (parser->lexer)->location;
+		      gcc_rich_location richloc (semicolon_loc);
+		      richloc.add_fixit_remove ();
+		      warning_at_rich_loc (&richloc, OPT_Wextra_semi,
+					   "extra %<;%> after in-class "
+					   "function definition");
+		    }
 		  goto out;
 		}
 	      else
@@ -23426,8 +23461,10 @@ cp_parser_member_declaration (cp_parser* parser)
 	      if (cp_lexer_next_token_is (parser->lexer, CPP_SEMICOLON))
 		{
 		  cp_token *token = cp_lexer_previous_token (parser->lexer);
-		  error_at (token->location,
-			    "stray %<,%> at end of member declaration");
+		  gcc_rich_location richloc (token->location);
+		  richloc.add_fixit_remove ();
+		  error_at_rich_loc (&richloc, "stray %<,%> at end of "
+				     "member declaration");
 		}
 	    }
 	  /* If the next token isn't a `;', then we have a parse error.  */
@@ -23438,8 +23475,10 @@ cp_parser_member_declaration (cp_parser* parser)
 		 actual semicolon is missing.  Find the previous token
 		 and use that for our error position.  */
 	      cp_token *token = cp_lexer_previous_token (parser->lexer);
-	      error_at (token->location,
-			"expected %<;%> at end of member declaration");
+	      gcc_rich_location richloc (token->location);
+	      richloc.add_fixit_insert_after (";");
+	      error_at_rich_loc (&richloc, "expected %<;%> at end of "
+				 "member declaration");
 
 	      /* Assume that the user meant to provide a semicolon.  If
 		 we were to cp_parser_skip_to_end_of_statement, we might
@@ -24846,8 +24885,12 @@ cp_parser_std_attribute_list (cp_parser *parser, tree attr_ns)
 	    error_at (token->location,
 		      "expected attribute before %<...%>");
 	  else
-	    TREE_VALUE (attribute)
-	      = make_pack_expansion (TREE_VALUE (attribute));
+	    {
+	      tree pack = make_pack_expansion (TREE_VALUE (attribute));
+	      if (pack == error_mark_node)
+		return error_mark_node;
+	      TREE_VALUE (attribute) = pack;
+	    }
 	  token = cp_lexer_peek_token (parser->lexer);
 	}
       if (token->type != CPP_COMMA)
@@ -27665,7 +27708,11 @@ set_and_check_decl_spec_loc (cp_decl_specifier_seq *decl_specs,
 	    error_at (location,
 		      "both %<__thread%> and %<thread_local%> specified");
 	  else
-	    error_at (location, "duplicate %qD", token->u.value);
+	    {
+	      gcc_rich_location richloc (location);
+	      richloc.add_fixit_remove ();
+	      error_at_rich_loc (&richloc, "duplicate %qD", token->u.value);
+	    }
 	}
       else
 	{
@@ -27686,8 +27733,9 @@ set_and_check_decl_spec_loc (cp_decl_specifier_seq *decl_specs,
             "constexpr",
 	    "__complex"
 	  };
-	  error_at (location,
-		    "duplicate %qs", decl_spec_names[ds]);
+	  gcc_rich_location richloc (location);
+	  richloc.add_fixit_remove ();
+	  error_at_rich_loc (&richloc, "duplicate %qs", decl_spec_names[ds]);
 	}
     }
 }
@@ -38745,16 +38793,6 @@ make_generic_type_name ()
   char buf[32];
   sprintf (buf, "auto:%d", ++generic_parm_count);
   return get_identifier (buf);
-}
-
-/* Predicate that behaves as is_auto_or_concept but matches the parent
-   node of the generic type rather than the generic type itself.  This
-   allows for type transformation in add_implicit_template_parms.  */
-
-static inline bool
-tree_type_is_auto_or_concept (const_tree t)
-{
-  return TREE_TYPE (t) && is_auto_or_concept (TREE_TYPE (t));
 }
 
 /* Add an implicit template type parameter to the CURRENT_TEMPLATE_PARMS

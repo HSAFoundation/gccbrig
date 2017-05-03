@@ -4677,7 +4677,7 @@ enum cp_lvalue_kind_flags {
   clk_none = 0,     /* Things that are not an lvalue.  */
   clk_ordinary = 1, /* An ordinary lvalue.  */
   clk_rvalueref = 2,/* An xvalue (rvalue formed using an rvalue reference) */
-  clk_class = 4,    /* A prvalue of class-type.  */
+  clk_class = 4,    /* A prvalue of class or array type.  */
   clk_bitfield = 8, /* An lvalue for a bit-field.  */
   clk_packed = 16   /* An lvalue for a packed field.  */
 };
@@ -5860,7 +5860,7 @@ extern bool move_fn_p                           (const_tree);
 extern bool move_signature_fn_p                 (const_tree);
 extern tree get_scope_of_declarator		(const cp_declarator *);
 extern void grok_special_member_properties	(tree);
-extern int grok_ctor_properties			(const_tree, const_tree);
+extern bool grok_ctor_properties		(const_tree, const_tree);
 extern bool grok_op_properties			(tree, bool);
 extern tree xref_tag				(enum tag_types, tree, tag_scope, bool);
 extern tree xref_tag_from_type			(tree, tree, tag_scope);
@@ -6081,8 +6081,8 @@ extern tree unqualified_fn_lookup_error		(cp_expr);
 extern tree build_lang_decl			(enum tree_code, tree, tree);
 extern tree build_lang_decl_loc			(location_t, enum tree_code, tree, tree);
 extern void retrofit_lang_decl			(tree);
-extern tree copy_decl				(tree);
-extern tree copy_type				(tree);
+extern tree copy_decl				(tree CXX_MEM_STAT_INFO);
+extern tree copy_type				(tree CXX_MEM_STAT_INFO);
 extern tree cxx_make_type			(enum tree_code);
 extern tree make_class_type			(enum tree_code);
 extern bool cxx_init				(void);
@@ -6161,7 +6161,6 @@ extern void append_type_to_template_for_access_check (tree, tree, tree,
 extern tree convert_generic_types_to_packs	(tree, int, int);
 extern tree splice_late_return_type		(tree, tree);
 extern bool is_auto				(const_tree);
-extern bool is_auto_or_concept			(const_tree);
 extern tree process_template_parm		(tree, location_t, tree, 
 						 bool, bool);
 extern tree end_template_parm_list		(tree);

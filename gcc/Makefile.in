@@ -517,12 +517,8 @@ CROSS_SYSTEM_HEADER_DIR = @CROSS_SYSTEM_HEADER_DIR@
 # macro is also used in a double-quoted context.
 SYSTEM_HEADER_DIR = `echo @SYSTEM_HEADER_DIR@ | sed -e :a -e 's,[^/]*/\.\.\/,,' -e ta`
 
-# Path to the system headers on the build machine
-ifeq ($(build),$(host))
-BUILD_SYSTEM_HEADER_DIR = $(SYSTEM_HEADER_DIR)
-else
-BUILD_SYSTEM_HEADER_DIR = `echo $(CROSS_SYSTEM_HEADER_DIR) | sed -e :a -e 's,[^/]*/\.\.\/,,' -e ta`
-endif
+# Path to the system headers on the build machine.
+BUILD_SYSTEM_HEADER_DIR = `echo @BUILD_SYSTEM_HEADER_DIR@ | sed -e :a -e 's,[^/]*/\.\.\/,,' -e ta`
 
 # Control whether to run fixincludes.
 STMP_FIXINC = @STMP_FIXINC@
@@ -2146,6 +2142,7 @@ s-specs : Makefile
 
 optionlist: s-options ; @true
 s-options: $(ALL_OPT_FILES) Makefile $(srcdir)/opt-gather.awk
+	LC_ALL=C ; export LC_ALL ; \
 	$(AWK) -f $(srcdir)/opt-gather.awk $(ALL_OPT_FILES) > tmp-optionlist
 	$(SHELL) $(srcdir)/../move-if-change tmp-optionlist optionlist
 	$(STAMP) s-options

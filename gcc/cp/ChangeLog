@@ -1,3 +1,156 @@
+2017-05-02  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* pt.c (is_auto_or_concept): Remove.
+	(type_uses_auto_or_concept): Remove, unused.
+	(find_parameter_packs_r, extract_autos_r, is_auto_r): Adjust.
+	* parser.c (tree_type_is_auto_or_concept): Remove, unused.
+	* cp-tree.h (is_auto_or_concept): Remove.
+
+2017-05-01  Xi Ruoyao  <ryxi@stu.xidian.edu.cn>
+
+        PR c++/80038
+	* cp-cilkplus.c (cilk_install_body_with_frame_cleanup): Don't
+	add pedigree operation and detach call here.
+	* cp-gimplify.c (cp_gimplify_expr): Remove the calls to
+	cilk_cp_gimplify_call_params_in_spawned_fn.
+	(cilk_cp_gimplify_call_params_in_spawned_fn): Remove function.
+	* semantics.c (simplify_aggr_init_expr): Copy EXPR_CILK_SPAWN.
+
+2017-04-29  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_member_declaration): Add fix-it hints for
+	stray comma and missing semicolon at end of member declaration.
+
+2017-04-27  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_cast_expression): Add target type of cast to
+	diagnostic.
+	* error.c (type_to_string): Add '{enum}' suffix to enumeration types.
+
+2017-04-26  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* decl.c (grok_ctor_properties, ambi_op_p, unary_op_p): Change
+	return type to bool.
+	* cp-tree.h (grok_ctor_properties): Update.
+
+2017-04-26  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_nested_name_specifier_opt): Add fix-it
+	information to diagnostic of invalid colon in nested-name-specifier.
+
+2017-04-25  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_elaborated_type_specifier): Add fix-it to
+	diagnostic of invalid class/struct keyword after enum.
+
+2017-04-25  David Malcolm  <dmalcolm@redhat.com>
+
+	* parser.c (cp_parser_member_declaration): Add fix-it hint
+	for removing stray semicolons.
+
+2017-04-25  David Malcolm  <dmalcolm@redhat.com>
+
+	* name-lookup.c (get_std_name_hint): New function.
+	(maybe_suggest_missing_header): New function.
+	(suggest_alternative_in_explicit_scope): Call
+	maybe_suggest_missing_header.
+
+2017-04-25  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/80177
+	* name-lookup.c (suggest_alternative_in_explicit_scope): Convert
+	candidate type of bm from tree to const char *.
+	(consider_binding_level): Likewise.
+	(lookup_name_fuzzy): Likewise, using this to merge the best
+	result from the preprocessor into bm, rather than immediately
+	returning, so that better matches from reserved words can "win".
+	Guard the rejection of keywords that don't start decl-specifiers
+	so it only happens for FUZZY_LOOKUP_TYPENAME.
+
+2017-04-24  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* decl.c (grokdeclarator): Use %qT instead of %<%T%> in diagnostics.
+	(start_enum): Likewise.
+	(build_enumerator): Likewise. Use %qE instead of plain %E.
+	* parser.c (cp_parser_mem_initializer_list): Use %qD instead of
+	%<%D%> in diagnostics.
+	(cp_parser_elaborated_type_specifier): Likewise.
+	* pt.c (make_pack_expansion): Use %qT and %qE instead of
+	%<%T%> and %<%E%> in diagnostics.
+	(tsubst_pack_expansion): Likewise.
+
+2017-04-24  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/80016
+	* parser.c (cp_parser_unary_expression):  Generate a location
+	range for alignof and sizeof expressions.
+
+2017-04-24  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_cv_qualifier_seq_opt): Add fix-it info to
+	error message.
+	(cp_parser_virt_specifier_seq_opt): Likewise.
+	(set_and_check_decl_spec_loc): Likewise twice.
+
+2017-04-21  Jason Merrill  <jason@redhat.com>
+
+	PR c++/80179 - ICE with initialized flexible array member.
+	* constexpr.c (verify_ctor_sanity): Handle flexible array members.
+
+2017-04-21  Richard Biener  <rguenther@suse.de>
+
+	* cp-tree.h (copy_decl): Annotate with CXX_MEM_STAT_INFO.
+	(copy_type): Likewise.
+	* lex.c (copy_decl): Pass down mem-stat info.
+	(copy_type): Likewise.
+
+2017-04-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR c++/80473
+	* init.c (build_new_1): Suppress notes about over-aligned new when
+	the warning is suppressed.
+
+2017-04-20  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* parser.c (cp_parser_member_declaration): Add warning with fixit
+	information for extra semicolon after in-class function definition.
+
+2017-04-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/80423
+	* tree.c (build_cplus_array_type): Call build_array_type
+	with the intended TYPE_TYPELESS_STORAGE flag value, instead
+	of calling build_array_type and modifying later TYPE_TYPELESS_STORAGE
+	on the shared type.
+
+2017-04-18  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/80244 - ICE with attribute in template alias.
+	* tree.c (strip_typedefs): Handle UNDERLYING_TYPE.
+
+	PR c++/80241 - ICE with alignas pack expansion.
+	* error.c (dump_expr): Handle TREE_LIST.
+	* parser.c (cp_parser_std_attribute_list): Return error_mark if
+	make_pack_expansion returns an error.
+
+2017-04-17  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	PR c++/80287
+	* class.c (fixup_may_alias): Fix all type variants.
+
+2017-04-17  Jason Merrill  <jason@redhat.com>
+
+	PR c++/80415 - wrong error with default arg and array reference.
+	* tree.c (lvalue_kind): Return clk_class for an array prvalue.
+
+	* pt.c (tsubst_init): Set TARGET_EXPR_DIRECT_INIT_P.
+
+2017-04-15  Alexandre Oliva <aoliva@redhat.com>
+
+	* decl.c (name_unnamed_type): Split out of...
+	(grokdeclarator): ... this.
+	* decl.h (name_unnamed_type): Declare.
+
 2017-04-12  Richard Biener  <rguenther@suse.de>
 	Bernd Edlinger  <bernd.edlinger@hotmail.de>
 

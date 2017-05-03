@@ -89,6 +89,21 @@ static tree vrp_evaluate_conditional_warnv_with_ops (enum tree_code,
 						     tree, tree, bool, bool *,
 						     bool *);
 
+struct assert_info
+{
+  /* Predicate code for the ASSERT_EXPR.  Must be COMPARISON_CLASS_P.  */
+  enum tree_code comp_code;
+
+  /* Name to register the assert for.  */
+  tree name;
+
+  /* Value being compared against.  */
+  tree val;
+
+  /* Expression to compare.  */
+  tree expr;
+};
+
 /* Location information for ASSERT_EXPRs.  Each instance of this
    structure describes an ASSERT_EXPR for an SSA name.  Since a single
    SSA name may have more than one assertion associated with it, these
@@ -2461,7 +2476,20 @@ extract_range_from_binary_expr_1 (value_range *vr,
 	  else if (min_op0)
 	    wmin = min_op0;
 	  else if (min_op1)
-	    wmin = minus_p ? wi::neg (min_op1) : min_op1;
+	    {
+	      if (minus_p)
+		{
+		  wmin = wi::neg (min_op1);
+
+		  /* Check for overflow.  */
+		  if (sgn == SIGNED && wi::neg_p (min_op1) && wi::neg_p (wmin))
+		    min_ovf = 1;
+		  else if (sgn == UNSIGNED && wi::ne_p (min_op1, 0))
+		    min_ovf = -1;
+		}
+	      else
+		wmin = min_op1;
+	    }
 	  else
 	    wmin = wi::shwi (0, prec);
 
@@ -2489,7 +2517,20 @@ extract_range_from_binary_expr_1 (value_range *vr,
 	  else if (max_op0)
 	    wmax = max_op0;
 	  else if (max_op1)
-	    wmax = minus_p ? wi::neg (max_op1) : max_op1;
+	    {
+	      if (minus_p)
+		{
+		  wmax = wi::neg (max_op1);
+
+		  /* Check for overflow.  */
+		  if (sgn == SIGNED && wi::neg_p (max_op1) && wi::neg_p (wmax))
+		    max_ovf = 1;
+		  else if (sgn == UNSIGNED && wi::ne_p (max_op1, 0))
+		    max_ovf = -1;
+		}
+	      else
+		wmax = max_op1;
+	    }
 	  else
 	    wmax = wi::shwi (0, prec);
 
@@ -5003,6 +5044,19 @@ debug_all_asserts (void)
   dump_all_asserts (stderr);
 }
 
+/* Push the assert info for NAME, EXPR, COMP_CODE and VAL to ASSERTS.  */
+
+static void
+add_assert_info (vec<assert_info> &asserts,
+		 tree name, tree expr, enum tree_code comp_code, tree val)
+{
+  assert_info info;
+  info.comp_code = comp_code;
+  info.name = name;
+  info.val = val;
+  info.expr = expr;
+  asserts.safe_push (info);
+}
 
 /* If NAME doesn't have an ASSERT_EXPR registered for asserting
    'EXPR COMP_CODE VAL' at a location that dominates block BB or
@@ -5331,9 +5385,10 @@ overflow_comparison_p (tree_code code, tree name, tree val,
    Invert the condition COND if INVERT is true.  */
 
 static void
-register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
+register_edge_assert_for_2 (tree name, edge e,
 			    enum tree_code cond_code,
-			    tree cond_op0, tree cond_op1, bool invert)
+			    tree cond_op0, tree cond_op1, bool invert,
+			    vec<assert_info> &asserts)
 {
   tree val;
   enum tree_code comp_code;
@@ -5344,20 +5399,15 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 						invert, &comp_code, &val))
     return;
 
-  /* Only register an ASSERT_EXPR if NAME was found in the sub-graph
-     reachable from E.  */
-  if (live_on_edge (e, name))
+  /* Queue the assert.  */
+  tree x;
+  if (overflow_comparison_p (comp_code, name, val, false, &x))
     {
-      tree x;
-      if (overflow_comparison_p (comp_code, name, val, false, &x))
-	{
-	  enum tree_code new_code
-	    = ((comp_code == GT_EXPR || comp_code == GE_EXPR)
-	       ? GT_EXPR : LE_EXPR);
-	  register_new_assert_for (name, name, new_code, x, NULL, e, bsi);
-	}
-      register_new_assert_for (name, name, comp_code, val, NULL, e, bsi);
+      enum tree_code new_code = ((comp_code == GT_EXPR || comp_code == GE_EXPR)
+				 ? GT_EXPR : LE_EXPR);
+      add_assert_info (asserts, name, name, new_code, x);
     }
+  add_assert_info (asserts, name, name, comp_code, val);
 
   /* In the case of NAME <= CST and NAME being defined as
      NAME = (unsigned) NAME2 + CST2 we can assert NAME2 >= -CST2
@@ -5397,8 +5447,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
       	  && TREE_CODE (name3) == SSA_NAME
 	  && (cst2 == NULL_TREE
 	      || TREE_CODE (cst2) == INTEGER_CST)
-	  && INTEGRAL_TYPE_P (TREE_TYPE (name3))
-	  && live_on_edge (e, name3))
+	  && INTEGRAL_TYPE_P (TREE_TYPE (name3)))
 	{
 	  tree tmp;
 
@@ -5416,15 +5465,14 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      fprintf (dump_file, "\n");
 	    }
 
-	  register_new_assert_for (name3, tmp, comp_code, val, NULL, e, bsi);
+	  add_assert_info (asserts, name3, tmp, comp_code, val);
 	}
 
       /* If name2 is used later, create an ASSERT_EXPR for it.  */
       if (name2 != NULL_TREE
       	  && TREE_CODE (name2) == SSA_NAME
 	  && TREE_CODE (cst2) == INTEGER_CST
-	  && INTEGRAL_TYPE_P (TREE_TYPE (name2))
-	  && live_on_edge (e, name2))
+	  && INTEGRAL_TYPE_P (TREE_TYPE (name2)))
 	{
 	  tree tmp;
 
@@ -5444,7 +5492,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      fprintf (dump_file, "\n");
 	    }
 
-	  register_new_assert_for (name2, tmp, comp_code, val, NULL, e, bsi);
+	  add_assert_info (asserts, name2, tmp, comp_code, val);
 	}
     }
 
@@ -5470,8 +5518,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	    continue;
 
 	  tree name2 = gimple_assign_lhs (use_stmt);
-	  if (TREE_CODE (name2) != SSA_NAME
-	      || !live_on_edge (e, name2))
+	  if (TREE_CODE (name2) != SSA_NAME)
 	    continue;
 
 	  enum tree_code code = gimple_assign_rhs_code (use_stmt);
@@ -5499,8 +5546,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 
 	  if (TREE_OVERFLOW_P (cst))
 	    cst = drop_tree_overflow (cst);
-	  register_new_assert_for (name2, name2, comp_code, cst,
-				   NULL, e, bsi);
+	  add_assert_info (asserts, name2, name2, comp_code, cst);
 	}
     }
  
@@ -5526,15 +5572,14 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	  tree op0 = gimple_assign_rhs1 (def_stmt);
 	  tree op1 = gimple_assign_rhs2 (def_stmt);
 	  if (TREE_CODE (op0) == SSA_NAME
-	      && TREE_CODE (op1) == INTEGER_CST
-	      && live_on_edge (e, op0))
+	      && TREE_CODE (op1) == INTEGER_CST)
 	    {
 	      enum tree_code reverse_op = (rhs_code == PLUS_EXPR
 					   ? MINUS_EXPR : PLUS_EXPR);
 	      op1 = int_const_binop (reverse_op, val, op1);
 	      if (TREE_OVERFLOW (op1))
 		op1 = drop_tree_overflow (op1);
-	      register_new_assert_for (op0, op0, comp_code, op1, NULL, e, bsi);
+	      add_assert_info (asserts, op0, op0, comp_code, op1);
 	    }
 	}
 
@@ -5552,8 +5597,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      && prec == TYPE_PRECISION (TREE_TYPE (name2))
 	      && (comp_code == LE_EXPR || comp_code == GT_EXPR
 		  || !tree_int_cst_equal (val,
-					  TYPE_MIN_VALUE (TREE_TYPE (val))))
-	      && live_on_edge (e, name2))
+					  TYPE_MIN_VALUE (TREE_TYPE (val)))))
 	    {
 	      tree tmp, cst;
 	      enum tree_code new_comp_code = comp_code;
@@ -5580,8 +5624,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 		  fprintf (dump_file, "\n");
 		}
 
-	      register_new_assert_for (name2, tmp, new_comp_code, cst, NULL,
-				       e, bsi);
+	      add_assert_info (asserts, name2, tmp, new_comp_code, cst);
 	    }
 	}
 
@@ -5597,8 +5640,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 	      && tree_fits_uhwi_p (cst2)
 	      && INTEGRAL_TYPE_P (TREE_TYPE (name2))
 	      && IN_RANGE (tree_to_uhwi (cst2), 1, prec - 1)
-	      && prec == GET_MODE_PRECISION (TYPE_MODE (TREE_TYPE (val)))
-	      && live_on_edge (e, name2))
+	      && prec == GET_MODE_PRECISION (TYPE_MODE (TREE_TYPE (val))))
 	    {
 	      mask = wi::mask (tree_to_uhwi (cst2), false, prec);
 	      val2 = fold_binary (LSHIFT_EXPR, TREE_TYPE (val), val, cst2);
@@ -5656,8 +5698,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 		  fprintf (dump_file, "\n");
 		}
 
-	      register_new_assert_for (name2, tmp, new_comp_code, new_val,
-				       NULL, e, bsi);
+	      add_assert_info (asserts, name2, tmp, new_comp_code, new_val);
 	    }
 	}
 
@@ -5702,12 +5743,10 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 		  if (!CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (def_stmt2))
 		      || !INTEGRAL_TYPE_P (TREE_TYPE (names[1]))
 		      || (TYPE_PRECISION (TREE_TYPE (name2))
-			  != TYPE_PRECISION (TREE_TYPE (names[1])))
-		      || !live_on_edge (e, names[1]))
+			  != TYPE_PRECISION (TREE_TYPE (names[1]))))
 		    names[1] = NULL_TREE;
 		}
-	      if (live_on_edge (e, name2))
-		names[0] = name2;
+	      names[0] = name2;
 	    }
 	}
       if (names[0] || names[1])
@@ -5898,8 +5937,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 			fprintf (dump_file, "\n");
 		      }
 
-		    register_new_assert_for (names[i], tmp, LE_EXPR,
-					     new_val, NULL, e, bsi);
+		    add_assert_info (asserts, names[i], tmp, LE_EXPR, new_val);
 		  }
 	    }
 	}
@@ -5915,7 +5953,7 @@ register_edge_assert_for_2 (tree name, edge e, gimple_stmt_iterator bsi,
 
 static void
 register_edge_assert_for_1 (tree op, enum tree_code code,
-			    edge e, gimple_stmt_iterator bsi)
+			    edge e, vec<assert_info> &asserts)
 {
   gimple *op_def;
   tree val;
@@ -5925,13 +5963,9 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
   if (TREE_CODE (op) != SSA_NAME)
     return;
 
-  /* We know that OP will have a zero or nonzero value.  If OP is used
-     more than once go ahead and register an assert for OP.  */
-  if (live_on_edge (e, op))
-    {
-      val = build_int_cst (TREE_TYPE (op), 0);
-      register_new_assert_for (op, op, code, val, NULL, e, bsi);
-    }
+  /* We know that OP will have a zero or nonzero value.  */
+  val = build_int_cst (TREE_TYPE (op), 0);
+  add_assert_info (asserts, op, op, code, val);
 
   /* Now look at how OP is set.  If it's set from a comparison,
      a truth operation or some bit operations, then we may be able
@@ -5949,9 +5983,9 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
       tree op1 = gimple_assign_rhs2 (op_def);
 
       if (TREE_CODE (op0) == SSA_NAME)
-        register_edge_assert_for_2 (op0, e, bsi, rhs_code, op0, op1, invert);
+        register_edge_assert_for_2 (op0, e, rhs_code, op0, op1, invert, asserts);
       if (TREE_CODE (op1) == SSA_NAME)
-        register_edge_assert_for_2 (op1, e, bsi, rhs_code, op0, op1, invert);
+        register_edge_assert_for_2 (op1, e, rhs_code, op0, op1, invert, asserts);
     }
   else if ((code == NE_EXPR
 	    && gimple_assign_rhs_code (op_def) == BIT_AND_EXPR)
@@ -5963,22 +5997,22 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
       tree op1 = gimple_assign_rhs2 (op_def);
       if (TREE_CODE (op0) == SSA_NAME
 	  && has_single_use (op0))
-	register_edge_assert_for_1 (op0, code, e, bsi);
+	register_edge_assert_for_1 (op0, code, e, asserts);
       if (TREE_CODE (op1) == SSA_NAME
 	  && has_single_use (op1))
-	register_edge_assert_for_1 (op1, code, e, bsi);
+	register_edge_assert_for_1 (op1, code, e, asserts);
     }
   else if (gimple_assign_rhs_code (op_def) == BIT_NOT_EXPR
 	   && TYPE_PRECISION (TREE_TYPE (gimple_assign_lhs (op_def))) == 1)
     {
       /* Recurse, flipping CODE.  */
       code = invert_tree_comparison (code, false);
-      register_edge_assert_for_1 (gimple_assign_rhs1 (op_def), code, e, bsi);
+      register_edge_assert_for_1 (gimple_assign_rhs1 (op_def), code, e, asserts);
     }
   else if (gimple_assign_rhs_code (op_def) == SSA_NAME)
     {
       /* Recurse through the copy.  */
-      register_edge_assert_for_1 (gimple_assign_rhs1 (op_def), code, e, bsi);
+      register_edge_assert_for_1 (gimple_assign_rhs1 (op_def), code, e, asserts);
     }
   else if (CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (op_def)))
     {
@@ -5988,7 +6022,7 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
       if (INTEGRAL_TYPE_P (TREE_TYPE (rhs))
 	  && (TYPE_PRECISION (TREE_TYPE (rhs))
 	      <= TYPE_PRECISION (TREE_TYPE (op))))
-	register_edge_assert_for_1 (rhs, code, e, bsi);
+	register_edge_assert_for_1 (rhs, code, e, asserts);
     }
 }
 
@@ -5997,9 +6031,9 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
    SI.  */
 
 static void
-register_edge_assert_for (tree name, edge e, gimple_stmt_iterator si,
+register_edge_assert_for (tree name, edge e,
 			  enum tree_code cond_code, tree cond_op0,
-			  tree cond_op1)
+			  tree cond_op1, vec<assert_info> &asserts)
 {
   tree val;
   enum tree_code comp_code;
@@ -6017,8 +6051,8 @@ register_edge_assert_for (tree name, edge e, gimple_stmt_iterator si,
     return;
 
   /* Register ASSERT_EXPRs for name.  */
-  register_edge_assert_for_2 (name, e, si, cond_code, cond_op0,
-			      cond_op1, is_else_edge);
+  register_edge_assert_for_2 (name, e, cond_code, cond_op0,
+			      cond_op1, is_else_edge, asserts);
 
 
   /* If COND is effectively an equality test of an SSA_NAME against
@@ -6038,8 +6072,8 @@ register_edge_assert_for (tree name, edge e, gimple_stmt_iterator si,
 	{
 	  tree op0 = gimple_assign_rhs1 (def_stmt);
 	  tree op1 = gimple_assign_rhs2 (def_stmt);
-	  register_edge_assert_for_1 (op0, NE_EXPR, e, si);
-	  register_edge_assert_for_1 (op1, NE_EXPR, e, si);
+	  register_edge_assert_for_1 (op0, NE_EXPR, e, asserts);
+	  register_edge_assert_for_1 (op1, NE_EXPR, e, asserts);
 	}
     }
 
@@ -6060,11 +6094,27 @@ register_edge_assert_for (tree name, edge e, gimple_stmt_iterator si,
 	{
 	  tree op0 = gimple_assign_rhs1 (def_stmt);
 	  tree op1 = gimple_assign_rhs2 (def_stmt);
-	  register_edge_assert_for_1 (op0, EQ_EXPR, e, si);
-	  register_edge_assert_for_1 (op1, EQ_EXPR, e, si);
+	  register_edge_assert_for_1 (op0, EQ_EXPR, e, asserts);
+	  register_edge_assert_for_1 (op1, EQ_EXPR, e, asserts);
 	}
     }
 }
+
+/* Finish found ASSERTS for E and register them at GSI.  */
+
+static void
+finish_register_edge_assert_for (edge e, gimple_stmt_iterator gsi,
+				 vec<assert_info> &asserts)
+{
+  for (unsigned i = 0; i < asserts.length (); ++i)
+    /* Only register an ASSERT_EXPR if NAME was found in the sub-graph
+       reachable from E.  */
+    if (live_on_edge (e, asserts[i].name))
+      register_new_assert_for (asserts[i].name, asserts[i].expr,
+			       asserts[i].comp_code, asserts[i].val,
+			       NULL, e, gsi);
+}
+
 
 
 /* Determine whether the outgoing edges of BB should receive an
@@ -6097,11 +6147,13 @@ find_conditional_asserts (basic_block bb, gcond *last)
 
       /* Register the necessary assertions for each operand in the
 	 conditional predicate.  */
+      auto_vec<assert_info, 8> asserts;
       FOR_EACH_SSA_TREE_OPERAND (op, last, iter, SSA_OP_USE)
-	register_edge_assert_for (op, e, bsi,
+	register_edge_assert_for (op, e,
 				  gimple_cond_code (last),
 				  gimple_cond_lhs (last),
-				  gimple_cond_rhs (last));
+				  gimple_cond_rhs (last), asserts);
+      finish_register_edge_assert_for (e, bsi, asserts);
     }
 }
 
@@ -6213,12 +6265,16 @@ find_switch_asserts (basic_block bb, gswitch *last)
 
       /* Register the necessary assertions for the operand in the
 	 SWITCH_EXPR.  */
-      register_edge_assert_for (op, e, bsi,
+      auto_vec<assert_info, 8> asserts;
+      register_edge_assert_for (op, e,
 				max ? GE_EXPR : EQ_EXPR,
-				op, fold_convert (TREE_TYPE (op), min));
+				op, fold_convert (TREE_TYPE (op), min),
+				asserts);
       if (max)
-	register_edge_assert_for (op, e, bsi, LE_EXPR, op,
-				  fold_convert (TREE_TYPE (op), max));
+	register_edge_assert_for (op, e, LE_EXPR, op,
+				  fold_convert (TREE_TYPE (op), max),
+				  asserts);
+      finish_register_edge_assert_for (e, bsi, asserts);
     }
 
   XDELETEVEC (ci);
@@ -6267,8 +6323,11 @@ find_switch_asserts (basic_block bb, gswitch *last)
       if (max == NULL_TREE)
 	{
 	  /* Register the assertion OP != MIN.  */
+	  auto_vec<assert_info, 8> asserts;
 	  min = fold_convert (TREE_TYPE (op), min);
-	  register_edge_assert_for (op, default_edge, bsi, NE_EXPR, op, min);
+	  register_edge_assert_for (op, default_edge, NE_EXPR, op, min,
+				    asserts);
+	  finish_register_edge_assert_for (default_edge, bsi, asserts);
 	}
       else
 	{
@@ -8756,20 +8815,32 @@ intersect_ranges (enum value_range_type *vr0type,
 	  /* Choose the right gap if the left one is empty.  */
 	  if (mineq)
 	    {
-	      if (TREE_CODE (vr1max) == INTEGER_CST)
-		*vr0min = int_const_binop (PLUS_EXPR, vr1max,
-					   build_int_cst (TREE_TYPE (vr1max), 1));
-	      else
+	      if (TREE_CODE (vr1max) != INTEGER_CST)
 		*vr0min = vr1max;
+	      else if (TYPE_PRECISION (TREE_TYPE (vr1max)) == 1
+		       && !TYPE_UNSIGNED (TREE_TYPE (vr1max)))
+		*vr0min
+		  = int_const_binop (MINUS_EXPR, vr1max,
+				     build_int_cst (TREE_TYPE (vr1max), -1));
+	      else
+		*vr0min
+		  = int_const_binop (PLUS_EXPR, vr1max,
+				     build_int_cst (TREE_TYPE (vr1max), 1));
 	    }
 	  /* Choose the left gap if the right one is empty.  */
 	  else if (maxeq)
 	    {
-	      if (TREE_CODE (vr1min) == INTEGER_CST)
-		*vr0max = int_const_binop (MINUS_EXPR, vr1min,
-					   build_int_cst (TREE_TYPE (vr1min), 1));
-	      else
+	      if (TREE_CODE (vr1min) != INTEGER_CST)
 		*vr0max = vr1min;
+	      else if (TYPE_PRECISION (TREE_TYPE (vr1min)) == 1
+		       && !TYPE_UNSIGNED (TREE_TYPE (vr1min)))
+		*vr0max
+		  = int_const_binop (PLUS_EXPR, vr1min,
+				     build_int_cst (TREE_TYPE (vr1min), -1));
+	      else
+		*vr0max
+		  = int_const_binop (MINUS_EXPR, vr1min,
+				     build_int_cst (TREE_TYPE (vr1min), 1));
 	    }
 	  /* Choose the anti-range if the range is effectively varying.  */
 	  else if (vrp_val_is_min (*vr0min)
@@ -8811,22 +8882,34 @@ intersect_ranges (enum value_range_type *vr0type,
 	  if (mineq)
 	    {
 	      *vr0type = VR_RANGE;
-	      if (TREE_CODE (*vr0max) == INTEGER_CST)
-		*vr0min = int_const_binop (PLUS_EXPR, *vr0max,
-					   build_int_cst (TREE_TYPE (*vr0max), 1));
-	      else
+	      if (TREE_CODE (*vr0max) != INTEGER_CST)
 		*vr0min = *vr0max;
+	      else if (TYPE_PRECISION (TREE_TYPE (*vr0max)) == 1
+		       && !TYPE_UNSIGNED (TREE_TYPE (*vr0max)))
+		*vr0min
+		  = int_const_binop (MINUS_EXPR, *vr0max,
+				     build_int_cst (TREE_TYPE (*vr0max), -1));
+	      else
+		*vr0min
+		  = int_const_binop (PLUS_EXPR, *vr0max,
+				     build_int_cst (TREE_TYPE (*vr0max), 1));
 	      *vr0max = vr1max;
 	    }
 	  /* Choose the left gap if the right is empty.  */
 	  else if (maxeq)
 	    {
 	      *vr0type = VR_RANGE;
-	      if (TREE_CODE (*vr0min) == INTEGER_CST)
-		*vr0max = int_const_binop (MINUS_EXPR, *vr0min,
-					   build_int_cst (TREE_TYPE (*vr0min), 1));
-	      else
+	      if (TREE_CODE (*vr0min) != INTEGER_CST)
 		*vr0max = *vr0min;
+	      else if (TYPE_PRECISION (TREE_TYPE (*vr0min)) == 1
+		       && !TYPE_UNSIGNED (TREE_TYPE (*vr0min)))
+		*vr0max
+		  = int_const_binop (PLUS_EXPR, *vr0min,
+				     build_int_cst (TREE_TYPE (*vr0min), -1));
+	      else
+		*vr0max
+		  = int_const_binop (MINUS_EXPR, *vr0min,
+				     build_int_cst (TREE_TYPE (*vr0min), 1));
 	      *vr0min = vr1min;
 	    }
 	  /* Choose the anti-range if the range is effectively varying.  */
@@ -11110,7 +11193,7 @@ public:
   virtual void after_dom_children (basic_block);
   void push_value_range (tree var, value_range *vr);
   value_range *pop_value_range (tree var);
-  value_range *try_find_new_range (tree op, tree_code code, tree limit);
+  value_range *try_find_new_range (tree, tree op, tree_code code, tree limit);
 
   /* Cond_stack holds the old VR.  */
   auto_vec<std::pair <tree, value_range*> > stack;
@@ -11119,19 +11202,18 @@ public:
   auto_vec<gimple *> stmts_to_remove;
 };
 
-/*  Find new range for OP such that (OP CODE LIMIT) is true.  */
+/*  Find new range for NAME such that (OP CODE LIMIT) is true.  */
 
 value_range *
-evrp_dom_walker::try_find_new_range (tree op, tree_code code, tree limit)
+evrp_dom_walker::try_find_new_range (tree name,
+				     tree op, tree_code code, tree limit)
 {
   value_range vr = VR_INITIALIZER;
-  value_range *old_vr = get_value_range (op);
+  value_range *old_vr = get_value_range (name);
 
   /* Discover VR when condition is true.  */
-  extract_range_for_var_from_comparison_expr (op, code, op,
+  extract_range_for_var_from_comparison_expr (name, code, op,
 					      limit, &vr);
-  if (old_vr->type == VR_RANGE || old_vr->type == VR_ANTI_RANGE)
-    vrp_intersect_ranges (&vr, old_vr);
   /* If we found any usable VR, set the VR to ssa_name and create a
      PUSH old value in the stack with the old VR.  */
   if (vr.type == VR_RANGE || vr.type == VR_ANTI_RANGE)
@@ -11195,36 +11277,29 @@ evrp_dom_walker::before_dom_children (basic_block bb)
 	  /* Entering a new scope.  Try to see if we can find a VR
 	     here.  */
 	  tree op1 = gimple_cond_rhs (stmt);
-	  tree_code code = gimple_cond_code (stmt);
-
 	  if (TREE_OVERFLOW_P (op1))
 	    op1 = drop_tree_overflow (op1);
+	  tree_code code = gimple_cond_code (stmt);
 
-	  /* If condition is false, invert the cond.  */
-	  if (pred_e->flags & EDGE_FALSE_VALUE)
-	    code = invert_tree_comparison (gimple_cond_code (stmt),
-					   HONOR_NANS (op0));
-	  /* Add VR when (OP0 CODE OP1) condition is true.  */
-	  value_range *op0_range = try_find_new_range (op0, code, op1);
+	  auto_vec<assert_info, 8> asserts;
+	  register_edge_assert_for (op0, pred_e, code, op0, op1, asserts);
+	  if (TREE_CODE (op1) == SSA_NAME)
+	    register_edge_assert_for (op1, pred_e, code, op0, op1, asserts);
 
-	  /* Register ranges for y in x < y where
-	     y might have ranges that are useful.  */
-	  tree limit;
-	  tree_code new_code;
-	  if (TREE_CODE (op1) == SSA_NAME
-	      && extract_code_and_val_from_cond_with_ops (op1, code,
-							  op0, op1,
-							  false,
-							  &new_code, &limit))
+	  auto_vec<std::pair<tree, value_range *>, 8> vrs;
+	  for (unsigned i = 0; i < asserts.length (); ++i)
 	    {
-	      /* Add VR when (OP1 NEW_CODE LIMIT) condition is true.  */
-	      value_range *op1_range = try_find_new_range (op1, new_code, limit);
-	      if (op1_range)
-		push_value_range (op1, op1_range);
+	      value_range *vr = try_find_new_range (asserts[i].name,
+						    asserts[i].expr,
+						    asserts[i].comp_code,
+						    asserts[i].val);
+	      if (vr)
+		vrs.safe_push (std::make_pair (asserts[i].name, vr));
 	    }
-
-	  if (op0_range)
-	    push_value_range (op0, op0_range);
+	  /* Push updated ranges only after finding all of them to avoid
+	     ordering issues that can lead to worse ranges.  */
+	  for (unsigned i = 0; i < vrs.length (); ++i)
+	    push_value_range (vrs[i].first, vrs[i].second);
 	}
     }
 
@@ -11412,13 +11487,13 @@ evrp_dom_walker::before_dom_children (basic_block bb)
 		      /* Add VR when (T COMP_CODE value) condition is
 			 true.  */
 		      value_range *op_range
-			= try_find_new_range (t, comp_code, value);
+			= try_find_new_range (t, t, comp_code, value);
 		      if (op_range)
 			push_value_range (t, op_range);
 		    }
 		}
 	      /* Add VR when (OP COMP_CODE value) condition is true.  */
-	      value_range *op_range = try_find_new_range (op,
+	      value_range *op_range = try_find_new_range (op, op,
 							  comp_code, value);
 	      if (op_range)
 		push_value_range (op, op_range);
