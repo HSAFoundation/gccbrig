@@ -1,3 +1,45 @@
+2017-05-11  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/78659
+	* io.c (dtio_procs_present): Add new function to check for DTIO
+	procedures relative to I/O statement READ or WRITE.
+	(gfc_resolve_dt): Add namelist checks using the new function.
+	* resolve.c (dtio_procs_present): Remove function and related
+	namelist checks. (resolve_fl_namelist): Add check specific to
+	Fortran 95 restriction on namelist objects.
+
+2017-05-11  Nathan Sidwell  <nathan@acm.org>
+	
+	* trans-decl.c: Include dumpfile.h not tree-dump.h,
+
+2017-05-09  Janus Weil  <janus@gcc.gnu.org>
+
+	PR fortran/79311
+	* resolve.c (gfc_resolve_finalizers): Ensure that derived-type
+	components have a their finalizers resolved, also if the superordinate
+	type itself has a finalizer.
+
+2017-05-08  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/79930
+	* frontend-passes.c (matmul_to_var_expr): New function,
+	add prototype.
+	(matmul_to_var_code):  Likewise.
+	(optimize_namespace):  Use them from gfc_code_walker.
+
+2017-05-05  David Malcolm  <dmalcolm@redhat.com>
+
+	* cpp.c (cb_cpp_error): Replace report_diagnostic
+	with diagnostic_report_diagnostic.
+	* error.c (gfc_warning): Likewise.
+	(gfc_warning_now_at): Likewise.
+	(gfc_warning_now): Likewise.
+	(gfc_warning_internal): Likewise.
+	(gfc_error_now): Likewise.
+	(gfc_fatal_error): Likewise.
+	(gfc_error_opt): Likewise.
+	(gfc_internal_error): Likewise.
+
 2017-05-01  Thomas Koenig  <tkoenig@gcc.gnu.org>
 
 	PR fortran/37131

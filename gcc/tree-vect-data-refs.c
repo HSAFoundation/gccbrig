@@ -1715,18 +1715,18 @@ vect_enhance_data_refs_alignment (loop_vec_info loop_vinfo)
             dr0 = first_store;
         }
 
-      /* In case there are only loads with different unknown misalignments, use
-         peeling only if it may help to align other accesses in the loop or
+      /* Use peeling only if it may help to align other accesses in the loop or
 	 if it may help improving load bandwith when we'd end up using
 	 unaligned loads.  */
       tree dr0_vt = STMT_VINFO_VECTYPE (vinfo_for_stmt (DR_STMT (dr0)));
-      if (!first_store
-	  && !STMT_VINFO_SAME_ALIGN_REFS (
-		  vinfo_for_stmt (DR_STMT (dr0))).length ()
+      if (STMT_VINFO_SAME_ALIGN_REFS
+	    (vinfo_for_stmt (DR_STMT (dr0))).length () == 0
 	  && (vect_supportable_dr_alignment (dr0, false)
 	      != dr_unaligned_supported
-	      || (builtin_vectorization_cost (vector_load, dr0_vt, 0)
-		  == builtin_vectorization_cost (unaligned_load, dr0_vt, -1))))
+	      || (DR_IS_READ (dr0)
+		  && (builtin_vectorization_cost (vector_load, dr0_vt, 0)
+		      == builtin_vectorization_cost (unaligned_load,
+						     dr0_vt, -1)))))
         do_peeling = false;
     }
 
@@ -3955,6 +3955,27 @@ again:
 	  STMT_VINFO_SIMD_LANE_ACCESS_P (stmt_info) = true;
 	  free_data_ref (datarefs[i]);
 	  datarefs[i] = dr;
+	}
+
+      if (TREE_CODE (DR_BASE_ADDRESS (dr)) == ADDR_EXPR
+	  && VAR_P (TREE_OPERAND (DR_BASE_ADDRESS (dr), 0))
+	  && DECL_NONALIASED (TREE_OPERAND (DR_BASE_ADDRESS (dr), 0)))
+	{
+          if (dump_enabled_p ())
+            {
+              dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+                               "not vectorized: base object not addressable "
+			       "for stmt: ");
+              dump_gimple_stmt (MSG_MISSED_OPTIMIZATION, TDF_SLIM, stmt, 0);
+            }
+          if (is_a <bb_vec_info> (vinfo))
+	    {
+	      /* In BB vectorization the ref can still participate
+	         in dependence analysis, we just can't vectorize it.  */
+	      STMT_VINFO_VECTORIZABLE (stmt_info) = false;
+	      continue;
+	    }
+	  return false;
 	}
 
       /* Set vectype for STMT.  */

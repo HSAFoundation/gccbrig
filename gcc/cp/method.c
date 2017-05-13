@@ -1207,6 +1207,8 @@ constructible_expr (tree to, tree from)
 bool
 is_trivially_xible (enum tree_code code, tree to, tree from)
 {
+  if (VOID_TYPE_P (to))
+    return false;
   tree expr;
   if (code == MODIFY_EXPR)
     expr = assignable_expr (to, from);
@@ -2094,7 +2096,7 @@ implicitly_declare_fn (special_function_kind kind, tree type,
   set_linkage_according_to_type (type, fn);
   if (TREE_PUBLIC (fn))
     DECL_COMDAT (fn) = 1;
-  rest_of_decl_compilation (fn, toplevel_bindings_p (), at_eof);
+  rest_of_decl_compilation (fn, namespace_bindings_p (), at_eof);
   gcc_assert (!TREE_USED (fn));
 
   /* Propagate constraints from the inherited constructor. */
@@ -2359,7 +2361,7 @@ lazily_declare_fn (special_function_kind sfk, tree type)
       || sfk == sfk_copy_assignment)
     check_for_override (fn, type);
   /* Add it to CLASSTYPE_METHOD_VEC.  */
-  add_method (type, fn, NULL_TREE);
+  add_method (type, fn, false);
   /* Add it to TYPE_METHODS.  */
   if (sfk == sfk_destructor
       && DECL_VIRTUAL_P (fn))
@@ -2375,7 +2377,7 @@ lazily_declare_fn (special_function_kind sfk, tree type)
   if (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (fn)
       || DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (fn))
     /* Create appropriate clones.  */
-    clone_function_decl (fn, /*update_method_vec=*/true);
+    clone_function_decl (fn, /*update_methods=*/true);
 
   return fn;
 }

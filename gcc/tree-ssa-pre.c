@@ -817,19 +817,23 @@ bitmap_set_and (bitmap_set_t dest, bitmap_set_t orig)
 
   if (dest != orig)
     {
-      bitmap_head temp;
-      bitmap_initialize (&temp, &grand_bitmap_obstack);
-
       bitmap_and_into (&dest->values, &orig->values);
-      bitmap_copy (&temp, &dest->expressions);
-      EXECUTE_IF_SET_IN_BITMAP (&temp, 0, i, bi)
+
+      unsigned int to_clear = -1U;
+      FOR_EACH_EXPR_ID_IN_SET (dest, i, bi)
 	{
+	  if (to_clear != -1U)
+	    {
+	      bitmap_clear_bit (&dest->expressions, to_clear);
+	      to_clear = -1U;
+	    }
 	  pre_expr expr = expression_for_id (i);
 	  unsigned int value_id = get_expr_value_id (expr);
 	  if (!bitmap_bit_p (&dest->values, value_id))
-	    bitmap_clear_bit (&dest->expressions, i);
+	    to_clear = i;
 	}
-      bitmap_clear (&temp);
+      if (to_clear != -1U)
+	bitmap_clear_bit (&dest->expressions, to_clear);
     }
 }
 
@@ -862,18 +866,20 @@ bitmap_set_subtract_values (bitmap_set_t a, bitmap_set_t b)
 {
   unsigned int i;
   bitmap_iterator bi;
-  bitmap_head temp;
-
-  bitmap_initialize (&temp, &grand_bitmap_obstack);
-
-  bitmap_copy (&temp, &a->expressions);
-  EXECUTE_IF_SET_IN_BITMAP (&temp, 0, i, bi)
+  pre_expr to_remove = NULL;
+  FOR_EACH_EXPR_ID_IN_SET (a, i, bi)
     {
+      if (to_remove)
+	{
+	  bitmap_remove_from_set (a, to_remove);
+	  to_remove = NULL;
+	}
       pre_expr expr = expression_for_id (i);
       if (bitmap_set_contains_value (b, get_expr_value_id (expr)))
-	bitmap_remove_from_set (a, expr);
+	to_remove = expr;
     }
-  bitmap_clear (&temp);
+  if (to_remove)
+    bitmap_remove_from_set (a, to_remove);
 }
 
 
@@ -1173,31 +1179,7 @@ get_or_alloc_expr_for (tree t)
     return get_or_alloc_expr_for_name (t);
   else if (is_gimple_min_invariant (t))
     return get_or_alloc_expr_for_constant (t);
-  else
-    {
-      /* More complex expressions can result from SCCVN expression
-	 simplification that inserts values for them.  As they all
-	 do not have VOPs the get handled by the nary ops struct.  */
-      vn_nary_op_t result;
-      unsigned int result_id;
-      vn_nary_op_lookup (t, &result);
-      if (result != NULL)
-	{
-	  pre_expr e = pre_expr_pool.allocate ();
-	  e->kind = NARY;
-	  PRE_EXPR_NARY (e) = result;
-	  result_id = lookup_expression_id (e);
-	  if (result_id != 0)
-	    {
-	      pre_expr_pool.remove (e);
-	      e = expression_for_id (result_id);
-	      return e;
-	    }
-	  alloc_expression_id (e);
-	  return e;
-	}
-    }
-  return NULL;
+  gcc_unreachable ();
 }
 
 /* Return the folded version of T if T, when folded, is a gimple
@@ -4214,9 +4196,14 @@ eliminate_dom_walker::before_dom_children (basic_block b)
   /* Mark new bb.  */
   el_avail_stack.safe_push (NULL_TREE);
 
-  /* ???  If we do nothing for unreachable blocks then this will confuse
-     tailmerging.  Eventually we can reduce its reliance on SCCVN now
-     that we fully copy/constant-propagate (most) things.  */
+  /* Skip unreachable blocks marked unreachable during the SCCVN domwalk.  */
+  edge_iterator ei;
+  edge e;
+  FOR_EACH_EDGE (e, ei, b->preds)
+    if (e->flags & EDGE_EXECUTABLE)
+      break;
+  if (! e)
+    return NULL;
 
   for (gphi_iterator gsi = gsi_start_phis (b); !gsi_end_p (gsi);)
     {
@@ -4658,30 +4645,51 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 	      && TREE_CODE (gimple_assign_rhs1 (stmt)) == ADDR_EXPR)
 	    recompute_tree_invariant_for_addr_expr (gimple_assign_rhs1 (stmt));
 	  gimple *old_stmt = stmt;
-	  if (is_gimple_call (stmt))
+	  gimple_stmt_iterator prev = gsi;
+	  gsi_prev (&prev);
+	  if (fold_stmt (&gsi))
 	    {
-	      /* ???  Only fold calls inplace for now, this may create new
-		 SSA names which in turn will confuse free_scc_vn SSA name
-		 release code.  */
-	      fold_stmt_inplace (&gsi);
-	      /* When changing a call into a noreturn call, cfg cleanup
-		 is needed to fix up the noreturn call.  */
-	      if (!was_noreturn && gimple_call_noreturn_p (stmt))
-		el_to_fixup.safe_push  (stmt);
+	      /* fold_stmt may have created new stmts inbetween
+		 the previous stmt and the folded stmt.  Mark
+		 all defs created there as varying to not confuse
+		 the SCCVN machinery as we're using that even during
+		 elimination.  */
+	      if (gsi_end_p (prev))
+		prev = gsi_start_bb (b);
+	      else
+		gsi_next (&prev);
+	      if (gsi_stmt (prev) != gsi_stmt (gsi))
+		do
+		  {
+		    tree def;
+		    ssa_op_iter dit;
+		    FOR_EACH_SSA_TREE_OPERAND (def, gsi_stmt (prev),
+					       dit, SSA_OP_ALL_DEFS)
+		      /* As existing DEFs may move between stmts
+			 we have to guard VN_INFO_GET.  */
+		      if (! has_VN_INFO (def))
+			VN_INFO_GET (def)->valnum = def;
+		    if (gsi_stmt (prev) == gsi_stmt (gsi))
+		      break;
+		    gsi_next (&prev);
+		  }
+		while (1);
 	    }
-	  else
-	    {
-	      fold_stmt (&gsi);
-	      stmt = gsi_stmt (gsi);
-	      if ((gimple_code (stmt) == GIMPLE_COND
-		   && (gimple_cond_true_p (as_a <gcond *> (stmt))
-		       || gimple_cond_false_p (as_a <gcond *> (stmt))))
-		  || (gimple_code (stmt) == GIMPLE_SWITCH
-		      && TREE_CODE (gimple_switch_index (
-				      as_a <gswitch *> (stmt)))
-		         == INTEGER_CST))
-		el_todo |= TODO_cleanup_cfg;
-	    }
+	  stmt = gsi_stmt (gsi);
+	  /* When changing a call into a noreturn call, cfg cleanup
+	     is needed to fix up the noreturn call.  */
+	  if (!was_noreturn
+	      && is_gimple_call (stmt) && gimple_call_noreturn_p (stmt))
+	    el_to_fixup.safe_push  (stmt);
+	  /* When changing a condition or switch into one we know what
+	     edge will be executed, schedule a cfg cleanup.  */
+	  if ((gimple_code (stmt) == GIMPLE_COND
+	       && (gimple_cond_true_p (as_a <gcond *> (stmt))
+		   || gimple_cond_false_p (as_a <gcond *> (stmt))))
+	      || (gimple_code (stmt) == GIMPLE_SWITCH
+		  && TREE_CODE (gimple_switch_index
+				  (as_a <gswitch *> (stmt))) == INTEGER_CST))
+	    el_todo |= TODO_cleanup_cfg;
 	  /* If we removed EH side-effects from the statement, clean
 	     its EH information.  */
 	  if (maybe_clean_or_replace_eh_stmt (old_stmt, stmt))
@@ -4713,10 +4721,8 @@ eliminate_dom_walker::before_dom_children (basic_block b)
     }
 
   /* Replace destination PHI arguments.  */
-  edge_iterator ei;
-  edge e;
   FOR_EACH_EDGE (e, ei, b->succs)
-    {
+    if (e->flags & EDGE_EXECUTABLE)
       for (gphi_iterator gsi = gsi_start_phis (e->dest);
 	   !gsi_end_p (gsi);
 	   gsi_next (&gsi))
@@ -4735,7 +4741,6 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 		gimple_set_plf (SSA_NAME_DEF_STMT (sprime), NECESSARY, true);
 	    }
 	}
-    }
   return NULL;
 }
 
@@ -4761,9 +4766,6 @@ eliminate_dom_walker::after_dom_children (basic_block)
 static unsigned int
 eliminate (bool do_pre)
 {
-  gimple_stmt_iterator gsi;
-  gimple *stmt;
-
   need_eh_cleanup = BITMAP_ALLOC (NULL);
   need_ab_cleanup = BITMAP_ALLOC (NULL);
 
@@ -4779,6 +4781,18 @@ eliminate (bool do_pre)
   el_avail.release ();
   el_avail_stack.release ();
 
+  return el_todo;
+}
+
+/* Perform CFG cleanups made necessary by elimination.  */
+
+static unsigned 
+fini_eliminate (void)
+{
+  gimple_stmt_iterator gsi;
+  gimple *stmt;
+  unsigned todo = 0;
+
   /* We cannot remove stmts during BB walk, especially not release SSA
      names there as this confuses the VN machinery.  The stmts ending
      up in el_to_remove are either stores or simple copies.
@@ -4787,12 +4801,6 @@ eliminate (bool do_pre)
     {
       stmt = el_to_remove.pop ();
 
-      if (dump_file && (dump_flags & TDF_DETAILS))
-	{
-	  fprintf (dump_file, "Removing dead stmt ");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
-	}
-
       tree lhs;
       if (gimple_code (stmt) == GIMPLE_PHI)
 	lhs = gimple_phi_result (stmt);
@@ -4800,8 +4808,15 @@ eliminate (bool do_pre)
 	lhs = gimple_get_lhs (stmt);
 
       if (inserted_exprs
-	  && TREE_CODE (lhs) == SSA_NAME)
-	bitmap_clear_bit (inserted_exprs, SSA_NAME_VERSION (lhs));
+	  && TREE_CODE (lhs) == SSA_NAME
+	  && bitmap_bit_p (inserted_exprs, SSA_NAME_VERSION (lhs)))
+	continue;
+
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	{
+	  fprintf (dump_file, "Removing dead stmt ");
+	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	}
 
       gsi = gsi_for_stmt (stmt);
       if (gimple_code (stmt) == GIMPLE_PHI)
@@ -4818,7 +4833,7 @@ eliminate (bool do_pre)
 	}
 
       /* Removing a stmt may expose a forwarder block.  */
-      el_todo |= TODO_cleanup_cfg;
+      todo |= TODO_cleanup_cfg;
     }
   el_to_remove.release ();
 
@@ -4837,18 +4852,10 @@ eliminate (bool do_pre)
 	}
 
       if (fixup_noreturn_call (stmt))
-	el_todo |= TODO_cleanup_cfg;
+	todo |= TODO_cleanup_cfg;
     }
   el_to_fixup.release ();
 
-  return el_todo;
-}
-
-/* Perform CFG cleanups made necessary by elimination.  */
-
-static unsigned 
-fini_eliminate (void)
-{
   bool do_eh_cleanup = !bitmap_empty_p (need_eh_cleanup);
   bool do_ab_cleanup = !bitmap_empty_p (need_ab_cleanup);
 
@@ -4862,8 +4869,8 @@ fini_eliminate (void)
   BITMAP_FREE (need_ab_cleanup);
 
   if (do_eh_cleanup || do_ab_cleanup)
-    return TODO_cleanup_cfg;
-  return 0;
+    todo |= TODO_cleanup_cfg;
+  return todo;
 }
 
 /* Borrow a bit of tree-ssa-dce.c for the moment.
@@ -4961,8 +4968,14 @@ remove_dead_inserted_code (void)
 	}
     }
 
+  unsigned int to_clear = -1U;
   EXECUTE_IF_SET_IN_BITMAP (inserted_exprs, 0, i, bi)
     {
+      if (to_clear != -1U)
+	{
+	  bitmap_clear_bit (inserted_exprs, to_clear);
+	  to_clear = -1U;
+	}
       t = SSA_NAME_DEF_STMT (ssa_name (i));
       if (!gimple_plf (t, NECESSARY))
 	{
@@ -4983,7 +4996,14 @@ remove_dead_inserted_code (void)
 	      release_defs (t);
 	    }
 	}
+      else
+	/* eliminate_fini will skip stmts marked for removal if we
+	   already removed it and uses inserted_exprs for this, so
+	   clear those we didn't end up removing.  */
+	to_clear = i;
     }
+  if (to_clear != -1U)
+    bitmap_clear_bit (inserted_exprs, to_clear);
   BITMAP_FREE (worklist);
 }
 
@@ -5128,8 +5148,8 @@ pass_pre::execute (function *fun)
   remove_dead_inserted_code ();
 
   scev_finalize ();
-  fini_pre ();
   todo |= fini_eliminate ();
+  fini_pre ();
   loop_optimizer_finalize ();
 
   /* Restore SSA info before tail-merging as that resets it as well.  */

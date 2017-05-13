@@ -1002,12 +1002,12 @@ modify_vtable_entry (tree t,
 }
 
 
-/* Add method METHOD to class TYPE.  If USING_DECL is non-null, it is
-   the USING_DECL naming METHOD.  Returns true if the method could be
-   added to the method vec.  */
+/* Add method METHOD to class TYPE.  If VIA_USING indicates whether
+   METHOD is being injected via a using_decl.  Returns true if the
+   method could be added to the method vec.  */
 
 bool
-add_method (tree type, tree method, tree using_decl)
+add_method (tree type, tree method, bool via_using)
 {
   unsigned slot;
   tree overload;
@@ -1097,7 +1097,7 @@ add_method (tree type, tree method, tree using_decl)
 
       /* Two using-declarations can coexist, we'll complain about ambiguity in
 	 overload resolution.  */
-      if (using_decl && TREE_CODE (fns) == OVERLOAD && OVL_USED (fns)
+      if (via_using && TREE_CODE (fns) == OVERLOAD && OVL_USED (fns)
 	  /* Except handle inherited constructors specially.  */
 	  && ! DECL_CONSTRUCTOR_P (fn))
 	goto cont;
@@ -1221,12 +1221,10 @@ add_method (tree type, tree method, tree using_decl)
 	      /* Otherwise defer to the other function.  */
 	      return false;
 	    }
-	  if (using_decl)
-	    {
-	      if (DECL_CONTEXT (fn) == type)
-		/* Defer to the local function.  */
-		return false;
-	    }
+
+	  if (via_using)
+	    /* Defer to the local function.  */
+	    return false;
 	  else if (flag_new_inheriting_ctors
 		   && DECL_INHERITED_CTOR (fn))
 	    {
@@ -1238,13 +1236,9 @@ add_method (tree type, tree method, tree using_decl)
 	    {
 	      error ("%q+#D cannot be overloaded", method);
 	      error ("with %q+#D", fn);
+	      return false;
 	    }
 
-	  /* We don't call duplicate_decls here to merge the
-	     declarations because that will confuse things if the
-	     methods have inline definitions.  In particular, we
-	     will crash while processing the definitions.  */
-	  return false;
 	}
 
     cont:
@@ -1259,7 +1253,7 @@ add_method (tree type, tree method, tree using_decl)
     return false;
 
   /* Add the new binding.  */
-  if (using_decl)
+  if (via_using)
     {
       overload = ovl_cons (method, current_fns);
       OVL_USED (overload) = true;
@@ -1305,8 +1299,7 @@ alter_access (tree t, tree fdecl, tree access)
 {
   tree elem;
 
-  if (!DECL_LANG_SPECIFIC (fdecl))
-    retrofit_lang_decl (fdecl);
+  retrofit_lang_decl (fdecl);
 
   gcc_assert (!DECL_DISCRIMINATOR_P (fdecl));
 
@@ -1366,8 +1359,7 @@ handle_using_decl (tree using_decl, tree t)
 			     tf_warning_or_error);
   if (old_value)
     {
-      if (is_overloaded_fn (old_value))
-	old_value = OVL_CURRENT (old_value);
+      old_value = OVL_CURRENT (old_value);
 
       if (DECL_P (old_value) && DECL_CONTEXT (old_value) == t)
 	/* OK */;
@@ -1391,7 +1383,7 @@ handle_using_decl (tree using_decl, tree t)
 	{
 	  error ("%q+D invalid in %q#T", using_decl, t);
 	  error ("  because of local method %q+#D with same name",
-		 OVL_CURRENT (old_value));
+		 old_value);
 	  return;
 	}
     }
@@ -1861,7 +1853,9 @@ check_bases (tree t,
 	       members */
 	    for (basefield = TYPE_FIELDS (basetype); basefield;
 		 basefield = DECL_CHAIN (basefield))
-	      if (TREE_CODE (basefield) == FIELD_DECL)
+	      if (TREE_CODE (basefield) == FIELD_DECL
+		  && DECL_SIZE (basefield)
+		  && !integer_zerop (DECL_SIZE (basefield)))
 		{
 		  if (field)
 		    CLASSTYPE_NON_STD_LAYOUT (t) = 1;
@@ -3339,7 +3333,7 @@ one_inheriting_sig (tree t, tree ctor, tree *parms, int nparms)
   tree fn = implicitly_declare_fn (sfk_inheriting_constructor,
 				   t, false, ctor, parmlist);
   gcc_assert (TYPE_MAIN_VARIANT (t) == t);
-  if (add_method (t, fn, NULL_TREE))
+  if (add_method (t, fn, false))
     {
       DECL_CHAIN (fn) = TYPE_METHODS (t);
       TYPE_METHODS (t) = fn;
@@ -3358,7 +3352,7 @@ one_inherited_ctor (tree ctor, tree t, tree using_decl)
     {
       ctor = implicitly_declare_fn (sfk_inheriting_constructor,
 				    t, /*const*/false, ctor, parms);
-      add_method (t, ctor, using_decl);
+      add_method (t, ctor, using_decl != NULL_TREE);
       TYPE_HAS_USER_CONSTRUCTOR (t) = true;
       return;
     }
@@ -4889,11 +4883,12 @@ decl_cloned_function_p (const_tree decl, bool just_testing)
 }
 
 /* Produce declarations for all appropriate clones of FN.  If
-   UPDATE_METHOD_VEC_P is nonzero, the clones are added to the
-   CLASTYPE_METHOD_VEC as well.  */
+   UPDATE_METHODS is true, the clones are added to the
+   CLASTYPE_METHOD_VEC.  VIA_USING indicates whether these are cloning
+   decls brought in via using declarations (i.e. inheriting ctors).  */
 
 void
-clone_function_decl (tree fn, int update_method_vec_p)
+clone_function_decl (tree fn, bool update_methods)
 {
   tree clone;
 
@@ -4907,11 +4902,11 @@ clone_function_decl (tree fn, int update_method_vec_p)
       /* For each constructor, we need two variants: an in-charge version
 	 and a not-in-charge version.  */
       clone = build_clone (fn, complete_ctor_identifier);
-      if (update_method_vec_p)
-	add_method (DECL_CONTEXT (clone), clone, NULL_TREE);
+      if (update_methods)
+	add_method (DECL_CONTEXT (clone), clone, false);
       clone = build_clone (fn, base_ctor_identifier);
-      if (update_method_vec_p)
-	add_method (DECL_CONTEXT (clone), clone, NULL_TREE);
+      if (update_methods)
+	add_method (DECL_CONTEXT (clone), clone, false);
     }
   else
     {
@@ -4929,15 +4924,15 @@ clone_function_decl (tree fn, int update_method_vec_p)
       if (DECL_VIRTUAL_P (fn))
 	{
 	  clone = build_clone (fn, deleting_dtor_identifier);
-	  if (update_method_vec_p)
-	    add_method (DECL_CONTEXT (clone), clone, NULL_TREE);
+	  if (update_methods)
+	    add_method (DECL_CONTEXT (clone), clone, false);
 	}
       clone = build_clone (fn, complete_dtor_identifier);
-      if (update_method_vec_p)
-	add_method (DECL_CONTEXT (clone), clone, NULL_TREE);
+      if (update_methods)
+	add_method (DECL_CONTEXT (clone), clone, false);
       clone = build_clone (fn, base_dtor_identifier);
-      if (update_method_vec_p)
-	add_method (DECL_CONTEXT (clone), clone, NULL_TREE);
+      if (update_methods)
+	add_method (DECL_CONTEXT (clone), clone, false);
     }
 
   /* Note that this is an abstract function that is never emitted.  */
@@ -5040,10 +5035,12 @@ clone_constructors_and_destructors (tree t)
   if (!CLASSTYPE_METHOD_VEC (t))
     return;
 
+  /* While constructors can be via a using declaration, at this point
+     we no longer need to know that.  */
   for (fns = CLASSTYPE_CONSTRUCTORS (t); fns; fns = OVL_NEXT (fns))
-    clone_function_decl (OVL_CURRENT (fns), /*update_method_vec_p=*/1);
+    clone_function_decl (OVL_CURRENT (fns), /*update_methods=*/true);
   for (fns = CLASSTYPE_DESTRUCTORS (t); fns; fns = OVL_NEXT (fns))
-    clone_function_decl (OVL_CURRENT (fns), /*update_method_vec_p=*/1);
+    clone_function_decl (OVL_CURRENT (fns), /*update_methods=*/true);
 }
 
 /* Deduce noexcept for a destructor DTOR.  */
@@ -5753,12 +5750,16 @@ finalize_literal_type_property (tree t)
   if (cxx_dialect < cxx11
       || TYPE_HAS_NONTRIVIAL_DESTRUCTOR (t))
     CLASSTYPE_LITERAL_P (t) = false;
+  else if (CLASSTYPE_LITERAL_P (t) && LAMBDA_TYPE_P (t))
+    CLASSTYPE_LITERAL_P (t) = (cxx_dialect >= cxx1z);
   else if (CLASSTYPE_LITERAL_P (t) && !TYPE_HAS_TRIVIAL_DFLT (t)
 	   && CLASSTYPE_NON_AGGREGATE (t)
 	   && !TYPE_HAS_CONSTEXPR_CTOR (t))
     CLASSTYPE_LITERAL_P (t) = false;
 
-  if (!CLASSTYPE_LITERAL_P (t))
+  /* C++14 DR 1684 removed this restriction.  */
+  if (cxx_dialect < cxx14
+      && !CLASSTYPE_LITERAL_P (t) && !LAMBDA_TYPE_P (t))
     for (fn = TYPE_METHODS (t); fn; fn = DECL_CHAIN (fn))
       if (DECL_DECLARED_CONSTEXPR_P (fn)
 	  && TREE_CODE (fn) != TEMPLATE_DECL
@@ -5766,12 +5767,11 @@ finalize_literal_type_property (tree t)
 	  && !DECL_CONSTRUCTOR_P (fn))
 	{
 	  DECL_DECLARED_CONSTEXPR_P (fn) = false;
-	  if (!DECL_GENERATED_P (fn) && !LAMBDA_TYPE_P (t))
-	    {
-	      error ("enclosing class of constexpr non-static member "
-		     "function %q+#D is not a literal type", fn);
-	      explain_non_literal_class (t);
-	    }
+	  if (!DECL_GENERATED_P (fn)
+	      && pedwarn (DECL_SOURCE_LOCATION (fn), OPT_Wpedantic,
+			  "enclosing class of constexpr non-static member "
+			  "function %q+#D is not a literal type", fn))
+	    explain_non_literal_class (t);
 	}
 }
 
@@ -5794,10 +5794,14 @@ explain_non_literal_class (tree t)
     return;
 
   inform (0, "%q+T is not literal because:", t);
-  if (TYPE_HAS_NONTRIVIAL_DESTRUCTOR (t))
+  if (cxx_dialect < cxx1z && LAMBDA_TYPE_P (t))
+    inform (0, "  %qT is a closure type, which is only literal in "
+	    "C++1z and later", t);
+  else if (TYPE_HAS_NONTRIVIAL_DESTRUCTOR (t))
     inform (0, "  %q+T has a non-trivial destructor", t);
   else if (CLASSTYPE_NON_AGGREGATE (t)
 	   && !TYPE_HAS_TRIVIAL_DFLT (t)
+	   && !LAMBDA_TYPE_P (t)
 	   && !TYPE_HAS_CONSTEXPR_CTOR (t))
     {
       inform (0, "  %q+T is not an aggregate, does not have a trivial "
@@ -8179,39 +8183,29 @@ resolve_address_of_overloaded_function (tree target_type,
      if we're just going to throw them out anyhow.  But, of course, we
      can only do this when we don't *need* a template function.  */
   if (!template_only)
-    {
-      tree fns;
+    for (tree fns = overload; fns; fns = OVL_NEXT (fns))
+      {
+	tree fn = OVL_CURRENT (fns);
 
-      for (fns = overload; fns; fns = OVL_NEXT (fns))
-	{
-	  tree fn = OVL_CURRENT (fns);
+	if (TREE_CODE (fn) == TEMPLATE_DECL)
+	  /* We're not looking for templates just yet.  */
+	  continue;
 
-	  if (TREE_CODE (fn) == TEMPLATE_DECL)
-	    /* We're not looking for templates just yet.  */
-	    continue;
+	if ((TREE_CODE (TREE_TYPE (fn)) == METHOD_TYPE) != is_ptrmem)
+	  /* We're looking for a non-static member, and this isn't
+	     one, or vice versa.  */
+	  continue;
 
-	  if ((TREE_CODE (TREE_TYPE (fn)) == METHOD_TYPE)
-	      != is_ptrmem)
-	    /* We're looking for a non-static member, and this isn't
-	       one, or vice versa.  */
-	    continue;
+	/* In C++17 we need the noexcept-qualifier to compare types.  */
+	if (flag_noexcept_type)
+	  maybe_instantiate_noexcept (fn);
 
-	  /* Ignore functions which haven't been explicitly
-	     declared.  */
-	  if (DECL_ANTICIPATED (fn))
-	    continue;
-
-	  /* In C++17 we need the noexcept-qualifier to compare types.  */
-	  if (flag_noexcept_type)
-	    maybe_instantiate_noexcept (fn);
-
-	  /* See if there's a match.  */
-	  tree fntype = static_fn_type (fn);
-	  if (same_type_p (target_fn_type, fntype)
-	      || fnptr_conv_p (target_fn_type, fntype))
-	    matches = tree_cons (fn, NULL_TREE, matches);
-	}
-    }
+	/* See if there's a match.  */
+	tree fntype = static_fn_type (fn);
+	if (same_type_p (target_fn_type, fntype)
+	    || fnptr_conv_p (target_fn_type, fntype))
+	  matches = tree_cons (fn, NULL_TREE, matches);
+      }
 
   /* Now, if we've already got a match (or matches), there's no need
      to proceed to the template functions.  But, if we don't have a
@@ -9770,11 +9764,19 @@ build_vtbl_initializer (tree binfo,
 	  /* Likewise for deleted virtuals.  */
 	  else if (DECL_DELETED_FN (fn_original))
 	    {
-	      fn = get_identifier ("__cxa_deleted_virtual");
-	      if (!get_global_value_if_present (fn, &fn))
-		fn = push_library_fn (fn, (build_function_type_list
-					   (void_type_node, NULL_TREE)),
-				      NULL_TREE, ECF_NORETURN);
+	      static tree dvirt_fn;
+
+	      if (!dvirt_fn)
+		{
+		  tree name = get_identifier ("__cxa_deleted_virtual");
+		  dvirt_fn = IDENTIFIER_GLOBAL_VALUE (name);
+		  if (!dvirt_fn)
+		    dvirt_fn = push_library_fn
+		      (name,
+		       build_function_type_list (void_type_node, NULL_TREE),
+		       NULL_TREE, ECF_NORETURN);
+		}
+	      fn = dvirt_fn;
 	      if (!TARGET_VTABLE_USES_DESCRIPTORS)
 		init = fold_convert (vfunc_ptr_type_node,
 				     build_fold_addr_expr (fn));
@@ -9783,7 +9785,8 @@ build_vtbl_initializer (tree binfo,
 	    {
 	      if (!integer_zerop (delta) || vcall_index)
 		{
-		  fn = make_thunk (fn, /*this_adjusting=*/1, delta, vcall_index);
+		  fn = make_thunk (fn, /*this_adjusting=*/1,
+				   delta, vcall_index);
 		  if (!DECL_NAME (fn))
 		    finish_thunk (fn);
 		}

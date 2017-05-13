@@ -2438,7 +2438,7 @@ finish_call_expr (tree fn, vec<tree, va_gc> **args, bool disallow_virtual,
 	    }
 
 	  /* A call to a namespace-scope function.  */
-	  result = build_new_function_call (fn, args, koenig_p, complain);
+	  result = build_new_function_call (fn, args, complain);
 	}
     }
   else if (TREE_CODE (fn) == PSEUDO_DTOR_EXPR)
@@ -2647,12 +2647,14 @@ finish_unary_op_expr (location_t op_loc, enum tree_code code, cp_expr expr,
   return result;
 }
 
-/* Finish a compound-literal expression.  TYPE is the type to which
-   the CONSTRUCTOR in COMPOUND_LITERAL is being cast.  */
+/* Finish a compound-literal expression or C++11 functional cast with aggregate
+   initializer.  TYPE is the type to which the CONSTRUCTOR in COMPOUND_LITERAL
+   is being cast.  */
 
 tree
 finish_compound_literal (tree type, tree compound_literal,
-			 tsubst_flags_t complain)
+			 tsubst_flags_t complain,
+			 fcl_t fcl_context)
 {
   if (type == error_mark_node)
     return error_mark_node;
@@ -2661,7 +2663,7 @@ finish_compound_literal (tree type, tree compound_literal,
     {
       compound_literal
 	= finish_compound_literal (TREE_TYPE (type), compound_literal,
-				   complain);
+				   complain, fcl_context);
       return cp_build_c_cast (type, compound_literal, complain);
     }
 
@@ -2682,6 +2684,8 @@ finish_compound_literal (tree type, tree compound_literal,
       TREE_TYPE (compound_literal) = type;
       /* Mark the expression as a compound literal.  */
       TREE_HAS_CONSTRUCTOR (compound_literal) = 1;
+      if (fcl_context == fcl_c99)
+	CONSTRUCTOR_C99_COMPOUND_LITERAL (compound_literal) = 1;
       return compound_literal;
     }
 
@@ -2717,10 +2721,17 @@ finish_compound_literal (tree type, tree compound_literal,
   compound_literal = digest_init_flags (type, compound_literal, LOOKUP_NORMAL,
 					complain);
   if (TREE_CODE (compound_literal) == CONSTRUCTOR)
-    TREE_HAS_CONSTRUCTOR (compound_literal) = true;
+    {
+      TREE_HAS_CONSTRUCTOR (compound_literal) = true;
+      if (fcl_context == fcl_c99)
+	CONSTRUCTOR_C99_COMPOUND_LITERAL (compound_literal) = 1;
+    }
 
   /* Put static/constant array temporaries in static variables.  */
+  /* FIXME all C99 compound literals should be variables rather than C++
+     temporaries, unless they are used as an aggregate initializer.  */
   if ((!at_function_scope_p () || CP_TYPE_CONST_P (type))
+      && fcl_context == fcl_c99
       && TREE_CODE (type) == ARRAY_TYPE
       && !TYPE_HAS_NONTRIVIAL_DESTRUCTOR (type)
       && initializer_constant_valid_p (compound_literal, type))
@@ -3007,7 +3018,7 @@ finish_member_declaration (tree decl)
     {
       /* We also need to add this function to the
 	 CLASSTYPE_METHOD_VEC.  */
-      if (add_method (current_class_type, decl, NULL_TREE))
+      if (add_method (current_class_type, decl, false))
 	{
 	  gcc_assert (TYPE_MAIN_VARIANT (current_class_type) == current_class_type);
 	  DECL_CHAIN (decl) = TYPE_METHODS (current_class_type);
@@ -4478,8 +4489,7 @@ omp_privatize_field (tree t, bool shared)
   if (v == NULL_TREE)
     {
       v = create_temporary_var (TREE_TYPE (m));
-      if (!DECL_LANG_SPECIFIC (v))
-	retrofit_lang_decl (v);
+      retrofit_lang_decl (v);
       DECL_OMP_PRIVATIZED_MEMBER (v) = 1;
       SET_DECL_VALUE_EXPR (v, m);
       DECL_HAS_VALUE_EXPR_P (v) = 1;
@@ -5255,7 +5265,7 @@ omp_reduction_lookup (location_t loc, tree id, tree type, tree *baselinkp,
 	  error_at (loc, "user defined reduction lookup is ambiguous");
 	  FOR_EACH_VEC_ELT (ambiguous, idx, udr)
 	    {
-	      inform (DECL_SOURCE_LOCATION (udr), "%s %#D", str, udr);
+	      inform (DECL_SOURCE_LOCATION (udr), "%s %#qD", str, udr);
 	      if (idx == 0)
 		str = get_spaces (str);
 	    }

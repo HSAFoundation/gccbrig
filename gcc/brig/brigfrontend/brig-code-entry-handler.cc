@@ -477,10 +477,10 @@ brig_code_entry_handler::build_address_operand
 
       /* The original offset is signed and should be sign
 	 extended for the pointer arithmetics.  */
-      tree const_offset_2 = is64b_offset ?
-	build_int_cst (size_type_node, offs) :
-	convert (long_integer_type_node,
-		 build_int_cst (integer_type_node, offs));
+      tree const_offset_2 = is64b_offset
+        ? build_int_cst (size_type_node, offs)
+        : convert (long_integer_type_node,
+                   build_int_cst (integer_type_node, offs));
 
       if (addr == NULL_TREE)
 	addr = const_offset_2;

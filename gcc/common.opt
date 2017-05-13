@@ -910,6 +910,10 @@ Driver Undocumented
 ;     and introduces new inheriting constructor handling.
 ;     Default in G++ 7.
 ;
+; 12: Corrects the calling convention for classes with only deleted copy/move
+;     constructors.
+;     Default in G++ 8.
+;
 ; Additional positive integers will be assigned as new versions of
 ; the ABI become the default version of the ABI.
 fabi-version=
@@ -1225,7 +1229,7 @@ Enum(diagnostic_color_rule) String(auto) Value(DIAGNOSTICS_COLOR_AUTO)
 
 fdiagnostics-parseable-fixits
 Common Var(flag_diagnostics_parseable_fixits)
-Print fixit hints in machine-readable form.
+Print fix-it hints in machine-readable form.
 
 fdiagnostics-generate-patch
 Common Var(flag_diagnostics_generate_patch)

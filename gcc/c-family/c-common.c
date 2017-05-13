@@ -2589,7 +2589,7 @@ c_register_builtin_type (tree type, const char* name)
   DECL_ARTIFICIAL (decl) = 1;
   if (!TYPE_NAME (type))
     TYPE_NAME (type) = decl;
-  pushdecl (decl);
+  lang_hooks.decls.pushdecl (decl);
 
   registered_builtin_types = tree_cons (0, type, registered_builtin_types);
 }
@@ -6109,7 +6109,7 @@ c_cpp_error (cpp_reader *pfile ATTRIBUTE_UNUSED, int level, int reason,
 				  richloc, dlevel);
   diagnostic_override_option_index (&diagnostic,
                                     c_option_controlling_cpp_error (reason));
-  ret = report_diagnostic (&diagnostic);
+  ret = diagnostic_report_diagnostic (global_dc, &diagnostic);
   if (level == CPP_DL_WARNING_SYSHDR)
     global_dc->dc_warn_system_headers = save_warn_system_headers;
   return ret;
@@ -6368,12 +6368,8 @@ complete_array_type (tree *ptype, tree initial_value, bool do_default)
   layout_type (main_type);
 
   /* Make sure we have the canonical MAIN_TYPE. */
-  inchash::hash hstate;
-  hstate.add_object (TYPE_HASH (unqual_elt));
-  hstate.add_object (TYPE_HASH (TYPE_DOMAIN (main_type)));
-  if (!AGGREGATE_TYPE_P (unqual_elt))
-    hstate.add_flag (TYPE_TYPELESS_STORAGE (main_type));
-  main_type = type_hash_canon (hstate.end (), main_type);
+  hashval_t hashcode = type_hash_canon_hash (main_type);
+  main_type = type_hash_canon (hashcode, main_type);
 
   /* Fix the canonical type.  */
   if (TYPE_STRUCTURAL_EQUALITY_P (TREE_TYPE (main_type))

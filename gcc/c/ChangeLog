@@ -1,3 +1,43 @@
+2017-05-12  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* c-parser.c (c_parser_omp_clause_num_gangs)
+	(c_parser_omp_clause_num_workers)
+	(c_parser_omp_clause_vector_length): Merge functions into...
+	(c_parser_oacc_single_int_clause): ... this new function.  Adjust
+	all users.
+
+2017-05-11  Nathan Sidwell  <nathan@acm.org>
+
+	* gimple-parser.c: Don't #include tree-dump.h.
+
+2017-05-11  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR testsuite/80580
+	* gimple-parser.c (c_parser_parse_ssa_name): Validate SSA name base.
+
+2017-05-11  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR testsuite/80580
+	* gimple-parser.c (c_parser_gimple_postfix_expression): Handle
+	incorrect __MEM syntax.
+
+2017-05-11  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR testsuite/80580
+	* gimple-parser.c (c_parser_gimple_unary_expression): Check argument
+	type of unary '*'.
+
+2017-05-09  Nathan Sidwell  <nathan@acm.org>
+
+	* c-tree.h (pushdecl): Declare.
+
+2017-05-05  David Malcolm  <dmalcolm@redhat.com>
+
+	* c-decl.c (warn_defaults_to): Replace report_diagnostic
+	with diagnostic_report_diagnostic.
+	* c-errors.c (pedwarn_c99): Likewise.
+	(pedwarn_c90): Likewise.
+
 2017-05-01  Xi Ruoyao  <ryxi@stu.xidian.edu.cn>
 
         PR c++/80038

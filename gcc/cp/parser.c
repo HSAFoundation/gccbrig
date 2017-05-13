@@ -4150,7 +4150,6 @@ make_char_string_pack (tree value)
 
   /* Build the argument packs.  */
   SET_ARGUMENT_PACK_ARGS (argpack, charvec);
-  TREE_TYPE (argpack) = char_type_node;
 
   TREE_VEC_ELT (argvec, 0) = argpack;
 
@@ -4186,7 +4185,6 @@ make_string_pack (tree value)
 
   /* Build the argument packs.  */
   SET_ARGUMENT_PACK_ARGS (argpack, charvec);
-  TREE_TYPE (argpack) = str_char_type_node;
 
   TREE_VEC_ELT (argvec, 1) = argpack;
 
@@ -6770,7 +6768,7 @@ cp_parser_postfix_expression (cp_parser *parser, bool address_p, bool cast_p,
 		/* Form the representation of the compound-literal.  */
 		postfix_expression
 		  = finish_compound_literal (type, initializer,
-					     tf_warning_or_error);
+					     tf_warning_or_error, fcl_c99);
 		postfix_expression.set_location (initializer.get_location ());
 		break;
 	      }
@@ -20370,7 +20368,7 @@ cp_parser_tx_qualifier_opt (cp_parser *parser)
 	      cp_lexer_consume_token (parser->lexer);
 	      if (!flag_tm)
 		{
-		  error ("%E requires %<-fgnu-tm%>", name);
+		  error ("%qE requires %<-fgnu-tm%>", name);
 		  return NULL_TREE;
 		}
 	      else
@@ -26834,7 +26832,7 @@ cp_parser_functional_cast (cp_parser* parser, tree type)
 	type = TREE_TYPE (type);
 
       cast = finish_compound_literal (type, expression_list,
-				      tf_warning_or_error);
+				      tf_warning_or_error, fcl_functional);
       /* Create a location of the form:
 	    type_name{i, f}
 	    ^~~~~~~~~~~~~~~
@@ -38972,7 +38970,7 @@ synthesize_implicit_template_parm  (cp_parser *parser, tree constr)
   else
     parser->implicit_template_parms = new_parm;
 
-  tree new_decl = getdecls ();
+  tree new_decl = get_local_decls ();
   if (non_type)
     /* Return the TEMPLATE_PARM_INDEX, not the PARM_DECL.  */
     new_decl = DECL_INITIAL (new_decl);

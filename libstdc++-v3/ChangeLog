@@ -1,3 +1,78 @@
+2017-05-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/78939
+	* include/std/utility (tuple_size<cv T>): Only define partial
+	specializations when tuple_size<T>::value is valid.
+	* testsuite/20_util/tuple/78939.cc: New.
+	* testsuite/20_util/tuple/cv_tuple_size_neg.cc: New.
+
+2017-05-11  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/stl_tree.h [_GLIBCXX_INLINE_VERSION]
+	(_Rb_tree_impl<>): Remove _Is_pod_comparator
+	template parameter.
+
+	* include/debug/formatter.h [_GLIBCXX_INLINE_VERSION]
+	(__gnu_debug::_Error_formatter::_Parameter::_M_print_field): Remove.
+	(__gnu_debug::_Error_formatter::_Parameter::_M_print_description):
+	Remove.
+	(__gnu_debug::_Error_formatter::_M_format_word): Remove.
+	(__gnu_debug::_Error_formatter::_M_print_word): Remove.
+	(__gnu_debug::_Error_formatter::_M_print_string): Remove.
+	(__gnu_debug::_Error_formatter::_M_get_max_length): Remove.
+	* src/c++11/debug.cc: Adapt.
+	* config/abi/pre/gnu-versioned-namespace.ver: Adapt.
+
+2017-05-11  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/allocator.xml: Fix ViewCVS URLs.
+	* doc/xml/manual/mt_allocator.xml: Likewise.
+	* doc/html/*: Regenerate.
+
+	PR libstdc++/80285
+	* include/bits/shared_ptr_base.h (_Sp_make_shared_tag::_S_ti): Define
+	function to get unique fake std::type_info reference.
+	(_Sp_counted_ptr_inplace::_M_get_deleter) [!__cpp_rtti]: Compare to
+	_S_ti() fake reference.
+	(__shared_ptr(_Sp_make_shared_tag, const Alloc&, Args&&...)): Share
+	single implementation with or without RTTI enable.
+	[!__cpp_rtti]: Pass fake reference to _M_get_deleter.
+	* testsuite/20_util/shared_ptr/creation/alloc.cc: Change expected
+	allocation and deallocation counts.
+	* testsuite/20_util/shared_ptr/creation/single_allocation.cc: New.
+	* testsuite/20_util/shared_ptr/creation/single_allocation_no_rtti.cc:
+	New.
+
+2017-05-10  François Dumont  <fdumont@gcc.gnu.org>
+
+	Bump version namespace.
+	* config/abi/pre/gnu-versioned-namespace.ver: Bump version namespace
+	from __7 to __8. Bump GLIBCXX_7.0 to GLIBCXX_8.0.
+	* acinclude.m4 (libtool_VERSION): Bump to 8:0:0.
+	* include/bits/c++config: Adapt.
+	* include/bits/regex.h: Adapt.
+	* include/experimental/bits/fs_fwd.h: Adapt.
+	* include/experimental/bits/lfts_config.h: Adapt.
+	* include/std/variant: Adapt.
+	* python/libstdcxx/v6/printers.py: Adapt.
+	* testsuite/libstdc++-prettyprinters/48362.cc: Adapt.
+
+	* include/bits/stl_algobase.h (std::__iter_swap<false>): Remove
+	_GLIBCXX_MOVE usage.
+
+2017-05-09  Jason Merrill  <jason@redhat.com>
+
+	* testsuite/24_iterators/container_access.cc (test03): Make il3 static.
+
+2017-05-08  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/std/optional: Use a separate static_assert per condition.
+	* testsuite/20_util/optional/cons/value_neg.cc: Update dg-error line
+	numbers.
+
+	* doc/xml/manual/mt_allocator.xml: Clarify deallocation behaviour.
+	* doc/html/*: Regenerate.
+
 2017-05-02  Hugo Beauzée-Luyssen <hugo@beauzee.fr>
 
 	PR libstdc++/69506

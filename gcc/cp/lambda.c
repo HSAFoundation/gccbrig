@@ -295,24 +295,13 @@ is_normal_capture_proxy (tree decl)
 void
 insert_capture_proxy (tree var)
 {
-  cp_binding_level *b;
-  tree stmt_list;
-
   /* Put the capture proxy in the extra body block so that it won't clash
      with a later local variable.  */
-  b = current_binding_level;
-  for (;;)
-    {
-      cp_binding_level *n = b->level_chain;
-      if (n->kind == sk_function_parms)
-	break;
-      b = n;
-    }
-  pushdecl_with_scope (var, b, false);
+  pushdecl_outermost_localscope (var);
 
   /* And put a DECL_EXPR in the STATEMENT_LIST for the same block.  */
   var = build_stmt (DECL_SOURCE_LOCATION (var), DECL_EXPR, var);
-  stmt_list = (*stmt_list_stack)[1];
+  tree stmt_list = (*stmt_list_stack)[1];
   gcc_assert (stmt_list);
   append_to_statement_list_force (var, &stmt_list);
 }
@@ -1109,7 +1098,7 @@ maybe_add_lambda_conv_op (tree type)
   SET_OVERLOADED_OPERATOR_CODE (fn, TYPE_EXPR);
   grokclassfn (type, fn, NO_SPECIAL);
   set_linkage_according_to_type (type, fn);
-  rest_of_decl_compilation (fn, toplevel_bindings_p (), at_eof);
+  rest_of_decl_compilation (fn, namespace_bindings_p (), at_eof);
   DECL_IN_AGGR_P (fn) = 1;
   DECL_ARTIFICIAL (fn) = 1;
   DECL_NOT_REALLY_EXTERN (fn) = 1;
@@ -1121,7 +1110,7 @@ maybe_add_lambda_conv_op (tree type)
   if (generic_lambda_p)
     fn = add_inherited_template_parms (fn, DECL_TI_TEMPLATE (callop));
 
-  add_method (type, fn, NULL_TREE);
+  add_method (type, fn, false);
 
   /* Generic thunk code fails for varargs; we'll complain in mark_used if
      the conversion op is used.  */
@@ -1139,7 +1128,7 @@ maybe_add_lambda_conv_op (tree type)
   DECL_SOURCE_LOCATION (fn) = DECL_SOURCE_LOCATION (callop);
   grokclassfn (type, fn, NO_SPECIAL);
   set_linkage_according_to_type (type, fn);
-  rest_of_decl_compilation (fn, toplevel_bindings_p (), at_eof);
+  rest_of_decl_compilation (fn, namespace_bindings_p (), at_eof);
   DECL_IN_AGGR_P (fn) = 1;
   DECL_ARTIFICIAL (fn) = 1;
   DECL_NOT_REALLY_EXTERN (fn) = 1;
@@ -1167,7 +1156,7 @@ maybe_add_lambda_conv_op (tree type)
       cplus_decl_attributes (&fn, attrs, 0);
     }
 
-  add_method (type, fn, NULL_TREE);
+  add_method (type, fn, false);
 
   if (nested)
     push_function_context ();

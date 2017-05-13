@@ -2994,11 +2994,12 @@ estimate_function_body_sizes (struct cgraph_node *node, bool early)
   inline_summaries->get (node)->self_size = size;
   nonconstant_names.release ();
   ipa_release_body_info (&fbi);
+  inline_update_overall_summary (node);
   if (opt_for_fn (node->decl, optimize))
     {
       if (!early)
         loop_optimizer_finalize ();
-      else if (!ipa_edge_args_vector)
+      else if (!ipa_edge_args_sum)
 	ipa_free_all_node_params ();
       free_dominance_info (CDI_DOMINATORS);
     }
@@ -3119,12 +3120,13 @@ compute_inline_parameters (struct cgraph_node *node, bool early)
   info->size = info->self_size;
   info->stack_frame_offset = 0;
   info->estimated_stack_size = info->estimated_self_stack_size;
-  if (flag_checking)
-    {
-      inline_update_overall_summary (node);
-      gcc_assert (!(info->time - info->self_time).to_int ()
-		  && info->size == info->self_size);
-    }
+
+  /* Code above should compute exactly the same result as
+     inline_update_overall_summary but because computation happens in
+     different order the roundoff errors result in slight changes.  */
+  inline_update_overall_summary (node);
+  gcc_assert (!(info->time - info->self_time).to_int ()
+	      && info->size == info->self_size);
 }
 
 
@@ -3478,17 +3480,17 @@ estimate_ipcp_clone_size_and_time (struct cgraph_node *node,
 				   known_contexts,
 				   vec<ipa_agg_jump_function_p> known_aggs,
 				   int *ret_size, sreal *ret_time,
+				   sreal *ret_nonspec_time,
 				   inline_hints *hints)
 {
   clause_t clause, nonspec_clause;
-  sreal nonspec_time;
 
   evaluate_conditions_for_known_args (node, false, known_vals, known_aggs,
 				      &clause, &nonspec_clause);
   estimate_node_size_and_time (node, clause, nonspec_clause,
 			       known_vals, known_contexts,
 			       known_aggs, ret_size, NULL, ret_time,
-			       &nonspec_time, hints, vNULL);
+			       ret_nonspec_time, hints, vNULL);
 }
 
 /* Translate all conditions from callee representation into caller
