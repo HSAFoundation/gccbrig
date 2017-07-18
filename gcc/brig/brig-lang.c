@@ -128,6 +128,11 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
 
   opts->x_flag_finite_math_only = 0;
   opts->x_flag_signed_zeros = 1;
+
+  /* Prevent some optimizations that break HSAIL's ftz semantics. For
+     example, X * (+/-)1.0 -> (+/-)X simplification is not valid for
+     subnormals. */
+  opts->x_flag_ftz_math = 1;
 }
 
 /* Handle Brig specific options.  Return 0 if we didn't do anything.  */

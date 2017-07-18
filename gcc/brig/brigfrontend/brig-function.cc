@@ -584,6 +584,37 @@ brig_function::emit_launcher_and_metadata ()
 	      build_int_cst (uint32_type_node,
 			     m_parent->m_module_group_variables.size()));
 
+  /* Enable flush-to-zero mode around the kernel launch. In base
+     profile all floating-point operations (except neg, abs and
+     copysign) must flush subnormal floating-point values. This is
+     enabled by call to libhsail-rt routine which sets appropriate
+     flags in the target CPU. When the kernel finishes the original
+     flags are restored by another libhsail-rt routine. */
+  std::string saved_ftz_var_name = "saved_ftz_flags";
+  tree saved_ftz_var
+    = build_decl (UNKNOWN_LOCATION, VAR_DECL,
+		  get_identifier_with_length (saved_ftz_var_name.c_str(),
+					      saved_ftz_var_name.size()),
+		  uint64_type_node);
+
+  DECL_NONLOCAL (saved_ftz_var) = 0;
+  TREE_ADDRESSABLE (saved_ftz_var) = 0;
+  TREE_STATIC (saved_ftz_var) = 0;
+  TREE_USED (saved_ftz_var) = 1;
+  DECL_ARTIFICIAL (saved_ftz_var) = 1;
+
+  DECL_CONTEXT (saved_ftz_var) = launcher;
+
+  DECL_CHAIN (saved_ftz_var) = BIND_EXPR_VARS (bind_expr);
+  BIND_EXPR_VARS (bind_expr) = saved_ftz_var;
+
+  tree enable_ftz_call
+    = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_ENABLE_FTZ), 0,
+		    uint64_type_node);
+  tree save_ftz_stmt = build2(MODIFY_EXPR, TREE_TYPE(saved_ftz_var),
+			      saved_ftz_var, enable_ftz_call);
+  append_to_statement_list (save_ftz_stmt, &stmt_list);
+
   /* Emit a launcher depending whether we converted the kernel function to
      a work group function or not.  */
   if (m_is_wg_function)
@@ -602,6 +633,12 @@ brig_function::emit_launcher_and_metadata ()
 		      uint32_type_node, group_local_offset_arg);
 
   append_to_statement_list_force (phsail_launch_kernel_call, &stmt_list);
+
+  /* Restore original FTZ setting. */
+  tree restore_ftz_call
+    = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_RESTORE_FTZ), 1,
+		    void_type_node, uint64_type_node, saved_ftz_var);
+  append_to_statement_list_force (restore_ftz_call, &stmt_list);
 
   emit_metadata (stmt_list);
 

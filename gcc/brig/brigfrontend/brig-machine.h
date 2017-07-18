@@ -30,4 +30,6 @@ unsigned gccbrig_get_target_addr_space_id (BrigSegment8_t segment);
 
 unsigned gccbrig_get_target_wavesize ();
 
+bool target_supports_ftz_mode ();
+
 #endif

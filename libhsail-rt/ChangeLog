@@ -1,3 +1,11 @@
+2017-07-18  Henry Linjamäki  <henry.linjamaki@parmance.com>
+
+	* rt/ftz.c: New file.
+	* rt/ftz.h: Likewise.
+	* rt/arithemic.c: Migrated ftz routines to ftz.c.
+	* Makefile.am: Added ftz.c source.
+	* Makefile.in: Regenerated.
+
 2017-05-03  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* rt/workitems.c: Removed a leftover comment.

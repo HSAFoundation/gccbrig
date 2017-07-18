@@ -29,8 +29,10 @@
 # of the upstream gcc targets. More targets shall be added after testing.
 case "${target}" in
   x86_64-*-linux* | i?86-*-linux*)
+    TARGET_CONFIG_INCLUDE_PATHS=gcc/config/i386
     ;;
     *)
+    TARGET_CONFIG_INCLUDE_PATHS=
     UNSUPPORTED=1
     ;;
 esac
