@@ -129,6 +129,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 (simplify
  (mult @0 real_onep)
  (if (!HONOR_SNANS (type)
+      && !flag_ftz_math
       && (!HONOR_SIGNED_ZEROS (type)
           || !COMPLEX_FLOAT_TYPE_P (type)))
   (non_lvalue @0)))
@@ -137,6 +138,7 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 (simplify
  (mult @0 real_minus_onep)
   (if (!HONOR_SNANS (type)
+       && !flag_ftz_math
        && (!HONOR_SIGNED_ZEROS (type)
            || !COMPLEX_FLOAT_TYPE_P (type)))
    (negate @0)))
@@ -240,13 +242,13 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 /* In IEEE floating point, x/1 is not equivalent to x for snans.  */
 (simplify
  (rdiv @0 real_onep)
- (if (!HONOR_SNANS (type))
+ (if (!HONOR_SNANS (type) && !flag_ftz_math)
   (non_lvalue @0)))
 
 /* In IEEE floating point, x/-1 is not equivalent to -x for snans.  */
 (simplify
  (rdiv @0 real_minus_onep)
- (if (!HONOR_SNANS (type))
+ (if (!HONOR_SNANS (type) && !flag_ftz_math)
   (negate @0)))
 
 (if (flag_reciprocal_math)

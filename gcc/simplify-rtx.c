@@ -2556,8 +2556,10 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	return op1;
 
       /* In IEEE floating point, x*1 is not equivalent to x for
-	 signalling NaNs.  */
+	 signalling NaNs.
+	 For -fftz-math, x*1 is not equivalent to x for subnormals. */
       if (!HONOR_SNANS (mode)
+	  && (FLOAT_MODE_P (mode) && !flag_ftz_math)
 	  && trueop1 == CONST1_RTX (mode))
 	return op0;
 
