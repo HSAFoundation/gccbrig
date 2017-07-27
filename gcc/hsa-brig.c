@@ -566,6 +566,8 @@ enqueue_op (hsa_op_base *op)
     op_queue.projected_size += sizeof (struct BrigOperandCodeList);
   else if (is_a <hsa_op_operand_list *> (op))
     op_queue.projected_size += sizeof (struct BrigOperandOperandList);
+  else if (is_a <hsa_op_wavesize *> (op))
+    op_queue.projected_size += sizeof (struct BrigOperandWavesize);
   else
     gcc_unreachable ();
   return ret;
@@ -1178,6 +1180,17 @@ emit_operand_list_operand (hsa_op_operand_list *operand_list)
   brig_operand.add (&out, sizeof (out));
 }
 
+/* Emit operand representing HSA WAVESIZE.  */
+
+static void
+emit_operand_wavesize ()
+{
+  struct BrigOperandWavesize out;
+  out.base.byteCount = lendian16 (sizeof (out));
+  out.base.kind = lendian16 (BRIG_KIND_OPERAND_WAVESIZE);
+  brig_operand.add (&out, sizeof (out));
+}
+
 /* Emit all operands queued for writing.  */
 
 static void
@@ -1198,6 +1211,8 @@ emit_queued_operands (void)
 	emit_code_list_operand (code_list);
       else if (hsa_op_operand_list *l = dyn_cast <hsa_op_operand_list *> (op))
 	emit_operand_list_operand (l);
+      else if (is_a <hsa_op_wavesize *> (op))
+	emit_operand_wavesize ();
       else
 	gcc_unreachable ();
     }

@@ -1295,6 +1295,19 @@ hsa_op_operand_list::~hsa_op_operand_list ()
   m_offsets.release ();
 }
 
+/* Constructor of class represing a wavesize operand.  */
+
+hsa_op_wavesize::hsa_op_wavesize ()
+  : hsa_op_base (BRIG_KIND_OPERAND_WAVESIZE)
+{
+}
+
+/* Obstack-backed operator new.  */
+void *
+hsa_op_wavesize::operator new (size_t size)
+{
+  return obstack_alloc (&hsa_obstack, size);
+}
 
 hsa_op_reg *
 hsa_function_representation::reg_for_gimple_ssa (tree ssa)
@@ -5941,6 +5954,15 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
       break;
     case BUILT_IN_HSA_WAVEID:
       gen_hsa_misc_u32_query (BRIG_OPCODE_WAVEID, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_WAVESIZE:
+      if (lhs)
+	{
+	  hsa_op_reg *dest = hsa_cfun->reg_for_gimple_ssa (lhs);
+	  hsa_op_wavesize *o = new hsa_op_wavesize ();
+	  hbb->append_insn (new hsa_insn_basic (2, BRIG_OPCODE_MOV,
+						dest->m_type, dest, o));
+	}
       break;
 
     case BUILT_IN_GOMP_PARALLEL:

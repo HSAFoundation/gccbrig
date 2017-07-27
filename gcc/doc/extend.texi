@@ -13496,6 +13496,9 @@ Returns the result of maxwaveid instruction.
 @item unsigned __builtin_hsa_waveid (void)
 Returns the result of waveid instruction.
 
+@item unsigned __builtin_hsa_wavesize (void)
+Returns the value of WAVESIZE special argument.
+
 @end table
 
 @node MIPS DSP Built-in Functions

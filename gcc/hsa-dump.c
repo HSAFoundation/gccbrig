@@ -808,6 +808,8 @@ dump_hsa_operand (FILE *f, hsa_op_base *op, bool dump_reg_type = false)
     dump_hsa_reg (f, as_a <hsa_op_reg *> (op), dump_reg_type);
   else if (is_a <hsa_op_address *> (op))
     dump_hsa_address (f, as_a <hsa_op_address *> (op));
+  else if (is_a <hsa_op_wavesize *> (op))
+    fprintf (f, "WAVESIZE");
   else
     fprintf (f, "UNKNOWN_OP_KIND");
 }
