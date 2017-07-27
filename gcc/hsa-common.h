@@ -730,6 +730,30 @@ is_a_helper <hsa_insn_signal *>::test (hsa_insn_basic *p)
 	  || p->m_opcode == BRIG_OPCODE_SIGNALNORET);
 }
 
+/* HSA instruction for a memory fence.  */
+
+class hsa_insn_memfence : public hsa_insn_basic
+{
+public:
+  hsa_insn_memfence (BrigMemoryOrder memorder, BrigMemoryScope memscope);
+
+  /* Things like acquire/release/aligned.  */
+  BrigMemoryOrder m_memoryorder;
+
+  /* Global memory scope (and in HSA 1.0 also the inferred group one).  */
+  BrigMemoryScope m_scope;
+};
+
+/* Report whether or not P is a memory fence instruction.  */
+
+template <>
+template <>
+inline bool
+is_a_helper <hsa_insn_memfence *>::test (hsa_insn_basic *p)
+{
+  return p->m_opcode == BRIG_OPCODE_MEMFENCE;
+}
+
 /* HSA instruction to convert between flat addressing and segments.  */
 
 class hsa_insn_seg : public hsa_insn_basic

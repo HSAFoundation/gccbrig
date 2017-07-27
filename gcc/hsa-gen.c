@@ -1606,6 +1606,17 @@ hsa_insn_signal::hsa_insn_signal (int nops, int opc,
 {
 }
 
+/* Constructor of class representing memory fence instructions. MEMORDER is the
+   requested memory order, SCOPE is the global (and in HSA 1.0 the inferred
+   group) scope.  */
+
+hsa_insn_memfence::hsa_insn_memfence (BrigMemoryOrder memorder,
+				      BrigMemoryScope scope)
+  : hsa_insn_basic (0, BRIG_OPCODE_MEMFENCE, BRIG_TYPE_NONE),
+    m_memoryorder (memorder), m_scope (scope)
+{
+}
+
 /* Constructor of class representing segment conversion instructions.  OPC is
    the opcode which must be either BRIG_OPCODE_STOF or BRIG_OPCODE_FTOS.  DEST
    and SRCT are destination and source types respectively, SEG is the segment
@@ -4997,6 +5008,196 @@ gen_hsa_atomic_for_builtin (bool ret_orig, enum BrigAtomicOperation acode,
     }
 }
 
+/* Create a cleardetectexcept or setdetectexcept instruction according to
+   OPCODE with exception mask ARG and append it to HBB.  Use LOC for sorry
+   messages, if need be.  */
+
+static void
+gen_hsa_exceptionmask_insn (int opcode, tree arg, location_t loc, hsa_bb *hbb)
+{
+  if (!tree_fits_uhwi_p (arg))
+    {
+      HSA_SORRY_AT (loc,
+		    "The argument of __builtin_hsa_cleardetectexcept and "
+		    "__builtin_hsa_setdetectexcept must be immedate "
+		    "constant.");
+      return;
+    }
+  hsa_insn_basic *insn
+    = new hsa_insn_basic (1, opcode, BRIG_TYPE_U32, new hsa_op_immed (arg));
+  hbb->append_insn (insn);
+}
+
+/* Create an HSA signal wait operation ACODE from a corresponding call to an
+   HSA builtin STMT and add it to HBB.  If ACODE is timeouting, TIMEOUT must be
+   set to true and vice versa.  */
+
+static void
+gen_hsa_signalwait_for_builtin (gimple *stmt, enum BrigAtomicOperation acode,
+				bool timeout, hsa_bb *hbb)
+{
+
+  BrigMemoryOrder memorder;
+  const char *mmname;
+  if (hsa_memorder_from_tree (gimple_call_arg (stmt, 2), &memorder,
+			      &mmname, gimple_location (stmt)))
+    return;
+  if (memorder == BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE)
+    memorder = BRIG_MEMORY_ORDER_SC_ACQUIRE;
+  hsa_op_base *tgt
+    = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (stmt, 0), hbb);
+
+  tree type = TREE_TYPE (gimple_call_arg (stmt, 1));
+  BrigType16_t atype = hsa_type_for_scalar_tree_type (type, false);
+  hsa_op_reg *dest;
+  tree lhs = gimple_call_lhs (stmt);
+  if (lhs != NULL)
+    dest = hsa_cfun->reg_for_gimple_ssa (lhs);
+  else
+    dest = new hsa_op_reg (atype);
+
+  hsa_op_base *op3 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (stmt, 1),
+						     hbb);
+  hsa_op_base *op4 = NULL;
+  if (timeout)
+    op4 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (stmt, 3), hbb);
+  hsa_insn_signal *siginsn = new hsa_insn_signal (timeout ? 4 : 3,
+						  BRIG_OPCODE_SIGNAL, acode,
+						  atype, memorder,
+						  dest, tgt, op3, op4);
+  hbb->append_insn (siginsn);
+}
+
+/* Generate HSA instruction for an queue operation OPCODE that returns a value
+   and append it to HBB.  Take necessary arguments and the LHS from CALL.  */
+
+static void
+gen_hsa_queue_insns_for_stmt (gcall *call, int opcode, hsa_bb *hbb)
+{
+  hsa_op_reg *areg = hsa_cfun->reg_for_gimple_ssa (gimple_call_arg (call, 0));
+  hsa_op_address *addr = new hsa_op_address (areg);
+  hsa_op_with_type *src0, *src1;
+
+  unsigned arg_mm;
+  tree lhs;
+  unsigned opcount;
+  hsa_op_reg *dest;
+  bool ld_p = false, st_p = false;
+
+  switch (opcode)
+    {
+    case BRIG_OPCODE_ADDQUEUEWRITEINDEX:
+      opcount = 3;
+      arg_mm = 2;
+      lhs = gimple_call_lhs (call);
+      dest = lhs ? hsa_cfun->reg_for_gimple_ssa (lhs)
+	: new hsa_op_reg (BRIG_TYPE_U64);
+      src0 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (call, 1), hbb);
+      src1 = NULL;
+      break;
+
+    case BRIG_OPCODE_CASQUEUEWRITEINDEX:
+      opcount = 4;
+      arg_mm = 3;
+      lhs = gimple_call_lhs (call);
+      dest = lhs ? hsa_cfun->reg_for_gimple_ssa (lhs)
+	: new hsa_op_reg (BRIG_TYPE_U64);
+      src0 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (call, 1), hbb);
+      src1 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (call, 2), hbb);
+      break;
+
+    case BRIG_OPCODE_LDQUEUEREADINDEX:
+    case BRIG_OPCODE_LDQUEUEWRITEINDEX:
+      opcount = 2;
+      arg_mm = 1;
+      lhs = gimple_call_lhs (call);
+      dest = lhs ? hsa_cfun->reg_for_gimple_ssa (lhs)
+	: new hsa_op_reg (BRIG_TYPE_U64);
+      src0 = NULL;
+      src1 = NULL;
+      ld_p = true;
+      break;
+
+    case BRIG_OPCODE_STQUEUEREADINDEX:
+    case BRIG_OPCODE_STQUEUEWRITEINDEX:
+      opcount = 2;
+      arg_mm = 2;
+      dest = NULL;
+      src0 = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (call, 1), hbb);
+      src1 = NULL;
+      st_p = true;
+      break;
+
+    default:
+      gcc_unreachable ();
+    }
+
+  BrigMemoryOrder memorder;
+  const char *mmname;
+  if (hsa_memorder_from_tree (gimple_call_arg (call, arg_mm), &memorder,
+			      &mmname, gimple_location (call)))
+    return;
+  if (ld_p)
+    {
+      if (memorder == BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE)
+	memorder = BRIG_MEMORY_ORDER_SC_ACQUIRE;
+      else if (memorder != BRIG_MEMORY_ORDER_RELAXED
+	       && memorder != BRIG_MEMORY_ORDER_SC_ACQUIRE)
+	{
+	  HSA_SORRY_ATV (gimple_location (call),
+			 "memory model for %s cannot be used for a"
+			 "queue load operation", mmname);
+	  return;
+	}
+    }
+  else if (st_p)
+    {
+      if (memorder == BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE)
+	memorder = BRIG_MEMORY_ORDER_SC_RELEASE;
+      else if (memorder != BRIG_MEMORY_ORDER_RELAXED
+	       && memorder != BRIG_MEMORY_ORDER_SC_RELEASE)
+	{
+	  HSA_SORRY_ATV (gimple_location (call),
+			 "memory model for %s cannot be used for a"
+			 "queue store operation", mmname);
+	  return;
+	}
+    }
+
+  hsa_insn_queue *qi
+    = new hsa_insn_queue (opcount, opcode, BRIG_SEGMENT_FLAT, memorder);
+  int i = 0;
+  if (dest)
+    {
+      qi->set_op (i, dest);
+      i++;
+    }
+  qi->set_op (i, addr);
+  i++;
+  if (src0)
+    {
+      qi->set_op (i, src0);
+      i++;
+    }
+  if (src1)
+    qi->set_op (i, src1);
+
+  hbb->append_insn (qi);
+}
+
+/* Generate HSA instruction performing a "miscalleaneous" u32-type query OPCODE
+   which should be stored to an HSA equivalent of LHS and appended to HBB  */
+static void
+gen_hsa_misc_u32_query (int opcode, tree lhs, hsa_bb *hbb)
+{
+  if (!lhs)
+    return;
+  hsa_insn_basic *insn
+      = new hsa_insn_basic (1, opcode, BRIG_TYPE_U32,
+			    hsa_cfun->reg_for_gimple_ssa (lhs));
+  hbb->append_insn (insn);
+}
+
 /* Generate HSA instructions for an internal fn.
    Instructions will be appended to HBB, which also needs to be the
    corresponding structure to the basic_block of STMT.  */
@@ -5277,10 +5478,14 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_LOAD_4:
     case BUILT_IN_ATOMIC_LOAD_8:
     case BUILT_IN_ATOMIC_LOAD_16:
+    case BUILT_IN_HSA_SIGNAL_LD:
       {
 	BrigType16_t mtype;
 	hsa_op_base *src;
-	src = get_address_from_value (gimple_call_arg (stmt, 0), hbb);
+	if (builtin == BUILT_IN_HSA_SIGNAL_LD)
+	  src = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (stmt, 0), hbb);
+	else
+	  src = get_address_from_value (gimple_call_arg (stmt, 0), hbb);
 
 	BrigMemoryOrder memorder;
 	const char *mmname;
@@ -5316,8 +5521,12 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
 	  }
 
 	hsa_insn_basic *atominsn;
-	atominsn = new hsa_insn_atomic (2, BRIG_OPCODE_ATOMIC, BRIG_ATOMIC_LD,
-					mtype, memorder, dest, src);
+ 	if (builtin == BUILT_IN_HSA_SIGNAL_LD)
+	  atominsn = new hsa_insn_signal (2, BRIG_OPCODE_SIGNAL, BRIG_ATOMIC_LD,
+					  mtype, memorder, dest, src);
+	else
+	  atominsn = new hsa_insn_atomic (2, BRIG_OPCODE_ATOMIC, BRIG_ATOMIC_LD,
+					  mtype, memorder, dest, src);
 
 	hbb->append_insn (atominsn);
 	break;
@@ -5330,6 +5539,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_EXCHANGE_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_EXCH, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_EXCH:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_EXCH, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_FETCH_ADD_1:
@@ -5339,6 +5550,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_FETCH_ADD_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_ADD, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_ADD:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_ADD, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_FETCH_SUB_1:
@@ -5348,6 +5561,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_FETCH_SUB_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_SUB, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_SUB:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_SUB, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_FETCH_AND_1:
@@ -5357,6 +5572,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_FETCH_AND_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_AND, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_AND:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_AND, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_FETCH_XOR_1:
@@ -5366,6 +5583,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_FETCH_XOR_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_XOR, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_XOR:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_XOR, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_FETCH_OR_1:
@@ -5375,6 +5594,8 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_ATOMIC_FETCH_OR_16:
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_OR, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_OR:
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_OR, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_STORE_1:
@@ -5385,6 +5606,9 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
       /* Since there cannot be any LHS, the first parameter is meaningless.  */
       gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_ST, stmt, hbb, false);
       break;
+    case BUILT_IN_HSA_SIGNAL_ST:
+      /* Since there cannot be any LHS, the first parameter is meaningless.  */
+      gen_hsa_atomic_for_builtin (true, BRIG_ATOMIC_ST, stmt, hbb, true);
       break;
 
     case BUILT_IN_ATOMIC_ADD_FETCH_1:
@@ -5432,16 +5656,38 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
     case BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_4:
     case BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_8:
     case BUILT_IN_SYNC_VAL_COMPARE_AND_SWAP_16:
+    case BUILT_IN_HSA_SIGNAL_CAS:
       {
 	tree type = TREE_TYPE (gimple_call_arg (stmt, 1));
 	BrigType16_t atype
 	  = hsa_bittype_for_type (hsa_type_for_scalar_tree_type (type, false));
-	BrigMemoryOrder memorder = BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE;
+
+	BrigMemoryOrder memorder;
+	if (builtin == BUILT_IN_HSA_SIGNAL_CAS)
+	  {
+	    tree mmtree = gimple_call_arg (stmt, 3);
+	    const char *mmname;
+	    if (hsa_memorder_from_tree (mmtree, &memorder, &mmname,
+					gimple_location (stmt)))
+	      return;
+	  }
+	else
+	  memorder = BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE;
 	hsa_insn_basic *atominsn;
 	hsa_op_base *tgt;
-	atominsn = new hsa_insn_atomic (4, BRIG_OPCODE_ATOMIC,
-					BRIG_ATOMIC_CAS, atype, memorder);
-	tgt = get_address_from_value (gimple_call_arg (stmt, 0), hbb);
+	if (builtin == BUILT_IN_HSA_SIGNAL_CAS)
+	  {
+	    atominsn = new hsa_insn_signal (4, BRIG_OPCODE_SIGNAL,
+					    BRIG_ATOMIC_CAS, atype, memorder);
+	    tgt = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (stmt, 0),
+						  hbb);
+	  }
+	else
+	  {
+	    atominsn = new hsa_insn_atomic (4, BRIG_OPCODE_ATOMIC,
+					    BRIG_ATOMIC_CAS, atype, memorder);
+	    tgt = get_address_from_value (gimple_call_arg (stmt, 0), hbb);
+	  }
 
 	if (lhs != NULL)
 	  dest = hsa_cfun->reg_for_gimple_ssa (lhs);
@@ -5475,12 +5721,228 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
       break;
     case BUILT_IN_HSA_CURRENTWORKGROUPSIZE:
       query_hsa_grid_dim (stmt, BRIG_OPCODE_CURRENTWORKGROUPSIZE, hbb);
+    case BUILT_IN_HSA_CURRENTWORKITEMFLATID:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_CURRENTWORKITEMFLATID, hbb);
+      break;
+    case BUILT_IN_HSA_DIM:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_DIM, hbb);
+      break;
+    case BUILT_IN_HSA_GRIDGROUPS:
+      query_hsa_grid_dim (stmt, BRIG_OPCODE_GRIDGROUPS, hbb);
+      break;
+    case BUILT_IN_HSA_PACKETCOMPLETIONSIG:
+      {
+	tree lhs = gimple_call_lhs (dyn_cast <gcall *> (stmt));
+	if (lhs)
+	  {
+	    hsa_op_reg *dest = hsa_cfun->reg_for_gimple_ssa (lhs);
+	    BrigType16_t brig_type
+	      = hsa_machine_large_p () ? BRIG_TYPE_SIG64 : BRIG_TYPE_SIG32;
+	    hsa_insn_basic *insn
+	      = new hsa_insn_basic (1, BRIG_OPCODE_PACKETCOMPLETIONSIG,
+				    brig_type, dest);
+	    hbb->append_insn (insn);
+	  }
+	break;
+      }
+    case BUILT_IN_HSA_PACKETID:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_PACKETID, hbb);
+      break;
+    case BUILT_IN_HSA_WORKGROUPSIZE:
+      query_hsa_grid_dim (stmt, BRIG_OPCODE_WORKGROUPSIZE, hbb);
+      break;
+    case BUILT_IN_HSA_WORKITEMFLATABSID:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_WORKITEMFLATABSID, hbb);
+      break;
+    case BUILT_IN_HSA_WORKITEMFLATABSID_64:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_WORKITEMFLATABSID, hbb);
+      break;
+    case BUILT_IN_HSA_WORKITEMFLATID:
+      query_hsa_grid_nodim (stmt, BRIG_OPCODE_WORKITEMFLATID, hbb);
       break;
 
+    case BUILT_IN_HSA_BARRIER_ALL:
     case BUILT_IN_GOMP_BARRIER:
       hbb->append_insn (new hsa_insn_br (0, BRIG_OPCODE_BARRIER, BRIG_TYPE_NONE,
 					 BRIG_WIDTH_ALL));
       break;
+    case BUILT_IN_HSA_BARRIER_WAVESIZE:
+      hbb->append_insn (new hsa_insn_br (0, BRIG_OPCODE_BARRIER, BRIG_TYPE_NONE,
+					 BRIG_WIDTH_WAVESIZE));
+      break;
+    case BUILT_IN_HSA_BARRIER_WIDTH:
+      {
+	tree w = gimple_call_arg (stmt, 0);
+	HOST_WIDE_INT width = 0;
+	if (tree_fits_shwi_p (w))
+	  width = tree_to_shwi (w);
+	if (width < BRIG_WIDTH_1
+	    || width >BRIG_WIDTH_ALL)
+	  {
+	    HSA_SORRY_AT (gimple_location (stmt),
+			  "An argument of __builtin_hsa_barrier_width "
+			  "must be valid BRIG_WIDTH constant.");
+	    return;
+	  }
+	hbb->append_insn (new hsa_insn_br (0, BRIG_OPCODE_BARRIER,
+					   BRIG_TYPE_NONE,
+					   (BrigWidth) width));
+	break;
+      }
+
+    case BUILT_IN_HSA_SIGNAL_WAIT_EQ:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAIT_EQ, false, hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_NE:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAIT_NE, false, hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_LT:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAIT_LT, false, hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_GTE:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAIT_GTE, false, hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_EQ_TIMEOUT:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAITTIMEOUT_EQ, true,
+				      hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_NE_TIMEOUT:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAITTIMEOUT_NE, true,
+				      hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_LT_TIMEOUT:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAITTIMEOUT_LT, true,
+				      hbb);
+      break;
+    case BUILT_IN_HSA_SIGNAL_WAIT_GTE_TIMEOUT:
+      gen_hsa_signalwait_for_builtin (stmt, BRIG_ATOMIC_WAITTIMEOUT_GTE, true,
+				      hbb);
+      break;
+
+    case BUILT_IN_HSA_MEMFENCE:
+      {
+	BrigMemoryOrder memorder;
+	const char *mmname;
+	if (hsa_memorder_from_tree (gimple_call_arg (stmt, 0), &memorder,
+				    &mmname, gimple_location (stmt)))
+	  return;
+	if (memorder != BRIG_MEMORY_ORDER_SC_ACQUIRE_RELEASE
+	    && memorder != BRIG_MEMORY_ORDER_SC_RELEASE
+	    && memorder != BRIG_MEMORY_ORDER_SC_ACQUIRE)
+	  {
+	    HSA_SORRY_AT (gimple_location (stmt),
+			  "HSA requires that memory fence memory model is "
+			  "scacr, scacq or screl");
+	    return;
+	  }
+	tree t = gimple_call_arg (stmt, 1);
+	BrigMemoryScope scope;
+	if (tree_fits_uhwi_p (t))
+	  {
+	    unsigned cst = tree_to_uhwi (t);
+	    scope = (BrigMemoryScope) cst;
+	  }
+	else
+	  scope = BRIG_MEMORY_SCOPE_NONE;
+	if (scope != BRIG_MEMORY_SCOPE_WAVEFRONT
+	    && scope != BRIG_MEMORY_SCOPE_WORKGROUP
+	    && scope != BRIG_MEMORY_SCOPE_AGENT
+	    && scope != BRIG_MEMORY_SCOPE_SYSTEM)
+	  {
+	    HSA_SORRY_AT (gimple_location (stmt),
+			  "the second parameter of memory fence instruction "
+			  "must be an integer constant of value "
+			  "BRIG_MEMORY_SCOPE_WAVEFRONT, "
+			  "BRIG_MEMORY_SCOPE_WORKGROUP, "
+			  "BRIG_MEMORY_SCOPE_AGENT, or "
+			  "BRIG_MEMORY_SCOPE_SYSTEM.");
+	    return;
+	  }
+	hsa_insn_memfence *fence = new hsa_insn_memfence (memorder, scope);
+	hbb->append_insn (fence);
+	break;
+      }
+
+    case BUILT_IN_HSA_CLEARDETECTEXCEPT:
+      gen_hsa_exceptionmask_insn (BRIG_OPCODE_CLEARDETECTEXCEPT,
+				  gimple_call_arg (stmt, 0),
+				  gimple_location (stmt), hbb);
+      break;
+    case BUILT_IN_HSA_GETDETECTEXCEPT:
+      if (lhs)
+	{
+	  hsa_op_reg *dest = hsa_cfun->reg_for_gimple_ssa (lhs);
+	  hsa_insn_basic *insn
+	    = new hsa_insn_basic (1, BRIG_OPCODE_GETDETECTEXCEPT,
+				  BRIG_TYPE_U32, dest);
+	  hbb->append_insn (insn);
+	}
+      break;
+    case BUILT_IN_HSA_SETDETECTEXCEPT:
+      gen_hsa_exceptionmask_insn (BRIG_OPCODE_SETDETECTEXCEPT,
+				  gimple_call_arg (stmt, 0),
+				  gimple_location (stmt), hbb);
+      break;
+
+    case BUILT_IN_HSA_ADDQUEUEWRITEINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_ADDQUEUEWRITEINDEX, hbb);
+      break;
+    case BUILT_IN_HSA_CASQUEUEWRITEINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_CASQUEUEWRITEINDEX, hbb);
+      break;
+    case BUILT_IN_HSA_LDQUEUEREADINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_LDQUEUEREADINDEX, hbb);
+      break;
+    case BUILT_IN_HSA_LDQUEUEWRITEINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_LDQUEUEWRITEINDEX, hbb);
+      break;
+    case BUILT_IN_HSA_STQUEUEREADINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_STQUEUEREADINDEX, hbb);
+      break;
+    case BUILT_IN_HSA_STQUEUEWRITEINDEX:
+      gen_hsa_queue_insns_for_stmt (call, BRIG_OPCODE_STQUEUEWRITEINDEX, hbb);
+      break;
+
+    case BUILT_IN_HSA_CLOCK:
+      {
+	hsa_op_reg *dest;
+	if (lhs)
+	  dest = hsa_cfun->reg_for_gimple_ssa (lhs);
+	else
+	  dest = new hsa_op_reg (BRIG_TYPE_U64);
+	hsa_insn_basic *insn = new hsa_insn_basic (1, BRIG_OPCODE_CLOCK,
+						   BRIG_TYPE_U64, dest);
+	hbb->append_insn (insn);
+	break;
+      }
+    case BUILT_IN_HSA_CUID:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_CUID, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_DEBUGTRAP:
+      {
+	hsa_op_with_type *src
+	  = hsa_reg_or_immed_for_gimple_op (gimple_call_arg (call, 0), hbb);
+	hsa_insn_basic *insn
+	    = new hsa_insn_basic (1, BRIG_OPCODE_DEBUGTRAP, BRIG_TYPE_U32, src);
+	hbb->append_insn (insn);
+	break;
+      }
+    case BUILT_IN_HSA_GROUPBASEPTR:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_GROUPBASEPTR, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_LANEID:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_LANEID, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_MAXCUID:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_MAXCUID, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_MAXWAVEID:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_MAXWAVEID, lhs, hbb);
+      break;
+    case BUILT_IN_HSA_WAVEID:
+      gen_hsa_misc_u32_query (BRIG_OPCODE_WAVEID, lhs, hbb);
+      break;
+
     case BUILT_IN_GOMP_PARALLEL:
       HSA_SORRY_AT (gimple_location (stmt),
 		    "support for HSA does not implement non-gridified "

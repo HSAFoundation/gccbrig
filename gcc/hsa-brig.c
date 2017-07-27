@@ -1775,6 +1775,23 @@ emit_srctype_insn (hsa_insn_srctype *insn)
   brig_insn_count++;
 }
 
+/* Emit memory fence instruction FENCE.  */
+static void
+emit_memfence_insn (hsa_insn_memfence *fence)
+{
+  struct BrigInstMemFence repr;
+  memset (&repr, 0, sizeof (repr));
+  repr.base.base.byteCount = lendian16 (sizeof (repr));
+  repr.base.base.kind = lendian16 (BRIG_KIND_INST_MEM_FENCE);
+  repr.base.opcode = lendian16 (fence->m_opcode);
+  repr.base.type = lendian16 (fence->m_type);
+
+  repr.memoryOrder = fence->m_memoryorder;
+  repr.globalSegmentMemoryScope = fence->m_scope;
+  repr.groupSegmentMemoryScope = fence->m_scope;
+  repr.imageSegmentMemoryScope = BRIG_MEMORY_SCOPE_NONE;
+}
+
 /* Emit packed instruction INSN.  */
 
 static void
@@ -1928,6 +1945,8 @@ emit_insn (hsa_insn_basic *insn)
     emit_cvt_insn (cvt);
   else if (hsa_insn_alloca *alloca = dyn_cast <hsa_insn_alloca *> (insn))
     emit_alloca_insn (alloca);
+  else if (hsa_insn_memfence *fence = dyn_cast <hsa_insn_memfence *> (insn))
+    emit_memfence_insn (fence);
   else
     emit_basic_insn (insn);
 }

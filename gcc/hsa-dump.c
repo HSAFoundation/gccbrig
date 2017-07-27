@@ -882,7 +882,13 @@ dump_hsa_insn_1 (FILE *f, hsa_insn_basic *insn, int *indent)
 
       dump_hsa_operands (f, mem);
     }
-
+  else if (is_a <hsa_insn_memfence *> (insn))
+    {
+      hsa_insn_memfence *fence = as_a <hsa_insn_memfence *> (insn);
+      fprintf (f, "%s", hsa_opcode_name (fence->m_opcode));
+      fprintf (f, "_%s", hsa_memsem_name (fence->m_memoryorder));
+      fprintf (f, "_%s", hsa_memscope_name (fence->m_scope));
+    }
   else if (is_a <hsa_insn_atomic *> (insn))
     {
       hsa_insn_atomic *mem = as_a <hsa_insn_atomic *> (insn);

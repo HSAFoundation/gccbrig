@@ -11872,6 +11872,7 @@ instructions, but allow the compiler to schedule those calls.
 * AVR Built-in Functions::
 * Blackfin Built-in Functions::
 * FR-V Built-in Functions::
+* HSA Built-in Functions::
 * MIPS DSP Built-in Functions::
 * MIPS Paired-Single Support::
 * MIPS Loongson Built-in Functions::
@@ -13291,6 +13292,210 @@ into the data cache.
 @item void __data_prefetch (const void *@var{x})
 Use the @code{nldub} instruction to load the contents of address @var{x}
 into the data cache.  The instruction is issued in slot I1@.
+@end table
+
+@node HSA Built-in Functions
+@subsection HSA Built-in Functions
+
+When using @code{-fdirecthsa} option to compile selected functions as
+Heterogeneous Systems Architecture Intermediate Language (HSAIL), the
+following built-in functions give access to various special HSA
+instructions and features:
+
+@table @code
+
+@item unsigned __builtin_hsa_currentworkgroupsize (unsigned @var{dimNumber})
+Returns the result of currentworkgroupsize instruction.
+@var{dimNumber} must be an immediate constant 0, 1 or 2.
+
+@item unsigned __builtin_hsa_currentworkitemflatid (void)
+Returns the result of currentworkitemflatid instruction.
+
+@item unsigned __builtin_hsa_dim (void)
+Returns the result of dim instruction.
+
+@item unsigned __builtin_hsa_gridgroups (unsigned @var{dimNumber})
+Returns the result of gridgroups instruction.  @var{dimNumber} must be
+an immediate constant 0, 1 or 2.
+
+@item unsigned __builtin_hsa_gridsize (unsigned @var{dimNumber})
+Returns the result of gridsize instruction.  @var{dimNumber} must be
+an immediate constant 0, 1 or 2.
+
+@item unsigned long __builtin_hsa_packetcompletionsig (void)
+Returns the result of packetcompletionsig instruction.
+
+@item unsigned long __builtin_hsa_packetid (void)
+Returns the result of packetid instruction.
+
+@item unsigned __builtin_hsa_workgroupid (unsigned @var{dimNumber})
+Returns the result of workgroupid instruction.  @var{dimNumber} must
+be an immediate constant 0, 1 or 2.
+
+@item unsigned __builtin_hsa_workitemabsid (unsigned @var{dimNumber})
+Returns the result of workitemabsid instruction.  @var{dimNumber} must
+be an immediate constant 0, 1 or 2.
+
+@item unsigned __builtin_hsa_workitemflatabsid (void)
+Returns the result of workitemflatabsid instruction.
+
+@item unsigned long long __builtin_hsa_workitemflatabsid (void)
+Returns the result of the 64-bit variant of the workitemflatabsid
+instruction.
+
+@item unsigned __builtin_hsa_workitemflatid (void)
+Returns the result of workitemflatid instruction.
+
+@item unsigned __builtin_hsa_workitemid (unsigned @var{dimNumber})
+Returns the result of workitemid instruction.  @var{dimNumber} must
+be an immediate constant 0, 1 or 2.
+
+@item unsigned long __builtin_hsa_signal_ld (unsigned long long @var{signalhandle}, int @var{memorder})
+Returns the result of signal_ld instruction.  Use constants for atomic
+builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_and (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_and instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_or (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_or instruction.  Use constants for atomic
+builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_xor (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_xor instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_exch (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_exch instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_add (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_add instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_sub (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Returns the result of signal_sub instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_cas (unsigned long long @var{signalhandle}, unsigned long @var{val1}, unsigned long @var{val2}, int @var{memorder})
+Returns the result of signal_cas instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_eq (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder})
+Returns the result of signal_wait_eq instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_ne (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder})
+Returns the result of signal_wait_ne instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_lt (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder})
+Returns the result of signal_wait_lt instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_gte (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder})
+Returns the result of signal_wait_gte instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_eq_timeout (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder}, unsigned long long @var{timeout})
+Returns the result of signal_wait_eq_timeout instruction.  Use
+constants for atomic builtins (see @ref{__atomic Builtins}) for
+@var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_ne_timeout (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder}, unsigned long long @var{timeout})
+Returns the result of signal_wait_ne_timeout instruction.  Use
+constants for atomic builtins (see @ref{__atomic Builtins}) for
+@var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_lt_timeout (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder}, unsigned long long @var{timeout})
+Returns the result of signal_wait_lt_timeout instruction.  Use
+constants for atomic builtins (see @ref{__atomic Builtins}) for
+@var{memorder}.
+
+@item unsigned long __builtin_hsa_signal_wait_gte_timeout (unsigned long long @var{signalhandle}, long @var{val}, int @var{memorder}, unsigned long long @var{timeout})
+Returns the result of signal_wait_gte_timeout instruction.  Use
+constants for atomic builtins (see @ref{__atomic Builtins}) for
+@var{memorder}.
+
+@item void __builtin_hsa_signal_st (unsigned long long @var{signalhandle}, unsigned long @var{val}, int @var{memorder})
+Performs a signal_st instruction.  Use constants for atomic builtins
+(see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item void __builtin_hsa_memfence (int @var{memorder}, unsinged long @var{scope})
+Performs a memfence instruction.  Use constants for atomic builtins
+(see @ref{__atomic Builtins}) for @var{memorder} and an appropriate
+immediate BRIG constant for @var{scope}.
+
+@item void __builtin_hsa_barrier_all (void)
+Performs barrier_all instruction.
+
+@item void __builtin_hsa_barrier_wavesize (void)
+Performs barrier_wavesize instruction.
+
+@item void __builtin_hsa_barrier_width (int @var{width})
+Performs barrier instruction of the given @var{width} which must be an
+appropriate immediate BRIG constant.
+
+@item void __builtin_hsa_cleardetectexcept (unsigned int @var{mask})
+Performs cleardetectexcept instruction.  @var{mask} must be an
+appropriate immediate BRIG constant.
+
+@item unsigned __builtin_hsa_getdetectexcept (void)
+Returns the result of getdetectexcept instruction.
+
+@item void __builtin_hsa_setdetectexcept (unsigned int @var{mask})
+Performs setdetectexcept instruction.  @var{mask} must be an
+appropriate immediate BRIG constant.
+
+@item unsigned long long __builtin_hsa_addqueuewriteindex (void *@var{ptr}, unsigned long long @var{src}, int @var{memorder})
+Returns the result of addqueuewriteindex instruction.  Use constants
+for atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long long __builtin_hsa_casqueuewriteindex (void *@var{ptr}, unsigned long long @var{src0}, unsigned long long @var{src1}, int @var{memorder})
+Returns the result of casqueuewriteindex instruction.  Use constants
+for atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long long __builtin_hsa_ldqueuereadindex (void *@var{ptr}, int @var{memorder})
+Returns the result of ldqueuereadindex instruction.  Use constants
+for atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long long __builtin_hsa_ldqueuewriteindex (void *@var{ptr}, int @var{memorder})
+Returns the result of ldqueuewriteindex instruction.  Use constants
+for atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item void * __builtin_hsa_stqueuereadindex (unsigned long long @var{src}, int @var{memorder})
+Returns the result of stqueuereadindex instruction.  Use constants for
+atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item void * __builtin_hsa_stqueuewriteindex (unsigned long long @var{src}, int @var{memorder})
+Returns the result of stqueuewriteindex instruction.  Use constants
+for atomic builtins (see @ref{__atomic Builtins}) for @var{memorder}.
+
+@item unsigned long long __builtin_hsa_clock (void)
+Returns the result of clock instruction.
+
+@item unsigned __builtin_hsa_cuid (void)
+Returns the result of cuid instruction.
+
+@item void __builtin_hsa_debugtrap (void)
+Performs debugtrap instruction.
+
+@item unsigned __builtin_hsa_groupbaseptr (void)
+Returns the result of groupbaseptr instruction.
+
+@item unsigned __builtin_hsa_laneid (void)
+Returns the result of laneid instruction.
+
+@item unsigned __builtin_hsa_maxcuid (void)
+Returns the result of maxcuid instruction.
+
+@item unsigned __builtin_hsa_maxwaveid (void)
+Returns the result of maxwaveid instruction.
+
+@item unsigned __builtin_hsa_waveid (void)
+Returns the result of waveid instruction.
+
 @end table
 
 @node MIPS DSP Built-in Functions
