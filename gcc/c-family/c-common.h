@@ -172,6 +172,7 @@ enum rid
   RID_IS_TRIVIALLY_ASSIGNABLE, RID_IS_TRIVIALLY_CONSTRUCTIBLE,
   RID_IS_TRIVIALLY_COPYABLE,
   RID_IS_UNION,                RID_UNDERLYING_TYPE,
+  RID_IS_ASSIGNABLE,           RID_IS_CONSTRUCTIBLE,
 
   /* C++11 */
   RID_CONSTEXPR, RID_DECLTYPE, RID_NOEXCEPT, RID_NULLPTR, RID_STATIC_ASSERT,
@@ -831,12 +832,11 @@ extern tree c_common_signed_type (tree);
 extern tree c_common_signed_or_unsigned_type (int, tree);
 extern void c_common_init_ts (void);
 extern tree c_build_bitfield_integer_type (unsigned HOST_WIDE_INT, int);
-extern enum conversion_safety unsafe_conversion_p (location_t, tree, tree,
+extern enum conversion_safety unsafe_conversion_p (location_t, tree, tree, tree,
 						   bool);
 extern bool decl_with_nonnull_addr_p (const_tree);
 extern tree c_fully_fold (tree, bool, bool *);
 extern tree c_wrap_maybe_const (tree, bool);
-extern tree c_save_expr (tree);
 extern tree c_common_truthvalue_conversion (location_t, tree);
 extern void c_apply_type_quals_to_decl (int, tree);
 extern tree c_sizeof_or_alignof_type (location_t, tree, bool, bool, int);
@@ -904,11 +904,11 @@ extern bool c_common_post_options (const char **);
 extern bool c_common_init (void);
 extern void c_common_finish (void);
 extern void c_common_parse_file (void);
-extern FILE *get_dump_info (int, int *);
+extern FILE *get_dump_info (int, dump_flags_t *);
 extern alias_set_type c_common_get_alias_set (tree);
 extern void c_register_builtin_type (tree, const char*);
 extern bool c_promoting_integer_type_p (const_tree);
-extern int self_promoting_args_p (const_tree);
+extern bool self_promoting_args_p (const_tree);
 extern tree strip_pointer_operator (tree);
 extern tree strip_pointer_or_array_types (tree);
 extern HOST_WIDE_INT c_common_to_target_charset (HOST_WIDE_INT);
@@ -1483,7 +1483,7 @@ extern bool cilk_recognize_spawn (tree, tree *);
 /* In c-warn.c.  */
 extern void constant_expression_warning (tree);
 extern void constant_expression_error (tree);
-extern void overflow_warning (location_t, tree);
+extern void overflow_warning (location_t, tree, tree = NULL_TREE);
 extern void warn_logical_operator (location_t, enum tree_code, tree,
 				   enum tree_code, tree, enum tree_code, tree);
 extern void warn_tautological_cmp (location_t, enum tree_code, tree, tree);
@@ -1539,6 +1539,8 @@ extern bool maybe_warn_shift_overflow (location_t, tree, tree);
 extern void warn_duplicated_cond_add_or_warn (location_t, tree, vec<tree> **);
 extern bool diagnose_mismatched_attributes (tree, tree);
 extern tree do_warn_duplicated_branches_r (tree *, int *, void *);
+extern void warn_for_multistatement_macros (location_t, location_t,
+					    location_t, enum rid);
 
 /* In c-attribs.c.  */
 extern bool attribute_takes_identifier_p (const_tree);
@@ -1552,11 +1554,18 @@ extern enum flt_eval_method
 excess_precision_mode_join (enum flt_eval_method, enum flt_eval_method);
 
 extern int c_flt_eval_method (bool ts18661_p);
+extern void add_no_sanitize_value (tree node, unsigned int flags);
+
+extern void maybe_add_include_fixit (rich_location *, const char *);
 
 #if CHECKING_P
 namespace selftest {
+  /* Declarations for specific families of tests within c-family,
+     by source file, in alphabetical order.  */
   extern void c_format_c_tests (void);
-  extern void run_c_tests (void);
+
+  /* The entrypoint for running all of the above tests.  */
+  extern void c_family_tests (void);
 } // namespace selftest
 #endif /* #if CHECKING_P */
 

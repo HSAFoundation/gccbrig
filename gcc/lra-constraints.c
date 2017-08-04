@@ -1841,7 +1841,7 @@ reg_in_class_p (rtx reg, enum reg_class cl)
 static bool
 prohibited_class_reg_set_mode_p (enum reg_class rclass,
 				 HARD_REG_SET &set,
-				 enum machine_mode mode)
+				 machine_mode mode)
 {
   HARD_REG_SET temp;
   
@@ -4644,7 +4644,6 @@ lra_constraints (bool first_p)
   unsigned int min_len, new_min_len, uid;
   rtx set, x, reg, dest_reg;
   basic_block last_bb;
-  bitmap_head equiv_insn_bitmap;
   bitmap_iterator bi;
 
   lra_constraint_iter++;
@@ -4676,7 +4675,7 @@ lra_constraints (bool first_p)
   /* Do elimination before the equivalence processing as we can spill
      some pseudos during elimination.  */
   lra_eliminate (false, first_p);
-  bitmap_initialize (&equiv_insn_bitmap, &reg_obstack);
+  auto_bitmap equiv_insn_bitmap (&reg_obstack);
   for (i = FIRST_PSEUDO_REGISTER; i < new_regno_start; i++)
     if (lra_reg_info[i].nrefs != 0)
       {
@@ -4737,14 +4736,14 @@ lra_constraints (bool first_p)
 	    if (contains_reg_p (x, false, true))
 	      ira_reg_equiv[i].profitable_p = false;
 	    if (get_equiv (reg) != reg)
-	      bitmap_ior_into (&equiv_insn_bitmap, &lra_reg_info[i].insn_bitmap);
+	      bitmap_ior_into (equiv_insn_bitmap, &lra_reg_info[i].insn_bitmap);
 	  }
       }
   for (i = FIRST_PSEUDO_REGISTER; i < new_regno_start; i++)
     update_equiv (i);
   /* We should add all insns containing pseudos which should be
      substituted by their equivalences.  */
-  EXECUTE_IF_SET_IN_BITMAP (&equiv_insn_bitmap, 0, uid, bi)
+  EXECUTE_IF_SET_IN_BITMAP (equiv_insn_bitmap, 0, uid, bi)
     lra_push_insn_by_uid (uid);
   min_len = lra_insn_stack_length ();
   new_insns_num = 0;
@@ -4775,7 +4774,7 @@ lra_constraints (bool first_p)
 	  /* We need to check equivalence in debug insn and change
 	     pseudo to the equivalent value if necessary.  */
 	  curr_id = lra_get_insn_recog_data (curr_insn);
-	  if (bitmap_bit_p (&equiv_insn_bitmap, INSN_UID (curr_insn)))
+	  if (bitmap_bit_p (equiv_insn_bitmap, INSN_UID (curr_insn)))
 	    {
 	      rtx old = *curr_id->operand_loc[0];
 	      *curr_id->operand_loc[0]
@@ -4849,7 +4848,7 @@ lra_constraints (bool first_p)
 	  /* Check non-transformed insns too for equiv change as USE
 	     or CLOBBER don't need reloads but can contain pseudos
 	     being changed on their equivalences.  */
-	  else if (bitmap_bit_p (&equiv_insn_bitmap, INSN_UID (curr_insn))
+	  else if (bitmap_bit_p (equiv_insn_bitmap, INSN_UID (curr_insn))
 		   && loc_equivalence_change_p (&PATTERN (curr_insn)))
 	    {
 	      lra_update_insn_regno_info (curr_insn);
@@ -4857,7 +4856,7 @@ lra_constraints (bool first_p)
 	    }
 	}
     }
-  bitmap_clear (&equiv_insn_bitmap);
+
   /* If we used a new hard regno, changed_p should be true because the
      hard reg is assigned to a new pseudo.  */
   if (flag_checking && !changed_p)
@@ -5726,7 +5725,7 @@ process_invariant_for_inheritance (rtx dst_reg, rtx invariant_rtx)
   int insn_regno;
   bool succ_p = false;
   int dst_regno = REGNO (dst_reg);
-  enum machine_mode dst_mode = GET_MODE (dst_reg);
+  machine_mode dst_mode = GET_MODE (dst_reg);
   enum reg_class cl = lra_get_allocno_class (dst_regno), insn_reg_cl;
 
   invariant_ptr = insert_invariant (invariant_rtx);
@@ -6483,7 +6482,8 @@ lra_inheritance (void)
 	  e = find_fallthru_edge (bb->succs);
 	  if (! e)
 	    break;
-	  if (e->probability < EBB_PROBABILITY_CUTOFF)
+	  if (e->probability.initialized_p ()
+	      && e->probability.to_reg_br_prob_base () < EBB_PROBABILITY_CUTOFF)
 	    break;
 	  bb = bb->next_bb;
 	}
@@ -6791,10 +6791,9 @@ undo_optional_reloads (void)
   bitmap_iterator bi, bi2;
   rtx_insn *insn;
   rtx set, src, dest;
-  bitmap_head removed_optional_reload_pseudos, insn_bitmap;
+  auto_bitmap removed_optional_reload_pseudos (&reg_obstack);
 
-  bitmap_initialize (&removed_optional_reload_pseudos, &reg_obstack);
-  bitmap_copy (&removed_optional_reload_pseudos, &lra_optional_reload_pseudos);
+  bitmap_copy (removed_optional_reload_pseudos, &lra_optional_reload_pseudos);
   EXECUTE_IF_SET_IN_BITMAP (&lra_optional_reload_pseudos, 0, regno, bi)
     {
       keep_p = false;
@@ -6829,19 +6828,19 @@ undo_optional_reloads (void)
 	  }
       if (keep_p)
 	{
-	  bitmap_clear_bit (&removed_optional_reload_pseudos, regno);
+	  bitmap_clear_bit (removed_optional_reload_pseudos, regno);
 	  if (lra_dump_file != NULL)
 	    fprintf (lra_dump_file, "Keep optional reload reg %d\n", regno);
 	}
     }
-  change_p = ! bitmap_empty_p (&removed_optional_reload_pseudos);
-  bitmap_initialize (&insn_bitmap, &reg_obstack);
-  EXECUTE_IF_SET_IN_BITMAP (&removed_optional_reload_pseudos, 0, regno, bi)
+  change_p = ! bitmap_empty_p (removed_optional_reload_pseudos);
+  auto_bitmap insn_bitmap (&reg_obstack);
+  EXECUTE_IF_SET_IN_BITMAP (removed_optional_reload_pseudos, 0, regno, bi)
     {
       if (lra_dump_file != NULL)
 	fprintf (lra_dump_file, "Remove optional reload reg %d\n", regno);
-      bitmap_copy (&insn_bitmap, &lra_reg_info[regno].insn_bitmap);
-      EXECUTE_IF_SET_IN_BITMAP (&insn_bitmap, 0, uid, bi2)
+      bitmap_copy (insn_bitmap, &lra_reg_info[regno].insn_bitmap);
+      EXECUTE_IF_SET_IN_BITMAP (insn_bitmap, 0, uid, bi2)
 	{
 	  insn = lra_insn_recog_data[uid]->insn;
 	  if ((set = single_set (insn)) != NULL_RTX)
@@ -6885,8 +6884,6 @@ undo_optional_reloads (void)
   /* Clear restore_regnos.  */
   EXECUTE_IF_SET_IN_BITMAP (&lra_optional_reload_pseudos, 0, regno, bi)
     lra_reg_info[regno].restore_rtx = NULL_RTX;
-  bitmap_clear (&insn_bitmap);
-  bitmap_clear (&removed_optional_reload_pseudos);
   return change_p;
 }
 
@@ -6899,7 +6896,6 @@ lra_undo_inheritance (void)
   int hard_regno;
   int n_all_inherit, n_inherit, n_all_split, n_split;
   rtx restore_rtx;
-  bitmap_head remove_pseudos;
   bitmap_iterator bi;
   bool change_p;
 
@@ -6910,7 +6906,7 @@ lra_undo_inheritance (void)
     fprintf (lra_dump_file,
 	     "\n********** Undoing inheritance #%d: **********\n\n",
 	     lra_undo_inheritance_iter);
-  bitmap_initialize (&remove_pseudos, &reg_obstack);
+  auto_bitmap remove_pseudos (&reg_obstack);
   n_inherit = n_all_inherit = 0;
   EXECUTE_IF_SET_IN_BITMAP (&lra_inheritance_pseudos, 0, regno, bi)
     if (lra_reg_info[regno].restore_rtx != NULL_RTX)
@@ -6922,7 +6918,7 @@ lra_undo_inheritance (void)
 	       allocation we used shorter live-ranges.  */
 	    && (! REG_P (lra_reg_info[regno].restore_rtx)
 		|| reg_renumber[REGNO (lra_reg_info[regno].restore_rtx)] < 0))
-	  bitmap_set_bit (&remove_pseudos, regno);
+	  bitmap_set_bit (remove_pseudos, regno);
 	else
 	  n_inherit++;
       }
@@ -6940,7 +6936,7 @@ lra_undo_inheritance (void)
 	hard_regno = (restore_regno >= FIRST_PSEUDO_REGISTER
 		      ? reg_renumber[restore_regno] : restore_regno);
 	if (hard_regno < 0 || reg_renumber[regno] == hard_regno)
-	  bitmap_set_bit (&remove_pseudos, regno);
+	  bitmap_set_bit (remove_pseudos, regno);
 	else
 	  {
 	    n_split++;
@@ -6953,8 +6949,7 @@ lra_undo_inheritance (void)
     fprintf (lra_dump_file, "Split %d out of %d (%.2f%%)\n",
 	     n_split, n_all_split,
 	     (double) n_split / n_all_split * 100);
-  change_p = remove_inheritance_pseudos (&remove_pseudos);
-  bitmap_clear (&remove_pseudos);
+  change_p = remove_inheritance_pseudos (remove_pseudos);
   /* Clear restore_regnos.  */
   EXECUTE_IF_SET_IN_BITMAP (&lra_inheritance_pseudos, 0, regno, bi)
     lra_reg_info[regno].restore_rtx = NULL_RTX;

@@ -362,6 +362,10 @@ class Gogo
   register_package(const std::string& pkgpath,
 		   const std::string& pkgpath_symbol, Location);
 
+  // Look up a package by pkgpath, and return its pkgpath_symbol.
+  std::string
+  pkgpath_symbol_for_package(const std::string&);
+
   // Start compiling a function.  ADD_METHOD_TO_TYPE is true if a
   // method function should be added to the type of its receiver.
   Named_object*
@@ -2114,6 +2118,11 @@ class Type_declaration
   add_method_declaration(const std::string& name, Package*,
 			 Function_type* type, Location location);
 
+  // Add an already created object as a method.
+  void
+  add_existing_method(Named_object* no)
+  { this->methods_.push_back(no); }
+
   // Return whether any methods were defined.
   bool
   has_methods() const;
@@ -3369,6 +3378,9 @@ static const int RUNTIME_ERROR_MAKE_CHAN_OUT_OF_BOUNDS = 9;
 
 // Division by zero.
 static const int RUNTIME_ERROR_DIVISION_BY_ZERO = 10;
+
+// Go statement with nil function.
+static const int RUNTIME_ERROR_GO_NIL = 11;
 
 // This is used by some of the langhooks.
 extern Gogo* go_get_gogo();

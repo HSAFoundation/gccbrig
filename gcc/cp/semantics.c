@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "omp-general.h"
 #include "convert.h"
 #include "gomp-constants.h"
+#include "predict.h"
 
 /* There routines provide a modular interface to perform many parsing
    operations.  They may therefore be used during actual parsing, or
@@ -305,11 +306,13 @@ perform_deferred_access_checks (tsubst_flags_t complain)
 
 /* Defer checking the accessibility of DECL, when looked up in
    BINFO. DIAG_DECL is the declaration to use to print diagnostics.
-   Return value like perform_access_checks above.  */
+   Return value like perform_access_checks above.
+   If non-NULL, report failures to AFI.  */
 
 bool
 perform_or_defer_access_check (tree binfo, tree decl, tree diag_decl,
-			       tsubst_flags_t complain)
+			       tsubst_flags_t complain,
+			       access_failure_info *afi)
 {
   int i;
   deferred_access *ptr;
@@ -328,7 +331,7 @@ perform_or_defer_access_check (tree binfo, tree decl, tree diag_decl,
   /* If we are not supposed to defer access checks, just check now.  */
   if (ptr->deferring_access_checks_kind == dk_no_deferred)
     {
-      bool ok = enforce_access (binfo, decl, diag_decl, complain);
+      bool ok = enforce_access (binfo, decl, diag_decl, complain, afi);
       return (complain & tf_error) ? true : ok;
     }
 
@@ -628,6 +631,7 @@ finish_goto_stmt (tree destination)
 
   check_goto (destination);
 
+  add_stmt (build_predict_expr (PRED_GOTO, NOT_TAKEN));
   return add_stmt (build_stmt (input_location, GOTO_EXPR, destination));
 }
 
@@ -731,7 +735,10 @@ finish_if_stmt_cond (tree cond, tree if_stmt)
   if (IF_STMT_CONSTEXPR_P (if_stmt)
       && require_potential_rvalue_constant_expression (cond)
       && !value_dependent_expression_p (cond))
-    cond = cxx_constant_value (cond, NULL_TREE);
+    {
+      cond = instantiate_non_dependent_expr (cond);
+      cond = cxx_constant_value (cond, NULL_TREE);
+    }
   finish_cond (&IF_COND (if_stmt), cond);
   add_stmt (if_stmt);
   THEN_CLAUSE (if_stmt) = push_stmt_list ();
@@ -1321,7 +1328,28 @@ finish_handler_parms (tree decl, tree handler)
 	}
     }
   else
-    type = expand_start_catch_block (decl);
+    {
+      type = expand_start_catch_block (decl);
+      if (warn_catch_value
+	  && type != NULL_TREE
+	  && type != error_mark_node
+	  && TREE_CODE (TREE_TYPE (decl)) != REFERENCE_TYPE)
+	{
+	  tree orig_type = TREE_TYPE (decl);
+	  if (CLASS_TYPE_P (orig_type))
+	    {
+	      if (TYPE_POLYMORPHIC_P (orig_type))
+		warning (OPT_Wcatch_value_,
+			 "catching polymorphic type %q#T by value", orig_type);
+	      else if (warn_catch_value > 1)
+		warning (OPT_Wcatch_value_,
+			 "catching type %q#T by value", orig_type);
+	    }
+	  else if (warn_catch_value > 2)
+	    warning (OPT_Wcatch_value_,
+		     "catching non-reference type %q#T", orig_type);
+	}
+    }
   HANDLER_TYPE (handler) = type;
 }
 
@@ -2231,15 +2259,10 @@ perform_koenig_lookup (cp_expr fn, vec<tree, va_gc> *args,
   /* Find the name of the overloaded function.  */
   if (identifier_p (fn))
     identifier = fn;
-  else if (is_overloaded_fn (fn))
+  else
     {
       functions = fn;
-      identifier = DECL_NAME (get_first_fn (functions));
-    }
-  else if (DECL_P (fn))
-    {
-      functions = fn;
-      identifier = DECL_NAME (fn);
+      identifier = OVL_NAME (functions);
     }
 
   /* A call to a namespace-scope function using an unqualified name.
@@ -2298,27 +2321,47 @@ finish_call_expr (tree fn, vec<tree, va_gc> **args, bool disallow_virtual,
 
   if (processing_template_decl)
     {
+      /* If FN is a local extern declaration or set thereof, look them up
+	 again at instantiation time.  */
+      if (is_overloaded_fn (fn))
+	{
+	  tree ifn = get_first_fn (fn);
+	  if (TREE_CODE (ifn) == FUNCTION_DECL
+	      && DECL_LOCAL_FUNCTION_P (ifn))
+	    orig_fn = DECL_NAME (ifn);
+	}
+
       /* If the call expression is dependent, build a CALL_EXPR node
 	 with no type; type_dependent_expression_p recognizes
 	 expressions with no type as being dependent.  */
       if (type_dependent_expression_p (fn)
 	  || any_type_dependent_arguments_p (*args))
 	{
-	  result = build_nt_call_vec (fn, *args);
+	  result = build_min_nt_call_vec (orig_fn, *args);
 	  SET_EXPR_LOCATION (result, EXPR_LOC_OR_LOC (fn, input_location));
 	  KOENIG_LOOKUP_P (result) = koenig_p;
+	  if (is_overloaded_fn (fn))
+	    {
+	      fn = get_fns (fn);
+	      lookup_keep (fn, true);
+	    }
+
 	  if (cfun)
 	    {
-	      do
+	      bool abnormal = true;
+	      for (lkp_iterator iter (fn); abnormal && iter; ++iter)
 		{
-		  tree fndecl = OVL_CURRENT (fn);
+		  tree fndecl = *iter;
 		  if (TREE_CODE (fndecl) != FUNCTION_DECL
 		      || !TREE_THIS_VOLATILE (fndecl))
-		    break;
-		  fn = OVL_NEXT (fn);
+		    abnormal = false;
 		}
-	      while (fn);
-	      if (!fn)
+	      /* FIXME: Stop warning about falling off end of non-void
+		 function.   But this is wrong.  Even if we only see
+		 no-return fns at this point, we could select a
+		 future-defined return fn during instantiation.  Or
+		 vice-versa.  */
+	      if (abnormal)
 		current_function_returns_abnormally = 1;
 	    }
 	  return result;
@@ -2472,24 +2515,9 @@ finish_call_expr (tree fn, vec<tree, va_gc> **args, bool disallow_virtual,
       result = convert_from_reference (result);
     }
 
-  if (koenig_p)
-    {
-      /* Free garbage OVERLOADs from arg-dependent lookup.  */
-      tree next = NULL_TREE;
-      for (fn = orig_fn;
-	   fn && TREE_CODE (fn) == OVERLOAD && OVL_ARG_DEPENDENT (fn);
-	   fn = next)
-	{
-	  if (processing_template_decl)
-	    /* In a template, we'll re-use them at instantiation time.  */
-	    OVL_ARG_DEPENDENT (fn) = false;
-	  else
-	    {
-	      next = OVL_CHAIN (fn);
-	      ggc_free (fn);
-	    }
-	}
-    }
+  /* Free or retain OVERLOADs from lookup.  */
+  if (is_overloaded_fn (orig_fn))
+    lookup_keep (get_fns (orig_fn), processing_template_decl);
 
   return result;
 }
@@ -2890,7 +2918,7 @@ begin_class_definition (tree t)
       if (ns && TREE_CODE (ns) == NAMESPACE_DECL
 	  && DECL_CONTEXT (ns) == std_node
 	  && DECL_NAME (ns)
-	  && !strcmp (IDENTIFIER_POINTER (DECL_NAME (ns)), "decimal"))
+	  && id_equal (DECL_NAME (ns), "decimal"))
 	{
 	  const char *n = TYPE_NAME_STRING (t);
 	  if ((strcmp (n, "decimal32") == 0)
@@ -3011,9 +3039,9 @@ finish_member_declaration (tree decl)
   if (DECL_LANG_SPECIFIC (decl) && DECL_LANGUAGE (decl) == lang_c)
     SET_DECL_LANGUAGE (decl, lang_cplusplus);
 
-  /* Put functions on the TYPE_METHODS list and everything else on the
-     TYPE_FIELDS list.  Note that these are built up in reverse order.
-     We reverse them (to obtain declaration order) in finish_struct.  */
+  /* Put the decl on the TYPE_FIELDS list.  Note that this is built up
+     in reverse order.  We reverse it (to obtain declaration order) in
+     finish_struct.  */
   if (DECL_DECLARES_FUNCTION_P (decl))
     {
       /* We also need to add this function to the
@@ -3021,8 +3049,8 @@ finish_member_declaration (tree decl)
       if (add_method (current_class_type, decl, false))
 	{
 	  gcc_assert (TYPE_MAIN_VARIANT (current_class_type) == current_class_type);
-	  DECL_CHAIN (decl) = TYPE_METHODS (current_class_type);
-	  TYPE_METHODS (current_class_type) = decl;
+	  DECL_CHAIN (decl) = TYPE_FIELDS (current_class_type);
+	  TYPE_FIELDS (current_class_type) = decl;
 
 	  maybe_add_class_template_decl_list (current_class_type, decl,
 					      /*friend_p=*/0);
@@ -3470,7 +3498,7 @@ finish_id_expression (tree id_expression,
 	      && (!TYPE_P (scope)
 		  || (!dependent_type_p (scope)
 		      && !(identifier_p (id_expression)
-			   && IDENTIFIER_TYPENAME_P (id_expression)
+			   && IDENTIFIER_CONV_OP_P (id_expression)
 			   && dependent_type_p (TREE_TYPE (id_expression))))))
 	    {
 	      /* If the qualifying type is non-dependent (and the name
@@ -3749,9 +3777,8 @@ finish_id_expression (tree id_expression,
 	}
       else if (is_overloaded_fn (decl))
 	{
-	  tree first_fn;
+	  tree first_fn = get_first_fn (decl);
 
-	  first_fn = get_first_fn (decl);
 	  if (TREE_CODE (first_fn) == TEMPLATE_DECL)
 	    first_fn = DECL_TEMPLATE_RESULT (first_fn);
 
@@ -4564,7 +4591,7 @@ handle_omp_array_sections_1 (tree c, tree t, vec<tree> &types,
 	}
       if (!VAR_P (t) && TREE_CODE (t) != PARM_DECL)
 	{
-	  if (processing_template_decl)
+	  if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 	    return NULL_TREE;
 	  if (DECL_P (t))
 	    error_at (OMP_CLAUSE_LOCATION (c),
@@ -4709,9 +4736,9 @@ handle_omp_array_sections_1 (tree c, tree t, vec<tree> &types,
 	  && TREE_CODE (TYPE_MAX_VALUE (TYPE_DOMAIN (type)))
 			== INTEGER_CST)
 	{
-	  tree size = size_binop (PLUS_EXPR,
-				  TYPE_MAX_VALUE (TYPE_DOMAIN (type)),
-				  size_one_node);
+	  tree size
+	    = fold_convert (sizetype, TYPE_MAX_VALUE (TYPE_DOMAIN (type)));
+	  size = size_binop (PLUS_EXPR, size, size_one_node);
 	  if (TREE_CODE (low_bound) == INTEGER_CST)
 	    {
 	      if (tree_int_cst_lt (size, low_bound))
@@ -5211,26 +5238,33 @@ omp_reduction_lookup (location_t loc, tree id, tree type, tree *baselinkp,
 						  type),
 				false, false);
   tree fns = id;
-  if (id && is_overloaded_fn (id))
-    id = get_fns (id);
-  for (; id; id = OVL_NEXT (id))
+  id = NULL_TREE;
+  if (fns && is_overloaded_fn (fns))
     {
-      tree fndecl = OVL_CURRENT (id);
-      if (TREE_CODE (fndecl) == FUNCTION_DECL)
+      for (lkp_iterator iter (get_fns (fns)); iter; ++iter)
 	{
-	  tree argtype = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (fndecl)));
-	  if (same_type_p (TREE_TYPE (argtype), type))
-	    break;
+	  tree fndecl = *iter;
+	  if (TREE_CODE (fndecl) == FUNCTION_DECL)
+	    {
+	      tree argtype = TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (fndecl)));
+	      if (same_type_p (TREE_TYPE (argtype), type))
+		{
+		  id = fndecl;
+		  break;
+		}
+	    }
+	}
+
+      if (id && BASELINK_P (fns))
+	{
+	  if (baselinkp)
+	    *baselinkp = fns;
+	  else
+	    baselink = fns;
 	}
     }
-  if (id && BASELINK_P (fns))
-    {
-      if (baselinkp)
-	*baselinkp = fns;
-      else
-	baselink = fns;
-    }
-  if (id == NULL_TREE && CLASS_TYPE_P (type) && TYPE_BINFO (type))
+
+  if (!id && CLASS_TYPE_P (type) && TYPE_BINFO (type))
     {
       vec<tree> ambiguous = vNULL;
       tree binfo = TYPE_BINFO (type), base_binfo, ret = NULL_TREE;
@@ -5615,7 +5649,6 @@ finish_omp_reduction_clause (tree c, bool *need_default_ctor, bool *need_dtor)
     {
       if (id == error_mark_node)
 	return true;
-      id = OVL_CURRENT (id);
       mark_used (id);
       tree body = DECL_SAVED_TREE (id);
       if (!body)
@@ -5763,7 +5796,7 @@ finish_omp_declare_simd_methods (tree t)
   if (processing_template_decl)
     return;
 
-  for (tree x = TYPE_METHODS (t); x; x = DECL_CHAIN (x))
+  for (tree x = TYPE_FIELDS (t); x; x = DECL_CHAIN (x))
     {
       if (TREE_CODE (TREE_TYPE (x)) != METHOD_TYPE)
 	continue;
@@ -6078,7 +6111,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	  if (!VAR_P (t) && TREE_CODE (t) != PARM_DECL
 	      && (!field_ok || TREE_CODE (t) != FIELD_DECL))
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (DECL_P (t))
 		error ("%qD is not a variable in clause %qs", t,
@@ -6150,7 +6183,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	      && ((ort & C_ORT_OMP_DECLARE_SIMD) != C_ORT_OMP
 		  || TREE_CODE (t) != FIELD_DECL))
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (DECL_P (t))
 		error ("%qD is not a variable in clause %<firstprivate%>", t);
@@ -6193,7 +6226,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	      && ((ort & C_ORT_OMP_DECLARE_SIMD) != C_ORT_OMP
 		  || TREE_CODE (t) != FIELD_DECL))
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (DECL_P (t))
 		error ("%qD is not a variable in clause %<lastprivate%>", t);
@@ -6556,7 +6589,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	    }
 	  if (!VAR_P (t) && TREE_CODE (t) != PARM_DECL)
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (DECL_P (t))
 		error ("%qD is not a variable in %<aligned%> clause", t);
@@ -6638,7 +6671,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	    remove = true;
 	  else if (!VAR_P (t) && TREE_CODE (t) != PARM_DECL)
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (DECL_P (t))
 		error ("%qD is not a variable in %<depend%> clause", t);
@@ -6769,7 +6802,7 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	    }
 	  if (!VAR_P (t) && TREE_CODE (t) != PARM_DECL)
 	    {
-	      if (processing_template_decl)
+	      if (processing_template_decl && TREE_CODE (t) != OVERLOAD)
 		break;
 	      if (OMP_CLAUSE_CODE (c) == OMP_CLAUSE_MAP
 		  && (OMP_CLAUSE_MAP_KIND (c) == GOMP_MAP_POINTER
@@ -6924,13 +6957,13 @@ finish_omp_clauses (tree clauses, enum c_omp_region_type ort)
 	    {
 	      if (OMP_CLAUSE_CODE (c) == OMP_CLAUSE_TO_DECLARE)
 		{
-		  if (TREE_CODE (t) == OVERLOAD && OVL_CHAIN (t))
-		    error_at (OMP_CLAUSE_LOCATION (c),
-			      "overloaded function name %qE in clause %qs", t,
-			      omp_clause_code_name[OMP_CLAUSE_CODE (c)]);
-		  else if (TREE_CODE (t) == TEMPLATE_ID_EXPR)
+		  if (TREE_CODE (t) == TEMPLATE_ID_EXPR)
 		    error_at (OMP_CLAUSE_LOCATION (c),
 			      "template %qE in clause %qs", t,
+			      omp_clause_code_name[OMP_CLAUSE_CODE (c)]);
+		  else if (really_overloaded_fn (t))
+		    error_at (OMP_CLAUSE_LOCATION (c),
+			      "overloaded function name %qE in clause %qs", t,
 			      omp_clause_code_name[OMP_CLAUSE_CODE (c)]);
 		  else
 		    error_at (OMP_CLAUSE_LOCATION (c),
@@ -9041,52 +9074,34 @@ finish_decltype_type (tree expr, bool id_expression_or_member_access_p,
 }
 
 /* Called from trait_expr_value to evaluate either __has_nothrow_assign or 
-   __has_nothrow_copy, depending on assign_p.  */
+   __has_nothrow_copy, depending on assign_p.  Returns true iff all
+   the copy {ctor,assign} fns are nothrow.  */
 
 static bool
 classtype_has_nothrow_assign_or_copy_p (tree type, bool assign_p)
 {
-  tree fns;
+  tree fns = NULL_TREE;
 
   if (assign_p)
-    {
-      int ix;
-      ix = lookup_fnfields_1 (type, cp_assignment_operator_id (NOP_EXPR));
-      if (ix < 0)
-	return false;
-      fns = (*CLASSTYPE_METHOD_VEC (type))[ix];
-    } 
+    fns = lookup_fnfields_slot (type, cp_assignment_operator_id (NOP_EXPR));
   else if (TYPE_HAS_COPY_CTOR (type))
-    {
-      /* If construction of the copy constructor was postponed, create
-	 it now.  */
-      if (CLASSTYPE_LAZY_COPY_CTOR (type))
-	lazily_declare_fn (sfk_copy_constructor, type);
-      if (CLASSTYPE_LAZY_MOVE_CTOR (type))
-	lazily_declare_fn (sfk_move_constructor, type);
-      fns = CLASSTYPE_CONSTRUCTORS (type);
-    }
-  else
-    return false;
+    fns = lookup_fnfields_slot (type, ctor_identifier);
 
-  for (; fns; fns = OVL_NEXT (fns))
+  bool saw_copy = false;
+  for (ovl_iterator iter (fns); iter; ++iter)
     {
-      tree fn = OVL_CURRENT (fns);
- 
-      if (assign_p)
+      tree fn = *iter;
+
+      if (copy_fn_p (fn) > 0)
 	{
-	  if (copy_fn_p (fn) == 0)
-	    continue;
+	  saw_copy = true;
+	  maybe_instantiate_noexcept (fn);
+	  if (!TYPE_NOTHROW_P (TREE_TYPE (fn)))
+	    return false;
 	}
-      else if (copy_fn_p (fn) <= 0)
-	continue;
-
-      maybe_instantiate_noexcept (fn);
-      if (!TYPE_NOTHROW_P (TREE_TYPE (fn)))
-	return false;
     }
 
-  return true;
+  return saw_copy;
 }
 
 /* Actually evaluates the trait.  */
@@ -9209,6 +9224,12 @@ trait_expr_value (cp_trait_kind kind, tree type1, tree type2)
     case CPTK_IS_UNION:
       return type_code1 == UNION_TYPE;
 
+    case CPTK_IS_ASSIGNABLE:
+      return is_xible (MODIFY_EXPR, type1, type2);
+
+    case CPTK_IS_CONSTRUCTIBLE:
+      return is_xible (INIT_EXPR, type1, type2);
+
     default:
       gcc_unreachable ();
       return false;
@@ -9280,6 +9301,10 @@ finish_trait_expr (cp_trait_kind kind, tree type1, tree type2)
     case CPTK_IS_TRIVIALLY_COPYABLE:
       if (!check_trait_type (type1))
 	return error_mark_node;
+      break;
+
+    case CPTK_IS_ASSIGNABLE:
+    case CPTK_IS_CONSTRUCTIBLE:
       break;
 
     case CPTK_IS_TRIVIALLY_ASSIGNABLE:
@@ -9360,7 +9385,7 @@ apply_deduced_return_type (tree fco, tree return_type)
     }
 
   if (DECL_CONV_FN_P (fco))
-    DECL_NAME (fco) = mangle_conv_op_name_for_type (return_type);
+    DECL_NAME (fco) = make_conv_op_name (return_type);
 
   TREE_TYPE (fco) = change_return_type (return_type, TREE_TYPE (fco));
 

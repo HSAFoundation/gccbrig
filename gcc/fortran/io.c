@@ -1515,8 +1515,8 @@ match_dec_etag (const io_tag *tag, gfc_expr **e)
     return m;
   else if (m != MATCH_NO)
     {
-      gfc_error ("%s is a DEC extension at %C, re-compile with "
-	  "-fdec to enable", tag->name);
+      gfc_error ("%s at %C is a DEC extension, enable with "
+		 "%<-fdec%>", tag->name);
       return MATCH_ERROR;
     }
   return m;
@@ -1532,8 +1532,8 @@ match_dec_vtag (const io_tag *tag, gfc_expr **e)
     return m;
   else if (m != MATCH_NO)
     {
-      gfc_error ("%s is a DEC extension at %C, re-compile with "
-	  "-fdec to enable", tag->name);
+      gfc_error ("%s at %C is a DEC extension, enable with "
+		 "%<-fdec%>", tag->name);
       return MATCH_ERROR;
     }
   return m;
@@ -1553,8 +1553,8 @@ match_dec_ftag (const io_tag *tag, gfc_open *o)
 
   if (!flag_dec)
     {
-      gfc_error ("%s is a DEC extension at %C, re-compile with "
-		 "-fdec to enable", tag->name);
+      gfc_error ("%s at %C is a DEC extension, enable with "
+		 "%<-fdec%>", tag->name);
       return MATCH_ERROR;
     }
 
@@ -3299,7 +3299,7 @@ gfc_resolve_dt (gfc_dt *dt, locus *loc)
 	      gfc_error ("NAMELIST object %qs in namelist %qs at %L is "
 			 "polymorphic and requires a defined input/output "
 			 "procedure", n->sym->name, dt->namelist->name, loc);
-	      return 1;
+	      return false;
 	    }
     
 	  if ((n->sym->ts.type == BT_DERIVED)
@@ -3310,7 +3310,7 @@ gfc_resolve_dt (gfc_dt *dt, locus *loc)
 				   "namelist %qs at %L with ALLOCATABLE "
 				   "or POINTER components", n->sym->name,
 				   dt->namelist->name, loc))
-		return 1;
+		return false;
     
 	      if (!t)
 		{
@@ -3318,7 +3318,7 @@ gfc_resolve_dt (gfc_dt *dt, locus *loc)
 			     "ALLOCATABLE or POINTER components and thus requires "
 			     "a defined input/output procedure", n->sym->name,
 			     dt->namelist->name, loc);
-		  return 1;
+		  return false;
 		}
 	    }
 	}

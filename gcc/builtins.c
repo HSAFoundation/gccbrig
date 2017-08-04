@@ -121,12 +121,12 @@ static rtx builtin_memcpy_read_str (void *, HOST_WIDE_INT, machine_mode);
 static rtx expand_builtin_memchr (tree, rtx);
 static rtx expand_builtin_memcpy (tree, rtx);
 static rtx expand_builtin_memcpy_with_bounds (tree, rtx);
-static rtx expand_builtin_memcpy_args (tree, tree, tree, rtx, tree);
+static rtx expand_builtin_memory_copy_args (tree dest, tree src, tree len,
+					    rtx target, tree exp, int endp);
 static rtx expand_builtin_memmove (tree, rtx);
-static rtx expand_builtin_mempcpy (tree, rtx, machine_mode);
-static rtx expand_builtin_mempcpy_with_bounds (tree, rtx, machine_mode);
-static rtx expand_builtin_mempcpy_args (tree, tree, tree, rtx,
-					machine_mode, int, tree);
+static rtx expand_builtin_mempcpy (tree, rtx);
+static rtx expand_builtin_mempcpy_with_bounds (tree, rtx);
+static rtx expand_builtin_mempcpy_args (tree, tree, tree, rtx, tree, int);
 static rtx expand_builtin_strcat (tree, rtx);
 static rtx expand_builtin_strcpy (tree, rtx);
 static rtx expand_builtin_strcpy_args (tree, tree, rtx);
@@ -140,7 +140,7 @@ static rtx expand_builtin_memset_with_bounds (tree, rtx, machine_mode);
 static rtx expand_builtin_memset_args (tree, tree, tree, rtx, machine_mode, tree);
 static rtx expand_builtin_bzero (tree);
 static rtx expand_builtin_strlen (tree, rtx, machine_mode);
-static rtx expand_builtin_alloca (tree, bool);
+static rtx expand_builtin_alloca (tree);
 static rtx expand_builtin_unop (machine_mode, tree, rtx, rtx, optab);
 static rtx expand_builtin_frame_address (tree, tree);
 static tree stabilize_va_list_loc (location_t, tree, int);
@@ -2961,81 +2961,6 @@ determine_block_size (tree len, rtx len_rtx,
 			  GET_MODE_MASK (GET_MODE (len_rtx)));
 }
 
-/* Helper function to do the actual work for expand_builtin_memcpy.  */
-
-static rtx
-expand_builtin_memcpy_args (tree dest, tree src, tree len, rtx target, tree exp)
-{
-  const char *src_str;
-  unsigned int src_align = get_pointer_alignment (src);
-  unsigned int dest_align = get_pointer_alignment (dest);
-  rtx dest_mem, src_mem, dest_addr, len_rtx;
-  HOST_WIDE_INT expected_size = -1;
-  unsigned int expected_align = 0;
-  unsigned HOST_WIDE_INT min_size;
-  unsigned HOST_WIDE_INT max_size;
-  unsigned HOST_WIDE_INT probable_max_size;
-
-  /* If DEST is not a pointer type, call the normal function.  */
-  if (dest_align == 0)
-    return NULL_RTX;
-
-  /* If either SRC is not a pointer type, don't do this
-     operation in-line.  */
-  if (src_align == 0)
-    return NULL_RTX;
-
-  if (currently_expanding_gimple_stmt)
-    stringop_block_profile (currently_expanding_gimple_stmt,
-			    &expected_align, &expected_size);
-
-  if (expected_align < dest_align)
-    expected_align = dest_align;
-  dest_mem = get_memory_rtx (dest, len);
-  set_mem_align (dest_mem, dest_align);
-  len_rtx = expand_normal (len);
-  determine_block_size (len, len_rtx, &min_size, &max_size,
-			&probable_max_size);
-  src_str = c_getstr (src);
-
-  /* If SRC is a string constant and block move would be done
-     by pieces, we can avoid loading the string from memory
-     and only stored the computed constants.  */
-  if (src_str
-      && CONST_INT_P (len_rtx)
-      && (unsigned HOST_WIDE_INT) INTVAL (len_rtx) <= strlen (src_str) + 1
-      && can_store_by_pieces (INTVAL (len_rtx), builtin_memcpy_read_str,
-			      CONST_CAST (char *, src_str),
-			      dest_align, false))
-    {
-      dest_mem = store_by_pieces (dest_mem, INTVAL (len_rtx),
-				  builtin_memcpy_read_str,
-				  CONST_CAST (char *, src_str),
-				  dest_align, false, 0);
-      dest_mem = force_operand (XEXP (dest_mem, 0), target);
-      dest_mem = convert_memory_address (ptr_mode, dest_mem);
-      return dest_mem;
-    }
-
-  src_mem = get_memory_rtx (src, len);
-  set_mem_align (src_mem, src_align);
-
-  /* Copy word part most expediently.  */
-  dest_addr = emit_block_move_hints (dest_mem, src_mem, len_rtx,
-				     CALL_EXPR_TAILCALL (exp)
-				     ? BLOCK_OP_TAILCALL : BLOCK_OP_NORMAL,
-				     expected_align, expected_size,
-				     min_size, max_size, probable_max_size);
-
-  if (dest_addr == 0)
-    {
-      dest_addr = force_operand (XEXP (dest_mem, 0), target);
-      dest_addr = convert_memory_address (ptr_mode, dest_addr);
-    }
-
-  return dest_addr;
-}
-
 /* Try to verify that the sizes and lengths of the arguments to a string
    manipulation function given by EXP are within valid bounds and that
    the operation does not lead to buffer overflow.  Arguments other than
@@ -3378,7 +3303,8 @@ expand_builtin_memcpy (tree exp, rtx target)
 
   check_memop_sizes (exp, dest, src, len);
 
-  return expand_builtin_memcpy_args (dest, src, len, target, exp);
+  return expand_builtin_memory_copy_args (dest, src, len, target, exp,
+					  /*endp=*/ 0);
 }
 
 /* Check a call EXP to the memmove built-in for validity.
@@ -3418,7 +3344,8 @@ expand_builtin_memcpy_with_bounds (tree exp, rtx target)
       tree dest = CALL_EXPR_ARG (exp, 0);
       tree src = CALL_EXPR_ARG (exp, 2);
       tree len = CALL_EXPR_ARG (exp, 4);
-      rtx res = expand_builtin_memcpy_args (dest, src, len, target, exp);
+      rtx res = expand_builtin_memory_copy_args (dest, src, len, target, exp,
+						 /*end_p=*/ 0);
 
       /* Return src bounds with the result.  */
       if (res)
@@ -3440,7 +3367,7 @@ expand_builtin_memcpy_with_bounds (tree exp, rtx target)
    stpcpy.  */
 
 static rtx
-expand_builtin_mempcpy (tree exp, rtx target, machine_mode mode)
+expand_builtin_mempcpy (tree exp, rtx target)
 {
   if (!validate_arglist (exp,
  			 POINTER_TYPE, POINTER_TYPE, INTEGER_TYPE, VOID_TYPE))
@@ -3457,8 +3384,7 @@ expand_builtin_mempcpy (tree exp, rtx target, machine_mode mode)
     return NULL_RTX;
 
   return expand_builtin_mempcpy_args (dest, src, len,
-				      target, mode, /*endp=*/ 1,
-				      exp);
+				      target, exp, /*endp=*/ 1);
 }
 
 /* Expand an instrumented call EXP to the mempcpy builtin.
@@ -3467,7 +3393,7 @@ expand_builtin_mempcpy (tree exp, rtx target, machine_mode mode)
    mode MODE if that's convenient).  */
 
 static rtx
-expand_builtin_mempcpy_with_bounds (tree exp, rtx target, machine_mode mode)
+expand_builtin_mempcpy_with_bounds (tree exp, rtx target)
 {
   if (!validate_arglist (exp,
 			 POINTER_TYPE, POINTER_BOUNDS_TYPE,
@@ -3480,7 +3406,7 @@ expand_builtin_mempcpy_with_bounds (tree exp, rtx target, machine_mode mode)
       tree src = CALL_EXPR_ARG (exp, 2);
       tree len = CALL_EXPR_ARG (exp, 4);
       rtx res = expand_builtin_mempcpy_args (dest, src, len, target,
-					     mode, 1, exp);
+					     exp, 1);
 
       /* Return src bounds with the result.  */
       if (res)
@@ -3493,94 +3419,103 @@ expand_builtin_mempcpy_with_bounds (tree exp, rtx target, machine_mode mode)
     }
 }
 
-/* Helper function to do the actual work for expand_builtin_mempcpy.  The
-   arguments to the builtin_mempcpy call DEST, SRC, and LEN are broken out
-   so that this can also be called without constructing an actual CALL_EXPR.
-   The other arguments and return value are the same as for
-   expand_builtin_mempcpy.  */
+/* Helper function to do the actual work for expand of memory copy family
+   functions (memcpy, mempcpy, stpcpy).  Expansing should assign LEN bytes
+   of memory from SRC to DEST and assign to TARGET if convenient.
+   If ENDP is 0 return the
+   destination pointer, if ENDP is 1 return the end pointer ala
+   mempcpy, and if ENDP is 2 return the end pointer minus one ala
+   stpcpy.  */
+
+static rtx
+expand_builtin_memory_copy_args (tree dest, tree src, tree len,
+				 rtx target, tree exp, int endp)
+{
+  const char *src_str;
+  unsigned int src_align = get_pointer_alignment (src);
+  unsigned int dest_align = get_pointer_alignment (dest);
+  rtx dest_mem, src_mem, dest_addr, len_rtx;
+  HOST_WIDE_INT expected_size = -1;
+  unsigned int expected_align = 0;
+  unsigned HOST_WIDE_INT min_size;
+  unsigned HOST_WIDE_INT max_size;
+  unsigned HOST_WIDE_INT probable_max_size;
+
+  /* If DEST is not a pointer type, call the normal function.  */
+  if (dest_align == 0)
+    return NULL_RTX;
+
+  /* If either SRC is not a pointer type, don't do this
+     operation in-line.  */
+  if (src_align == 0)
+    return NULL_RTX;
+
+  if (currently_expanding_gimple_stmt)
+    stringop_block_profile (currently_expanding_gimple_stmt,
+			    &expected_align, &expected_size);
+
+  if (expected_align < dest_align)
+    expected_align = dest_align;
+  dest_mem = get_memory_rtx (dest, len);
+  set_mem_align (dest_mem, dest_align);
+  len_rtx = expand_normal (len);
+  determine_block_size (len, len_rtx, &min_size, &max_size,
+			&probable_max_size);
+  src_str = c_getstr (src);
+
+  /* If SRC is a string constant and block move would be done
+     by pieces, we can avoid loading the string from memory
+     and only stored the computed constants.  */
+  if (src_str
+      && CONST_INT_P (len_rtx)
+      && (unsigned HOST_WIDE_INT) INTVAL (len_rtx) <= strlen (src_str) + 1
+      && can_store_by_pieces (INTVAL (len_rtx), builtin_memcpy_read_str,
+			      CONST_CAST (char *, src_str),
+			      dest_align, false))
+    {
+      dest_mem = store_by_pieces (dest_mem, INTVAL (len_rtx),
+				  builtin_memcpy_read_str,
+				  CONST_CAST (char *, src_str),
+				  dest_align, false, endp);
+      dest_mem = force_operand (XEXP (dest_mem, 0), target);
+      dest_mem = convert_memory_address (ptr_mode, dest_mem);
+      return dest_mem;
+    }
+
+  src_mem = get_memory_rtx (src, len);
+  set_mem_align (src_mem, src_align);
+
+  /* Copy word part most expediently.  */
+  dest_addr = emit_block_move_hints (dest_mem, src_mem, len_rtx,
+				     CALL_EXPR_TAILCALL (exp)
+				     && (endp == 0 || target == const0_rtx)
+				     ? BLOCK_OP_TAILCALL : BLOCK_OP_NORMAL,
+				     expected_align, expected_size,
+				     min_size, max_size, probable_max_size);
+
+  if (dest_addr == 0)
+    {
+      dest_addr = force_operand (XEXP (dest_mem, 0), target);
+      dest_addr = convert_memory_address (ptr_mode, dest_addr);
+    }
+
+  if (endp && target != const0_rtx)
+    {
+      dest_addr = gen_rtx_PLUS (ptr_mode, dest_addr, len_rtx);
+      /* stpcpy pointer to last byte.  */
+      if (endp == 2)
+	dest_addr = gen_rtx_MINUS (ptr_mode, dest_addr, const1_rtx);
+    }
+
+  return dest_addr;
+}
 
 static rtx
 expand_builtin_mempcpy_args (tree dest, tree src, tree len,
-			     rtx target, machine_mode mode, int endp,
-			     tree orig_exp)
+			     rtx target, tree orig_exp, int endp)
 {
-  tree fndecl = get_callee_fndecl (orig_exp);
-
-    /* If return value is ignored, transform mempcpy into memcpy.  */
-  if (target == const0_rtx
-      && DECL_FUNCTION_CODE (fndecl) == BUILT_IN_CHKP_MEMPCPY_NOBND_NOCHK_CHKP
-      && builtin_decl_implicit_p (BUILT_IN_CHKP_MEMCPY_NOBND_NOCHK_CHKP))
-    {
-      tree fn = builtin_decl_implicit (BUILT_IN_CHKP_MEMCPY_NOBND_NOCHK_CHKP);
-      tree result = build_call_nofold_loc (UNKNOWN_LOCATION, fn, 3,
-					   dest, src, len);
-      return expand_expr (result, target, mode, EXPAND_NORMAL);
-    }
-  else if (target == const0_rtx
-	   && builtin_decl_implicit_p (BUILT_IN_MEMCPY))
-    {
-      tree fn = builtin_decl_implicit (BUILT_IN_MEMCPY);
-      tree result = build_call_nofold_loc (UNKNOWN_LOCATION, fn, 3,
-					   dest, src, len);
-      return expand_expr (result, target, mode, EXPAND_NORMAL);
-    }
-  else
-    {
-      const char *src_str;
-      unsigned int src_align = get_pointer_alignment (src);
-      unsigned int dest_align = get_pointer_alignment (dest);
-      rtx dest_mem, src_mem, len_rtx;
-
-      /* If either SRC or DEST is not a pointer type, don't do this
-	 operation in-line.  */
-      if (dest_align == 0 || src_align == 0)
-	return NULL_RTX;
-
-      /* If LEN is not constant, call the normal function.  */
-      if (! tree_fits_uhwi_p (len))
-	return NULL_RTX;
-
-      len_rtx = expand_normal (len);
-      src_str = c_getstr (src);
-
-      /* If SRC is a string constant and block move would be done
-	 by pieces, we can avoid loading the string from memory
-	 and only stored the computed constants.  */
-      if (src_str
-	  && CONST_INT_P (len_rtx)
-	  && (unsigned HOST_WIDE_INT) INTVAL (len_rtx) <= strlen (src_str) + 1
-	  && can_store_by_pieces (INTVAL (len_rtx), builtin_memcpy_read_str,
-				  CONST_CAST (char *, src_str),
-				  dest_align, false))
-	{
-	  dest_mem = get_memory_rtx (dest, len);
-	  set_mem_align (dest_mem, dest_align);
-	  dest_mem = store_by_pieces (dest_mem, INTVAL (len_rtx),
-				      builtin_memcpy_read_str,
-				      CONST_CAST (char *, src_str),
-				      dest_align, false, endp);
-	  dest_mem = force_operand (XEXP (dest_mem, 0), NULL_RTX);
-	  dest_mem = convert_memory_address (ptr_mode, dest_mem);
-	  return dest_mem;
-	}
-
-      if (CONST_INT_P (len_rtx)
-	  && can_move_by_pieces (INTVAL (len_rtx),
-				 MIN (dest_align, src_align)))
-	{
-	  dest_mem = get_memory_rtx (dest, len);
-	  set_mem_align (dest_mem, dest_align);
-	  src_mem = get_memory_rtx (src, len);
-	  set_mem_align (src_mem, src_align);
-	  dest_mem = move_by_pieces (dest_mem, src_mem, INTVAL (len_rtx),
-				     MIN (dest_align, src_align), endp);
-	  dest_mem = force_operand (XEXP (dest_mem, 0), NULL_RTX);
-	  dest_mem = convert_memory_address (ptr_mode, dest_mem);
-	  return dest_mem;
-	}
-
-      return NULL_RTX;
-    }
+  return expand_builtin_memory_copy_args (dest, src, len, target, orig_exp,
+					  endp);
 }
 
 /* Expand into a movstr instruction, if one is available.  Return NULL_RTX if
@@ -3738,8 +3673,7 @@ expand_builtin_stpcpy (tree exp, rtx target, machine_mode mode)
 
       lenp1 = size_binop_loc (loc, PLUS_EXPR, len, ssize_int (1));
       ret = expand_builtin_mempcpy_args (dst, src, lenp1,
-					 target, mode, /*endp=*/2,
-					 exp);
+					 target, exp, /*endp=*/2);
 
       if (ret)
 	return ret;
@@ -3788,31 +3722,18 @@ expand_builtin_stpncpy (tree exp, rtx)
       || !warn_stringop_overflow)
     return NULL_RTX;
 
+  /* The source and destination of the call.  */
   tree dest = CALL_EXPR_ARG (exp, 0);
   tree src = CALL_EXPR_ARG (exp, 1);
 
-  /* The number of bytes to write (not the maximum).  */
+  /* The exact number of bytes to write (not the maximum).  */
   tree len = CALL_EXPR_ARG (exp, 2);
-  /* The length of the source sequence.  */
-  tree slen = c_strlen (src, 1);
 
-  /* Try to determine the range of lengths that the source expression
-     refers to.  */
-  tree lenrange[2];
-  if (slen)
-    lenrange[0] = lenrange[1] = slen;
-  else
-    {
-      get_range_strlen (src, lenrange);
-      slen = lenrange[0];
-    }
-
+  /* The size of the destination object.  */
   tree destsize = compute_objsize (dest, warn_stringop_overflow - 1);
 
-  /* The number of bytes to write is LEN but check_sizes will also
-     check SLEN if LEN's value isn't known.  */
   check_sizes (OPT_Wstringop_overflow_,
-	       exp, len, /*maxlen=*/NULL_TREE, slen, destsize);
+	       exp, len, /*maxlen=*/NULL_TREE, src, destsize);
 
   return NULL_RTX;
 }
@@ -4927,11 +4848,10 @@ expand_builtin_frame_address (tree fndecl, tree exp)
 }
 
 /* Expand EXP, a call to the alloca builtin.  Return NULL_RTX if we
-   failed and the caller should emit a normal call.  CANNOT_ACCUMULATE
-   is the same as for allocate_dynamic_stack_space.  */
+   failed and the caller should emit a normal call.  */
 
 static rtx
-expand_builtin_alloca (tree exp, bool cannot_accumulate)
+expand_builtin_alloca (tree exp)
 {
   rtx op0;
   rtx result;
@@ -4939,7 +4859,7 @@ expand_builtin_alloca (tree exp, bool cannot_accumulate)
   tree fndecl = get_callee_fndecl (exp);
   bool alloca_with_align = (DECL_FUNCTION_CODE (fndecl)
 			    == BUILT_IN_ALLOCA_WITH_ALIGN);
-
+  bool alloca_for_var = CALL_ALLOCA_FOR_VAR_P (exp);
   bool valid_arglist
     = (alloca_with_align
        ? validate_arglist (exp, INTEGER_TYPE, INTEGER_TYPE, VOID_TYPE)
@@ -4968,11 +4888,30 @@ expand_builtin_alloca (tree exp, bool cannot_accumulate)
 	   ? TREE_INT_CST_LOW (CALL_EXPR_ARG (exp, 1))
 	   : BIGGEST_ALIGNMENT);
 
-  /* Allocate the desired space.  */
-  result = allocate_dynamic_stack_space (op0, 0, align, cannot_accumulate);
+  /* Allocate the desired space.  If the allocation stems from the declaration
+     of a variable-sized object, it cannot accumulate.  */
+  result = allocate_dynamic_stack_space (op0, 0, align, alloca_for_var);
   result = convert_memory_address (ptr_mode, result);
 
   return result;
+}
+
+/* Emit a call to __asan_allocas_unpoison call in EXP.  Replace second argument
+   of the call with virtual_stack_dynamic_rtx because in asan pass we emit a
+   dummy value into second parameter relying on this function to perform the
+   change.  See motivation for this in comment to handle_builtin_stack_restore
+   function.  */
+
+static rtx
+expand_asan_emit_allocas_unpoison (tree exp)
+{
+  tree arg0 = CALL_EXPR_ARG (exp, 0);
+  rtx top = expand_expr (arg0, NULL_RTX, ptr_mode, EXPAND_NORMAL);
+  rtx bot = convert_memory_address (ptr_mode, virtual_stack_dynamic_rtx);
+  rtx ret = init_one_libfunc ("__asan_allocas_unpoison");
+  ret = emit_library_call_value (ret, NULL_RTX, LCT_NORMAL, ptr_mode, 2, top,
+				 ptr_mode, bot, ptr_mode);
+  return ret;
 }
 
 /* Expand a call to bswap builtin in EXP.
@@ -6092,6 +6031,12 @@ expand_builtin_atomic_fetch_op (machine_mode mode, tree exp, rtx target,
   gcc_assert (TREE_OPERAND (addr, 0) == fndecl);
   TREE_OPERAND (addr, 0) = builtin_decl_explicit (ext_call);
 
+  /* If we will emit code after the call, the call can not be a tail call.
+     If it is emitted as a tail call, a barrier is emitted after it, and
+     then all trailing code is removed.  */
+  if (!ignore)
+    CALL_EXPR_TAILCALL (exp) = 0;
+
   /* Expand the call here so we can emit trailing code.  */
   ret = expand_call (exp, target, ignore);
 
@@ -6765,12 +6710,13 @@ expand_builtin (tree exp, rtx target, rtx subtarget, machine_mode mode,
 
     case BUILT_IN_ALLOCA:
     case BUILT_IN_ALLOCA_WITH_ALIGN:
-      /* If the allocation stems from the declaration of a variable-sized
-	 object, it cannot accumulate.  */
-      target = expand_builtin_alloca (exp, CALL_ALLOCA_FOR_VAR_P (exp));
+      target = expand_builtin_alloca (exp);
       if (target)
 	return target;
       break;
+
+    case BUILT_IN_ASAN_ALLOCAS_UNPOISON:
+      return expand_asan_emit_allocas_unpoison (exp);
 
     case BUILT_IN_STACK_SAVE:
       return expand_stack_save ();
@@ -6890,7 +6836,7 @@ expand_builtin (tree exp, rtx target, rtx subtarget, machine_mode mode,
       break;
 
     case BUILT_IN_MEMPCPY:
-      target = expand_builtin_mempcpy (exp, target, mode);
+      target = expand_builtin_mempcpy (exp, target);
       if (target)
 	return target;
       break;
@@ -7669,7 +7615,7 @@ expand_builtin_with_bounds (tree exp, rtx target,
       break;
 
     case BUILT_IN_CHKP_MEMPCPY_NOBND_NOCHK_CHKP:
-      target = expand_builtin_mempcpy_with_bounds (exp, target, mode);
+      target = expand_builtin_mempcpy_with_bounds (exp, target);
       if (target)
 	return target;
       break;
@@ -8748,13 +8694,12 @@ fold_builtin_FILE (location_t loc)
 static inline tree
 fold_builtin_FUNCTION ()
 {
-  if (current_function_decl)
-    {
-      const char *name = IDENTIFIER_POINTER (DECL_NAME (current_function_decl));
-      return build_string_literal (strlen (name) + 1, name);
-    }
+  const char *name = "";
 
-  return build_string_literal (1, "");
+  if (current_function_decl)
+    name = lang_hooks.decl_printable_name (current_function_decl, 0);
+
+  return build_string_literal (strlen (name) + 1, name);
 }
 
 /* Fold a call to __builtin_LINE to an integer constant.  */
@@ -9049,7 +8994,6 @@ fold_builtin_3 (location_t loc, tree fndecl,
 	return do_mpfr_remquo (arg0, arg1, arg2);
     break;
 
-    case BUILT_IN_BCMP:
     case BUILT_IN_MEMCMP:
       return fold_builtin_memcmp (loc, arg0, arg1, arg2);;
 

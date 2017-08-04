@@ -400,6 +400,8 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 	fputs (" in-constant-pool", file);
       if (code == VAR_DECL && DECL_COMMON (node))
 	fputs (" common", file);
+      if ((code == VAR_DECL || code == PARM_DECL) && DECL_READ_P (node))
+	fputs (" read", file);
       if (code == VAR_DECL && DECL_THREAD_LOCAL_P (node))
 	{
 	  fputs (" ", file);
@@ -485,7 +487,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent,
 
       if (CODE_CONTAINS_STRUCT (code, TS_DECL_COMMON))
 	{
-	  print_node_brief (file, "attributes",
+	  print_node (file, "attributes",
 			    DECL_ATTRIBUTES (node), indent + 4);
 	  if (code != PARM_DECL)
 	    print_node_brief (file, "initial", DECL_INITIAL (node),
@@ -1007,7 +1009,7 @@ debug_raw (const tree_node *ptr)
 }
 
 static void
-dump_tree_via_hooks (const tree_node *ptr, int options)
+dump_tree_via_hooks (const tree_node *ptr, dump_flags_t options)
 {
   if (DECL_P (ptr))
     lang_hooks.print_decl (stderr, const_cast <tree_node*> (ptr), 0);
@@ -1031,21 +1033,6 @@ debug (const tree_node *ptr)
 {
   if (ptr)
     debug (*ptr);
-  else
-    fprintf (stderr, "<nil>\n");
-}
-
-DEBUG_FUNCTION void
-debug_verbose (const tree_node &ref)
-{
-  dump_tree_via_hooks (&ref, TDF_VERBOSE);
-}
-
-DEBUG_FUNCTION void
-debug_verbose (const tree_node *ptr)
-{
-  if (ptr)
-    debug_verbose (*ptr);
   else
     fprintf (stderr, "<nil>\n");
 }

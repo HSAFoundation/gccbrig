@@ -191,7 +191,7 @@ static rtx get_expansion (struct var_to_expand *);
 static void
 report_unroll (struct loop *loop, location_t locus)
 {
-  int report_flags = MSG_OPTIMIZED_LOCATIONS | TDF_RTL | TDF_DETAILS;
+  dump_flags_t report_flags = MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS;
 
   if (loop->lpt_decision.decision == LPT_NONE)
     return;
@@ -202,10 +202,10 @@ report_unroll (struct loop *loop, location_t locus)
   dump_printf_loc (report_flags, locus,
                    "loop unrolled %d times",
                    loop->lpt_decision.times);
-  if (profile_info)
+  if (profile_info && loop->header->count.initialized_p ())
     dump_printf (report_flags,
                  " (header execution count %d)",
-                 (int)loop->header->count);
+                 (int)loop->header->count.to_gcov_type ());
 
   dump_printf (report_flags, "\n");
 }
@@ -223,7 +223,7 @@ decide_unrolling (int flags)
       location_t locus = get_loop_location (loop);
 
       if (dump_enabled_p ())
-	dump_printf_loc (TDF_RTL, locus,
+	dump_printf_loc (MSG_NOTE, locus,
                          ";; *** Considering loop %d at BB %d for "
                          "unrolling ***\n",
                          loop->num, loop->header->index);
@@ -774,7 +774,8 @@ split_edge_and_insert (edge e, rtx_insn *insns)
 
 static rtx_insn *
 compare_and_jump_seq (rtx op0, rtx op1, enum rtx_code comp,
-		      rtx_code_label *label, int prob, rtx_insn *cinsn)
+		      rtx_code_label *label, profile_probability prob,
+		      rtx_insn *cinsn)
 {
   rtx_insn *seq;
   rtx_jump_insn *jump;
@@ -808,12 +809,14 @@ compare_and_jump_seq (rtx op0, rtx op1, enum rtx_code comp,
       op0 = force_operand (op0, NULL_RTX);
       op1 = force_operand (op1, NULL_RTX);
       do_compare_rtx_and_jump (op0, op1, comp, 0,
-			       mode, NULL_RTX, NULL, label, -1);
+			       mode, NULL_RTX, NULL, label,
+			       profile_probability::uninitialized ());
       jump = as_a <rtx_jump_insn *> (get_last_insn ());
       jump->set_jump_target (label);
       LABEL_NUSES (label)++;
     }
-  add_int_reg_note (jump, REG_BR_PROB, prob);
+  if (prob.initialized_p ())
+    add_reg_br_prob_note (jump, prob);
 
   seq = get_insns ();
   end_sequence ();
@@ -857,10 +860,11 @@ unroll_loop_runtime_iterations (struct loop *loop)
 {
   rtx old_niter, niter, tmp;
   rtx_insn *init_code, *branch_code;
-  unsigned i, j, p;
+  unsigned i, j;
+  profile_probability p;
   basic_block preheader, *body, swtch, ezc_swtch = NULL;
   int may_exit_copy, iter_freq, new_freq;
-  gcov_type iter_count, new_count;
+  profile_count iter_count, new_count;
   unsigned n_peel;
   edge e;
   bool extra_zero_check, last_may_exit;
@@ -970,7 +974,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
      innermost switch block.  Switch blocks and peeled loop copies are built
      from innermost outward.  */
   iter_freq = new_freq = swtch->frequency / (max_unroll + 1);
-  iter_count = new_count = swtch->count / (max_unroll + 1);
+  iter_count = new_count = swtch->count.apply_scale (1, max_unroll + 1);
   swtch->frequency = new_freq;
   swtch->count = new_count;
   single_succ_edge (swtch)->count = new_count;
@@ -989,7 +993,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
 
       /* Create item for switch.  */
       j = n_peel - i - (extra_zero_check ? 0 : 1);
-      p = REG_BR_PROB_BASE / (i + 2);
+      p = profile_probability::always ().apply_scale (1, i + 2);
 
       preheader = split_edge (loop_preheader_edge (loop));
       /* Add in frequency/count of edge from switch block.  */
@@ -1006,7 +1010,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
 
       swtch = split_edge_and_insert (single_pred_edge (swtch), branch_code);
       set_immediate_dominator (CDI_DOMINATORS, preheader, swtch);
-      single_succ_edge (swtch)->probability = REG_BR_PROB_BASE - p;
+      single_succ_edge (swtch)->probability = p.invert ();
       single_succ_edge (swtch)->count = new_count;
       new_freq += iter_freq;
       new_count += iter_count;
@@ -1021,13 +1025,13 @@ unroll_loop_runtime_iterations (struct loop *loop)
   if (extra_zero_check)
     {
       /* Add branch for zero iterations.  */
-      p = REG_BR_PROB_BASE / (max_unroll + 1);
+      p = profile_probability::always ().apply_scale (1, max_unroll + 1);
       swtch = ezc_swtch;
       preheader = split_edge (loop_preheader_edge (loop));
       /* Recompute frequency/count adjustments since initial peel copy may
 	 have exited and reduced those values that were computed above.  */
       iter_freq = swtch->frequency / (max_unroll + 1);
-      iter_count = swtch->count / (max_unroll + 1);
+      iter_count = swtch->count.apply_scale (1, max_unroll + 1);
       /* Add in frequency/count of edge from switch block.  */
       preheader->frequency += iter_freq;
       preheader->count += iter_count;
@@ -1039,7 +1043,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
 
       swtch = split_edge_and_insert (single_succ_edge (swtch), branch_code);
       set_immediate_dominator (CDI_DOMINATORS, preheader, swtch);
-      single_succ_edge (swtch)->probability = REG_BR_PROB_BASE - p;
+      single_succ_edge (swtch)->probability = p.invert ();
       single_succ_edge (swtch)->count -= iter_count;
       e = make_edge (swtch, preheader,
 		     single_succ_edge (swtch)->flags & EDGE_IRREDUCIBLE_LOOP);

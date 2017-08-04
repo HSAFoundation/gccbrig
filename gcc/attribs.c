@@ -404,14 +404,31 @@ decl_attributes (tree *node, tree attributes, int flags)
      those targets that support it.  */
   if (TREE_CODE (*node) == FUNCTION_DECL
       && attributes
-      && lookup_attribute_spec (get_identifier ("naked"))
-      && lookup_attribute ("naked", attributes) != NULL)
+      && lookup_attribute ("naked", attributes) != NULL
+      && lookup_attribute_spec (get_identifier ("naked")))
     {
       if (lookup_attribute ("noinline", attributes) == NULL)
 	attributes = tree_cons (get_identifier ("noinline"), NULL, attributes);
 
       if (lookup_attribute ("noclone", attributes) == NULL)
 	attributes = tree_cons (get_identifier ("noclone"),  NULL, attributes);
+    }
+
+  /* A "noipa" function attribute implies "noinline", "noclone" and "no_icf"
+     for those targets that support it.  */
+  if (TREE_CODE (*node) == FUNCTION_DECL
+      && attributes
+      && lookup_attribute ("noipa", attributes) != NULL
+      && lookup_attribute_spec (get_identifier ("noipa")))
+    {
+      if (lookup_attribute ("noinline", attributes) == NULL)
+	attributes = tree_cons (get_identifier ("noinline"), NULL, attributes);
+
+      if (lookup_attribute ("noclone", attributes) == NULL)
+	attributes = tree_cons (get_identifier ("noclone"),  NULL, attributes);
+
+      if (lookup_attribute ("no_icf", attributes) == NULL)
+	attributes = tree_cons (get_identifier ("no_icf"),  NULL, attributes);
     }
 
   targetm.insert_attributes (*node, &attributes);
@@ -888,12 +905,8 @@ make_dispatcher_decl (const tree decl)
   tree func_decl;
   char *func_name;
   tree fn_type, func_type;
-  bool is_uniq = false;
 
-  if (TREE_PUBLIC (decl) == 0)
-    is_uniq = true;
-
-  func_name = make_unique_name (decl, "ifunc", is_uniq);
+  func_name = xstrdup (IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl)));
 
   fn_type = TREE_TYPE (decl);
   func_type = build_function_type (TREE_TYPE (fn_type),

@@ -1959,7 +1959,7 @@ tilegx_expand_unaligned_load (rtx dest_reg, rtx mem, HOST_WIDE_INT bitsize,
 	extract_bit_field (gen_lowpart (DImode, wide_result),
 			   bitsize, bit_offset % BITS_PER_UNIT,
 			   !sign, gen_lowpart (DImode, dest_reg),
-			   DImode, DImode, false);
+			   DImode, DImode, false, NULL);
 
       if (extracted != dest_reg)
 	emit_move_insn (dest_reg, gen_lowpart (DImode, extracted));
@@ -2619,9 +2619,8 @@ cbranch_predicted_p (rtx_insn *insn)
 
   if (x)
     {
-      int pred_val = XINT (x, 0);
-
-      return pred_val >= REG_BR_PROB_BASE / 2;
+      return profile_probability::from_reg_br_prob_note (XINT (x, 0))
+	     >= profile_probability::even ();
     }
 
   return false;

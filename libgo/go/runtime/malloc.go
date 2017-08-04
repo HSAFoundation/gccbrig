@@ -291,6 +291,8 @@ func mallocinit() {
 		// allocation at 0x40 << 32 because when using 4k pages with 3-level
 		// translation buffers, the user address space is limited to 39 bits
 		// On darwin/arm64, the address space is even smaller.
+		// On AIX, mmap adresses range start at 0x07000000_00000000 for 64 bits
+		// processes.
 		arenaSize := round(_MaxMem, _PageSize)
 		bitmapSize = arenaSize / (sys.PtrSize * 8 / 2)
 		spansSize = arenaSize / _PageSize * sys.PtrSize
@@ -301,12 +303,15 @@ func mallocinit() {
 				p = uintptr(i)<<40 | uintptrMask&(0x0013<<28)
 			case GOARCH == "arm64":
 				p = uintptr(i)<<40 | uintptrMask&(0x0040<<32)
+			case GOOS == "aix":
+				i = 1
+				p = uintptr(i)<<32 | uintptrMask&(0x70<<52)
 			default:
 				p = uintptr(i)<<40 | uintptrMask&(0x00c0<<32)
 			}
 			pSize = bitmapSize + spansSize + arenaSize + _PageSize
 			p = uintptr(sysReserve(unsafe.Pointer(p), pSize, &reserved))
-			if p != 0 {
+			if p != 0 || GOOS == "aix" { // Useless to loop on AIX, as i is forced to 1
 				break
 			}
 		}
@@ -412,10 +417,12 @@ func (h *mheap) sysAlloc(n uintptr) unsafe.Pointer {
 			if p == 0 {
 				return nil
 			}
+			// p can be just about anywhere in the address
+			// space, including before arena_end.
 			if p == h.arena_end {
 				h.arena_end = new_end
 				h.arena_reserved = reserved
-			} else if h.arena_start <= p && p+p_size-h.arena_start-1 <= _MaxArena32 {
+			} else if h.arena_end < p && p+p_size-h.arena_start-1 <= _MaxArena32 {
 				// Keep everything page-aligned.
 				// Our pages are bigger than hardware pages.
 				h.arena_end = p + p_size
@@ -425,6 +432,16 @@ func (h *mheap) sysAlloc(n uintptr) unsafe.Pointer {
 				h.arena_used = used
 				h.arena_reserved = reserved
 			} else {
+				// We got a mapping, but it's not
+				// linear with our current arena, so
+				// we can't use it.
+				//
+				// TODO: Make it possible to allocate
+				// from this. We can't decrease
+				// arena_used, but we could introduce
+				// a new variable for the current
+				// allocation position.
+
 				// We haven't added this allocation to
 				// the stats, so subtract it from a
 				// fake stat (but avoid underflow).

@@ -212,6 +212,13 @@ cp_decl_dwarf_attribute (const_tree decl, int attr)
 	}
       break;
 
+    case DW_AT_export_symbols:
+      if (TREE_CODE (decl) == NAMESPACE_DECL
+	  && (DECL_NAMESPACE_INLINE_P (decl)
+	      || (DECL_NAME (decl) == NULL_TREE && dwarf_version >= 5)))
+	return 1;
+      break;
+
     default:
       break;
     }
@@ -350,6 +357,18 @@ tree
 cp_pushdecl (tree decl)
 {
   return pushdecl (decl);
+}
+
+/* Register c++-specific dumps.  */
+
+void
+cp_register_dumps (gcc::dump_manager *dumps)
+{
+  class_dump_id = dumps->dump_register
+    (".class", "lang-class", "lang-class", DK_lang, OPTGROUP_NONE, false);
+
+  raw_dump_id = dumps->dump_register
+    (".raw", "lang-raw", "lang-raw", DK_lang, OPTGROUP_NONE, false);
 }
 
 void

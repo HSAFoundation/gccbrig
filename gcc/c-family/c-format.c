@@ -54,7 +54,8 @@ struct function_format_info
 };
 
 /* Initialized in init_dynamic_diag_info.  */
-static tree local_tree_type_node;
+static GTY(()) tree local_tree_type_node;
+static GTY(()) tree locus;
 
 static bool decode_format_attr (tree, function_format_info *, int);
 static int decode_format_type (const char *);
@@ -671,6 +672,7 @@ static const format_char_info asm_fprintf_char_table[] =
   { "L",   0, STD_C89, NOARGUMENTS, "",      "",   NULL },
   { "U",   0, STD_C89, NOARGUMENTS, "",      "",   NULL },
   { "r",   0, STD_C89, { T89_I,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "",  "", NULL },
+  { "z",   0, STD_C89, NOARGUMENTS, "",      "",   NULL },
   { "@",   0, STD_C89, NOARGUMENTS, "",      "",   NULL },
   { NULL,  0, STD_C89, NOLENGTHS, NULL, NULL, NULL }
 };
@@ -770,7 +772,7 @@ static const format_char_info gcc_cxxdiag_char_table[] =
   /* Custom conversion specifiers.  */
 
   /* These will require a "tree" at runtime.  */
-  { "ADFSTVX",1,STD_C89,{ T89_T,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "q+#",   "'",   NULL },
+  { "ADFHISTVX",1,STD_C89,{ T89_T,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "q+#",   "'",   NULL },
   { "E", 1,STD_C89,{ T89_T,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "q+#",   "",   NULL },
   { "K", 1, STD_C89,{ T89_T,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "",   "\"",   NULL },
   { "v", 0,STD_C89, { T89_I,   BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN,  BADLEN  }, "q#",  "",   NULL },
@@ -3277,6 +3279,12 @@ matching_type_p (tree spec_type, tree arg_type)
   gcc_assert (spec_type);
   gcc_assert (arg_type);
 
+  /* If any of the types requires structural equality, we can't compare
+     their canonical types.  */
+  if (TYPE_STRUCTURAL_EQUALITY_P (spec_type)
+      || TYPE_STRUCTURAL_EQUALITY_P (arg_type))
+    return false;
+
   spec_type = TYPE_CANONICAL (spec_type);
   arg_type = TYPE_CANONICAL (arg_type);
 
@@ -3734,8 +3742,6 @@ init_dynamic_asm_fprintf_info (void)
 static void
 init_dynamic_gfc_info (void)
 {
-  static tree locus;
-
   if (!locus)
     {
       static format_char_info *gfc_fci;
@@ -4211,3 +4217,5 @@ c_format_c_tests ()
 } // namespace selftest
 
 #endif /* CHECKING_P */
+
+#include "gt-c-family-c-format.h"

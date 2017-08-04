@@ -399,12 +399,6 @@ rtems_task_variable_add_file =
 endif
 
 if LIBGO_IS_LINUX
-runtime_thread_files = runtime/thread-linux.c
-else
-runtime_thread_files = runtime/thread-sema.c
-endif
-
-if LIBGO_IS_LINUX
 runtime_getncpu_file = runtime/getncpu-linux.c
 else
 if LIBGO_IS_DARWIN
@@ -469,7 +463,6 @@ runtime_files = \
 	runtime/runtime_c.c \
 	runtime/stack.c \
 	runtime/thread.c \
-	$(runtime_thread_files) \
 	runtime/yield.c \
 	$(rtems_task_variable_add_file) \
 	$(runtime_getncpu_file)
@@ -531,7 +524,7 @@ s-version: Makefile
 
 runtime_sysinfo.go: s-runtime_sysinfo; @true
 s-runtime_sysinfo: $(srcdir)/mkrsysinfo.sh gen-sysinfo.go
-	GOOS=$(GOOS) $(SHELL) $(srcdir)/mkrsysinfo.sh
+	GOARCH=$(GOARCH) GOOS=$(GOOS) $(SHELL) $(srcdir)/mkrsysinfo.sh
 	$(SHELL) $(srcdir)/mvifdiff.sh tmp-runtime_sysinfo.go runtime_sysinfo.go
 	$(STAMP) $@
 
@@ -543,6 +536,8 @@ s-sigtab: $(srcdir)/mksigtab.sh gen-sysinfo.go
 
 # _Complex_lock and _Reader_lock are Go translations of some AIX system
 # types and should not be exported back to C
+# semt is a Go translation of the C type sem_t; it fails to convert on
+# some systems and need not be exported back to C.
 # sigset conflicts with system type sigset on AIX, so we need to rename it
 runtime.inc: s-runtime-inc; @true
 s-runtime-inc: runtime.lo Makefile
@@ -551,7 +546,7 @@ s-runtime-inc: runtime.lo Makefile
 	for pattern in '_[GP][a-z]' _Max _Lock _Sig _Trace _MHeap _Num; do \
 	  grep "#define $$pattern" runtime.inc.tmp >> runtime.inc.tmp2; \
 	done
-	for TYPE in _Complex_lock _Reader_lock; do \
+	for TYPE in _Complex_lock _Reader_lock semt; do \
 	  sed -e '/struct '$${TYPE}' {/,/^}/s/^.*$$//' runtime.inc.tmp2 > runtime.inc.tmp3; \
 	  mv runtime.inc.tmp3 runtime.inc.tmp2; \
 	done
@@ -910,7 +905,7 @@ BUILDDEPS = \
 BUILDPACKAGE = \
 	$(MKDIR_P) $(@D); \
 	files=`echo $^ | sed -e 's/[^ ]*\.gox//g' -e 's/[^ ]*\.dep//'`; \
-	$(LTGOCOMPILE) -I . -c -fgo-pkgpath=`echo $@ | sed -e 's/.lo$$//'` $($(subst -,_,$(subst .,_,$(subst /,_,$@)))_GOCFLAGS) -o $@ $$files
+	$(LTGOCOMPILE) -I . -c -fgo-pkgpath=`echo $@ | sed -e 's/.lo$$//' -e 's|golang_org|vendor/golang_org|'` $($(subst -,_,$(subst .,_,$(subst /,_,$@)))_GOCFLAGS) -o $@ $$files
 
 # How to build a .gox file from a .lo file.
 # Matching .o file can either be in the same directory as the .lo (non-PIC

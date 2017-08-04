@@ -689,7 +689,13 @@ Gogo::init_imports(std::vector<Bstatement*>& init_stmts, Bfunction *bfunction)
 	 this->imported_init_fns_.begin();
        p != this->imported_init_fns_.end();
        ++p)
-    v.push_back(*p);
+    {
+      if ((*p)->priority() < 0)
+	go_error_at(Linemap::unknown_location(),
+		    "internal error: failed to set init priority for %s",
+		    (*p)->package_name().c_str());
+      v.push_back(*p);
+    }
   std::sort(v.begin(), v.end(), priority_compare);
 
   // We build calls to the init functions, which take no arguments.
@@ -1498,10 +1504,10 @@ Gogo::write_globals()
       Bfunction* initfn = func->get_or_make_decl(this, *p);
       Bexpression* func_code =
           this->backend()->function_code_expression(initfn, func_loc);
-      Bexpression* call = this->backend()->call_expression(initfn, func_code,
+      Bexpression* call = this->backend()->call_expression(init_bfn, func_code,
                                                            empty_args,
 							   NULL, func_loc);
-      Bstatement* ist = this->backend()->expression_statement(initfn, call);
+      Bstatement* ist = this->backend()->expression_statement(init_bfn, call);
       init_stmts.push_back(ist);
     }
 
@@ -1682,6 +1688,16 @@ Gogo::register_package(const std::string& pkgpath,
   return package;
 }
 
+// Return the pkgpath symbol for a package, given the pkgpath.
+
+std::string
+Gogo::pkgpath_symbol_for_package(const std::string& pkgpath)
+{
+  Packages::iterator p = this->packages_.find(pkgpath);
+  go_assert(p != this->packages_.end());
+  return p->second->pkgpath_symbol();
+}
+
 // Start compiling a function.
 
 Named_object*
@@ -1786,8 +1802,41 @@ Gogo::start_function(const std::string& name, Function_type* type,
       char buf[30];
       snprintf(buf, sizeof buf, ".$sink%d", sink_count);
       ++sink_count;
-      ret = this->package_->bindings()->add_function(buf, NULL, function);
+      ret = Named_object::make_function(buf, NULL, function);
       ret->func_value()->set_is_sink();
+
+      if (!type->is_method())
+	ret = this->package_->bindings()->add_named_object(ret);
+      else if (add_method_to_type)
+	{
+	  // We should report errors even for sink methods.
+	  Type* rtype = type->receiver()->type();
+	  // Avoid points_to and deref to avoid getting an error if
+	  // the type is not yet defined.
+	  if (rtype->classification() == Type::TYPE_POINTER)
+	    rtype = rtype->points_to();
+	  while (rtype->named_type() != NULL
+		 && rtype->named_type()->is_alias())
+	    rtype = rtype->named_type()->real_type()->forwarded();
+	  if (rtype->is_error_type())
+	    ;
+	  else if (rtype->named_type() != NULL)
+	    {
+	      if (rtype->named_type()->named_object()->package() != NULL)
+		go_error_at(type->receiver()->location(),
+			    "may not define methods on non-local type");
+	    }
+	  else if (rtype->forward_declaration_type() != NULL)
+	    {
+	      // Go ahead and add the method in case we need to report
+	      // an error when we see the definition.
+	      rtype->forward_declaration_type()->add_existing_method(ret);
+	    }
+	  else
+	    go_error_at(type->receiver()->location(),
+			("invalid receiver type "
+			 "(receiver must be a named type)"));
+	}
     }
   else if (!type->is_method())
     {
@@ -3009,25 +3058,52 @@ Finalize_methods::type(Type* t)
 
     case Type::TYPE_NAMED:
       {
-	// We have to finalize the methods of the real type first.
-	// But if the real type is a struct type, then we only want to
-	// finalize the methods of the field types, not of the struct
-	// type itself.  We don't want to add methods to the struct,
-	// since it has a name.
 	Named_type* nt = t->named_type();
 	Type* rt = nt->real_type();
 	if (rt->classification() != Type::TYPE_STRUCT)
 	  {
+	    // Finalize the methods of the real type first.
 	    if (Type::traverse(rt, this) == TRAVERSE_EXIT)
 	      return TRAVERSE_EXIT;
+
+	    // Finalize the methods of this type.
+	    nt->finalize_methods(this->gogo_);
 	  }
 	else
 	  {
+	    // We don't want to finalize the methods of a named struct
+	    // type, as the methods should be attached to the named
+	    // type, not the struct type.  We just want to finalize
+	    // the field types.
+	    //
+	    // It is possible that a field type refers indirectly to
+	    // this type, such as via a field with function type with
+	    // an argument or result whose type is this type.  To
+	    // avoid the cycle, first finalize the methods of any
+	    // embedded types, which are the only types we need to
+	    // know to finalize the methods of this type.
+	    const Struct_field_list* fields = rt->struct_type()->fields();
+	    if (fields != NULL)
+	      {
+		for (Struct_field_list::const_iterator pf = fields->begin();
+		     pf != fields->end();
+		     ++pf)
+		  {
+		    if (pf->is_anonymous())
+		      {
+			if (Type::traverse(pf->type(), this) == TRAVERSE_EXIT)
+			  return TRAVERSE_EXIT;
+		      }
+		  }
+	      }
+
+	    // Finalize the methods of this type.
+	    nt->finalize_methods(this->gogo_);
+
+	    // Finalize all the struct fields.
 	    if (rt->struct_type()->traverse_field_types(this) == TRAVERSE_EXIT)
 	      return TRAVERSE_EXIT;
 	  }
-
-	nt->finalize_methods(this->gogo_);
 
 	// If this type is defined in a different package, then finalize the
 	// types of all the methods, since we won't see them otherwise.
@@ -4775,6 +4851,8 @@ Gogo::convert_named_types()
   Runtime::convert_types(this);
 
   this->named_types_are_converted_ = true;
+
+  Type::finish_pointer_types(this);
 }
 
 // Convert all names types in a set of bindings.
@@ -5379,8 +5457,8 @@ Function::get_or_make_decl(Gogo* gogo, Named_object* no)
               // use the pkgpath of the imported package to avoid
               // a possible name collision.  See bug478 for a test
               // case.
-              pkgpath = Gogo::hidden_name_pkgpath(no->name());
-              pkgpath = Gogo::pkgpath_for_symbol(pkgpath);
+	      std::string p = Gogo::hidden_name_pkgpath(no->name());
+	      pkgpath = gogo->pkgpath_symbol_for_package(p);
             }
 
           asm_name = pkgpath;
@@ -5475,8 +5553,19 @@ Function_declaration::get_or_make_decl(Gogo* gogo, Named_object* no)
       if (this->asm_name_.empty())
         {
           asm_name = (no->package() == NULL
-                                  ? gogo->pkgpath_symbol()
-                                  : no->package()->pkgpath_symbol());
+		      ? gogo->pkgpath_symbol()
+		      : no->package()->pkgpath_symbol());
+	  if (this->fntype_->is_method()
+	      && Gogo::is_hidden_name(no->name())
+	      && Gogo::hidden_name_pkgpath(no->name()) != gogo->pkgpath())
+	    {
+	      // This is a method created for an unexported method of
+	      // an imported embedded type.  Use the pkgpath of the
+	      // imported package.  This matches code in
+	      // Function::get_or_make_decl, above.
+	      std::string p = Gogo::hidden_name_pkgpath(no->name());
+	      asm_name = gogo->pkgpath_symbol_for_package(p);
+	    }
           asm_name.append(1, '.');
           asm_name.append(Gogo::unpack_hidden_name(no->name()));
           if (this->fntype_->is_method())
@@ -6985,7 +7074,10 @@ Type_declaration::define_methods(Named_type* nt)
   for (std::vector<Named_object*>::const_iterator p = this->methods_.begin();
        p != this->methods_.end();
        ++p)
-    nt->add_existing_method(*p);
+    {
+      if (!(*p)->func_value()->is_sink())
+	nt->add_existing_method(*p);
+    }
 }
 
 // We are using the type.  Return true if we should issue a warning.

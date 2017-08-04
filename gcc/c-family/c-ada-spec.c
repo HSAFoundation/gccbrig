@@ -858,7 +858,7 @@ print_generic_ada_decl (pretty_printer *pp, tree decl, const char *source_file)
 {
   source_file_base = source_file;
 
-  if (print_ada_declaration (pp, decl, 0, INDENT_INCR))
+  if (print_ada_declaration (pp, decl, NULL_TREE, INDENT_INCR))
     {
       pp_newline (pp);
       pp_newline (pp);
@@ -1052,13 +1052,11 @@ get_underlying_decl (tree type)
 static bool
 has_static_fields (const_tree type)
 {
-  tree tmp;
-
   if (!type || !RECORD_OR_UNION_TYPE_P (type))
     return false;
 
-  for (tmp = TYPE_FIELDS (type); tmp; tmp = TREE_CHAIN (tmp))
-    if (DECL_NAME (tmp) && TREE_STATIC (tmp))
+  for (tree fld = TYPE_FIELDS (type); fld; fld = TREE_CHAIN (fld))
+    if (TREE_CODE (fld) == FIELD_DECL && DECL_NAME (fld) && TREE_STATIC (fld))
       return true;
 
   return false;
@@ -1070,16 +1068,11 @@ has_static_fields (const_tree type)
 static bool
 is_tagged_type (const_tree type)
 {
-  tree tmp;
-
   if (!type || !RECORD_OR_UNION_TYPE_P (type))
     return false;
 
-  /* TYPE_METHODS is only set on the main variant.  */
-  type = TYPE_MAIN_VARIANT (type);
-
-  for (tmp = TYPE_METHODS (type); tmp; tmp = TREE_CHAIN (tmp))
-    if (TREE_CODE (tmp) == FUNCTION_DECL && DECL_VINDEX (tmp))
+  for (tree fld = TYPE_FIELDS (type); fld; fld = TREE_CHAIN (fld))
+    if (TREE_CODE (fld) == FUNCTION_DECL && DECL_VINDEX (fld))
       return true;
 
   return false;
@@ -1093,8 +1086,6 @@ is_tagged_type (const_tree type)
 static bool
 has_nontrivial_methods (tree type)
 {
-  tree tmp;
-
   if (!type || !RECORD_OR_UNION_TYPE_P (type))
     return false;
 
@@ -1106,12 +1097,9 @@ has_nontrivial_methods (tree type)
   if (!cpp_check (type, IS_TRIVIAL))
     return true;
 
-  /* TYPE_METHODS is only set on the main variant.  */
-  type = TYPE_MAIN_VARIANT (type);
-
   /* If there are user-defined methods, they are deemed non-trivial.  */
-  for (tmp = TYPE_METHODS (type); tmp; tmp = TREE_CHAIN (tmp))
-    if (!DECL_ARTIFICIAL (tmp))
+  for (tree fld = TYPE_FIELDS (type); fld; fld = DECL_CHAIN (fld))
+    if (TREE_CODE (TREE_TYPE (fld)) == METHOD_TYPE && !DECL_ARTIFICIAL (fld))
       return true;
 
   return false;
@@ -1665,7 +1653,8 @@ dump_ada_function_declaration (pretty_printer *buffer, tree func,
 	  if (DECL_NAME (arg))
 	    {
 	      check_name (buffer, arg);
-	      pp_ada_tree_identifier (buffer, DECL_NAME (arg), 0, false);
+	      pp_ada_tree_identifier (buffer, DECL_NAME (arg), NULL_TREE,
+				      false);
 	      pp_string (buffer, " : ");
 	    }
 	  else
@@ -1799,7 +1788,7 @@ is_char_array (tree t)
 
   tmp = TREE_TYPE (tmp);
   return num_dim == 1 && TREE_CODE (tmp) == INTEGER_TYPE
-    && !strcmp (IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (tmp))), "char");
+    && id_equal (DECL_NAME (TYPE_NAME (tmp)), "char");
 }
 
 /* Dump in BUFFER an array type T in Ada syntax.  Assume that the "type"
@@ -1896,7 +1885,7 @@ dump_ada_template (pretty_printer *buffer, tree t, int spc)
       if (TREE_VEC_LENGTH (types) == 0)
 	break;
 
-      if (!RECORD_OR_UNION_TYPE_P (instance) || !TYPE_METHODS (instance))
+      if (!RECORD_OR_UNION_TYPE_P (instance))
 	break;
 
       /* We are interested in concrete template instantiations only: skip
@@ -2065,7 +2054,10 @@ dump_generic_ada_node (pretty_printer *buffer, tree node, tree type, int spc,
 	    }
 	  else
 	    {
-	      pp_string (buffer, "unsigned");
+	      if (TYPE_UNSIGNED (node))
+		pp_string (buffer, "unsigned");
+	      else
+		pp_string (buffer, "int");
 	      for (; value; value = TREE_CHAIN (value))
 		{
 		  pp_semicolon (buffer);
@@ -2103,7 +2095,7 @@ dump_generic_ada_node (pretty_printer *buffer, tree node, tree type, int spc,
 	  {
 	    if (DECL_NAME (node))
 	      pp_ada_tree_identifier
-		(buffer, DECL_NAME (node), 0, limited_access);
+		(buffer, DECL_NAME (node), NULL_TREE, limited_access);
 	    else
 	      pp_string (buffer, "<unnamed type decl>");
 	  }
@@ -2390,13 +2382,14 @@ dump_generic_ada_node (pretty_printer *buffer, tree node, tree type, int spc,
 	{
 	  if (is_tagged_type (TREE_TYPE (node)))
 	    {
-	      tree tmp = TYPE_FIELDS (TREE_TYPE (node));
 	      int first = 1;
 
 	      /* Look for ancestors.  */
-	      for (; tmp; tmp = TREE_CHAIN (tmp))
+	      for (tree fld = TYPE_FIELDS (TREE_TYPE (node));
+		   fld;
+		   fld = TREE_CHAIN (fld))
 		{
-		  if (!DECL_NAME (tmp) && is_tagged_type (TREE_TYPE (tmp)))
+		  if (!DECL_NAME (fld) && is_tagged_type (TREE_TYPE (fld)))
 		    {
 		      if (first)
 			{
@@ -2406,8 +2399,8 @@ dump_generic_ada_node (pretty_printer *buffer, tree node, tree type, int spc,
 		      else
 			pp_string (buffer, " and ");
 
-		      dump_ada_decl_name
-			(buffer, TYPE_NAME (TREE_TYPE (tmp)), false);
+		      dump_ada_decl_name (buffer, TYPE_NAME (TREE_TYPE (fld)),
+					  false);
 		    }
 		}
 
@@ -2442,25 +2435,23 @@ dump_generic_ada_node (pretty_printer *buffer, tree node, tree type, int spc,
 static int
 print_ada_methods (pretty_printer *buffer, tree node, int spc)
 {
-  tree t;
-  int res;
-
   if (!has_nontrivial_methods (node))
     return 0;
 
   pp_semicolon (buffer);
 
-  res = 1;
-  for (t = TYPE_METHODS (node); t; t = TREE_CHAIN (t))
-    {
-      if (res)
-	{
-	  pp_newline (buffer);
-	  pp_newline (buffer);
-	}
-
-      res = print_ada_declaration (buffer, t, node, spc);
-    }
+  int res = 1;
+  for (tree fld = TYPE_FIELDS (node); fld; fld = DECL_CHAIN (fld))
+    if (TREE_CODE (TREE_TYPE (fld)) == METHOD_TYPE)
+      {
+	if (res)
+	  {
+	    pp_newline (buffer);
+	    pp_newline (buffer);
+	  }
+	
+	res = print_ada_declaration (buffer, fld, node, spc);
+      }
 
   return 1;
 }
@@ -2512,7 +2503,7 @@ dump_nested_types (pretty_printer *buffer, tree t, tree parent, bool forward,
       dump_nested_type (buffer, field, t, parent, spc);
 
   for (field = TYPE_FIELDS (type); field; field = TREE_CHAIN (field))
-    if (!TYPE_NAME (TREE_TYPE (field)))
+    if (TREE_CODE (field) == FIELD_DECL && !TYPE_NAME (TREE_TYPE (field)))
       dump_nested_type (buffer, field, t, parent, spc);
 
   TREE_VISITED (t) = 1;
@@ -2961,19 +2952,14 @@ print_ada_declaration (pretty_printer *buffer, tree t, tree type, int spc)
 	  dump_generic_ada_node (buffer, ret_type, type, spc, false, true);
 	}
 
-      if (is_constructor
-	  && RECORD_OR_UNION_TYPE_P (type)
-	  && TYPE_METHODS (type))
-	{
-	  tree tmp;
-
-	  for (tmp = TYPE_METHODS (type); tmp; tmp = TREE_CHAIN (tmp))
-	    if (cpp_check (tmp, IS_ABSTRACT))
-	      {
-		is_abstract_class = true;
-		break;
-	      }
-	}
+      if (is_constructor && RECORD_OR_UNION_TYPE_P (type))
+	for (tree fld = TYPE_FIELDS (type); fld; fld = DECL_CHAIN (fld))
+	  if (TREE_CODE (TREE_TYPE (fld)) == METHOD_TYPE
+	      && cpp_check (fld, IS_ABSTRACT))
+	    {
+	      is_abstract_class = true;
+	      break;
+	    }
 
       if (is_abstract || is_abstract_class)
 	pp_string (buffer, " is abstract");
@@ -3028,35 +3014,35 @@ print_ada_declaration (pretty_printer *buffer, tree t, tree type, int spc)
 
       pp_string (buffer, " is ");
 
-      /* Check whether we have an Ada interface compatible class.  */
+      /* Check whether we have an Ada interface compatible class.
+	 That is only have a vtable non-static data member and no
+	 non-abstract methods.  */
       if (cpp_check
-	  && RECORD_OR_UNION_TYPE_P (TREE_TYPE (t))
-	  && TYPE_METHODS (TREE_TYPE (t)))
+	  && RECORD_OR_UNION_TYPE_P (TREE_TYPE (t)))
 	{
-	  int num_fields = 0;
-	  tree tmp;
+	  bool has_fields = false;
 
 	  /* Check that there are no fields other than the virtual table.  */
-	  for (tmp = TYPE_FIELDS (TREE_TYPE (t)); tmp; tmp = TREE_CHAIN (tmp))
+	  for (tree fld = TYPE_FIELDS (TREE_TYPE (t));
+	       fld;
+	       fld = TREE_CHAIN (fld))
 	    {
-	      if (TREE_CODE (tmp) == TYPE_DECL)
-		continue;
-	      num_fields++;
-	    }
-
-	  if (num_fields == 1)
-	    is_interface = 1;
-
-	  /* Also check that there are only pure virtual methods.  Since the
-	     class is empty, we can skip implicit constructors/destructors.  */
-	  for (tmp = TYPE_METHODS (TREE_TYPE (t)); tmp; tmp = TREE_CHAIN (tmp))
-	    {
-	      if (DECL_ARTIFICIAL (tmp))
-		continue;
-	      if (cpp_check (tmp, IS_ABSTRACT))
-		is_abstract_record = 1;
-	      else
-		is_interface = 0;
+	      if (TREE_CODE (fld) == FIELD_DECL)
+		{
+		  if (!has_fields && DECL_VIRTUAL_P (fld))
+		    is_interface = 1;
+		  else
+		    is_interface = 0;
+		  has_fields = true;
+		}
+	      else if (TREE_CODE (TREE_TYPE (fld)) == METHOD_TYPE
+		       && !DECL_ARTIFICIAL (fld))
+		{
+		  if (cpp_check (fld, IS_ABSTRACT))
+		    is_abstract_record = 1;
+		  else
+		    is_interface = 0;
+		}
 	    }
 	}
 
@@ -3114,10 +3100,13 @@ print_ada_declaration (pretty_printer *buffer, tree t, tree type, int spc)
 	    {
 	      pp_string (buffer, "aliased ");
 
+	      if (TREE_READONLY (t))
+		pp_string (buffer, "constant ");
+
 	      if (TYPE_NAME (TREE_TYPE (t)))
 		dump_generic_ada_node
 		  (buffer, TREE_TYPE (t), t, spc, false, true);
-	      else
+	      else if (type)
 		dump_ada_double_name (buffer, type, t);
 	    }
 	  else
@@ -3126,6 +3115,9 @@ print_ada_declaration (pretty_printer *buffer, tree t, tree type, int spc)
 		  && (TYPE_NAME (TREE_TYPE (t))
 		      || TREE_CODE (TREE_TYPE (t)) != INTEGER_TYPE))
 		pp_string (buffer, "aliased ");
+
+	      if (TREE_READONLY (t))
+		pp_string (buffer, "constant ");
 
 	      dump_generic_ada_node
 		(buffer, TREE_TYPE (t), TREE_TYPE (t), spc, false, true);
@@ -3222,10 +3214,10 @@ print_ada_struct_decl (pretty_printer *buffer, tree node, tree type, int spc,
 		  field_num++;
 		}
 	    }
-	  else if (TREE_CODE (tmp) != TYPE_DECL && !TREE_STATIC (tmp))
+	  else if (TREE_CODE (tmp) == FIELD_DECL && !TREE_STATIC (tmp))
 	    {
 	      /* Skip internal virtual table field.  */
-	      if (strncmp (IDENTIFIER_POINTER (DECL_NAME (tmp)), "_vptr", 5))
+	      if (!DECL_VIRTUAL_P (tmp))
 		{
 		  if (is_union)
 		    {
@@ -3316,7 +3308,9 @@ print_ada_struct_decl (pretty_printer *buffer, tree node, tree type, int spc,
   /* Print the static fields of the structure, if any.  */
   for (tmp = TYPE_FIELDS (node); tmp; tmp = TREE_CHAIN (tmp))
     {
-      if (DECL_NAME (tmp) && TREE_STATIC (tmp))
+      if (TREE_CODE (tmp) == FIELD_DECL
+	  && DECL_NAME (tmp)
+	  && TREE_STATIC (tmp))
 	{
 	  if (need_semicolon)
 	    {

@@ -49,6 +49,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "c-family/c-ada-spec.h"
 #include "asan.h"
 
+/* Id for dumping the raw trees.  */
+int raw_dump_id;
+ 
 extern cpp_reader *parse_in;
 
 /* This structure contains information about the initializations
@@ -189,14 +192,16 @@ change_return_type (tree new_ret, tree fntype)
   return newtype;
 }
 
-/* Build a PARM_DECL with NAME and TYPE, and set DECL_ARG_TYPE
+/* Build a PARM_DECL of FN with NAME and TYPE, and set DECL_ARG_TYPE
    appropriately.  */
 
 tree
-cp_build_parm_decl (tree name, tree type)
+cp_build_parm_decl (tree fn, tree name, tree type)
 {
   tree parm = build_decl (input_location,
 			  PARM_DECL, name, type);
+  DECL_CONTEXT (parm) = fn;
+
   /* DECL_ARG_TYPE is only used by the back end and the back end never
      sees templates.  */
   if (!processing_template_decl)
@@ -205,13 +210,13 @@ cp_build_parm_decl (tree name, tree type)
   return parm;
 }
 
-/* Returns a PARM_DECL for a parameter of the indicated TYPE, with the
+/* Returns a PARM_DECL of FN for a parameter of the indicated TYPE, with the
    indicated NAME.  */
 
 tree
-build_artificial_parm (tree name, tree type)
+build_artificial_parm (tree fn, tree name, tree type)
 {
-  tree parm = cp_build_parm_decl (name, type);
+  tree parm = cp_build_parm_decl (fn, name, type);
   DECL_ARTIFICIAL (parm) = 1;
   /* All our artificial parms are implicitly `const'; they cannot be
      assigned to.  */
@@ -262,7 +267,7 @@ maybe_retrofit_in_chrg (tree fn)
      pass us a pointer to our VTT.  */
   if (CLASSTYPE_VBASECLASSES (DECL_CONTEXT (fn)))
     {
-      parm = build_artificial_parm (vtt_parm_identifier, vtt_parm_type);
+      parm = build_artificial_parm (fn, vtt_parm_identifier, vtt_parm_type);
 
       /* First add it to DECL_ARGUMENTS between 'this' and the real args...  */
       DECL_CHAIN (parm) = parms;
@@ -275,7 +280,7 @@ maybe_retrofit_in_chrg (tree fn)
     }
 
   /* Then add the in-charge parm (before the VTT parm).  */
-  parm = build_artificial_parm (in_charge_identifier, integer_type_node);
+  parm = build_artificial_parm (fn, in_charge_identifier, integer_type_node);
   DECL_CHAIN (parm) = parms;
   parms = parm;
   arg_types = hash_tree_chain (integer_type_node, arg_types);
@@ -337,7 +342,7 @@ grokclassfn (tree ctype, tree function, enum overload_flags flags)
   DECL_CONTEXT (function) = ctype;
 
   if (flags == DTOR_FLAG)
-    DECL_DESTRUCTOR_P (function) = 1;
+    DECL_CXX_DESTRUCTOR_P (function) = 1;
 
   if (flags == DTOR_FLAG || DECL_CONSTRUCTOR_P (function))
     maybe_retrofit_in_chrg (function);
@@ -553,10 +558,6 @@ check_member_template (tree tmpl)
 tree
 check_classfn (tree ctype, tree function, tree template_parms)
 {
-  int ix;
-  bool is_template;
-  tree pushed_scope;
-  
   if (DECL_USE_TEMPLATE (function)
       && !(TREE_CODE (function) == TEMPLATE_DECL
 	   && DECL_TEMPLATE_SPECIALIZATION (function))
@@ -589,7 +590,7 @@ check_classfn (tree ctype, tree function, tree template_parms)
     }
 
   /* OK, is this a definition of a member template?  */
-  is_template = (template_parms != NULL_TREE);
+  bool is_template = (template_parms != NULL_TREE);
 
   /* [temp.mem]
 
@@ -603,119 +604,88 @@ check_classfn (tree ctype, tree function, tree template_parms)
   /* We must enter the scope here, because conversion operators are
      named by target type, and type equivalence relies on typenames
      resolving within the scope of CTYPE.  */
-  pushed_scope = push_scope (ctype);
-  ix = class_method_index_for_fn (complete_type (ctype), function);
-  if (ix >= 0)
+  tree pushed_scope = push_scope (ctype);
+  tree matched = NULL_TREE;
+  tree fns = lookup_fnfields_slot (ctype, DECL_NAME (function));
+  
+  for (ovl_iterator iter (fns); !matched && iter; ++iter)
     {
-      vec<tree, va_gc> *methods = CLASSTYPE_METHOD_VEC (ctype);
-      tree fndecls, fndecl = 0;
-      bool is_conv_op;
-      const char *format = NULL;
+      tree fndecl = *iter;
+      tree p1 = TYPE_ARG_TYPES (TREE_TYPE (function));
+      tree p2 = TYPE_ARG_TYPES (TREE_TYPE (fndecl));
 
-      for (fndecls = (*methods)[ix];
-	   fndecls; fndecls = OVL_NEXT (fndecls))
-	{
-	  tree p1, p2;
+      /* We cannot simply call decls_match because this doesn't work
+	 for static member functions that are pretending to be
+	 methods, and because the name may have been changed by
+	 asm("new_name").  */
 
-	  fndecl = OVL_CURRENT (fndecls);
-	  p1 = TYPE_ARG_TYPES (TREE_TYPE (function));
-	  p2 = TYPE_ARG_TYPES (TREE_TYPE (fndecl));
+      /* Get rid of the this parameter on functions that become
+	 static.  */
+      if (DECL_STATIC_FUNCTION_P (fndecl)
+	  && TREE_CODE (TREE_TYPE (function)) == METHOD_TYPE)
+	p1 = TREE_CHAIN (p1);
 
-	  /* We cannot simply call decls_match because this doesn't
-	     work for static member functions that are pretending to
-	     be methods, and because the name may have been changed by
-	     asm("new_name").  */
+      /* A member template definition only matches a member template
+	 declaration.  */
+      if (is_template != (TREE_CODE (fndecl) == TEMPLATE_DECL))
+	continue;
 
-	   /* Get rid of the this parameter on functions that become
-	      static.  */
-	  if (DECL_STATIC_FUNCTION_P (fndecl)
-	      && TREE_CODE (TREE_TYPE (function)) == METHOD_TYPE)
-	    p1 = TREE_CHAIN (p1);
+      /* ref-qualifier or absence of same must match.  */
+      if (type_memfn_rqual (TREE_TYPE (function))
+	  != type_memfn_rqual (TREE_TYPE (fndecl)))
+	continue;
 
-	  /* A member template definition only matches a member template
-	     declaration.  */
-	  if (is_template != (TREE_CODE (fndecl) == TEMPLATE_DECL))
-	    continue;
+      // Include constraints in the match.
+      tree c1 = get_constraints (function);
+      tree c2 = get_constraints (fndecl);
 
-	  /* ref-qualifier or absence of same must match.  */
-	  if (type_memfn_rqual (TREE_TYPE (function))
-	      != type_memfn_rqual (TREE_TYPE (fndecl)))
-	    continue;
-
-	  // Include constraints in the match.
-	  tree c1 = get_constraints (function);
-	  tree c2 = get_constraints (fndecl);
-
-	  /* While finding a match, same types and params are not enough
-	     if the function is versioned.  Also check version ("target")
-	     attributes.  */
-	  if (same_type_p (TREE_TYPE (TREE_TYPE (function)),
-			   TREE_TYPE (TREE_TYPE (fndecl)))
-	      && compparms (p1, p2)
-	      && !targetm.target_option.function_versions (function, fndecl)
-	      && (!is_template
-		  || comp_template_parms (template_parms,
-					  DECL_TEMPLATE_PARMS (fndecl)))
-	      && equivalent_constraints (c1, c2)
-	      && (DECL_TEMPLATE_SPECIALIZATION (function)
-		  == DECL_TEMPLATE_SPECIALIZATION (fndecl))
-	      && (!DECL_TEMPLATE_SPECIALIZATION (function)
-		  || (DECL_TI_TEMPLATE (function)
-		      == DECL_TI_TEMPLATE (fndecl))))
-	    break;
-	}
-      if (fndecls)
-	{
-	  if (pushed_scope)
-	    pop_scope (pushed_scope);
-	  return OVL_CURRENT (fndecls);
-	}
-      
-      error_at (DECL_SOURCE_LOCATION (function),
-		"prototype for %q#D does not match any in class %qT",
-		function, ctype);
-      is_conv_op = DECL_CONV_FN_P (fndecl);
-
-      if (is_conv_op)
-	ix = CLASSTYPE_FIRST_CONVERSION_SLOT;
-      fndecls = (*methods)[ix];
-      while (fndecls)
-	{
-	  fndecl = OVL_CURRENT (fndecls);
-	  fndecls = OVL_NEXT (fndecls);
-
-	  if (!fndecls && is_conv_op)
-	    {
-	      if (methods->length () > (size_t) ++ix)
-		{
-		  fndecls = (*methods)[ix];
-		  if (!DECL_CONV_FN_P (OVL_CURRENT (fndecls)))
-		    {
-		      fndecls = NULL_TREE;
-		      is_conv_op = false;
-		    }
-		}
-	      else
-		is_conv_op = false;
-	    }
-	  if (format)
-	    format = "                %+#D";
-	  else if (fndecls)
-	    format = N_("candidates are: %+#D");
-	  else
-	    format = N_("candidate is: %+#D");
-	  error (format, fndecl);
-	}
+      /* While finding a match, same types and params are not enough
+	 if the function is versioned.  Also check version ("target")
+	 attributes.  */
+      if (same_type_p (TREE_TYPE (TREE_TYPE (function)),
+		       TREE_TYPE (TREE_TYPE (fndecl)))
+	  && compparms (p1, p2)
+	  && !targetm.target_option.function_versions (function, fndecl)
+	  && (!is_template
+	      || comp_template_parms (template_parms,
+				      DECL_TEMPLATE_PARMS (fndecl)))
+	  && equivalent_constraints (c1, c2)
+	  && (DECL_TEMPLATE_SPECIALIZATION (function)
+	      == DECL_TEMPLATE_SPECIALIZATION (fndecl))
+	  && (!DECL_TEMPLATE_SPECIALIZATION (function)
+	      || (DECL_TI_TEMPLATE (function) == DECL_TI_TEMPLATE (fndecl))))
+	matched = fndecl;
     }
-  else if (!COMPLETE_TYPE_P (ctype))
-    cxx_incomplete_type_error (function, ctype);
-  else
-    error ("no %q#D member function declared in class %qT",
-	   function, ctype);
+
+  if (!matched)
+    {
+      if (!COMPLETE_TYPE_P (ctype))
+	cxx_incomplete_type_error (function, ctype);
+      else
+	{
+	  if (DECL_CONV_FN_P (function))
+	    fns = lookup_all_conversions (ctype);
+
+	  error_at (DECL_SOURCE_LOCATION (function),
+		    "no declaration matches %q#D", function);
+	  if (fns)
+	    print_candidates (fns);
+	  else if (DECL_CONV_FN_P (function))
+	    inform (DECL_SOURCE_LOCATION (function),
+		    "no conversion operators declared");
+	  else
+	    inform (DECL_SOURCE_LOCATION (function),
+		    "no functions named %qD", function);
+	  inform (DECL_SOURCE_LOCATION (TYPE_NAME (ctype)),
+		  "%#qT defined here", ctype);
+	}
+      matched = error_mark_node;
+    }
 
   if (pushed_scope)
     pop_scope (pushed_scope);
-  return error_mark_node;
+
+  return matched;
 }
 
 /* DECL is a function with vague linkage.  Remember it so that at the
@@ -832,7 +802,7 @@ grokfield (const cp_declarator *declarator,
 	}
 
       if (IDENTIFIER_POINTER (name)[0] == '_'
-	  && ! strcmp (IDENTIFIER_POINTER (name), "_vptr"))
+	  && id_equal (name, "_vptr"))
 	error ("member %qD conflicts with virtual function table field name",
 	       value);
     }
@@ -1094,9 +1064,10 @@ is_late_template_attribute (tree attr, tree decl)
   if (is_attribute_p ("weak", name))
     return true;
 
-  /* Attribute unused is applied directly, as it appertains to
+  /* Attributes used and unused are applied directly, as they appertain to
      decls. */
-  if (is_attribute_p ("unused", name))
+  if (is_attribute_p ("unused", name)
+      || is_attribute_p ("used", name))
     return false;
 
   /* Attribute tls_model wants to modify the symtab.  */
@@ -1994,12 +1965,14 @@ decl_needed_p (tree decl)
   /* If this entity was used, let the back end see it; it will decide
      whether or not to emit it into the object file.  */
   if (TREE_USED (decl))
-      return true;
+    return true;
+
   /* Virtual functions might be needed for devirtualization.  */
   if (flag_devirtualize
       && TREE_CODE (decl) == FUNCTION_DECL
       && DECL_VIRTUAL_P (decl))
     return true;
+
   /* Otherwise, DECL does not need to be emitted -- yet.  A subsequent
      reference to DECL might cause it to be emitted later.  */
   return false;
@@ -2619,6 +2592,7 @@ reset_decl_linkage (tree decl)
   determine_visibility (decl);
   tentative_decl_linkage (decl);
 }
+
 static void
 reset_type_linkage_2 (tree type)
 {
@@ -2642,25 +2616,14 @@ reset_type_linkage_2 (tree type)
       for (tree m = TYPE_FIELDS (type); m; m = DECL_CHAIN (m))
 	{
 	  tree mem = STRIP_TEMPLATE (m);
-	  if (VAR_P (mem))
+	  if (TREE_CODE (mem) == VAR_DECL || TREE_CODE (mem) == FUNCTION_DECL)
 	    reset_decl_linkage (mem);
-	}
-      for (tree m = TYPE_METHODS (type); m; m = DECL_CHAIN (m))
-	{
-	  tree mem = STRIP_TEMPLATE (m);
-	  reset_decl_linkage (mem);
-	  if (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (mem))
-	    {
-	      /* Also update its name, for cxx_dwarf_name.  */
-	      DECL_NAME (mem) = TYPE_IDENTIFIER (type);
-	      if (m != mem)
-		DECL_NAME (m) = TYPE_IDENTIFIER (type);
-	    }
 	}
       binding_table_foreach (CLASSTYPE_NESTED_UTDS (type),
 			     bt_reset_linkage_2, NULL);
     }
 }
+
 static void
 bt_reset_linkage_2 (binding_entry b, void */*data*/)
 {
@@ -3507,12 +3470,10 @@ start_static_storage_duration_function (unsigned count)
 
   /* Create the argument list.  */
   initialize_p_decl = cp_build_parm_decl
-    (get_identifier (INITIALIZE_P_IDENTIFIER), integer_type_node);
-  DECL_CONTEXT (initialize_p_decl) = ssdf_decl;
+    (ssdf_decl, get_identifier (INITIALIZE_P_IDENTIFIER), integer_type_node);
   TREE_USED (initialize_p_decl) = 1;
   priority_decl = cp_build_parm_decl
-    (get_identifier (PRIORITY_IDENTIFIER), integer_type_node);
-  DECL_CONTEXT (priority_decl) = ssdf_decl;
+    (ssdf_decl, get_identifier (PRIORITY_IDENTIFIER), integer_type_node);
   TREE_USED (priority_decl) = 1;
 
   DECL_CHAIN (initialize_p_decl) = priority_decl;
@@ -3742,7 +3703,7 @@ one_static_initialization_or_destruction (tree decl, tree init, bool initp)
       if (init)
 	{
 	  finish_expr_stmt (init);
-	  if (flag_sanitize & SANITIZE_ADDRESS)
+	  if (sanitize_flags_p (SANITIZE_ADDRESS, decl))
 	    {
 	      varpool_node *vnode = varpool_node::get (decl);
 	      if (vnode)
@@ -4057,21 +4018,14 @@ cpp_check (tree t, cpp_operation op)
 static void 
 collect_source_refs (tree namespc) 
 {
-  tree t;
-
-  if (!namespc) 
-    return;
-
   /* Iterate over names in this name space.  */
-  for (t = NAMESPACE_LEVEL (namespc)->names; t; t = TREE_CHAIN (t))
-    if (!DECL_IS_BUILTIN (t) )
+  for (tree t = NAMESPACE_LEVEL (namespc)->names; t; t = TREE_CHAIN (t))
+    if (DECL_IS_BUILTIN (t))
+      ;
+    else if (TREE_CODE (t) == NAMESPACE_DECL && !DECL_NAMESPACE_ALIAS (t))
+      collect_source_refs (t);
+    else
       collect_source_ref (DECL_SOURCE_FILE (t));
-  
-  /* Dump siblings, if any */
-  collect_source_refs (TREE_CHAIN (namespc));
-
-  /* Dump children, if any */
-  collect_source_refs (NAMESPACE_LEVEL (namespc)->namespaces);
 }
 
 /* Collect decls relevant to SOURCE_FILE from all namespaces recursively,
@@ -4080,17 +4034,16 @@ collect_source_refs (tree namespc)
 static void
 collect_ada_namespace (tree namespc, const char *source_file)
 {
-  if (!namespc)
-    return;
+  tree decl = NAMESPACE_LEVEL (namespc)->names;
 
-  /* Collect decls from this namespace */
-  collect_ada_nodes (NAMESPACE_LEVEL (namespc)->names, source_file);
+  /* Collect decls from this namespace.  This will skip
+     NAMESPACE_DECLs (both aliases and regular, it cannot tell).  */
+  collect_ada_nodes (decl, source_file);
 
-  /* Collect siblings, if any */
-  collect_ada_namespace (TREE_CHAIN (namespc), source_file);
-
-  /* Collect children, if any */
-  collect_ada_namespace (NAMESPACE_LEVEL (namespc)->namespaces, source_file);
+  /* Now scan for namespace children, and dump them.  */
+  for (; decl; decl = TREE_CHAIN (decl))
+    if (TREE_CODE (decl) == NAMESPACE_DECL && !DECL_NAMESPACE_ALIAS (decl))
+      collect_ada_namespace (decl, source_file);
 }
 
 /* Returns true iff there is a definition available for variable or
@@ -4157,10 +4110,19 @@ decl_maybe_constant_var_p (tree decl)
     /* A proxy isn't constant.  */
     return false;
   if (TREE_CODE (type) == REFERENCE_TYPE)
-    /* References can be constant.  */
+    /* References can be constant.  */;
+  else if (CP_TYPE_CONST_NON_VOLATILE_P (type)
+	   && INTEGRAL_OR_ENUMERATION_TYPE_P (type))
+    /* And const integers.  */;
+  else
+    return false;
+
+  if (DECL_INITIAL (decl)
+      && !DECL_INITIALIZED_BY_CONSTANT_EXPRESSION_P (decl))
+    /* We know the initializer, and it isn't constant.  */
+    return false;
+  else
     return true;
-  return (CP_TYPE_CONST_NON_VOLATILE_P (type)
-	  && INTEGRAL_OR_ENUMERATION_TYPE_P (type));
 }
 
 /* Complain that DECL uses a type with no linkage.  In C++98 mode this is
@@ -4369,13 +4331,11 @@ generate_mangling_aliases ()
 static void
 dump_tu (void)
 {
-  int flags;
-  FILE *stream = dump_begin (TDI_tu, &flags);
-
-  if (stream)
+  dump_flags_t flags;
+  if (FILE *stream = dump_begin (raw_dump_id, &flags))
     {
       dump_node (global_namespace, flags & ~TDF_SLIM, stream);
-      dump_end (TDI_tu, stream);
+      dump_end (raw_dump_id, stream);
     }
 }
 
@@ -4390,10 +4350,10 @@ maybe_warn_sized_delete (enum tree_code code)
   tree sized = NULL_TREE;
   tree unsized = NULL_TREE;
 
-  for (tree ovl = IDENTIFIER_GLOBAL_VALUE (cp_operator_id (code));
-       ovl; ovl = OVL_NEXT (ovl))
+  for (ovl_iterator iter (IDENTIFIER_GLOBAL_VALUE (cp_operator_id (code)));
+       iter; ++iter)
     {
-      tree fn = OVL_CURRENT (ovl);
+      tree fn = *iter;
       /* We're only interested in usual deallocation functions.  */
       if (!usual_deallocation_fn_p (fn))
 	continue;
@@ -4526,37 +4486,18 @@ c_parse_final_cleanups (void)
       instantiate_pending_templates (retries);
       ggc_collect ();
 
-      /* Write out virtual tables as required.  Note that writing out
-	 the virtual table for a template class may cause the
+      /* Write out virtual tables as required.  Writing out the
+	 virtual table for a template class may cause the
 	 instantiation of members of that class.  If we write out
 	 vtables then we remove the class from our list so we don't
 	 have to look at it again.  */
-
-      while (keyed_classes != NULL_TREE
-	     && maybe_emit_vtables (TREE_VALUE (keyed_classes)))
-	{
-	  reconsider = true;
-	  keyed_classes = TREE_CHAIN (keyed_classes);
-	}
-
-      t = keyed_classes;
-      if (t != NULL_TREE)
-	{
-	  tree next = TREE_CHAIN (t);
-
-	  while (next)
-	    {
-	      if (maybe_emit_vtables (TREE_VALUE (next)))
-		{
-		  reconsider = true;
-		  TREE_CHAIN (t) = TREE_CHAIN (next);
-		}
-	      else
-		t = next;
-
-	      next = TREE_CHAIN (t);
-	    }
-	}
+      for (i = keyed_classes->length ();
+	   keyed_classes->iterate (--i, &t);)
+	if (maybe_emit_vtables (t))
+	  {
+	    reconsider = true;
+	    keyed_classes->unordered_remove (i);
+	  }
 
       /* Write out needed type info variables.  We have to be careful
 	 looping through unemitted decls, because emit_tinfo_decl may
@@ -4661,6 +4602,8 @@ c_parse_final_cleanups (void)
 	  if (!DECL_SAVED_TREE (decl))
 	    continue;
 
+	  cgraph_node *node = cgraph_node::get_create (decl);
+
 	  /* We lie to the back end, pretending that some functions
 	     are not defined when they really are.  This keeps these
 	     functions from being put out unnecessarily.  But, we must
@@ -4681,9 +4624,6 @@ c_parse_final_cleanups (void)
 	      && DECL_INITIAL (decl)
 	      && decl_needed_p (decl))
 	    {
-	      struct cgraph_node *node, *next;
-
-	      node = cgraph_node::get (decl);
 	      if (node->cpp_implicit_alias)
 		node = node->get_alias_target ();
 
@@ -4693,7 +4633,8 @@ c_parse_final_cleanups (void)
 		 group, we need to mark all symbols in the same comdat group
 		 that way.  */
 	      if (node->same_comdat_group)
-		for (next = dyn_cast<cgraph_node *> (node->same_comdat_group);
+		for (cgraph_node *next
+		       = dyn_cast<cgraph_node *> (node->same_comdat_group);
 		     next != node;
 		     next = dyn_cast<cgraph_node *> (next->same_comdat_group))
 		  next->call_for_symbol_thunks_and_aliases (clear_decl_external,
@@ -4707,7 +4648,7 @@ c_parse_final_cleanups (void)
 	  if (!DECL_EXTERNAL (decl)
 	      && decl_needed_p (decl)
 	      && !TREE_ASM_WRITTEN (decl)
-	      && !cgraph_node::get (decl)->definition)
+	      && !node->definition)
 	    {
 	      /* We will output the function; no longer consider it in this
 		 loop.  */
@@ -4827,7 +4768,6 @@ c_parse_final_cleanups (void)
   perform_deferred_noexcept_checks ();
 
   finish_repo ();
-
   fini_constexpr ();
 
   /* The entire file is now complete.  If requested, dump everything
@@ -4898,7 +4838,7 @@ build_offset_ref_call_from_tree (tree fn, vec<tree, va_gc> **args,
 		  || TREE_CODE (fn) == MEMBER_REF);
       if (type_dependent_expression_p (fn)
 	  || any_type_dependent_arguments_p (*args))
-	return build_nt_call_vec (fn, *args);
+	return build_min_nt_call_vec (fn, *args);
 
       orig_args = make_tree_vector_copy (*args);
 
@@ -5029,11 +4969,14 @@ mark_used (tree decl, tsubst_flags_t complain)
       decl = BASELINK_FUNCTIONS (decl);
       if (really_overloaded_fn (decl))
 	return true;
-      decl = OVL_CURRENT (decl);
+      decl = OVL_FIRST (decl);
     }
 
   /* Set TREE_USED for the benefit of -Wunused.  */
   TREE_USED (decl) = 1;
+  /* And for structured bindings also the underlying decl.  */
+  if (DECL_DECOMPOSITION_P (decl) && DECL_DECOMP_BASE (decl))
+    TREE_USED (DECL_DECOMP_BASE (decl)) = 1;
 
   if (TREE_CODE (decl) == TEMPLATE_DECL)
     return true;
@@ -5051,19 +4994,13 @@ mark_used (tree decl, tsubst_flags_t complain)
   if (TREE_CODE (decl) == FUNCTION_DECL
       && DECL_DELETED_FN (decl))
     {
-      if (DECL_ARTIFICIAL (decl))
-	{
-	  if (DECL_OVERLOADED_OPERATOR_P (decl) == TYPE_EXPR
-	      && LAMBDA_TYPE_P (DECL_CONTEXT (decl)))
-	    {
-	      /* We mark a lambda conversion op as deleted if we can't
-		 generate it properly; see maybe_add_lambda_conv_op.  */
-	      sorry ("converting lambda which uses %<...%> to "
-		     "function pointer");
-	      return false;
-	    }
-	}
-      if (complain & tf_error)
+      if (DECL_ARTIFICIAL (decl)
+	  && DECL_OVERLOADED_OPERATOR_P (decl) == TYPE_EXPR
+	  && LAMBDA_TYPE_P (DECL_CONTEXT (decl)))
+	/* We mark a lambda conversion op as deleted if we can't
+	   generate it properly; see maybe_add_lambda_conv_op.  */
+	sorry ("converting lambda which uses %<...%> to function pointer");
+      else if (complain & tf_error)
 	{
 	  error ("use of deleted function %qD", decl);
 	  if (!maybe_explain_implicit_delete (decl))
@@ -5115,6 +5052,13 @@ mark_used (tree decl, tsubst_flags_t complain)
 
   if (!require_deduced_type (decl, complain))
     return false;
+
+  if (builtin_pack_fn_p (decl))
+    {
+      error ("use of built-in parameter pack %qD outside of a template",
+	     DECL_NAME (decl));
+      return false;
+    }
 
   /* If we don't need a value, then we don't need to synthesize DECL.  */
   if (cp_unevaluated_operand || in_discarded_stmt)

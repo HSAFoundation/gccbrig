@@ -475,6 +475,10 @@ find_bb_boundaries (basic_block bb)
 
 	  bb = fallthru->dest;
 	  remove_edge (fallthru);
+	  /* BB is unreachable at this point - we need to determine its profile
+	     once edges are built.  */
+	  bb->frequency = 0;
+	  bb->count = profile_count::uninitialized ();
 	  flow_transfer_insn = NULL;
 	  if (code == CODE_LABEL && LABEL_ALT_ENTRY_P (insn))
 	    make_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun), bb, 0);
@@ -541,10 +545,11 @@ compute_outgoing_frequencies (basic_block b)
 	{
 	  probability = XINT (note, 0);
 	  e = BRANCH_EDGE (b);
-	  e->probability = probability;
-	  e->count = apply_probability (b->count, probability);
+	  e->probability
+		 = profile_probability::from_reg_br_prob_note (probability);
+	  e->count = b->count.apply_probability (e->probability);
 	  f = FALLTHRU_EDGE (b);
-	  f->probability = REG_BR_PROB_BASE - probability;
+	  f->probability = e->probability.invert ();
 	  f->count = b->count - e->count;
 	  return;
 	}
@@ -556,7 +561,7 @@ compute_outgoing_frequencies (basic_block b)
   else if (single_succ_p (b))
     {
       e = single_succ_edge (b);
-      e->probability = REG_BR_PROB_BASE;
+      e->probability = profile_probability::always ();
       e->count = b->count;
       return;
     }
@@ -577,9 +582,9 @@ compute_outgoing_frequencies (basic_block b)
         guess_outgoing_edge_probabilities (b);
     }
 
-  if (b->count)
+  if (b->count.initialized_p ())
     FOR_EACH_EDGE (e, ei, b->succs)
-      e->count = apply_probability (b->count, e->probability);
+      e->count = b->count.apply_probability (e->probability);
 }
 
 /* Assume that some pass has inserted labels or control flow
@@ -590,6 +595,9 @@ void
 find_many_sub_basic_blocks (sbitmap blocks)
 {
   basic_block bb, min, max;
+  bool found = false;
+  auto_vec<unsigned int> n_succs;
+  n_succs.safe_grow_cleared (last_basic_block_for_fn (cfun));
 
   FOR_EACH_BB_FN (bb, cfun)
     SET_STATE (bb,
@@ -597,11 +605,24 @@ find_many_sub_basic_blocks (sbitmap blocks)
 
   FOR_EACH_BB_FN (bb, cfun)
     if (STATE (bb) == BLOCK_TO_SPLIT)
-      find_bb_boundaries (bb);
+      {
+	int n = last_basic_block_for_fn (cfun);
+	unsigned int ns = EDGE_COUNT (bb->succs);
+
+        find_bb_boundaries (bb);
+	if (n == last_basic_block_for_fn (cfun) && ns == EDGE_COUNT (bb->succs))
+	  n_succs[bb->index] = EDGE_COUNT (bb->succs);
+      }
 
   FOR_EACH_BB_FN (bb, cfun)
     if (STATE (bb) != BLOCK_ORIGINAL)
-      break;
+      {
+	found = true;
+        break;
+      }
+
+  if (!found)
+    return;
 
   min = max = bb;
   for (; bb != EXIT_BLOCK_PTR_FOR_FN (cfun); bb = bb->next_bb)
@@ -624,13 +645,45 @@ find_many_sub_basic_blocks (sbitmap blocks)
 	  continue;
 	if (STATE (bb) == BLOCK_NEW)
 	  {
-	    bb->count = 0;
+	    bool initialized_src = false, uninitialized_src = false;
+	    bb->count = profile_count::zero ();
 	    bb->frequency = 0;
 	    FOR_EACH_EDGE (e, ei, bb->preds)
 	      {
-		bb->count += e->count;
-		bb->frequency += EDGE_FREQUENCY (e);
+		if (e->count.initialized_p ())
+		  {
+		    bb->count += e->count;
+		    initialized_src = true;
+		  }
+		else
+		  uninitialized_src = true;
+		if (e->probability.initialized_p ())
+		  bb->frequency += EDGE_FREQUENCY (e);
 	      }
+	    /* When some edges are missing with read profile, this is
+	       most likely because RTL expansion introduced loop.
+	       When profile is guessed we may have BB that is reachable
+	       from unlikely path as well as from normal path.
+
+	       TODO: We should handle loops created during BB expansion
+	       correctly here.  For now we assume all those loop to cycle
+	       precisely once.  */
+	    if (!initialized_src
+		|| (uninitialized_src
+		     && profile_status_for_fn (cfun) != PROFILE_READ))
+	      bb->count = profile_count::uninitialized ();
+	  }
+ 	/* If nothing changed, there is no need to create new BBs.  */
+	else if (EDGE_COUNT (bb->succs) == n_succs[bb->index])
+	  {
+	    /* In rare occassions RTL expansion might have mistakely assigned
+	       a probabilities different from what is in CFG.  This happens
+	       when we try to split branch to two but optimize out the
+	       second branch during the way. See PR81030.  */
+	    if (JUMP_P (BB_END (bb)) && any_condjump_p (BB_END (bb))
+		&& EDGE_COUNT (bb->succs) >= 2)
+	      update_br_prob_note (bb);
+	    continue;
 	  }
 
 	compute_outgoing_frequencies (bb);

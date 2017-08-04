@@ -962,7 +962,7 @@ Set_and_use_temporary_expression::do_get_backend(Translate_context* context)
   Location loc = this->location();
   Gogo* gogo = context->gogo();
   Bvariable* bvar = this->statement_->get_backend_variable(context);
-  Bexpression* lvar_ref = gogo->backend()->var_expression(bvar, VE_rvalue, loc);
+  Bexpression* lvar_ref = gogo->backend()->var_expression(bvar, VE_lvalue, loc);
 
   Named_object* fn = context->function();
   go_assert(fn != NULL);
@@ -970,7 +970,7 @@ Set_and_use_temporary_expression::do_get_backend(Translate_context* context)
   Bexpression* bexpr = this->expr_->get_backend(context);
   Bstatement* set = gogo->backend()->assignment_statement(bfn, lvar_ref,
                                                           bexpr, loc);
-  Bexpression* var_ref = gogo->backend()->var_expression(bvar, VE_lvalue, loc);
+  Bexpression* var_ref = gogo->backend()->var_expression(bvar, VE_rvalue, loc);
   Bexpression* ret = gogo->backend()->compound_expression(set, var_ref, loc);
   return ret;
 }
@@ -1204,7 +1204,14 @@ Func_expression::do_get_backend(Translate_context* context)
   // expression.  It is a pointer to a struct whose first field points
   // to the function code and whose remaining fields are the addresses
   // of the closed-over variables.
-  return this->closure_->get_backend(context);
+  Bexpression *bexpr = this->closure_->get_backend(context);
+
+  // Introduce a backend type conversion, to account for any differences
+  // between the argument type (function descriptor, struct with a
+  // single field) and the closure (struct with multiple fields).
+  Gogo* gogo = context->gogo();
+  Btype *btype = this->type()->get_backend(gogo);
+  return gogo->backend()->convert_expression(btype, bexpr, this->location());
 }
 
 // Ast dump for function.
@@ -3410,11 +3417,13 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
 
   Gogo* gogo = context->gogo();
   Btype* btype = type->get_backend(gogo);
-  Bexpression* bexpr = this->expr_->get_backend(context);
   Location loc = this->location();
 
   if (Type::are_identical(type, expr_type, false, NULL))
-    return gogo->backend()->convert_expression(btype, bexpr, loc);
+    {
+      Bexpression* bexpr = this->expr_->get_backend(context);
+      return gogo->backend()->convert_expression(btype, bexpr, loc);
+    }
   else if (type->interface_type() != NULL
 	   || expr_type->interface_type() != NULL)
     {
@@ -3483,6 +3492,7 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
   else if (type->is_numeric_type())
     {
       go_assert(Type::are_convertible(type, expr_type, NULL));
+      Bexpression* bexpr = this->expr_->get_backend(context);
       return gogo->backend()->convert_expression(btype, bexpr, loc);
     }
   else if ((type->is_unsafe_pointer_type()
@@ -3493,7 +3503,10 @@ Type_conversion_expression::do_get_backend(Translate_context* context)
            || (this->may_convert_function_types_
                && type->function_type() != NULL
                && expr_type->function_type() != NULL))
-    return gogo->backend()->convert_expression(btype, bexpr, loc);
+    {
+      Bexpression* bexpr = this->expr_->get_backend(context);
+      return gogo->backend()->convert_expression(btype, bexpr, loc);
+    }
   else
     {
       Expression* conversion =
@@ -4370,7 +4383,7 @@ Unary_expression::do_get_backend(Translate_context* context)
 	  gogo->backend()->implicit_variable_set_init(implicit, buf, btype,
 						      true, copy_to_heap, false,
 						      bexpr);
-	  bexpr = gogo->backend()->var_expression(implicit, VE_lvalue, loc);
+	  bexpr = gogo->backend()->var_expression(implicit, VE_rvalue, loc);
 
 	  // If we are not copying a slice initializer to the heap,
 	  // then it can be changed by the program, so if it can
@@ -4380,7 +4393,7 @@ Unary_expression::do_get_backend(Translate_context* context)
 	      && this->expr_->type()->has_pointer())
 	    {
 	      Bexpression* root =
-                  gogo->backend()->var_expression(implicit, VE_lvalue, loc);
+                  gogo->backend()->var_expression(implicit, VE_rvalue, loc);
 	      root = gogo->backend()->address_expression(root, loc);
 	      Type* type = Type::make_pointer_type(this->expr_->type());
 	      gogo->add_gc_root(Expression::make_backend(root, type, loc));
@@ -4400,7 +4413,7 @@ Unary_expression::do_get_backend(Translate_context* context)
                                                 true, false, btype, loc);
           gogo->backend()->immutable_struct_set_init(decl, buf, true, false,
                                                      btype, loc, bexpr);
-          bexpr = gogo->backend()->var_expression(decl, VE_lvalue, loc);
+          bexpr = gogo->backend()->var_expression(decl, VE_rvalue, loc);
         }
 
       go_assert(!this->create_temp_ || this->expr_->is_variable());
@@ -6470,7 +6483,8 @@ Expression::comparison(Translate_context* context, Type* result_type,
 	  && left_type->array_type()->length() == NULL)
 	{
 	  Array_type* at = left_type->array_type();
-          left = at->get_value_pointer(context->gogo(), left);
+          bool is_lvalue = false;
+          left = at->get_value_pointer(context->gogo(), left, is_lvalue);
 	}
       else if (left_type->interface_type() != NULL)
 	{
@@ -7491,6 +7505,10 @@ Builtin_call_expression::lower_make(Statement_inserter* inserter)
       return Expression::make_error(this->location());
     }
   Type* type = first_arg->type();
+
+  if (!type->in_heap())
+    go_error_at(first_arg->location(),
+		"can't make slice of go:notinheap type");
 
   bool is_slice = false;
   bool is_map = false;
@@ -8735,6 +8753,9 @@ Builtin_call_expression::do_check_types(Gogo*)
 	  }
 
 	Type* element_type = slice_type->array_type()->element_type();
+	if (!element_type->in_heap())
+	  go_error_at(args->front()->location(),
+		      "can't append to slice of go:notinheap type");
 	if (this->is_varargs())
 	  {
 	    if (!args->back()->type()->is_slice_type()
@@ -9442,24 +9463,28 @@ Call_expression::do_lower(Gogo* gogo, Named_object* function,
 				       this->is_varargs_, loc);
 
   // If this call returns multiple results, create a temporary
-  // variable for each result.
-  size_t rc = this->result_count();
-  if (rc > 1 && this->results_ == NULL)
+  // variable to hold them.
+  if (this->result_count() > 1 && this->call_temp_ == NULL)
     {
-      std::vector<Temporary_statement*>* temps =
-	new std::vector<Temporary_statement*>;
-      temps->reserve(rc);
+      Struct_field_list* sfl = new Struct_field_list();
+      Function_type* fntype = this->get_function_type();
       const Typed_identifier_list* results = fntype->results();
+      Location loc = this->location();
+
+      int i = 0;
+      char buf[20];
       for (Typed_identifier_list::const_iterator p = results->begin();
-	   p != results->end();
-	   ++p)
-	{
-	  Temporary_statement* temp = Statement::make_temporary(p->type(),
-								NULL, loc);
-	  inserter->insert(temp);
-	  temps->push_back(temp);
-	}
-      this->results_ = temps;
+           p != results->end();
+           ++p, ++i)
+        {
+          snprintf(buf, sizeof buf, "res%d", i);
+          sfl->push_back(Struct_field(Typed_identifier(buf, p->type(), loc)));
+        }
+
+      Struct_type* st = Type::make_struct_type(sfl, loc);
+      st->set_is_struct_incomparable();
+      this->call_temp_ = Statement::make_temporary(st, NULL, loc);
+      inserter->insert(this->call_temp_);
     }
 
   // Handle a call to a varargs function by packaging up the extra
@@ -9758,30 +9783,6 @@ Call_expression::do_flatten(Gogo* gogo, Named_object*,
       this->args_ = args;
     }
 
-  size_t rc = this->result_count();
-  if (rc > 1 && this->call_temp_ == NULL)
-    {
-      Struct_field_list* sfl = new Struct_field_list();
-      Function_type* fntype = this->get_function_type();
-      const Typed_identifier_list* results = fntype->results();
-      Location loc = this->location();
-
-      int i = 0;
-      char buf[20];
-      for (Typed_identifier_list::const_iterator p = results->begin();
-           p != results->end();
-           ++p, ++i)
-        {
-          snprintf(buf, sizeof buf, "res%d", i);
-          sfl->push_back(Struct_field(Typed_identifier(buf, p->type(), loc)));
-        }
-
-      Struct_type* st = Type::make_struct_type(sfl, loc);
-      st->set_is_struct_incomparable();
-      this->call_temp_ = Statement::make_temporary(st, NULL, loc);
-      inserter->insert(this->call_temp_);
-    }
-
   return this;
 }
 
@@ -9806,17 +9807,18 @@ Call_expression::result_count() const
   return fntype->results()->size();
 }
 
-// Return the temporary which holds a result.
+// Return the temporary that holds the result for a call with multiple
+// results.
 
 Temporary_statement*
-Call_expression::result(size_t i) const
+Call_expression::results() const
 {
-  if (this->results_ == NULL || this->results_->size() <= i)
+  if (this->call_temp_ == NULL)
     {
       go_assert(saw_errors());
       return NULL;
     }
-  return (*this->results_)[i];
+  return this->call_temp_;
 }
 
 // Set the number of results expected from a call expression.
@@ -10155,9 +10157,13 @@ Call_expression::do_must_eval_in_order() const
 Expression*
 Call_expression::interface_method_function(
     Interface_field_reference_expression* interface_method,
-    Expression** first_arg_ptr)
+    Expression** first_arg_ptr,
+    Location location)
 {
-  *first_arg_ptr = interface_method->get_underlying_object();
+  Expression* object = interface_method->get_underlying_object();
+  Type* unsafe_ptr_type = Type::make_pointer_type(Type::make_void_type());
+  *first_arg_ptr =
+      Expression::make_unsafe_cast(unsafe_ptr_type, object, location);
   return interface_method->get_function();
 }
 
@@ -10166,8 +10172,21 @@ Call_expression::interface_method_function(
 Bexpression*
 Call_expression::do_get_backend(Translate_context* context)
 {
+  Location location = this->location();
+
   if (this->call_ != NULL)
-    return this->call_;
+    {
+      // If the call returns multiple results, make a new reference to
+      // the temporary.
+      if (this->call_temp_ != NULL)
+	{
+	  Expression* ref =
+	    Expression::make_temporary_reference(this->call_temp_, location);
+	  return ref->get_backend(context);
+	}
+
+      return this->call_;
+    }
 
   Function_type* fntype = this->get_function_type();
   if (fntype == NULL)
@@ -10177,7 +10196,6 @@ Call_expression::do_get_backend(Translate_context* context)
     return context->backend()->error_expression();
 
   Gogo* gogo = context->gogo();
-  Location location = this->location();
 
   Func_expression* func = this->fn_->func_expression();
   Interface_field_reference_expression* interface_method =
@@ -10266,7 +10284,8 @@ Call_expression::do_get_backend(Translate_context* context)
   else
     {
       Expression* first_arg;
-      fn = this->interface_method_function(interface_method, &first_arg);
+      fn = this->interface_method_function(interface_method, &first_arg,
+                                           location);
       fn_args[0] = first_arg->get_backend(context);
     }
 
@@ -10297,89 +10316,26 @@ Call_expression::do_get_backend(Translate_context* context)
                                                        fn_args, bclosure,
                                                        location);
 
-  if (this->results_ != NULL)
+  if (this->call_temp_ != NULL)
     {
-      Bexpression* bcall_ref = this->call_result_ref(context);
-      Bstatement* assn_stmt =
-          gogo->backend()->assignment_statement(bfunction,
-                                                bcall_ref, call, location);
+      // This case occurs when the call returns multiple results.
 
-      this->call_ = this->set_results(context);
+      Expression* ref = Expression::make_temporary_reference(this->call_temp_,
+							     location);
+      Bexpression* bref = ref->get_backend(context);
+      Bstatement* bassn = gogo->backend()->assignment_statement(bfunction,
+								bref, call,
+								location);
 
-      Bexpression* set_and_call =
-          gogo->backend()->compound_expression(assn_stmt, this->call_,
-                                               location);
-      return set_and_call;
+      ref = Expression::make_temporary_reference(this->call_temp_, location);
+      this->call_ = ref->get_backend(context);
+
+      return gogo->backend()->compound_expression(bassn, this->call_,
+						  location);
     }
 
   this->call_ = call;
   return this->call_;
-}
-
-// Return the backend representation of a reference to the struct used
-// to capture the result of a multiple-output call.
-
-Bexpression*
-Call_expression::call_result_ref(Translate_context* context)
-{
-  go_assert(this->call_temp_ != NULL);
-  Location location = this->location();
-  Expression* call_ref =
-      Expression::make_temporary_reference(this->call_temp_, location);
-  Bexpression* bcall_ref = call_ref->get_backend(context);
-  return bcall_ref;
-}
-
-// Set the result variables if this call returns multiple results.
-
-Bexpression*
-Call_expression::set_results(Translate_context* context)
-{
-  Gogo* gogo = context->gogo();
-
-  Bexpression* results = NULL;
-  Location loc = this->location();
-
-  go_assert(this->call_temp_ != NULL);
-
-  size_t rc = this->result_count();
-  for (size_t i = 0; i < rc; ++i)
-    {
-      Temporary_statement* temp = this->result(i);
-      if (temp == NULL)
-	{
-	  go_assert(saw_errors());
-	  return gogo->backend()->error_expression();
-	}
-      Temporary_reference_expression* ref =
-	Expression::make_temporary_reference(temp, loc);
-      ref->set_is_lvalue();
-
-      Bfunction* bfunction = context->function()->func_value()->get_decl();
-      Bexpression* result_ref = ref->get_backend(context);
-      Bexpression* bcall_ref = this->call_result_ref(context);
-      Bexpression* call_result =
-          gogo->backend()->struct_field_expression(bcall_ref, i, loc);
-      Bstatement* assn_stmt =
-          gogo->backend()->assignment_statement(bfunction,
-                                                result_ref, call_result, loc);
-
-      bcall_ref = this->call_result_ref(context);
-      call_result = gogo->backend()->struct_field_expression(bcall_ref, i, loc);
-      Bexpression* result =
-          gogo->backend()->compound_expression(assn_stmt, call_result, loc);
-
-      if (results == NULL)
-        results = result;
-      else
-        {
-          Bstatement* expr_stmt =
-              gogo->backend()->expression_statement(bfunction, result);
-          results =
-              gogo->backend()->compound_expression(expr_stmt, results, loc);
-        }
-    }
-  return results;
 }
 
 // Dump ast representation for a call expressin.
@@ -10502,13 +10458,14 @@ Call_result_expression::do_get_backend(Translate_context* context)
       go_assert(this->call_->is_error_expression());
       return context->backend()->error_expression();
     }
-  Temporary_statement* ts = ce->result(this->index_);
+  Temporary_statement* ts = ce->results();
   if (ts == NULL)
     {
       go_assert(saw_errors());
       return context->backend()->error_expression();
     }
   Expression* ref = Expression::make_temporary_reference(ts, this->location());
+  ref = Expression::make_field_reference(ref, this->index_, this->location());
   return ref->get_backend(context);
 }
 
@@ -10610,10 +10567,24 @@ Index_expression::do_lower(Gogo*, Named_object*, Statement_inserter*, int)
 	}
       return Expression::make_map_index(left, start, location);
     }
+  else if (cap != NULL)
+    {
+      go_error_at(location,
+		  "invalid 3-index slice of object that is not a slice");
+      return Expression::make_error(location);
+    }
+  else if (end != NULL)
+    {
+      go_error_at(location,
+		  ("attempt to slice object that is not "
+		   "array, slice, or string"));
+      return Expression::make_error(location);
+    }
   else
     {
       go_error_at(location,
-                  "attempt to index object which is not array, string, or map");
+                  ("attempt to index object that is not "
+		   "array, slice, string, or map"));
       return Expression::make_error(location);
     }
 }
@@ -11053,7 +11024,8 @@ Array_index_expression::do_get_backend(Translate_context* context)
 	{
 	  // Slice.
 	  Expression* valptr =
-              array_type->get_value_pointer(gogo, this->array_);
+              array_type->get_value_pointer(gogo, this->array_,
+                                            this->is_lvalue_);
 	  Bexpression* ptr = valptr->get_backend(context);
           ptr = gogo->backend()->pointer_offset_expression(ptr, start, loc);
 
@@ -11129,7 +11101,8 @@ Array_index_expression::do_get_backend(Translate_context* context)
   Bexpression* offset = gogo->backend()->conditional_expression(bfn, int_btype,
 								cond, zero,
 								start, loc);
-  Expression* valptr = array_type->get_value_pointer(gogo, this->array_);
+  Expression* valptr = array_type->get_value_pointer(gogo, this->array_,
+                                                     this->is_lvalue_);
   Bexpression* val = valptr->get_backend(context);
   val = gogo->backend()->pointer_offset_expression(val, offset, loc);
 
@@ -12084,12 +12057,15 @@ Interface_field_reference_expression::do_get_backend(Translate_context* context)
   Bexpression* bclosure =
     Expression::make_heap_expression(expr, loc)->get_backend(context);
 
+  Gogo* gogo = context->gogo();
+  Btype* btype = this->type()->get_backend(gogo);
+  bclosure = gogo->backend()->convert_expression(btype, bclosure, loc);
+
   Expression* nil_check =
       Expression::make_binary(OPERATOR_EQEQ, this->expr_,
                               Expression::make_nil(loc), loc);
   Bexpression* bnil_check = nil_check->get_backend(context);
 
-  Gogo* gogo = context->gogo();
   Bexpression* bcrash = gogo->runtime_error(RUNTIME_ERROR_NIL_DEREFERENCE,
 					    loc)->get_backend(context);
 
@@ -12406,6 +12382,13 @@ Type*
 Allocation_expression::do_type()
 {
   return Type::make_pointer_type(this->type_);
+}
+
+void
+Allocation_expression::do_check_types(Gogo*)
+{
+  if (!this->type_->in_heap())
+    go_error_at(this->location(), "can't heap allocate go:notinheap type");
 }
 
 // Make a copy of an allocation expression.
@@ -14258,7 +14241,10 @@ Type_guard_expression::do_get_backend(Translate_context* context)
         Expression::convert_for_assignment(context->gogo(), this->type_,
                                            this->expr_, this->location());
 
-  return conversion->get_backend(context);
+  Gogo* gogo = context->gogo();
+  Btype* bt = this->type_->get_backend(gogo);
+  Bexpression* bexpr = conversion->get_backend(context);
+  return gogo->backend()->convert_expression(bt, bexpr, this->location());
 }
 
 // Dump ast representation for a type guard expression.
@@ -15375,10 +15361,16 @@ Interface_mtable_expression::do_type()
   Typed_identifier tid("__type_descriptor", Type::make_type_descriptor_ptr_type(),
                        this->location());
   sfl->push_back(Struct_field(tid));
+  Type* unsafe_ptr_type = Type::make_pointer_type(Type::make_void_type());
   for (Typed_identifier_list::const_iterator p = interface_methods->begin();
        p != interface_methods->end();
        ++p)
-    sfl->push_back(Struct_field(*p));
+    {
+      // We want C function pointers here, not func descriptors; model
+      // using void* pointers.
+      Typed_identifier method(p->name(), unsafe_ptr_type, p->location());
+      sfl->push_back(Struct_field(method));
+    }
   Struct_type* st = Type::make_struct_type(sfl, this->location());
   st->set_is_struct_incomparable();
   this->method_table_type_ = st;
@@ -15402,27 +15394,32 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
 			      + "__"
 			      + this->type_->mangled_name(gogo));
 
-  // See whether this interface has any hidden methods.
-  bool has_hidden_methods = false;
-  for (Typed_identifier_list::const_iterator p = interface_methods->begin();
-       p != interface_methods->end();
-       ++p)
+  // Set is_public if we are converting a named type to an interface
+  // type that is defined in the same package as the named type, and
+  // the interface has hidden methods.  In that case the interface
+  // method table will be defined by the package that defines the
+  // types.
+  bool is_public = false;
+  if (this->type_->named_type() != NULL
+      && (this->type_->named_type()->named_object()->package()
+	  == this->itype_->package()))
     {
-      if (Gogo::is_hidden_name(p->name()))
+      for (Typed_identifier_list::const_iterator p = interface_methods->begin();
+	   p != interface_methods->end();
+	   ++p)
 	{
-	  has_hidden_methods = true;
-	  break;
+	  if (Gogo::is_hidden_name(p->name()))
+	    {
+	      is_public = true;
+	      break;
+	    }
 	}
     }
 
-  // We already know that the named type is convertible to the
-  // interface.  If the interface has hidden methods, and the named
-  // type is defined in a different package, then the interface
-  // conversion table will be defined by that other package.
-  if (has_hidden_methods
-      && this->type_->named_type() != NULL
+  if (is_public
       && this->type_->named_type()->named_object()->package() != NULL)
     {
+      // The interface conversion table is defined elsewhere.
       Btype* btype = this->type()->get_backend(gogo);
       std::string asm_name(go_selectively_encode_id(mangled_name));
       this->bvar_ =
@@ -15439,11 +15436,18 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
   else
     td_type = Type::make_pointer_type(this->type_);
 
+  std::vector<Backend::Btyped_identifier> bstructfields;
+
   // Build an interface method table for a type: a type descriptor followed by a
   // list of function pointers, one for each interface method.  This is used for
   // interfaces.
   Expression_list* svals = new Expression_list();
-  svals->push_back(Expression::make_type_descriptor(td_type, loc));
+  Expression* tdescriptor = Expression::make_type_descriptor(td_type, loc);
+  svals->push_back(tdescriptor);
+
+  Btype* tdesc_btype = tdescriptor->type()->get_backend(gogo);
+  Backend::Btyped_identifier btd("_type", tdesc_btype, loc);
+  bstructfields.push_back(btd);
 
   Named_type* nt = this->type_->named_type();
   Struct_type* st = this->type_->struct_type();
@@ -15463,15 +15467,25 @@ Interface_mtable_expression::do_get_backend(Translate_context* context)
       Named_object* no = m->named_object();
 
       go_assert(no->is_function() || no->is_function_declaration());
+
+      Btype* fcn_btype = m->type()->get_backend_fntype(gogo);
+      Backend::Btyped_identifier bmtype(p->name(), fcn_btype, loc);
+      bstructfields.push_back(bmtype);
+
       svals->push_back(Expression::make_func_code_reference(no, loc));
     }
 
-  Btype* btype = this->type()->get_backend(gogo);
-  Expression* mtable = Expression::make_struct_composite_literal(this->type(),
-                                                                 svals, loc);
-  Bexpression* ctor = mtable->get_backend(context);
+  Btype *btype = gogo->backend()->struct_type(bstructfields);
+  std::vector<Bexpression*> ctor_bexprs;
+  for (Expression_list::const_iterator pe = svals->begin();
+       pe != svals->end();
+       ++pe)
+    {
+      ctor_bexprs.push_back((*pe)->get_backend(context));
+    }
+  Bexpression* ctor =
+      gogo->backend()->constructor_expression(btype, ctor_bexprs, loc);
 
-  bool is_public = has_hidden_methods && this->type_->named_type() != NULL;
   std::string asm_name(go_selectively_encode_id(mangled_name));
   this->bvar_ = gogo->backend()->immutable_struct(mangled_name, asm_name, false,
 						  !is_public, btype, loc);

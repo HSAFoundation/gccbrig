@@ -31,6 +31,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "asan.h"
 #include "gcc-rich-location.h"
 #include "gimplify.h"
+#include "c-family/c-indentation.h"
 
 /* Print a warning if a constant expression had overflow in folding.
    Invoke this function on every expression that the language
@@ -63,8 +64,9 @@ constant_expression_error (tree value)
     error ("overflow in constant expression");
 }
 
-/* Print a warning if an expression had overflow in folding and its
-   operands hadn't.
+/* Print a warning if an expression result VALUE had an overflow
+   in folding and its operands hadn't.  EXPR, which may be null, is
+   the operand of the expression.
 
    Invoke this function on every expression that
    (1) appears in the source code, and
@@ -75,42 +77,74 @@ constant_expression_error (tree value)
    already overflowed.  */
 
 void
-overflow_warning (location_t loc, tree value)
+overflow_warning (location_t loc, tree value, tree expr)
 {
   if (c_inhibit_evaluation_warnings != 0)
     return;
 
+  const char *warnfmt = NULL;
+
   switch (TREE_CODE (value))
     {
     case INTEGER_CST:
-      warning_at (loc, OPT_Woverflow, "integer overflow in expression");
+      warnfmt = (expr
+		 ? G_("integer overflow in expression %qE of type %qT "
+		      "results in %qE")
+		 : G_("integer overflow in expression of type %qT "
+		      "results in %qE"));
       break;
 
     case REAL_CST:
-      warning_at (loc, OPT_Woverflow,
-		  "floating point overflow in expression");
+      warnfmt = (expr
+		 ? G_ ("floating point overflow in expression %qE "
+		       "of type %qT results in %qE")
+		 : G_ ("floating point overflow in expression of type %qT "
+		       "results in %qE"));
       break;
 
     case FIXED_CST:
-      warning_at (loc, OPT_Woverflow, "fixed-point overflow in expression");
+      warnfmt = (expr
+		 ? G_("fixed-point overflow in expression %qE of type %qT "
+		      "results in %qE")
+		 : G_("fixed-point overflow in expression of type %qT "
+		      "results in %qE"));
       break;
 
     case VECTOR_CST:
-      warning_at (loc, OPT_Woverflow, "vector overflow in expression");
+      warnfmt = (expr
+		 ? G_("vector overflow in expression %qE of type %qT "
+		      "results in %qE")
+		 : G_("vector overflow in expression of type %qT "
+		      "results in %qE"));
       break;
 
     case COMPLEX_CST:
       if (TREE_CODE (TREE_REALPART (value)) == INTEGER_CST)
-	warning_at (loc, OPT_Woverflow,
-		    "complex integer overflow in expression");
+	warnfmt = (expr
+		   ? G_("complex integer overflow in expression %qE "
+			"of type %qT results in %qE")
+		   : G_("complex integer overflow in expression of type %qT "
+			"results in %qE"));
       else if (TREE_CODE (TREE_REALPART (value)) == REAL_CST)
-	warning_at (loc, OPT_Woverflow,
-		    "complex floating point overflow in expression");
+	warnfmt = (expr
+		   ? G_("complex floating point overflow in expression %qE "
+			"of type %qT results in %qE")
+		   : G_("complex floating point overflow in expression "
+			"of type %qT results in %qE"));
+      else
+	return;
       break;
 
     default:
-      break;
+      return;
     }
+
+  if (expr)
+    warning_at (loc, OPT_Woverflow, warnfmt, expr, TREE_TYPE (expr), value);
+  else
+    warning_at (loc, OPT_Woverflow, warnfmt, TREE_TYPE (value), value);
+
+  TREE_NO_WARNING (value) = 1;
 }
 
 /* Helper function for walk_tree.  Unwrap C_MAYBE_CONST_EXPRs in an expression
@@ -431,7 +465,6 @@ warn_if_unused_value (const_tree exp, location_t locus)
     case TARGET_EXPR:
     case CALL_EXPR:
     case TRY_CATCH_EXPR:
-    case WITH_CLEANUP_EXPR:
     case EXIT_EXPR:
     case VA_ARG_EXPR:
       return false;
@@ -537,10 +570,10 @@ strict_aliasing_warning (tree otype, tree type, tree expr)
 	    = get_alias_set (TREE_TYPE (TREE_OPERAND (expr, 0)));
 	  alias_set_type set2 = get_alias_set (TREE_TYPE (type));
 
-	  if (set1 != set2 && set2 != 0
-	      && (set1 == 0
-		  || (!alias_set_subset_of (set2, set1)
-		      && !alias_sets_conflict_p (set1, set2))))
+	  if (set2 != 0
+	      && set1 != set2
+	      && !alias_set_subset_of (set2, set1)
+	      && !alias_sets_conflict_p (set1, set2))
 	    {
 	      warning (OPT_Wstrict_aliasing, "dereferencing type-punned "
 		       "pointer will break strict-aliasing rules");
@@ -930,7 +963,7 @@ check_main_parameter_types (tree decl)
    This is a helper function for warnings_for_convert_and_check.  */
 
 static void
-conversion_warning (location_t loc, tree type, tree expr)
+conversion_warning (location_t loc, tree type, tree expr, tree result)
 {
   tree expr_type = TREE_TYPE (expr);
   enum conversion_safety conversion_kind;
@@ -971,43 +1004,58 @@ conversion_warning (location_t loc, tree type, tree expr)
     case REAL_CST:
     case INTEGER_CST:
     case COMPLEX_CST:
-      conversion_kind = unsafe_conversion_p (loc, type, expr, true);
-      if (conversion_kind == UNSAFE_REAL)
-	warning_at (loc, OPT_Wfloat_conversion,
-		    "conversion to %qT alters %qT constant value",
-		    type, expr_type);
-      else if (conversion_kind)
-	warning_at (loc, OPT_Wconversion,
-		    "conversion to %qT alters %qT constant value",
-		    type, expr_type);
-      return;
-
-    case COND_EXPR:
       {
+	conversion_kind = unsafe_conversion_p (loc, type, expr, result, true);
+	int warnopt;
+	if (conversion_kind == UNSAFE_REAL)
+	  warnopt = OPT_Wfloat_conversion;
+	else if (conversion_kind)
+	  warnopt = OPT_Wconversion;
+	else
+	  break;
+
+	if (TREE_CODE_CLASS (TREE_CODE (result)) == tcc_constant)
+	  warning_at (loc, warnopt,
+		      "conversion from %qT to %qT changes value from %qE to %qE",
+		      expr_type, type, expr, result);
+	else
+	  warning_at (loc, warnopt,
+		      "conversion from %qT to %qT changes the value of %qE",
+		      expr_type, type, expr);
+	break;
+      }
+    case COND_EXPR:
+	  {
 	/* In case of COND_EXPR, we do not care about the type of
 	   COND_EXPR, only about the conversion of each operand.  */
 	tree op1 = TREE_OPERAND (expr, 1);
 	tree op2 = TREE_OPERAND (expr, 2);
 
-	conversion_warning (loc, type, op1);
-	conversion_warning (loc, type, op2);
+	conversion_warning (loc, type, op1, result);
+	conversion_warning (loc, type, op2, result);
 	return;
       }
 
     default: /* 'expr' is not a constant.  */
-      conversion_kind = unsafe_conversion_p (loc, type, expr, true);
-      if (conversion_kind == UNSAFE_REAL)
-	warning_at (loc, OPT_Wfloat_conversion,
-		    "conversion to %qT from %qT may alter its value",
-		    type, expr_type);
-      else if (conversion_kind == UNSAFE_IMAGINARY)
+      conversion_kind = unsafe_conversion_p (loc, type, expr, result, true);
+      if (conversion_kind == UNSAFE_IMAGINARY)
 	warning_at (loc, OPT_Wconversion,
-		    "conversion to %qT from %qT discards imaginary component",
-		    type, expr_type);
-      else if (conversion_kind)
-	warning_at (loc, OPT_Wconversion,
-		    "conversion to %qT from %qT may alter its value",
-		    type, expr_type);
+		    "conversion from %qT to to %qT discards imaginary "
+		    "component",
+		    expr_type, type);
+      else
+	{
+	  int warnopt;
+	  if (conversion_kind == UNSAFE_REAL)
+	    warnopt = OPT_Wfloat_conversion;
+	  else if (conversion_kind)
+	    warnopt = OPT_Wconversion;
+	  else
+	    break;
+	  warning_at (loc, warnopt,
+		      "conversion from %qT to %qT may change value",
+		      expr_type, type);
+	}
     }
 }
 
@@ -1020,6 +1068,10 @@ warnings_for_convert_and_check (location_t loc, tree type, tree expr,
 				tree result)
 {
   loc = expansion_point_location_if_in_system_header (loc);
+
+  bool cst = TREE_CODE_CLASS (TREE_CODE (result)) == tcc_constant;
+
+  tree exprtype = TREE_TYPE (expr);
 
   if (TREE_CODE (expr) == INTEGER_CST
       && (TREE_CODE (type) == INTEGER_TYPE
@@ -1036,31 +1088,76 @@ warnings_for_convert_and_check (location_t loc, tree type, tree expr,
 	  /* This detects cases like converting -129 or 256 to
 	     unsigned char.  */
 	  if (!int_fits_type_p (expr, c_common_signed_type (type)))
-	    warning_at (loc, OPT_Woverflow,
-			"large integer implicitly truncated to unsigned type");
+	    {
+	      if (cst)
+		warning_at (loc, OPT_Woverflow,
+			    (TYPE_UNSIGNED (exprtype)
+			     ? G_("conversion from %qT to %qT "
+				  "changes value from %qE to %qE")
+			     : G_("unsigned conversion from %qT to %qT "
+				  "changes value from %qE to %qE")),
+			    exprtype, type, expr, result);
+	      else
+		warning_at (loc, OPT_Woverflow,
+			    (TYPE_UNSIGNED (exprtype)
+			     ? G_("conversion from %qT to %qT "
+				  "changes the value of %qE")
+			     : G_("unsigned conversion from %qT to %qT "
+				  "changes the value of %qE")),
+			    exprtype, type, expr);
+	    }
 	  else
-	    conversion_warning (loc, type, expr);
+	    conversion_warning (loc, type, expr, result);
 	}
       else if (!int_fits_type_p (expr, c_common_unsigned_type (type)))
-	warning_at (loc, OPT_Woverflow,
-		 "overflow in implicit constant conversion");
+	{
+	  if (cst)
+	    warning_at (loc, OPT_Woverflow,
+			"overflow in conversion from %qT to %qT "
+			"changes value from %qE to %qE",
+			exprtype, type, expr, result);
+	  else
+	    warning_at (loc, OPT_Woverflow,
+			"overflow in conversion from %qT to %qT "
+			"changes the value of %qE",
+			exprtype, type, expr);
+	}
       /* No warning for converting 0x80000000 to int.  */
       else if (pedantic
-	       && (TREE_CODE (TREE_TYPE (expr)) != INTEGER_TYPE
-		   || TYPE_PRECISION (TREE_TYPE (expr))
+	       && (TREE_CODE (exprtype) != INTEGER_TYPE
+		   || TYPE_PRECISION (exprtype)
 		   != TYPE_PRECISION (type)))
-	warning_at (loc, OPT_Woverflow,
-		    "overflow in implicit constant conversion");
-
+	{
+	  if (cst)
+	    warning_at (loc, OPT_Woverflow,
+			"overflow in conversion from %qT to %qT "
+			"changes value from %qE to %qE",
+			exprtype, type, expr, result);
+	  else
+	    warning_at (loc, OPT_Woverflow,
+			"overflow in conversion from %qT to %qT "
+			"changes the value of %qE",
+			exprtype, type, expr);
+	}
       else
-	conversion_warning (loc, type, expr);
+	conversion_warning (loc, type, expr, result);
     }
   else if ((TREE_CODE (result) == INTEGER_CST
 	    || TREE_CODE (result) == FIXED_CST) && TREE_OVERFLOW (result))
-    warning_at (loc, OPT_Woverflow,
-		"overflow in implicit constant conversion");
+    {
+      if (cst)
+	warning_at (loc, OPT_Woverflow,
+		    "overflow in conversion from %qT to %qT "
+		    "chages value from %qE to %qE",
+		    exprtype, type, expr, result);
+      else
+	warning_at (loc, OPT_Woverflow,
+		    "overflow in conversion from %qT to %qT "
+		    "chages the value of %qE",
+		    exprtype, type, expr);
+    }
   else
-    conversion_warning (loc, type, expr);
+    conversion_warning (loc, type, expr, result);
 }
 
 /* Subroutines of c_do_switch_warnings, called via splay_tree_foreach.
@@ -1069,6 +1166,10 @@ warnings_for_convert_and_check (location_t loc, tree type, tree expr,
 static void
 match_case_to_enum_1 (tree key, tree type, tree label)
 {
+  /* Avoid warning about enums that have no enumerators.  */
+  if (TYPE_VALUES (type) == NULL_TREE)
+    return;
+
   char buf[WIDE_INT_PRINT_BUFFER_SIZE];
 
   if (tree_fits_uhwi_p (key))
@@ -1078,7 +1179,7 @@ match_case_to_enum_1 (tree key, tree type, tree label)
   else
     print_hex (key, buf);
 
-  if (TYPE_NAME (type) == 0)
+  if (TYPE_NAME (type) == NULL_TREE)
     warning_at (DECL_SOURCE_LOCATION (CASE_LABEL (label)),
 		warn_switch ? OPT_Wswitch : OPT_Wswitch_enum,
 		"case value %qs not in enumerated type",
@@ -1698,12 +1799,12 @@ warn_for_memset (location_t loc, tree arg0, tree arg2,
 	  tree domain = TYPE_DOMAIN (type);
 	  if (!integer_onep (TYPE_SIZE_UNIT (elt_type))
 	      && domain != NULL_TREE
-	      && TYPE_MAXVAL (domain)
-	      && TYPE_MINVAL (domain)
-	      && integer_zerop (TYPE_MINVAL (domain))
+	      && TYPE_MAX_VALUE (domain)
+	      && TYPE_MIN_VALUE (domain)
+	      && integer_zerop (TYPE_MIN_VALUE (domain))
 	      && integer_onep (fold_build2 (MINUS_EXPR, domain,
 					    arg2,
-					    TYPE_MAXVAL (domain))))
+					    TYPE_MAX_VALUE (domain))))
 	    warning_at (loc, OPT_Wmemset_elt_size,
 			"%<memset%> used with length equal to "
 			"number of elements without multiplication "
@@ -1790,9 +1891,10 @@ warn_for_sign_compare (location_t location,
 				   c_common_signed_type (base_type)))
 	/* OK */;
       else
-	warning_at (location,
-		    OPT_Wsign_compare,
-		    "comparison between signed and unsigned integer expressions");
+	warning_at (location, OPT_Wsign_compare,
+		    "comparison of integer expressions of different "
+		    "signedness: %qT and %qT", TREE_TYPE (orig_op0),
+		    TREE_TYPE (orig_op1));
     }
 
   /* Warn if two unsigned values are being compared in a size larger
@@ -2253,8 +2355,8 @@ do_warn_duplicated_branches (tree expr)
   tree thenb = COND_EXPR_THEN (expr);
   tree elseb = COND_EXPR_ELSE (expr);
 
-  /* Don't bother if there's no else branch.  */
-  if (elseb == NULL_TREE)
+  /* Don't bother if any of the branches is missing.  */
+  if (thenb == NULL_TREE || elseb == NULL_TREE)
     return;
 
   /* And don't warn for empty statements.  */
@@ -2299,4 +2401,102 @@ do_warn_duplicated_branches_r (tree *tp, int *, void *)
   if (TREE_CODE (*tp) == COND_EXPR)
     do_warn_duplicated_branches (*tp);
   return NULL_TREE;
+}
+
+/* Implementation of -Wmultistatement-macros.  This warning warns about
+   cases when a macro expands to multiple statements not wrapped in
+   do {} while (0) or ({ }) and is used as a body of if/else/for/while
+   conditionals.  For example,
+
+   #define DOIT x++; y++
+
+   if (c)
+     DOIT;
+
+   will increment y unconditionally.
+
+   BODY_LOC is the location of the first token in the body after labels
+   have been parsed, NEXT_LOC is the location of the next token after the
+   body of the conditional has been parsed, and GUARD_LOC is the location
+   of the conditional.  */
+
+void
+warn_for_multistatement_macros (location_t body_loc, location_t next_loc,
+				location_t guard_loc, enum rid keyword)
+{
+  if (!warn_multistatement_macros)
+    return;
+
+  /* Ain't got time to waste.  We only care about macros here.  */
+  if (!from_macro_expansion_at (body_loc)
+      || !from_macro_expansion_at (next_loc))
+    return;
+
+  /* Let's skip macros defined in system headers.  */
+  if (in_system_header_at (body_loc)
+      || in_system_header_at (next_loc))
+    return;
+
+  /* Find the actual tokens in the macro definition.  BODY_LOC and
+     NEXT_LOC have to come from the same spelling location, but they
+     will resolve to different locations in the context of the macro
+     definition.  */
+  location_t body_loc_exp
+    = linemap_resolve_location (line_table, body_loc,
+				LRK_MACRO_DEFINITION_LOCATION, NULL);
+  location_t next_loc_exp
+    = linemap_resolve_location (line_table, next_loc,
+				LRK_MACRO_DEFINITION_LOCATION, NULL);
+  location_t guard_loc_exp
+    = linemap_resolve_location (line_table, guard_loc,
+				LRK_MACRO_DEFINITION_LOCATION, NULL);
+
+  /* These are some funky cases we don't want to warn about.  */
+  if (body_loc_exp == guard_loc_exp
+      || next_loc_exp == guard_loc_exp
+      || body_loc_exp == next_loc_exp)
+    return;
+
+  /* Find the macro maps for the macro expansions.  */
+  const line_map *body_map = linemap_lookup (line_table, body_loc);
+  const line_map *next_map = linemap_lookup (line_table, next_loc);
+  const line_map *guard_map = linemap_lookup (line_table, guard_loc);
+
+  /* Now see if the following token (after the body) is coming from the
+     same macro expansion.  If it is, it might be a problem.  */
+  if (body_map != next_map)
+    return;
+
+  /* The conditional itself must not come from the same expansion, because
+     we don't want to warn about
+     #define IF if (x) x++; y++
+     and similar.  */
+  if (guard_map == body_map)
+    return;
+
+  /* Handle the case where NEXT and BODY come from the same expansion while
+     GUARD doesn't, yet we shouldn't warn.  E.g.
+
+       #define GUARD if (...)
+       #define GUARD2 GUARD
+
+     and in the definition of another macro:
+
+       GUARD2
+	foo ();
+       return 1;
+   */
+  while (linemap_macro_expansion_map_p (guard_map))
+    {
+      const line_map_macro *mm = linemap_check_macro (guard_map);
+      guard_loc_exp = MACRO_MAP_EXPANSION_POINT_LOCATION (mm);
+      guard_map = linemap_lookup (line_table, guard_loc_exp);
+      if (guard_map == body_map)
+	return;
+    }
+
+  if (warning_at (body_loc, OPT_Wmultistatement_macros,
+		  "macro expands to multiple statements"))
+    inform (guard_loc, "some parts of macro expansion are not guarded by "
+	    "this %qs clause", guard_tinfo_to_string (keyword));
 }

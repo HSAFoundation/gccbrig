@@ -1556,6 +1556,8 @@ class fixit_hint;
    inserting at the start of a line, and finishing with a newline
    (with no interior newline characters).  Other attempts to add
    fix-it hints containing newline characters will fail.
+   Similarly, attempts to delete or replace a range *affecting* multiple
+   lines will fail.
 
    The rich_location API handles these failures gracefully, so that
    diagnostics can attempt to add fix-it hints without each needing
@@ -1663,6 +1665,27 @@ class rich_location
   fixit_hint *get_last_fixit_hint () const;
   bool seen_impossible_fixit_p () const { return m_seen_impossible_fixit; }
 
+  /* Set this if the fix-it hints are not suitable to be
+     automatically applied.
+
+     For example, if you are suggesting more than one
+     mutually exclusive solution to a problem, then
+     it doesn't make sense to apply all of the solutions;
+     manual intervention is required.
+
+     If set, then the fix-it hints in the rich_location will
+     be printed, but will not be added to generated patches,
+     or affect the modified version of the file.  */
+  void fixits_cannot_be_auto_applied ()
+  {
+    m_fixits_cannot_be_auto_applied = true;
+  }
+
+  bool fixits_can_be_auto_applied_p () const
+  {
+    return !m_fixits_cannot_be_auto_applied;
+  }
+
 private:
   bool reject_impossible_fixit (source_location where);
   void stop_supporting_fixits ();
@@ -1686,6 +1709,7 @@ protected:
   semi_embedded_vec <fixit_hint *, MAX_STATIC_FIXIT_HINTS> m_fixit_hints;
 
   bool m_seen_impossible_fixit;
+  bool m_fixits_cannot_be_auto_applied;
 };
 
 /* A fix-it hint: a suggested insertion, replacement, or deletion of text.
@@ -1881,6 +1905,15 @@ void linemap_dump (FILE *, struct line_maps *, unsigned, bool);
    specifies how many macro maps to dump.  */
 void line_table_dump (FILE *, struct line_maps *, unsigned int, unsigned int);
 
+/* An enum for distinguishing the various parts within a source_location.  */
+
+enum location_aspect
+{
+  LOCATION_ASPECT_CARET,
+  LOCATION_ASPECT_START,
+  LOCATION_ASPECT_FINISH
+};
+
 /* The rich_location class requires a way to expand source_location instances.
    We would directly use expand_location_to_spelling_point, which is
    implemented in gcc/input.c, but we also need to use it for rich_location
@@ -1888,6 +1921,7 @@ void line_table_dump (FILE *, struct line_maps *, unsigned int, unsigned int);
    Hence we require client code of libcpp to implement the following
    symbol.  */
 extern expanded_location
-linemap_client_expand_location_to_spelling_point (source_location );
+linemap_client_expand_location_to_spelling_point (source_location,
+						  enum location_aspect);
 
 #endif /* !LIBCPP_LINE_MAP_H  */

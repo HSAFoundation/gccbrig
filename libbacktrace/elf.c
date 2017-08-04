@@ -70,7 +70,7 @@ dl_iterate_phdr (int (*callback) (struct dl_phdr_info *,
    ELF.  We could make this code test and support either possibility,
    but there is no point.  This code only works for the currently
    running executable, which means that we know the ELF mode at
-   configure mode.  */
+   configure time.  */
 
 #if BACKTRACE_ELF_SIZE != 32 && BACKTRACE_ELF_SIZE != 64
 #error "Unknown BACKTRACE_ELF_SIZE"
@@ -962,18 +962,12 @@ backtrace_initialize (struct backtrace_state *state, int descriptor,
     }
 
   if (!state->threaded)
-    {
-      if (state->fileline_fn == NULL || state->fileline_fn == elf_nodebug)
-	*fileline_fn = elf_fileline_fn;
-    }
+    *fileline_fn = state->fileline_fn;
   else
-    {
-      fileline current_fn;
+    *fileline_fn = backtrace_atomic_load_pointer (&state->fileline_fn);
 
-      current_fn = backtrace_atomic_load_pointer (&state->fileline_fn);
-      if (current_fn == NULL || current_fn == elf_nodebug)
-	*fileline_fn = elf_fileline_fn;
-    }
+  if (*fileline_fn == NULL || *fileline_fn == elf_nodebug)
+    *fileline_fn = elf_fileline_fn;
 
   return 1;
 }

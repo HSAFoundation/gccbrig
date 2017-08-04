@@ -98,14 +98,24 @@
     && (ALIGN) < BITS_PER_WORD)			\
    ? BITS_PER_WORD : ALIGN)
 
-#define DATA_ALIGNMENT(EXP, ALIGN)		\
-  ((((ALIGN) < BITS_PER_WORD)			\
-    && (TREE_CODE (EXP) == ARRAY_TYPE		\
-	|| TREE_CODE (EXP) == UNION_TYPE	\
-	|| TREE_CODE (EXP) == RECORD_TYPE))	\
-   ? BITS_PER_WORD : (ALIGN))
+/* Align definitions of arrays, unions and structures so that
+   initializations and copies can be made more efficient.  This is not
+   ABI-changing, so it only affects places where we can see the
+   definition.  Increasing the alignment tends to introduce padding,
+   so don't do this when optimizing for size/conserving stack space.  */
+#define AARCH64_EXPAND_ALIGNMENT(COND, EXP, ALIGN)			\
+  (((COND) && ((ALIGN) < BITS_PER_WORD)					\
+    && (TREE_CODE (EXP) == ARRAY_TYPE					\
+	|| TREE_CODE (EXP) == UNION_TYPE				\
+	|| TREE_CODE (EXP) == RECORD_TYPE)) ? BITS_PER_WORD : (ALIGN))
 
-#define LOCAL_ALIGNMENT(EXP, ALIGN) DATA_ALIGNMENT(EXP, ALIGN)
+/* Align global data.  */
+#define DATA_ALIGNMENT(EXP, ALIGN)			\
+  AARCH64_EXPAND_ALIGNMENT (!optimize_size, EXP, ALIGN)
+
+/* Similarly, make sure that objects on the stack are sensibly aligned.  */
+#define LOCAL_ALIGNMENT(EXP, ALIGN)				\
+  AARCH64_EXPAND_ALIGNMENT (!flag_conserve_stack, EXP, ALIGN)
 
 #define STRUCTURE_SIZE_BOUNDARY		8
 
@@ -134,12 +144,14 @@ extern unsigned aarch64_architecture_version;
 #define AARCH64_FL_CRC        (1 << 3)	/* Has CRC.  */
 /* ARMv8.1-A architecture extensions.  */
 #define AARCH64_FL_LSE	      (1 << 4)  /* Has Large System Extensions.  */
-#define AARCH64_FL_V8_1	      (1 << 5)  /* Has ARMv8.1-A extensions.  */
+#define AARCH64_FL_RDMA	      (1 << 5)  /* Has Round Double Multiply Add.  */
+#define AARCH64_FL_V8_1	      (1 << 6)  /* Has ARMv8.1-A extensions.  */
 /* ARMv8.2-A architecture extensions.  */
 #define AARCH64_FL_V8_2	      (1 << 8)  /* Has ARMv8.2-A features.  */
 #define AARCH64_FL_F16	      (1 << 9)  /* Has ARMv8.2-A FP16 extensions.  */
 /* ARMv8.3-A architecture extensions.  */
 #define AARCH64_FL_V8_3	      (1 << 10)  /* Has ARMv8.3-A features.  */
+#define AARCH64_FL_RCPC	      (1 << 11)  /* Has support for RCpc model.  */
 
 /* Has FP and SIMD.  */
 #define AARCH64_FL_FPSIMD     (AARCH64_FL_FP | AARCH64_FL_SIMD)
@@ -150,7 +162,8 @@ extern unsigned aarch64_architecture_version;
 /* Architecture flags that effect instruction selection.  */
 #define AARCH64_FL_FOR_ARCH8       (AARCH64_FL_FPSIMD)
 #define AARCH64_FL_FOR_ARCH8_1			       \
-  (AARCH64_FL_FOR_ARCH8 | AARCH64_FL_LSE | AARCH64_FL_CRC | AARCH64_FL_V8_1)
+  (AARCH64_FL_FOR_ARCH8 | AARCH64_FL_LSE | AARCH64_FL_CRC \
+   | AARCH64_FL_RDMA | AARCH64_FL_V8_1)
 #define AARCH64_FL_FOR_ARCH8_2			\
   (AARCH64_FL_FOR_ARCH8_1 | AARCH64_FL_V8_2)
 #define AARCH64_FL_FOR_ARCH8_3			\
@@ -163,7 +176,7 @@ extern unsigned aarch64_architecture_version;
 #define AARCH64_ISA_FP             (aarch64_isa_flags & AARCH64_FL_FP)
 #define AARCH64_ISA_SIMD           (aarch64_isa_flags & AARCH64_FL_SIMD)
 #define AARCH64_ISA_LSE		   (aarch64_isa_flags & AARCH64_FL_LSE)
-#define AARCH64_ISA_RDMA	   (aarch64_isa_flags & AARCH64_FL_V8_1)
+#define AARCH64_ISA_RDMA	   (aarch64_isa_flags & AARCH64_FL_RDMA)
 #define AARCH64_ISA_V8_2	   (aarch64_isa_flags & AARCH64_FL_V8_2)
 #define AARCH64_ISA_F16		   (aarch64_isa_flags & AARCH64_FL_F16)
 #define AARCH64_ISA_V8_3	   (aarch64_isa_flags & AARCH64_FL_V8_3)

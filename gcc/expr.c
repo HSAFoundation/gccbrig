@@ -96,7 +96,8 @@ static rtx do_store_flag (sepops, rtx, machine_mode);
 #ifdef PUSH_ROUNDING
 static void emit_single_push_insn (machine_mode, rtx, tree);
 #endif
-static void do_tablejump (rtx, machine_mode, rtx, rtx, rtx, int);
+static void do_tablejump (rtx, machine_mode, rtx, rtx, rtx,
+			  profile_probability);
 static rtx const_vector_from_tree (tree);
 static rtx const_scalar_mask_from_tree (tree);
 static tree tree_expr_size (const_tree);
@@ -1452,7 +1453,7 @@ compare_by_pieces_d::generate (rtx op0, rtx op1, machine_mode mode)
       m_accumulator = NULL_RTX;
     }
   do_compare_rtx_and_jump (op0, op1, NE, true, mode, NULL_RTX, NULL,
-			   m_fail_label, -1);
+			   m_fail_label, profile_probability::uninitialized ());
 }
 
 /* Return true if MODE can be used for a set of moves and comparisons,
@@ -1484,7 +1485,8 @@ compare_by_pieces_d::finish_mode (machine_mode mode)
 {
   if (m_accumulator != NULL_RTX)
     do_compare_rtx_and_jump (m_accumulator, const0_rtx, NE, true, mode,
-			     NULL_RTX, NULL, m_fail_label, -1);
+			     NULL_RTX, NULL, m_fail_label,
+			     profile_probability::uninitialized ());
 }
 
 /* Generate several move instructions to compare LEN bytes from blocks
@@ -1845,7 +1847,9 @@ emit_block_move_via_loop (rtx x, rtx y, rtx size,
   emit_label (cmp_label);
 
   emit_cmp_and_jump_insns (iter, size, LT, NULL_RTX, iter_mode,
-			   true, top_label, REG_BR_PROB_BASE * 90 / 100);
+			   true, top_label,
+			   profile_probability::guessed_always ()
+				.apply_scale (9, 10));
 }
 
 /* Expand a call to memcpy or memmove or memcmp, and return the result.
@@ -5402,7 +5406,8 @@ store_expr_with_bounds (tree exp, rtx target, int call_param_p,
 
       do_pending_stack_adjust ();
       NO_DEFER_POP;
-      jumpifnot (TREE_OPERAND (exp, 0), lab1, -1);
+      jumpifnot (TREE_OPERAND (exp, 0), lab1,
+		 profile_probability::uninitialized ());
       store_expr_with_bounds (TREE_OPERAND (exp, 1), target, call_param_p,
 			      nontemporal, reverse, btarget);
       emit_jump_insn (targetm.gen_jump (lab2));
@@ -6504,7 +6509,8 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 		    /* Generate a conditional jump to exit the loop.  */
 		    exit_cond = build2 (LT_EXPR, integer_type_node,
 					index, hi_index);
-		    jumpif (exit_cond, loop_end, -1);
+		    jumpif (exit_cond, loop_end,
+			    profile_probability::uninitialized ());
 
 		    /* Update the loop counter, and jump to the head of
 		       the loop.  */
@@ -6583,6 +6589,7 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 	rtvec vector = NULL;
 	unsigned n_elts;
 	alias_set_type alias;
+	bool vec_vec_init_p = false;
 
 	gcc_assert (eltmode != BLKmode);
 
@@ -6590,27 +6597,30 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 	if (REG_P (target) && VECTOR_MODE_P (GET_MODE (target)))
 	  {
 	    machine_mode mode = GET_MODE (target);
+	    machine_mode emode = eltmode;
 
-	    icode = (int) optab_handler (vec_init_optab, mode);
-	    /* Don't use vec_init<mode> if some elements have VECTOR_TYPE.  */
-	    if (icode != CODE_FOR_nothing)
+	    if (CONSTRUCTOR_NELTS (exp)
+		&& (TREE_CODE (TREE_TYPE (CONSTRUCTOR_ELT (exp, 0)->value))
+		    == VECTOR_TYPE))
 	      {
-		tree value;
-
-		FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (exp), idx, value)
-		  if (TREE_CODE (TREE_TYPE (value)) == VECTOR_TYPE)
-		    {
-		      icode = CODE_FOR_nothing;
-		      break;
-		    }
+		tree etype = TREE_TYPE (CONSTRUCTOR_ELT (exp, 0)->value);
+		gcc_assert (CONSTRUCTOR_NELTS (exp) * TYPE_VECTOR_SUBPARTS (etype)
+			    == n_elts);
+		emode = TYPE_MODE (etype);
 	      }
+	    icode = (int) convert_optab_handler (vec_init_optab, mode, emode);
 	    if (icode != CODE_FOR_nothing)
 	      {
-		unsigned int i;
+		unsigned int i, n = n_elts;
 
-		vector = rtvec_alloc (n_elts);
-		for (i = 0; i < n_elts; i++)
-		  RTVEC_ELT (vector, i) = CONST0_RTX (GET_MODE_INNER (mode));
+		if (emode != eltmode)
+		  {
+		    n = CONSTRUCTOR_NELTS (exp);
+		    vec_vec_init_p = true;
+		  }
+		vector = rtvec_alloc (n);
+		for (i = 0; i < n; i++)
+		  RTVEC_ELT (vector, i) = CONST0_RTX (emode);
 	      }
 	  }
 
@@ -6628,10 +6638,10 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 
 	    FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (exp), idx, value)
 	      {
-		int n_elts_here = tree_to_uhwi
-		  (int_const_binop (TRUNC_DIV_EXPR,
-				    TYPE_SIZE (TREE_TYPE (value)),
-				    TYPE_SIZE (elttype)));
+		tree sz = TYPE_SIZE (TREE_TYPE (value));
+		int n_elts_here
+		  = tree_to_uhwi (int_const_binop (TRUNC_DIV_EXPR, sz,
+						   TYPE_SIZE (elttype)));
 
 		count += n_elts_here;
 		if (mostly_zeros_p (value))
@@ -6681,18 +6691,21 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 
 	    if (vector)
 	      {
-		/* vec_init<mode> should not be used if there are VECTOR_TYPE
-		   elements.  */
-		gcc_assert (TREE_CODE (TREE_TYPE (value)) != VECTOR_TYPE);
-		RTVEC_ELT (vector, eltpos)
-		  = expand_normal (value);
+		if (vec_vec_init_p)
+		  {
+		    gcc_assert (ce->index == NULL_TREE);
+		    gcc_assert (TREE_CODE (TREE_TYPE (value)) == VECTOR_TYPE);
+		    eltpos = idx;
+		  }
+		else
+		  gcc_assert (TREE_CODE (TREE_TYPE (value)) != VECTOR_TYPE);
+		RTVEC_ELT (vector, eltpos) = expand_normal (value);
 	      }
 	    else
 	      {
-		machine_mode value_mode =
-		  TREE_CODE (TREE_TYPE (value)) == VECTOR_TYPE
-		  ? TYPE_MODE (TREE_TYPE (value))
-		  : eltmode;
+		machine_mode value_mode
+		  = (TREE_CODE (TREE_TYPE (value)) == VECTOR_TYPE
+		     ? TYPE_MODE (TREE_TYPE (value)) : eltmode);
 		bitpos = eltpos * elt_size;
 		store_constructor_field (target, bitsize, bitpos, 0,
 					 bitregion_end, value_mode,
@@ -6701,9 +6714,9 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size,
 	  }
 
 	if (vector)
-	  emit_insn (GEN_FCN (icode)
-		     (target,
-		      gen_rtx_PARALLEL (GET_MODE (target), vector)));
+	  emit_insn (GEN_FCN (icode) (target,
+				      gen_rtx_PARALLEL (GET_MODE (target),
+							vector)));
 	break;
       }
 
@@ -9043,7 +9056,7 @@ expand_expr_real_2 (sepops ops, rtx target, machine_mode tmode,
 	lab = gen_label_rtx ();
 	do_compare_rtx_and_jump (target, cmpop1, comparison_code,
 				 unsignedp, mode, NULL_RTX, NULL, lab,
-				 -1);
+				 profile_probability::uninitialized ());
       }
       emit_move_insn (target, op1);
       emit_label (lab);
@@ -9272,7 +9285,8 @@ expand_expr_real_2 (sepops ops, rtx target, machine_mode tmode,
 	emit_move_insn (target, const0_rtx);
 
 	rtx_code_label *lab1 = gen_label_rtx ();
-	jumpifnot_1 (code, treeop0, treeop1, lab1, -1);
+	jumpifnot_1 (code, treeop0, treeop1, lab1,
+		     profile_probability::uninitialized ());
 
 	if (TYPE_PRECISION (type) == 1 && !TYPE_UNSIGNED (type))
 	  emit_move_insn (target, constm1_rtx);
@@ -9523,7 +9537,8 @@ expand_expr_real_2 (sepops ops, rtx target, machine_mode tmode,
 	NO_DEFER_POP;
 	rtx_code_label *lab0 = gen_label_rtx ();
 	rtx_code_label *lab1 = gen_label_rtx ();
-	jumpifnot (treeop0, lab0, -1);
+	jumpifnot (treeop0, lab0,
+		   profile_probability::uninitialized ());
 	store_expr (treeop1, temp,
 		    modifier == EXPAND_STACK_PARM,
 		    false, false);
@@ -9768,7 +9783,7 @@ expand_expr_real_1 (tree exp, rtx target, machine_mode tmode,
 	      if (targetm.gen_ccmp_first)
 		{
 		  gcc_checking_assert (targetm.gen_ccmp_next != NULL);
-		  r = expand_ccmp_expr (g);
+		  r = expand_ccmp_expr (g, mode);
 		  if (r)
 		    break;
 		}
@@ -10631,11 +10646,11 @@ expand_expr_real_1 (tree exp, rtx target, machine_mode tmode,
 	    /* If the field isn't aligned enough to fetch as a memref,
 	       fetch it as a bit field.  */
 	    || (mode1 != BLKmode
-		&& (((TYPE_ALIGN (TREE_TYPE (tem)) < GET_MODE_ALIGNMENT (mode)
-		      || (bitpos % GET_MODE_ALIGNMENT (mode) != 0)
-		      || (MEM_P (op0)
-			  && (MEM_ALIGN (op0) < GET_MODE_ALIGNMENT (mode1)
-			      || (bitpos % GET_MODE_ALIGNMENT (mode1) != 0))))
+		&& (((MEM_P (op0)
+		      ? MEM_ALIGN (op0) < GET_MODE_ALIGNMENT (mode1)
+		        || (bitpos % GET_MODE_ALIGNMENT (mode1) != 0)
+		      : TYPE_ALIGN (TREE_TYPE (tem)) < GET_MODE_ALIGNMENT (mode)
+		        || (bitpos % GET_MODE_ALIGNMENT (mode) != 0))
 		     && modifier != EXPAND_MEMORY
 		     && ((modifier == EXPAND_CONST_ADDRESS
 			  || modifier == EXPAND_INITIALIZER)
@@ -11042,7 +11057,8 @@ expand_expr_real_1 (tree exp, rtx target, machine_mode tmode,
 	    int value = TREE_CODE (rhs) == BIT_IOR_EXPR;
 	    do_jump (TREE_OPERAND (rhs, 1),
 		     value ? label : 0,
-		     value ? 0 : label, -1);
+		     value ? 0 : label,
+		     profile_probability::uninitialized ());
 	    expand_assignment (lhs, build_int_cst (TREE_TYPE (rhs), value),
 			       false);
 	    do_pending_stack_adjust ();
@@ -11512,7 +11528,7 @@ do_store_flag (sepops ops, rtx target, machine_mode mode)
 int
 try_casesi (tree index_type, tree index_expr, tree minval, tree range,
 	    rtx table_label, rtx default_label, rtx fallback_label,
-            int default_probability)
+            profile_probability default_probability)
 {
   struct expand_operand ops[5];
   machine_mode index_mode = SImode;
@@ -11582,7 +11598,7 @@ try_casesi (tree index_type, tree index_expr, tree minval, tree range,
 
 static void
 do_tablejump (rtx index, machine_mode mode, rtx range, rtx table_label,
-	      rtx default_label, int default_probability)
+	      rtx default_label, profile_probability default_probability)
 {
   rtx temp, vector;
 
@@ -11645,7 +11661,8 @@ do_tablejump (rtx index, machine_mode mode, rtx range, rtx table_label,
 
 int
 try_tablejump (tree index_type, tree index_expr, tree minval, tree range,
-	       rtx table_label, rtx default_label, int default_probability)
+	       rtx table_label, rtx default_label, 
+	       profile_probability default_probability)
 {
   rtx index;
 

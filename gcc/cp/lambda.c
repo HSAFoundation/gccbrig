@@ -427,13 +427,15 @@ build_capture_proxy (tree member)
   return var;
 }
 
+static GTY(()) tree ptr_id;
+static GTY(()) tree max_id;
+
 /* Return a struct containing a pointer and a length for lambda capture of
    an array of runtime length.  */
 
 static tree
 vla_capture_type (tree array_type)
 {
-  static tree ptr_id, max_id;
   tree type = xref_tag (record_type, make_anon_name (), ts_current, false);
   xref_basetypes (type, NULL_TREE);
   type = begin_class_definition (type);
@@ -527,7 +529,10 @@ add_capture (tree lambda, tree id, tree orig_init, bool by_reference_p,
       else if (id != this_identifier && by_reference_p)
 	{
 	  if (!lvalue_p (initializer))
-	    error ("cannot capture %qE by reference", initializer);
+	    {
+	      error ("cannot capture %qE by reference", initializer);
+	      return error_mark_node;
+	    }
 	}
       else
 	{
@@ -841,18 +846,15 @@ maybe_generic_this_capture (tree object, tree fns)
 	bool id_expr = TREE_CODE (fns) == TEMPLATE_ID_EXPR;
 	if (id_expr)
 	  fns = TREE_OPERAND (fns, 0);
-	for (; fns; fns = OVL_NEXT (fns))
-	  {
-	    tree fn = OVL_CURRENT (fns);
 
-	    if ((!id_expr || TREE_CODE (fn) == TEMPLATE_DECL)
-		&& DECL_NONSTATIC_MEMBER_FUNCTION_P (fn))
-	      {
-		/* Found a non-static member.  Capture this.  */
-		lambda_expr_this_capture (lam, true);
-		break;
-	      }
-	  }
+	for (lkp_iterator iter (fns); iter; ++iter)
+	  if ((!id_expr || TREE_CODE (*iter) == TEMPLATE_DECL)
+	      && DECL_NONSTATIC_MEMBER_FUNCTION_P (*iter))
+	    {
+	      /* Found a non-static member.  Capture this.  */
+	      lambda_expr_this_capture (lam, true);
+	      break;
+	    }
       }
 }
 
@@ -988,6 +990,8 @@ maybe_add_lambda_conv_op (tree type)
 			    null_pointer_node);
   if (generic_lambda_p)
     {
+      ++processing_template_decl;
+
       /* Prepare the dependent member call for the static member function
 	 '_FUN' and, potentially, prepare another call to be used in a decltype
 	 return expression for a deduced return call op to allow for simple
@@ -1037,9 +1041,7 @@ maybe_add_lambda_conv_op (tree type)
 
 	if (generic_lambda_p)
 	  {
-	    ++processing_template_decl;
 	    tree a = forward_parm (tgt);
-	    --processing_template_decl;
 
 	    CALL_EXPR_ARG (call, ix) = a;
 	    if (decltype_call)
@@ -1063,11 +1065,9 @@ maybe_add_lambda_conv_op (tree type)
     {
       if (decltype_call)
 	{
-	  ++processing_template_decl;
 	  fn_result = finish_decltype_type
 	    (decltype_call, /*id_expression_or_member_access_p=*/false,
 	     tf_warning_or_error);
-	  --processing_template_decl;
 	}
     }
   else
@@ -1085,10 +1085,13 @@ maybe_add_lambda_conv_op (tree type)
       && TYPE_NOTHROW_P (TREE_TYPE (callop)))
     stattype = build_exception_variant (stattype, noexcept_true_spec);
 
+  if (generic_lambda_p)
+    --processing_template_decl;
+
   /* First build up the conversion op.  */
 
   tree rettype = build_pointer_type (stattype);
-  tree name = mangle_conv_op_name_for_type (rettype);
+  tree name = make_conv_op_name (rettype);
   tree thistype = cp_build_qualified_type (type, TYPE_QUAL_CONST);
   tree fntype = build_method_type_directly (thistype, rettype, void_list_node);
   tree convfn = build_lang_decl (FUNCTION_DECL, name, fntype);
@@ -1103,7 +1106,8 @@ maybe_add_lambda_conv_op (tree type)
   DECL_ARTIFICIAL (fn) = 1;
   DECL_NOT_REALLY_EXTERN (fn) = 1;
   DECL_DECLARED_INLINE_P (fn) = 1;
-  DECL_ARGUMENTS (fn) = build_this_parm (fntype, TYPE_QUAL_CONST);
+  DECL_ARGUMENTS (fn) = build_this_parm (fn, fntype, TYPE_QUAL_CONST);
+
   if (nested_def)
     DECL_INTERFACE_KNOWN (fn) = 1;
 
@@ -1151,9 +1155,7 @@ maybe_add_lambda_conv_op (tree type)
     {
       /* Don't UBsan this function; we're deliberately calling op() with a null
 	 object argument.  */
-      tree attrs = build_tree_list (get_identifier ("no_sanitize_undefined"),
-				    NULL_TREE);
-      cplus_decl_attributes (&fn, attrs, 0);
+      add_no_sanitize_value (fn, SANITIZE_UNDEFINED);
     }
 
   add_method (type, fn, false);
@@ -1251,3 +1253,5 @@ is_lambda_ignored_entity (tree val)
 
   return false;
 }
+
+#include "gt-cp-lambda.h"

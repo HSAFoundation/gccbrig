@@ -1773,7 +1773,7 @@ spu_expand_prologue (void)
 	      size_v4si = scratch_v4si;
 	    }
 	  emit_insn (gen_cgt_v4si (scratch_v4si, sp_v4si, size_v4si));
-	  emit_insn (gen_vec_extractv4si
+	  emit_insn (gen_vec_extractv4sisi
 		     (scratch_reg_0, scratch_v4si, GEN_INT (1)));
 	  emit_insn (gen_spu_heq (scratch_reg_0, GEN_INT (0)));
 	}
@@ -2195,7 +2195,8 @@ get_branch_target (rtx_insn *branch)
 	    {
 	      /* If the more probable case is not a fall through, then
 	         try a branch hint.  */
-	      int prob = XINT (note, 0);
+	      int prob = profile_probability::from_reg_br_prob_note
+			    (XINT (note, 0)).to_reg_br_prob_base ();
 	      if (prob > (REG_BR_PROB_BASE * 6 / 10)
 		  && GET_CODE (XEXP (src, 1)) != PC)
 		lab = XEXP (src, 1);
@@ -4335,8 +4336,7 @@ ea_load_store_inline (rtx mem, bool is_store, rtx ea_addr, rtx data_addr)
 				      gen_rtx_IF_THEN_ELSE (VOIDmode, bcomp,
 							    hit_ref, pc_rtx)));
   /* Say that this branch is very likely to happen.  */
-  v = REG_BR_PROB_BASE - REG_BR_PROB_BASE / 100 - 1;
-  add_int_reg_note (insn, REG_BR_PROB, v);
+  add_reg_br_prob_note (insn, profile_probability::very_likely ());
 
   ea_load_store (mem, is_store, ea_addr, data_addr);
   cont_label = gen_label_rtx ();
@@ -5368,7 +5368,7 @@ spu_allocate_stack (rtx op0, rtx op1)
     {
       rtx avail = gen_reg_rtx(SImode);
       rtx result = gen_reg_rtx(SImode);
-      emit_insn (gen_vec_extractv4si (avail, sp, GEN_INT (1)));
+      emit_insn (gen_vec_extractv4sisi (avail, sp, GEN_INT (1)));
       emit_insn (gen_cgt_si(result, avail, GEN_INT (-1)));
       emit_insn (gen_spu_heq (result, GEN_INT(0) ));
     }
@@ -5684,22 +5684,22 @@ spu_builtin_extract (rtx ops[])
       switch (mode)
 	{
 	case V16QImode:
-	  emit_insn (gen_vec_extractv16qi (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv16qiqi (ops[0], ops[1], ops[2]));
 	  break;
 	case V8HImode:
-	  emit_insn (gen_vec_extractv8hi (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv8hihi (ops[0], ops[1], ops[2]));
 	  break;
 	case V4SFmode:
-	  emit_insn (gen_vec_extractv4sf (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv4sfsf (ops[0], ops[1], ops[2]));
 	  break;
 	case V4SImode:
-	  emit_insn (gen_vec_extractv4si (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv4sisi (ops[0], ops[1], ops[2]));
 	  break;
 	case V2DImode:
-	  emit_insn (gen_vec_extractv2di (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv2didi (ops[0], ops[1], ops[2]));
 	  break;
 	case V2DFmode:
-	  emit_insn (gen_vec_extractv2df (ops[0], ops[1], ops[2]));
+	  emit_insn (gen_vec_extractv2dfdf (ops[0], ops[1], ops[2]));
 	  break;
 	default:
 	  abort ();

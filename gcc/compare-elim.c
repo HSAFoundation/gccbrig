@@ -279,7 +279,7 @@ can_eliminate_compare (rtx compare, rtx eh_note, struct comparison *cmp)
     return false;
 
   /* New mode must be compatible with the previous compare mode.  */
-  enum machine_mode new_mode
+  machine_mode new_mode
     = targetm.cc_modes_compatible (GET_MODE (compare), cmp->orig_mode);
 
   if (new_mode == VOIDmode)
@@ -526,6 +526,7 @@ maybe_select_cc_mode (struct comparison *cmp, rtx a ATTRIBUTE_UNUSED,
 static rtx
 equivalent_reg_at_start (rtx reg, rtx_insn *end, rtx_insn *start)
 {
+  machine_mode orig_mode = GET_MODE (reg);
   rtx_insn *bb_head = BB_HEAD (BLOCK_FOR_INSN (end));
 
   for (rtx_insn *insn = PREV_INSN (end);
@@ -540,29 +541,29 @@ equivalent_reg_at_start (rtx reg, rtx_insn *end, rtx_insn *start)
       df_ref def;
 
       /* Note that the BB_HEAD is always either a note or a label, but in
-	 any case it means that IN_A is defined outside the block.  */
+	 any case it means that REG is defined outside the block.  */
       if (insn == bb_head)
 	return NULL_RTX;
       if (NOTE_P (insn) || DEBUG_INSN_P (insn))
 	continue;
 
-      /* Find a possible def of IN_A in INSN.  */
+      /* Find a possible def of REG in INSN.  */
       FOR_EACH_INSN_DEF (def, insn)
 	if (DF_REF_REGNO (def) == REGNO (reg))
 	  break;
 
-      /* No definitions of IN_A; continue searching.  */
+      /* No definitions of REG; continue searching.  */
       if (def == NULL)
 	continue;
 
-      /* Bail if this is not a totally normal set of IN_A.  */
+      /* Bail if this is not a totally normal set of REG.  */
       if (DF_REF_IS_ARTIFICIAL (def))
 	return NULL_RTX;
       if (DF_REF_FLAGS (def) & abnormal_flags)
 	return NULL_RTX;
 
       /* We've found an insn between the compare and the clobber that sets
-	 IN_A.  Given that pass_cprop_hardreg has not yet run, we still find
+	 REG.  Given that pass_cprop_hardreg has not yet run, we still find
 	 situations in which we can usefully look through a copy insn.  */
       rtx x = single_set (insn);
       if (x == NULL_RTX)
@@ -571,6 +572,9 @@ equivalent_reg_at_start (rtx reg, rtx_insn *end, rtx_insn *start)
       if (!REG_P (reg))
 	return NULL_RTX;
     }
+
+  if (GET_MODE (reg) != orig_mode)
+    return NULL_RTX;
 
   return reg;
 }

@@ -1,4 +1,4 @@
-@c Copyright (C) 1988-2017 Free Software Foundation, Inc.
+c Copyright (C) 1988-2017 Free Software Foundation, Inc.
 
 @c This is part of the GCC manual.
 @c For copying conditions, see the file gcc.texi.
@@ -1312,11 +1312,24 @@ in order to put read-only data into the flash memory and access that
 data by means of the special instructions @code{LPM} or @code{ELPM}
 needed to read from flash.
 
-Per default, any data including read-only data is located in RAM
-(the generic address space) so that non-generic address spaces are
-needed to locate read-only data in flash memory
-@emph{and} to generate the right instructions to access this data
-without using (inline) assembler code.
+Devices belonging to @code{avrtiny} and @code{avrxmega3} can access
+flash memory by means of @code{LD*} instructions because the flash
+memory is mapped into the RAM address space.  There is @emph{no need}
+for language extensions like @code{__flash} or attribute
+@ref{AVR Variable Attributes,,@code{progmem}}.
+The default linker description files for these devices cater for that
+feature and @code{.rodata} stays in flash: The compiler just generates
+@code{LD*} instructions, and the linker script adds core specific
+offsets to all @code{.rodata} symbols: @code{0x4000} in the case of
+@code{avrtiny} and @code{0x8000} in the case of @code{avrxmega3}.
+See @ref{AVR Options} for a list of respective devices.
+
+For devices not in @code{avrtiny} or @code{avrxmega3},
+any data including read-only data is located in RAM (the generic
+address space) because flash memory is not visible in the RAM address
+space.  In order to locate read-only data in flash memory @emph{and}
+to generate the right instructions to access this data without
+using (inline) assembler code, special address spaces are needed.
 
 @table @code
 @item __flash
@@ -1447,14 +1460,11 @@ extern const __memx char foo;
 const __memx void *pfoo = &foo;
 @end smallexample
 
-@noindent
-Such code requires at least binutils 2.23, see
-@w{@uref{https://sourceware.org/PR13503,PR13503}}.
-
 @item
 On the reduced Tiny devices like ATtiny40, no address spaces are supported.
-Data can be put into and read from flash memory by means of
-attribute @code{progmem}, see @ref{AVR Variable Attributes}.
+Just use vanilla C / C++ code without overhead as outlined above.
+Attribute @code{progmem} is supported but works differently,
+see @ref{AVR Variable Attributes}.
 
 @end itemize
 
@@ -2901,6 +2911,18 @@ This has a similar effect
 as the @option{-fno-toplevel-reorder} option, but only applies to the
 marked symbols.
 
+@item no_sanitize ("@var{sanitize_option}")
+@cindex @code{no_sanitize} function attribute
+The @code{no_sanitize} attribute on functions is used
+to inform the compiler that it should not do sanitization of all options
+mentioned in @var{sanitize_option}.  A list of values acceptable by
+@option{-fsanitize} option can be provided.
+
+@smallexample
+void __attribute__ ((no_sanitize ("alignment", "object-size")))
+f () @{ /* @r{Do something.} */; @}
+@end smallexample
+
 @item no_sanitize_address
 @itemx no_address_safety_analysis
 @cindex @code{no_sanitize_address} function attribute
@@ -2961,6 +2983,19 @@ asm ("");
 @noindent
 (@pxref{Extended Asm}) in the called function, to serve as a special
 side-effect.
+
+@item noipa
+@cindex @code{noipa} function attribute
+Disable interprocedural optimizations between the function with this
+attribute and its callers, as if the body of the function is not available
+when optimizing callers and the callers are unavailable when optimizing
+the body.  This attribute implies @code{noinline}, @code{noclone} and
+@code{no_icf} attributes.    However, this attribute is not equivalent
+to a combination of other attributes, because its purpose is to suppress
+existing and future optimizations employing interprocedural analysis,
+including those that do not have an attribute suitable for disabling
+them individually.  This attribute is supported mainly for the purpose
+of testing the compiler.
 
 @item nonnull (@var{arg-index}, @dots{})
 @cindex @code{nonnull} function attribute
@@ -3082,6 +3117,27 @@ that affect more than one function.
 
 This attribute should be used for debugging purposes only.  It is not
 suitable in production code.
+
+@item patchable_function_entry
+@cindex @code{patchable_function_entry} function attribute
+@cindex extra NOP instructions at the function entry point
+In case the target's text segment can be made writable at run time by
+any means, padding the function entry with a number of NOPs can be
+used to provide a universal tool for instrumentation.
+
+The @code{patchable_function_entry} function attribute can be used to
+change the number of NOPs to any desired value.  The two-value syntax
+is the same as for the command-line switch
+@option{-fpatchable-function-entry=N,M}, generating @var{N} NOPs, with
+the function entry point before the @var{M}th NOP instruction.
+@var{M} defaults to 0 if omitted e.g. function entry point is before
+the first NOP.
+
+If patchable function entries are enabled globally using the command-line
+option @option{-fpatchable-function-entry=N,M}, then you must disable
+instrumentation on all functions that are part of the instrumentation
+framework with the attribute @code{patchable_function_entry (0)}
+to prevent recursion.
 
 @item pure
 @cindex @code{pure} function attribute
@@ -3256,8 +3312,17 @@ are the same as for @code{target} attribute.
 For instance, on an x86, you could compile a function with
 @code{target_clones("sse4.1,avx")}.  GCC creates two function clones,
 one compiled with @option{-msse4.1} and another with @option{-mavx}.
-It also creates a resolver function (see the @code{ifunc} attribute
-above) that dynamically selects a clone suitable for current architecture.
+
+On a PowerPC, you can compile a function with
+@code{target_clones("cpu=power9,default")}.  GCC will create two
+function clones, one compiled with @option{-mcpu=power9} and another
+with the default options.  GCC must be configured to use GLIBC 2.23 or
+newer in order to use the @code{target_clones} attribute.
+
+It also creates a resolver function (see
+the @code{ifunc} attribute above) that dynamically selects a clone
+suitable for current architecture.  The resolver is created only if there
+is a usage of a function with @code{target_clones} attribute.
 
 @item unused
 @cindex @code{unused} function attribute
@@ -3784,6 +3849,33 @@ prologue/epilogue sequences generated by the compiler. Only basic
 (@pxref{Basic Asm}). While using extended @code{asm} or a mixture of
 basic @code{asm} and C code may appear to work, they cannot be
 depended upon to work reliably and are not supported.
+
+@item no_gccisr
+@cindex @code{no_gccisr} function attribute, AVR
+Do not use @code{__gcc_isr} pseudo instructions in a function with
+the @code{interrupt} or @code{signal} attribute aka. interrupt
+service routine (ISR).
+Use this attribute if the preamble of the ISR prologue should always read
+@example
+push  __zero_reg__
+push  __tmp_reg__
+in    __tmp_reg__, __SREG__
+push  __tmp_reg__
+clr   __zero_reg__
+@end example
+and accordingly for the postamble of the epilogue --- no matter whether
+the mentioned registers are actually used in the ISR or not.
+Situations where you might want to use this attribute include:
+@itemize @bullet
+@item
+Code that (effectively) clobbers bits of @code{SREG} other than the
+@code{I}-flag by writing to the memory location of @code{SREG}.
+@item
+Code that uses inline assembler to jump to a different function which
+expects (parts of) the prologue code as outlined above to be present.
+@end itemize
+To disable @code{__gcc_isr} generation for the whole compilation unit,
+there is option @option{-mno-gas-isr-prologues}, @pxref{AVR Options}.
 
 @item OS_main
 @itemx OS_task
@@ -5278,6 +5370,17 @@ this function attribute to make GCC generate the ``hot-patching'' function
 prologue used in Win32 API functions in Microsoft Windows XP Service Pack 2
 and newer.
 
+@item naked
+@cindex @code{naked} function attribute, x86
+This attribute allows the compiler to construct the
+requisite function declaration, while allowing the body of the
+function to be assembly code. The specified function will not have
+prologue/epilogue sequences generated by the compiler. Only basic
+@code{asm} statements can safely be included in naked functions
+(@pxref{Basic Asm}). While using extended @code{asm} or a mixture of
+basic @code{asm} and C code may appear to work, they cannot be
+depended upon to work reliably and are not supported.
+
 @item regparm (@var{number})
 @cindex @code{regparm} function attribute, x86
 @cindex functions that are passed arguments in registers on x86-32
@@ -5928,6 +6031,19 @@ normally resides in the data memory (RAM).
 See also the @ref{AVR Named Address Spaces} section for
 an alternate way to locate and access data in flash memory.
 
+@item @bullet{}@tie{} AVR cores with flash memory visible in the RAM address range:
+On such devices, there is no need for attribute @code{progmem} or
+@ref{AVR Named Address Spaces,,@code{__flash}} qualifier at all.
+Just use standard C / C++.  The compiler will generate @code{LD*}
+instructions.  As flash memory is visible in the RAM address range,
+and the default linker script does @emph{not} locate @code{.rodata} in
+RAM, no special features are needed in order not to waste RAM for
+read-only data or to read from flash.  You might even get slightly better
+performance by
+avoiding @code{progmem} and @code{__flash}.  This applies to devices from
+families @code{avrtiny} and @code{avrxmega3}, see @ref{AVR Options} for
+an overview.
+
 @item @bullet{}@tie{}Reduced AVR Tiny cores like ATtiny40:
 The compiler adds @code{0x4000}
 to the addresses of objects and declarations in @code{progmem} and locates
@@ -5949,28 +6065,7 @@ int read_var (int i)
 @end smallexample
 
 Please notice that on these devices, there is no need for @code{progmem}
-at all.  Just use an appropriate linker description file like outlined below.
-
-@smallexample
-  .text :
-  @{ ...
-  @} > text
-  /* Leave .rodata in flash and add an offset of 0x4000 to all
-     addresses so that respective objects can be accessed by
-     LD instructions and open coded C/C++.  This means there
-     is no need for progmem in the source and no overhead by
-     read-only data in RAM.  */
-  .rodata ADDR(.text) + SIZEOF (.text) + 0x4000 :
-  @{
-    *(.rodata)
-    *(.rodata*)
-    *(.gnu.linkonce.r*)
-  @} AT> text
-  /* No more need to put .rodata into .data:
-     Removed all .rodata entries from .data.  */
-  .data :
-  @{ ...
-@end smallexample
+at all.
 
 @end table
 
@@ -12698,54 +12793,37 @@ or if not a specific built-in is implemented or not. For example, if
 @code{__builtin_avr_nop} is available the macro
 @code{__BUILTIN_AVR_NOP} is defined to @code{1} and undefined otherwise.
 
-The following built-in functions map to the respective machine
+@table @code
+
+@item void __builtin_avr_nop (void)
+@itemx void __builtin_avr_sei (void)
+@itemx void __builtin_avr_cli (void)
+@itemx void __builtin_avr_sleep (void)
+@itemx void __builtin_avr_wdr (void)
+@itemx unsigned char __builtin_avr_swap (unsigned char)
+@itemx unsigned int __builtin_avr_fmul (unsigned char, unsigned char)
+@itemx int __builtin_avr_fmuls (char, char)
+@itemx int __builtin_avr_fmulsu (char, unsigned char)
+These built-in functions map to the respective machine
 instruction, i.e.@: @code{nop}, @code{sei}, @code{cli}, @code{sleep},
 @code{wdr}, @code{swap}, @code{fmul}, @code{fmuls}
 resp. @code{fmulsu}. The three @code{fmul*} built-ins are implemented
 as library call if no hardware multiplier is available.
 
-@smallexample
-void __builtin_avr_nop (void)
-void __builtin_avr_sei (void)
-void __builtin_avr_cli (void)
-void __builtin_avr_sleep (void)
-void __builtin_avr_wdr (void)
-unsigned char __builtin_avr_swap (unsigned char)
-unsigned int __builtin_avr_fmul (unsigned char, unsigned char)
-int __builtin_avr_fmuls (char, char)
-int __builtin_avr_fmulsu (char, unsigned char)
-@end smallexample
-
-In order to delay execution for a specific number of cycles, GCC
-implements
-@smallexample
-void __builtin_avr_delay_cycles (unsigned long ticks)
-@end smallexample
-
-@noindent
-@code{ticks} is the number of ticks to delay execution. Note that this
+@item void __builtin_avr_delay_cycles (unsigned long ticks)
+Delay execution for @var{ticks} cycles. Note that this
 built-in does not take into account the effect of interrupts that
-might increase delay time. @code{ticks} must be a compile-time
+might increase delay time. @var{ticks} must be a compile-time
 integer constant; delays with a variable number of cycles are not supported.
 
-@smallexample
-char __builtin_avr_flash_segment (const __memx void*)
-@end smallexample
-
-@noindent
+@item char __builtin_avr_flash_segment (const __memx void*)
 This built-in takes a byte address to the 24-bit
 @ref{AVR Named Address Spaces,address space} @code{__memx} and returns
 the number of the flash segment (the 64 KiB chunk) where the address
 points to.  Counting starts at @code{0}.
 If the address does not point to flash memory, return @code{-1}.
 
-@smallexample
-unsigned char __builtin_avr_insert_bits (unsigned long map,
-                                         unsigned char bits,
-                                         unsigned char val)
-@end smallexample
-
-@noindent
+@item uint8_t __builtin_avr_insert_bits (uint32_t map, uint8_t bits, uint8_t val)
 Insert bits from @var{bits} into @var{val} and return the resulting
 value. The nibbles of @var{map} determine how the insertion is
 performed: Let @var{X} be the @var{n}-th nibble of @var{map}
@@ -12790,13 +12868,29 @@ __builtin_avr_insert_bits (0xffff3210, bits, val)
 __builtin_avr_insert_bits (0x01234567, bits, 0)
 @end smallexample
 
-@smallexample
-void __builtin_avr_nops (unsigned count)
-@end smallexample
+@item void __builtin_avr_nops (unsigned count)
+Insert @var{count} @code{NOP} instructions.
+The number of instructions must be a compile-time integer constant.
+
+@end table
 
 @noindent
-Insert @code{count} @code{NOP} instructions.
-The number of instructions must be a compile-time integer constant.
+There are many more AVR-specific built-in functions that are used to
+implement the ISO/IEC TR 18037 ``Embedded C'' fixed-point functions of
+section 7.18a.6.  You don't need to use these built-ins directly.
+Instead, use the declarations as supplied by the @code{stdfix.h} header
+with GNU-C99:
+
+@smallexample
+#include <stdfix.h>
+
+// Re-interpret the bit representation of unsigned 16-bit
+// integer @var{uval} as Q-format 0.16 value.
+unsigned fract get_bits (uint_ur_t uval)
+@{
+    return urbits (uval);
+@}
+@end smallexample
 
 @node Blackfin Built-in Functions
 @subsection Blackfin Built-in Functions
@@ -14896,8 +14990,18 @@ to maintain API compatibility with the x86 builtins.
 
 @deftypefn {Built-in Function} int __builtin_cpu_is (const char *@var{cpuname})
 This function returns a value of @code{1} if the run-time CPU is of type
-@var{cpuname} and returns @code{0} otherwise. The following CPU names can be
-detected:
+@var{cpuname} and returns @code{0} otherwise
+
+The @code{__builtin_cpu_is} function requires GLIBC 2.23 or newer
+which exports the hardware capability bits.  GCC defines the macro
+@code{__BUILTIN_CPU_SUPPORTS__} if the @code{__builtin_cpu_supports}
+built-in function is fully supported.
+
+If GCC was configured to use a GLIBC before 2.23, the built-in
+function @code{__builtin_cpu_is} always returns a 0 and the compiler
+issues a warning.
+
+The following CPU names can be detected:
 
 @table @samp
 @item power9
@@ -14934,20 +15038,33 @@ IBM PowerPC Cell Broadband Engine Architecture CPU.
 
 Here is an example:
 @smallexample
-if (__builtin_cpu_is ("power8"))
-  @{
-     do_power8 (); // POWER8 specific implementation.
-  @}
-else
-  @{
-     do_generic (); // Generic implementation.
-  @}
+#ifdef __BUILTIN_CPU_SUPPORTS__
+  if (__builtin_cpu_is ("power8"))
+    @{
+       do_power8 (); // POWER8 specific implementation.
+    @}
+  else
+#endif
+    @{
+       do_generic (); // Generic implementation.
+    @}
 @end smallexample
 @end deftypefn
 
 @deftypefn {Built-in Function} int __builtin_cpu_supports (const char *@var{feature})
 This function returns a value of @code{1} if the run-time CPU supports the HWCAP
-feature @var{feature} and returns @code{0} otherwise. The following features can be
+feature @var{feature} and returns @code{0} otherwise.
+
+The @code{__builtin_cpu_supports} function requires GLIBC 2.23 or
+newer which exports the hardware capability bits.  GCC defines the
+macro @code{__BUILTIN_CPU_SUPPORTS__} if the
+@code{__builtin_cpu_supports} built-in function is fully supported.
+
+If GCC was configured to use a GLIBC before 2.23, the built-in
+function @code{__builtin_cpu_suports} always returns a 0 and the
+compiler issues a warning.
+
+The following features can be
 detected:
 
 @table @samp
@@ -15031,14 +15148,16 @@ CPU supports the vector-scalar extension.
 
 Here is an example:
 @smallexample
-if (__builtin_cpu_supports ("fpu"))
-  @{
-     asm("fadd %0,%1,%2" : "=d"(dst) : "d"(src1), "d"(src2));
-  @}
-else
-  @{
-     dst = __fadd (src1, src2); // Software FP addition function.
-  @}
+#ifdef __BUILTIN_CPU_SUPPORTS__
+  if (__builtin_cpu_supports ("fpu"))
+    @{
+       asm("fadd %0,%1,%2" : "=d"(dst) : "d"(src1), "d"(src2));
+    @}
+  else
+#endif
+    @{
+       dst = __fadd (src1, src2); // Software FP addition function.
+    @}
 @end smallexample
 @end deftypefn
 
@@ -15154,12 +15273,20 @@ long long __builtin_darn_raw (void);
 int __builtin_darn_32 (void);
 
 unsigned int scalar_extract_exp (double source);
+unsigned long long int scalar_extract_exp (__ieee128 source);
+
 unsigned long long int scalar_extract_sig (double source);
+unsigned __int128 scalar_extract_sig (__ieee128 source);
 
 double
 scalar_insert_exp (unsigned long long int significand, unsigned long long int exponent);
 double
 scalar_insert_exp (double significand, unsigned long long int exponent);
+
+ieee_128
+scalar_insert_exp (unsigned __int128 significand, unsigned long long int exponent);
+ieee_128
+scalar_insert_exp (ieee_128 significand, unsigned long long int exponent);
 
 int scalar_cmp_exp_gt (double arg1, double arg2);
 int scalar_cmp_exp_lt (double arg1, double arg2);
@@ -15168,9 +15295,11 @@ int scalar_cmp_exp_unordered (double arg1, double arg2);
 
 bool scalar_test_data_class (float source, const int condition);
 bool scalar_test_data_class (double source, const int condition);
+bool scalar_test_data_class (__ieee128 source, const int condition);
 
 bool scalar_test_neg (float source);
 bool scalar_test_neg (double source);
+bool scalar_test_neg (__ieee128 source);
 
 int __builtin_byte_in_set (unsigned char u, unsigned long long set);
 int __builtin_byte_in_range (unsigned char u, unsigned int range);
@@ -15210,25 +15339,38 @@ functions require a 64-bit environment supporting ISA 3.0 or later.
 The @code{scalar_extract_exp} and @code{scalar_extract_sig} built-in
 functions return the significand and the biased exponent value
 respectively of their @code{source} arguments.
-Within the result returned by @code{scalar_extract_sig},
-the @code{0x10000000000000} bit is set if the
+When supplied with a 64-bit @code{source} argument, the
+result returned by @code{scalar_extract_sig} has
+the @code{0x0010000000000000} bit set if the
 function's @code{source} argument is in normalized form.
 Otherwise, this bit is set to 0.
+When supplied with a 128-bit @code{source} argument, the
+@code{0x00010000000000000000000000000000} bit of the result is
+treated similarly.
 Note that the sign of the significand is not represented in the result
 returned from the @code{scalar_extract_sig} function.  Use the
 @code{scalar_test_neg} function to test the sign of its @code{double}
 argument.
 
-The @code{scalar_insert_exp} 
-function requires a 64-bit environment supporting ISA 3.0 or later.
-The @code{scalar_insert_exp} built-in function returns a double-precision
+The @code{scalar_insert_exp}
+functions require a 64-bit environment supporting ISA 3.0 or later.
+When supplied with a 64-bit first argument, the
+@code{scalar_insert_exp} built-in function returns a double-precision
 floating point value that is constructed by assembling the values of its
 @code{significand} and @code{exponent} arguments.  The sign of the
 result is copied from the most significant bit of the
 @code{significand} argument.  The significand and exponent components
 of the result are composed of the least significant 11 bits of the
 @code{exponent} argument and the least significant 52 bits of the
-@code{significand} argument.
+@code{significand} argument respectively.
+
+When supplied with a 128-bit first argument, the
+@code{scalar_insert_exp} built-in function returns a quad-precision
+ieee floating point value.  The sign bit of the result is copied from
+the most significant bit of the @code{significand} argument.
+The significand and exponent components of the result are composed of
+the least significant 15 bits of the @code{exponent} argument and the
+least significant 112 bits of the @code{significand} argument respectively.
 
 The @code{scalar_cmp_exp_gt}, @code{scalar_cmp_exp_lt},
 @code{scalar_cmp_exp_eq}, and @code{scalar_cmp_exp_unordered} built-in
@@ -15335,11 +15477,35 @@ vector bool short vec_cmpnez (vector unsigned short arg1, vector unsigned short 
 vector bool int vec_cmpnez (vector signed int arg1, vector signed int arg2);
 vector bool int vec_cmpnez (vector unsigned int, vector unsigned int);
 
+vector signed char vec_cnttz (vector signed char);
+vector unsigned char vec_cnttz (vector unsigned char);
+vector signed short vec_cnttz (vector signed short);
+vector unsigned short vec_cnttz (vector unsigned short);
+vector signed int vec_cnttz (vector signed int);
+vector unsigned int vec_cnttz (vector unsigned int);
+vector signed long long vec_cnttz (vector signed long long);
+vector unsigned long long vec_cnttz (vector unsigned long long);
+
 signed int vec_cntlz_lsbb (vector signed char);
 signed int vec_cntlz_lsbb (vector unsigned char);
 
 signed int vec_cnttz_lsbb (vector signed char);
 signed int vec_cnttz_lsbb (vector unsigned char);
+
+vector unsigned short vec_pack_to_short_fp32 (vector float, vector float);
+
+vector signed char vec_xl_be (signed long long, signed char *);
+vector unsigned char vec_xl_be (signed long long, unsigned char *);
+vector signed int vec_xl_be (signed long long, signed int *);
+vector unsigned int vec_xl_be (signed long long, unsigned int *);
+vector signed __int128 vec_xl_be (signed long long, signed __int128 *);
+vector unsigned __int128 vec_xl_be (signed long long, unsigned __int128 *);
+vector signed long long vec_xl_be (signed long long, signed long long *);
+vector unsigned long long vec_xl_be (signed long long, unsigned long long *);
+vector signed short vec_xl_be (signed long long, signed short *);
+vector unsigned short vec_xl_be (signed long long, unsigned short *);
+vector double vec_xl_be (signed long long, double *);
+vector float vec_xl_be (signed long long, float *);
 
 vector signed char vec_xl_len (signed char *addr, size_t len);
 vector unsigned char vec_xl_len (unsigned char *addr, size_t len);
@@ -15872,6 +16038,22 @@ vector signed long vec_cts (vector double, const int);
 vector unsigned int vec_ctu (vector float, const int);
 vector unsigned long vec_ctu (vector double, const int);
 
+vector double vec_doublee (vector float);
+vector double vec_doublee (vector signed int);
+vector double vec_doublee (vector unsigned int);
+
+vector double vec_doubleo (vector float);
+vector double vec_doubleo (vector signed int);
+vector double vec_doubleo (vector unsigned int);
+
+vector double vec_doubleh (vector float);
+vector double vec_doubleh (vector signed int);
+vector double vec_doubleh (vector unsigned int);
+
+vector double vec_doublel (vector float);
+vector double vec_doublel (vector signed int);
+vector double vec_doublel (vector unsigned int);
+
 void vec_dss (const int);
 
 void vec_dssall (void);
@@ -15963,6 +16145,20 @@ void vec_dstt (const float *, int, const int);
 vector float vec_expte (vector float);
 
 vector float vec_floor (vector float);
+
+vector float vec_float (vector signed int);
+vector float vec_float (vector unsigned int);
+
+vector float vec_float2 (vector signed long long, vector signed long long);
+vector float vec_float2 (vector unsigned long long, vector signed long long);
+
+vector float vec_floate (vector double);
+vector float vec_floate (vector signed long long);
+vector float vec_floate (vector unsigned long long);
+
+vector float vec_floato (vector double);
+vector float vec_floato (vector signed long long);
+vector float vec_floato (vector unsigned long long);
 
 vector float vec_ld (int, const vector float *);
 vector float vec_ld (int, const float *);
@@ -16321,6 +16517,10 @@ vector signed short vec_mule (vector signed char,
 vector unsigned int vec_mule (vector unsigned short,
                               vector unsigned short);
 vector signed int vec_mule (vector signed short, vector signed short);
+vector unsigned long long vec_mule (vector unsigned int,
+                                    vector unsigned int);
+vector signed long long vec_mule (vector signed int,
+                                  vector signed int);
 
 vector signed int vec_vmulesh (vector signed short,
                                vector signed short);
@@ -16340,6 +16540,10 @@ vector signed short vec_mulo (vector signed char, vector signed char);
 vector unsigned int vec_mulo (vector unsigned short,
                               vector unsigned short);
 vector signed int vec_mulo (vector signed short, vector signed short);
+vector unsigned long long vec_mulo (vector unsigned int,
+                                    vector unsigned int);
+vector signed long long vec_mulo (vector signed int,
+                                  vector signed int);
 
 vector signed int vec_vmulosh (vector signed short,
                                vector signed short);
@@ -16498,6 +16702,19 @@ vector bool char vec_perm (vector bool char,
 
 vector float vec_re (vector float);
 
+vector bool char vec_reve (vector bool char);
+vector signed char vec_reve (vector signed char);
+vector unsigned char vec_reve (vector unsigned char);
+vector bool int vec_reve (vector bool int);
+vector signed int vec_reve (vector signed int);
+vector unsigned int vec_reve (vector unsigned int);
+vector bool long long vec_reve (vector bool long long);
+vector signed long long vec_reve (vector signed long long);
+vector unsigned long long vec_reve (vector unsigned long long);
+vector bool short vec_reve (vector bool short);
+vector signed short vec_reve (vector signed short);
+vector unsigned short vec_reve (vector unsigned short);
+
 vector signed char vec_rl (vector signed char,
                            vector unsigned char);
 vector unsigned char vec_rl (vector unsigned char,
@@ -16585,6 +16802,13 @@ vector bool char vec_sel (vector bool char,
                           vector bool char,
                           vector unsigned char);
 
+vector signed long long vec_signed (vector double);
+vector signed int vec_signed (vector float);
+
+vector signed int vec_signede (vector double);
+vector signed int vec_signedo (vector double);
+vector signed int vec_signed2 (vector double, vector double);
+
 vector signed char vec_sl (vector signed char,
                            vector unsigned char);
 vector unsigned char vec_sl (vector unsigned char,
@@ -16640,6 +16864,31 @@ vector unsigned char vec_sld (vector unsigned char,
 vector bool char vec_sld (vector bool char,
                           vector bool char,
                           const int);
+
+vector signed char vec_sldw (vector signed char,
+                             vector signed char,
+                             const int);
+vector unsigned char vec_sldw (vector unsigned char,
+                               vector unsigned char,
+                               const int);
+vector signed short vec_sldw (vector signed short,
+                              vector signed short,
+                              const int);
+vector unsigned short vec_sldw (vector unsigned short,
+                                vector unsigned short,
+                                const int);
+vector signed int vec_sldw (vector signed int,
+                            vector signed int,
+                            const int);
+vector unsigned int vec_sldw (vector unsigned int,
+                              vector unsigned int,
+                              const int);
+vector signed long long vec_sldw (vector signed long long,
+                                  vector signed long long,
+                                  const int);
+vector unsigned long long vec_sldw (vector unsigned long long,
+                                    vector unsigned long long,
+                                    const int);
 
 vector signed int vec_sll (vector signed int,
                            vector unsigned int);
@@ -17011,7 +17260,34 @@ vector unsigned char vec_vsububm (vector unsigned char,
 vector unsigned char vec_vsububm (vector unsigned char,
                                   vector unsigned char);
 
+vector signed int vec_subc (vector signed int, vector signed int);
 vector unsigned int vec_subc (vector unsigned int, vector unsigned int);
+vector signed __int128 vec_subc (vector signed __int128,
+                                 vector signed __int128);
+vector unsigned __int128 vec_subc (vector unsigned __int128,
+                                   vector unsigned __int128);
+
+vector signed int vec_sube (vector signed int, vector signed int,
+                            vector signed int);
+vector unsigned int vec_sube (vector unsigned int, vector unsigned int,
+                              vector unsigned int);
+vector signed __int128 vec_sube (vector signed __int128,
+                                 vector signed __int128,
+                                 vector signed __int128);
+vector unsigned __int128 vec_sube (vector unsigned __int128,
+                                   vector unsigned __int128,
+                                   vector unsigned __int128);
+
+vector signed int vec_subec (vector signed int, vector signed int,
+                             vector signed int);
+vector unsigned int vec_subec (vector unsigned int, vector unsigned int,
+                               vector unsigned int);
+vector signed __int128 vec_subec (vector signed __int128,
+                                  vector signed __int128,
+                                  vector signed __int128);
+vector unsigned __int128 vec_subec (vector unsigned __int128,
+                                    vector unsigned __int128,
+                                    vector unsigned __int128);
 
 vector unsigned char vec_subs (vector bool char, vector unsigned char);
 vector unsigned char vec_subs (vector unsigned char, vector bool char);
@@ -17087,6 +17363,13 @@ vector signed int vec_sum2s (vector signed int, vector signed int);
 vector signed int vec_sums (vector signed int, vector signed int);
 
 vector float vec_trunc (vector float);
+
+vector signed long long vec_unsigned (vector double);
+vector signed int vec_unsigned (vector float);
+
+vector signed int vec_unsignede (vector double);
+vector signed int vec_unsignedo (vector double);
+vector signed int vec_unsigned2 (vector double, vector double);
 
 vector signed short vec_unpackh (vector signed char);
 vector bool short vec_unpackh (vector bool char);
@@ -17909,6 +18192,8 @@ vector long long vec_vbpermq (vector signed char, vector signed char);
 vector long long vec_vbpermq (vector unsigned char, vector unsigned char);
 
 vector unsigned char vec_bperm (vector unsigned char, vector unsigned char);
+vector unsigned char vec_bperm (vector unsigned long long,
+                                vector unsigned char);
 vector unsigned long long vec_bperm (vector unsigned __int128,
                                      vector unsigned char);
 
@@ -18088,6 +18373,9 @@ vector bool short vec_cmpne (vector bool short, vector bool short);
 vector bool int vec_cmpne (vector bool int, vector bool int);
 vector bool long long vec_cmpne (vector bool long long, vector bool long long);
 
+vector float vec_extract_fp32_from_shorth (vector unsigned short);
+vector float vec_extract_fp32_from_shortl (vector unsigned short);
+
 vector long long vec_vctz (vector long long);
 vector unsigned long long vec_vctz (vector unsigned long long);
 vector int vec_vctz (vector int);
@@ -18117,6 +18405,13 @@ vector unsigned char vec_insert4b (vector unsigned int, vector unsigned char,
                                    const int);
 vector signed char vec_insert4b (long long, vector signed char, const int);
 vector unsigned char vec_insert4b (long long, vector unsigned char, const int);
+
+vector unsigned int vec_parity_lsbb (vector signed int);
+vector unsigned int vec_parity_lsbb (vector unsigned int);
+vector unsigned __int128 vec_parity_lsbb (vector signed __int128);
+vector unsigned __int128 vec_parity_lsbb (vector unsigned __int128);
+vector unsigned long long vec_parity_lsbb (vector signed long long);
+vector unsigned long long vec_parity_lsbb (vector unsigned long long);
 
 vector int vec_vprtyb (vector int);
 vector unsigned int vec_vprtyb (vector unsigned int);
@@ -18333,13 +18628,17 @@ of each element.
 If the ISA 3.0 instruction set additions (@option{-mcpu=power9})
 are available:
 @smallexample
+vector signed bool char vec_revb (vector signed char);
 vector signed char vec_revb (vector signed char);
 vector unsigned char vec_revb (vector unsigned char);
+vector bool short vec_revb (vector bool short);
 vector short vec_revb (vector short);
 vector unsigned short vec_revb (vector unsigned short);
+vector bool int vec_revb (vector bool int);
 vector int vec_revb (vector int);
 vector unsigned int vec_revb (vector unsigned int);
 vector float vec_revb (vector float);
+vector bool long long vec_revb (vector bool long long);
 vector long long vec_revb (vector long long);
 vector unsigned long long vec_revb (vector unsigned long long);
 vector double vec_revb (vector double);
@@ -19110,6 +19409,45 @@ v2si __builtin_vis_fpmin32 (v2si, v2si);
 v8qi __builtin_vis_fpminu8 (v8qi, v8qi);
 v4hi __builtin_vis_fpminu16 (v4hi, v4hi);
 v2si __builtin_vis_fpminu32 (v2si, v2si);
+@end smallexample
+
+When you use the @option{-mvis4b} switch, the VIS version 4.0B
+built-in functions also become available:
+
+@smallexample
+v8qi __builtin_vis_dictunpack8 (double, int);
+v4hi __builtin_vis_dictunpack16 (double, int);
+v2si __builtin_vis_dictunpack32 (double, int);
+
+long __builtin_vis_fpcmple8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpgt8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpeq8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpne8shl (v8qi, v8qi, int);
+
+long __builtin_vis_fpcmple16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpgt16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpeq16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpne16shl (v4hi, v4hi, int);
+
+long __builtin_vis_fpcmple32shl (v2si, v2si, int);
+long __builtin_vis_fpcmpgt32shl (v2si, v2si, int);
+long __builtin_vis_fpcmpeq32shl (v2si, v2si, int);
+long __builtin_vis_fpcmpne32shl (v2si, v2si, int);
+
+long __builtin_vis_fpcmpule8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpugt8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpule16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpugt16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpule32shl (v2si, v2si, int);
+long __builtin_vis_fpcmpugt32shl (v2si, v2si, int);
+
+long __builtin_vis_fpcmpde8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpde16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpde32shl (v2si, v2si, int);
+
+long __builtin_vis_fpcmpur8shl (v8qi, v8qi, int);
+long __builtin_vis_fpcmpur16shl (v4hi, v4hi, int);
+long __builtin_vis_fpcmpur32shl (v2si, v2si, int);
 @end smallexample
 
 @node SPU Built-in Functions
@@ -22612,6 +22950,12 @@ true, else it is false.
 @item __underlying_type (type)
 The underlying type of @code{type}.  Requires: @code{type} shall be
 an enumeration type ([dcl.enum]).
+
+@item __integer_pack (length)
+When used as the pattern of a pack expansion within a template
+definition, expands to a template argument pack containing integers
+from @code{0} to @code{length-1}.  This is provided for efficient
+implementation of @code{std::make_integer_sequence}.
 
 @end table
 

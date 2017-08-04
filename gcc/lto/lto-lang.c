@@ -48,6 +48,8 @@ static tree handle_sentinel_attribute (tree *, tree, tree, int, bool *);
 static tree handle_type_generic_attribute (tree *, tree, tree, int, bool *);
 static tree handle_transaction_pure_attribute (tree *, tree, tree, int, bool *);
 static tree handle_returns_twice_attribute (tree *, tree, tree, int, bool *);
+static tree handle_patchable_function_entry_attribute (tree *, tree, tree,
+						       int, bool *);
 static tree ignore_attribute (tree *, tree, tree, int, bool *);
 
 static tree handle_format_attribute (tree *, tree, tree, int, bool *);
@@ -76,6 +78,9 @@ const struct attribute_spec lto_attribute_table[] =
 			      handle_nonnull_attribute, false },
   { "nothrow",                0, 0, true,  false, false,
 			      handle_nothrow_attribute, false },
+  { "patchable_function_entry", 1, 2, true, false, false,
+			      handle_patchable_function_entry_attribute,
+			      false },
   { "returns_twice",          0, 0, true,  false, false,
 			      handle_returns_twice_attribute, false },
   { "sentinel",               0, 1, false, true, true,
@@ -470,6 +475,13 @@ handle_returns_twice_attribute (tree *node, tree ARG_UNUSED (name),
 
   DECL_IS_RETURNS_TWICE (*node) = 1;
 
+  return NULL_TREE;
+}
+
+static tree
+handle_patchable_function_entry_attribute (tree *, tree, tree, int, bool *)
+{
+  /* Nothing to be done here.  */
   return NULL_TREE;
 }
 
@@ -1220,13 +1232,17 @@ lto_init (void)
   /* In the C++ front-end, fileptr_type_node is defined as a variant
      copy of ptr_type_node, rather than ptr_node itself.  The
      distinction should only be relevant to the front-end, so we
-     always use the C definition here in lto1.  */
-  gcc_assert (fileptr_type_node == ptr_type_node);
-  gcc_assert (TYPE_MAIN_VARIANT (fileptr_type_node) == ptr_type_node);
-  /* Likewise for const struct tm*.  */
-  gcc_assert (const_tm_ptr_type_node == const_ptr_type_node);
-  gcc_assert (TYPE_MAIN_VARIANT (const_tm_ptr_type_node)
-	      == const_ptr_type_node);
+     always use the C definition here in lto1.
+     Likewise for const struct tm*.  */
+  for (unsigned i = 0;
+       i < sizeof (builtin_structptr_types) / sizeof (builtin_structptr_type);
+       ++i)
+    {
+      gcc_assert (builtin_structptr_types[i].node
+		  == builtin_structptr_types[i].base);
+      gcc_assert (TYPE_MAIN_VARIANT (builtin_structptr_types[i].node)
+		  == builtin_structptr_types[i].base);
+    }
 
   lto_build_c_type_nodes ();
   gcc_assert (va_list_type_node);

@@ -163,6 +163,13 @@ bool flag_stack_usage_info = false
 Variable
 int flag_debug_asm
 
+; How many NOP insns to place at each function entry by default
+Variable
+HOST_WIDE_INT function_entry_patch_area_size
+
+; And how far the real asm entry point is into this area
+Variable
+HOST_WIDE_INT function_entry_patch_area_start
 
 ; Balance between GNAT encodings and standard DWARF to emit.
 Variable
@@ -224,7 +231,7 @@ unsigned int flag_sanitize
 
 ; What sanitizers should recover from errors
 Variable
-unsigned int flag_sanitize_recover = (SANITIZE_UNDEFINED | SANITIZE_NONDEFAULT | SANITIZE_KERNEL_ADDRESS) & ~(SANITIZE_UNREACHABLE | SANITIZE_RETURN)
+unsigned int flag_sanitize_recover = (SANITIZE_UNDEFINED | SANITIZE_UNDEFINED_NONDEFAULT | SANITIZE_KERNEL_ADDRESS) & ~(SANITIZE_UNREACHABLE | SANITIZE_RETURN)
 
 fsanitize-coverage=trace-pc
 Common Report Var(flag_sanitize_coverage)
@@ -546,7 +553,7 @@ Common Var(warn_array_bounds) Warning
 Warn if an array is accessed out of bounds.
 
 Warray-bounds=
-Common Joined RejectNegative UInteger Var(warn_array_bounds) Warning
+Common Joined RejectNegative UInteger Var(warn_array_bounds) Warning IntegerRange(0, 2)
 Warn if an array is accessed out of bounds.
 
 Wattributes
@@ -601,7 +608,7 @@ Wimplicit-fallthrough
 Common Alias(Wimplicit-fallthrough=,3,0) Warning
 
 Wimplicit-fallthrough=
-Common Var(warn_implicit_fallthrough) RejectNegative Joined UInteger Warning
+Common Var(warn_implicit_fallthrough) RejectNegative Joined UInteger Warning IntegerRange(0, 5)
 Warn when a switch case falls through.
 
 Winline
@@ -1778,7 +1785,7 @@ Specify the algorithm to partition symbols and vars at linktime.
 
 ; The initial value of -1 comes from Z_DEFAULT_COMPRESSION in zlib.h.
 flto-compression-level=
-Common Joined RejectNegative UInteger Var(flag_lto_compression_level) Init(-1)
+Common Joined RejectNegative UInteger Var(flag_lto_compression_level) Init(-1) IntegerRange(0, 9)
 -flto-compression-level=<number>	Use zlib compression level <number> for IL.
 
 flto-odr-type-merging
@@ -1969,6 +1976,10 @@ fprofile
 Common Report Var(profile_flag)
 Enable basic program profiling code.
 
+fprofile-abs-path
+Common Report Var(profile_abs_path_flag)
+Generate absolute source path names for gcov.
+
 fprofile-arcs
 Common Report Var(profile_arc_flag)
 Insert arc-based program profiling code.
@@ -2026,6 +2037,10 @@ fprofile-reorder-functions
 Common Report Var(flag_profile_reorder_functions)
 Enable function reordering that improves code placement.
 
+fpatchable-function-entry=
+Common Joined Optimization
+Insert NOP instructions at each function entry.
+
 frandom-seed
 Common Var(common_deferred_options) Defer
 
@@ -2057,7 +2072,7 @@ Tell DSE that the storage for a C++ object is dead when the constructor
 starts and when the destructor finishes.
 
 flifetime-dse=
-Common Joined RejectNegative UInteger Var(flag_lifetime_dse) Optimization
+Common Joined RejectNegative UInteger Var(flag_lifetime_dse) Optimization IntegerRange(0, 2)
 
 flive-range-shrinkage
 Common Report Var(flag_live_range_shrinkage) Init(0) Optimization
@@ -2681,8 +2696,9 @@ fvar-tracking-uninit
 Common Report Var(flag_var_tracking_uninit) PerFunction
 Perform variable tracking and also tag variables that are uninitialized.
 
+; Alias to enable both -ftree-loop-vectorize and -ftree-slp-vectorize.
 ftree-vectorize
-Common Report Var(flag_tree_vectorize) Optimization
+Common Report Optimization
 Enable vectorization on trees.
 
 ftree-vectorizer-verbose=
@@ -2690,11 +2706,11 @@ Common Joined RejectNegative Ignore
 Does nothing.  Preserved for backward compatibility.
 
 ftree-loop-vectorize
-Common Report Var(flag_tree_loop_vectorize) Optimization
+Common Report Var(flag_tree_loop_vectorize) Optimization EnabledBy(ftree-vectorize)
 Enable loop vectorization on trees.
 
 ftree-slp-vectorize
-Common Report Var(flag_tree_slp_vectorize) Optimization
+Common Report Var(flag_tree_slp_vectorize) Optimization EnabledBy(ftree-vectorize)
 Enable basic block vectorization (SLP) on trees.
 
 fvect-cost-model=

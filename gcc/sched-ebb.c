@@ -622,7 +622,7 @@ schedule_ebbs (void)
   if (n_basic_blocks_for_fn (cfun) == NUM_FIXED_BLOCKS)
     return;
 
-  if (profile_info && flag_branch_probabilities)
+  if (profile_info && profile_status_for_fn (cfun) == PROFILE_READ)
     probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY_FEEDBACK);
   else
     probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY);
@@ -648,7 +648,8 @@ schedule_ebbs (void)
 	  e = find_fallthru_edge (bb->succs);
 	  if (! e)
 	    break;
-	  if (e->probability <= probability_cutoff)
+	  if (e->probability.initialized_p ()
+	      && e->probability.to_reg_br_prob_base () <= probability_cutoff)
 	    break;
 	  if (e->dest->flags & BB_DISABLE_SCHEDULE)
  	    break;

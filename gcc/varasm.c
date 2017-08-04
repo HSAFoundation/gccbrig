@@ -1670,10 +1670,6 @@ decide_function_section (tree decl)
 {
   first_function_block_is_cold = false;
 
-  if (flag_reorder_blocks_and_partition)
-    /* We will decide in assemble_start_function.  */
-    return;
-
  if (DECL_SECTION_NAME (decl))
     {
       struct cgraph_node *node = cgraph_node::get (current_function_decl);
@@ -1711,7 +1707,7 @@ assemble_start_function (tree decl, const char *fnname)
   char tmp_label[100];
   bool hot_label_written = false;
 
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     {
       ASM_GENERATE_INTERNAL_LABEL (tmp_label, "LHOTB", const_labelno);
       crtl->subsections.hot_section_label = ggc_strdup (tmp_label);
@@ -1746,7 +1742,7 @@ assemble_start_function (tree decl, const char *fnname)
      has both hot and cold sections, because we don't want to re-set
      the alignment when the section switch happens mid-function.  */
 
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     {
       first_function_block_is_cold = false;
 
@@ -1773,8 +1769,7 @@ assemble_start_function (tree decl, const char *fnname)
   /* Switch to the correct text section for the start of the function.  */
 
   switch_to_section (function_section (decl));
-  if (flag_reorder_blocks_and_partition
-      && !hot_label_written)
+  if (crtl->has_bb_partition && !hot_label_written)
     ASM_OUTPUT_LABEL (asm_out_file, crtl->subsections.hot_section_label);
 
   /* Tell assembler to move to target machine's alignment for functions.  */
@@ -1830,6 +1825,46 @@ assemble_start_function (tree decl, const char *fnname)
   if (DECL_PRESERVE_P (decl))
     targetm.asm_out.mark_decl_preserved (fnname);
 
+  unsigned HOST_WIDE_INT patch_area_size = function_entry_patch_area_size;
+  unsigned HOST_WIDE_INT patch_area_entry = function_entry_patch_area_start;
+
+  tree patchable_function_entry_attr
+    = lookup_attribute ("patchable_function_entry", DECL_ATTRIBUTES (decl));
+  if (patchable_function_entry_attr)
+    {
+      tree pp_val = TREE_VALUE (patchable_function_entry_attr);
+      tree patchable_function_entry_value1 = TREE_VALUE (pp_val);
+
+      if (tree_fits_uhwi_p (patchable_function_entry_value1))
+	patch_area_size = tree_to_uhwi (patchable_function_entry_value1);
+      else
+	gcc_unreachable ();
+
+      patch_area_entry = 0;
+      if (list_length (pp_val) > 1)
+	{
+	  tree patchable_function_entry_value2 =
+	    TREE_VALUE (TREE_CHAIN (pp_val));
+
+	  if (tree_fits_uhwi_p (patchable_function_entry_value2))
+	    patch_area_entry = tree_to_uhwi (patchable_function_entry_value2);
+	  else
+	    gcc_unreachable ();
+	}
+    }
+
+  if (patch_area_entry > patch_area_size)
+    {
+      if (patch_area_size > 0)
+	warning (OPT_Wattributes, "Patchable function entry > size");
+      patch_area_entry = 0;
+    }
+
+  /* Emit the patching area before the entry label, if any.  */
+  if (patch_area_entry > 0)
+    targetm.asm_out.print_patchable_function_entry (asm_out_file,
+						    patch_area_entry, true);
+
   /* Do any machine/system dependent processing of the function name.  */
 #ifdef ASM_DECLARE_FUNCTION_NAME
   ASM_DECLARE_FUNCTION_NAME (asm_out_file, fnname, current_function_decl);
@@ -1837,6 +1872,12 @@ assemble_start_function (tree decl, const char *fnname)
   /* Standard thing is just output label for the function.  */
   ASM_OUTPUT_FUNCTION_LABEL (asm_out_file, fnname, current_function_decl);
 #endif /* ASM_DECLARE_FUNCTION_NAME */
+
+  /* And the area after the label.  Record it if we haven't done so yet.  */
+  if (patch_area_size > patch_area_entry)
+    targetm.asm_out.print_patchable_function_entry (asm_out_file,
+					     patch_area_size-patch_area_entry,
+						    patch_area_entry == 0);
 
   if (lookup_attribute ("no_split_stack", DECL_ATTRIBUTES (decl)))
     saw_no_split_stack = true;
@@ -1850,7 +1891,7 @@ assemble_end_function (tree decl, const char *fnname ATTRIBUTE_UNUSED)
 {
 #ifdef ASM_DECLARE_FUNCTION_SIZE
   /* We could have switched section in the middle of the function.  */
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     switch_to_section (function_section (decl));
   ASM_DECLARE_FUNCTION_SIZE (asm_out_file, fnname, decl);
 #endif
@@ -1861,7 +1902,7 @@ assemble_end_function (tree decl, const char *fnname ATTRIBUTE_UNUSED)
     }
   /* Output labels for end of hot/cold text sections (to be used by
      debug info.)  */
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     {
       section *save_text_section;
 
@@ -2408,7 +2449,7 @@ assemble_external (tree decl ATTRIBUTE_UNUSED)
   gcc_assert (asm_out_file);
 
   /* In a perfect world, the following condition would be true.
-     Sadly, the Java and Go front ends emit assembly *from the front end*,
+     Sadly, the Go front end emit assembly *from the front end*,
      bypassing the call graph.  See PR52739.  Fix before GCC 4.8.  */
 #if 0
   /* This function should only be called if we are expanding, or have

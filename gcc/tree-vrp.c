@@ -796,7 +796,8 @@ get_single_symbol (tree t, bool *neg, tree *inv)
   if (TREE_CODE (t) != SSA_NAME)
     return NULL_TREE;
 
-  gcc_assert (! inv_ || ! TREE_OVERFLOW_P (inv_));
+  if (inv_ && TREE_OVERFLOW_P (inv_))
+    inv_ = drop_tree_overflow (inv_);
 
   *neg = neg_;
   *inv = inv_;
@@ -4417,7 +4418,7 @@ dump_value_range (FILE *file, const value_range *vr)
 	  && vrp_val_is_min (vr->min))
 	fprintf (file, "-INF");
       else
-	print_generic_expr (file, vr->min, 0);
+	print_generic_expr (file, vr->min);
 
       fprintf (file, ", ");
 
@@ -4425,7 +4426,7 @@ dump_value_range (FILE *file, const value_range *vr)
 	  && vrp_val_is_max (vr->max))
 	fprintf (file, "+INF");
       else
-	print_generic_expr (file, vr->max, 0);
+	print_generic_expr (file, vr->max);
 
       fprintf (file, "]");
 
@@ -4438,7 +4439,7 @@ dump_value_range (FILE *file, const value_range *vr)
 
 	  EXECUTE_IF_SET_IN_BITMAP (vr->equiv, 0, i, bi)
 	    {
-	      print_generic_expr (file, ssa_name (i), 0);
+	      print_generic_expr (file, ssa_name (i));
 	      fprintf (file, " ");
 	      c++;
 	    }
@@ -4474,7 +4475,7 @@ dump_all_value_ranges (FILE *file)
     {
       if (vr_value[i])
 	{
-	  print_generic_expr (file, ssa_name (i), 0);
+	  print_generic_expr (file, ssa_name (i));
 	  fprintf (file, ": ");
 	  dump_value_range (file, vr_value[i]);
 	  fprintf (file, "\n");
@@ -4587,14 +4588,14 @@ dump_asserts_for (FILE *file, tree name)
   assert_locus *loc;
 
   fprintf (file, "Assertions to be inserted for ");
-  print_generic_expr (file, name, 0);
+  print_generic_expr (file, name);
   fprintf (file, "\n");
 
   loc = asserts_for[SSA_NAME_VERSION (name)];
   while (loc)
     {
       fprintf (file, "\t");
-      print_gimple_stmt (file, gsi_stmt (loc->si), 0, 0);
+      print_gimple_stmt (file, gsi_stmt (loc->si), 0);
       fprintf (file, "\n\tBB #%d", loc->bb->index);
       if (loc->e)
 	{
@@ -4603,9 +4604,9 @@ dump_asserts_for (FILE *file, tree name)
 	  dump_edge_info (file, loc->e, dump_flags, 0);
 	}
       fprintf (file, "\n\tPREDICATE: ");
-      print_generic_expr (file, loc->expr, 0);
+      print_generic_expr (file, loc->expr);
       fprintf (file, " %s ", get_tree_code_name (loc->comp_code));
-      print_generic_expr (file, loc->val, 0);
+      print_generic_expr (file, loc->val);
       fprintf (file, "\n\n");
       loc = loc->next;
     }
@@ -5061,9 +5062,9 @@ register_edge_assert_for_2 (tree name, edge e,
 	  if (dump_file)
 	    {
 	      fprintf (dump_file, "Adding assert for ");
-	      print_generic_expr (dump_file, name3, 0);
+	      print_generic_expr (dump_file, name3);
 	      fprintf (dump_file, " from ");
-	      print_generic_expr (dump_file, tmp, 0);
+	      print_generic_expr (dump_file, tmp);
 	      fprintf (dump_file, "\n");
 	    }
 
@@ -5088,9 +5089,9 @@ register_edge_assert_for_2 (tree name, edge e,
 	  if (dump_file)
 	    {
 	      fprintf (dump_file, "Adding assert for ");
-	      print_generic_expr (dump_file, name2, 0);
+	      print_generic_expr (dump_file, name2);
 	      fprintf (dump_file, " from ");
-	      print_generic_expr (dump_file, tmp, 0);
+	      print_generic_expr (dump_file, tmp);
 	      fprintf (dump_file, "\n");
 	    }
 
@@ -5220,9 +5221,9 @@ register_edge_assert_for_2 (tree name, edge e,
 	      if (dump_file)
 		{
 		  fprintf (dump_file, "Adding assert for ");
-		  print_generic_expr (dump_file, name2, 0);
+		  print_generic_expr (dump_file, name2);
 		  fprintf (dump_file, " from ");
-		  print_generic_expr (dump_file, tmp, 0);
+		  print_generic_expr (dump_file, tmp);
 		  fprintf (dump_file, "\n");
 		}
 
@@ -5294,9 +5295,9 @@ register_edge_assert_for_2 (tree name, edge e,
 	      if (dump_file)
 		{
 		  fprintf (dump_file, "Adding assert for ");
-		  print_generic_expr (dump_file, name2, 0);
+		  print_generic_expr (dump_file, name2);
 		  fprintf (dump_file, " from ");
-		  print_generic_expr (dump_file, tmp, 0);
+		  print_generic_expr (dump_file, tmp);
 		  fprintf (dump_file, "\n");
 		}
 
@@ -5533,9 +5534,9 @@ register_edge_assert_for_2 (tree name, edge e,
 		    if (dump_file)
 		      {
 			fprintf (dump_file, "Adding assert for ");
-			print_generic_expr (dump_file, names[i], 0);
+			print_generic_expr (dump_file, names[i]);
 			fprintf (dump_file, " from ");
-			print_generic_expr (dump_file, tmp, 0);
+			print_generic_expr (dump_file, tmp);
 			fprintf (dump_file, "\n");
 		      }
 
@@ -5628,6 +5629,81 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
     }
 }
 
+/* Check if comparison
+     NAME COND_OP INTEGER_CST
+   has a form of
+     (X & 11...100..0) COND_OP XX...X00...0
+   Such comparison can yield assertions like
+     X >= XX...X00...0
+     X <= XX...X11...1
+   in case of COND_OP being NE_EXPR or
+     X < XX...X00...0
+     X > XX...X11...1
+   in case of EQ_EXPR.  */
+
+static bool
+is_masked_range_test (tree name, tree valt, enum tree_code cond_code,
+		      tree *new_name, tree *low, enum tree_code *low_code,
+		      tree *high, enum tree_code *high_code)
+{
+  gimple *def_stmt = SSA_NAME_DEF_STMT (name);
+
+  if (!is_gimple_assign (def_stmt)
+      || gimple_assign_rhs_code (def_stmt) != BIT_AND_EXPR)
+    return false;
+
+  tree t = gimple_assign_rhs1 (def_stmt);
+  tree maskt = gimple_assign_rhs2 (def_stmt);
+  if (TREE_CODE (t) != SSA_NAME || TREE_CODE (maskt) != INTEGER_CST)
+    return false;
+
+  wide_int mask = maskt;
+  wide_int inv_mask = ~mask;
+  wide_int val = valt;  // Assume VALT is INTEGER_CST
+
+  if ((inv_mask & (inv_mask + 1)) != 0
+      || (val & mask) != val)
+    return false;
+
+  bool is_range = cond_code == EQ_EXPR;
+
+  tree type = TREE_TYPE (t);
+  wide_int min = wi::min_value (type),
+    max = wi::max_value (type);
+
+  if (is_range)
+    {
+      *low_code = val == min ? ERROR_MARK : GE_EXPR;
+      *high_code = val == max ? ERROR_MARK : LE_EXPR;
+    }
+  else
+    {
+      /* We can still generate assertion if one of alternatives
+	 is known to always be false.  */
+      if (val == min)
+	{
+	  *low_code = (enum tree_code) 0;
+	  *high_code = GT_EXPR;
+	}
+      else if ((val | inv_mask) == max)
+	{
+	  *low_code = LT_EXPR;
+	  *high_code = (enum tree_code) 0;
+	}
+      else
+	return false;
+    }
+
+  *new_name = t;
+  *low = wide_int_to_tree (type, val);
+  *high = wide_int_to_tree (type, val | inv_mask);
+
+  if (wi::neg_p (val, TYPE_SIGN (type)))
+    std::swap (*low, *high);
+
+  return true;
+}
+
 /* Try to register an edge assertion for SSA name NAME on edge E for
    the condition COND contributing to the conditional jump pointed to by
    SI.  */
@@ -5698,6 +5774,24 @@ register_edge_assert_for (tree name, edge e,
 	  tree op1 = gimple_assign_rhs2 (def_stmt);
 	  register_edge_assert_for_1 (op0, EQ_EXPR, e, asserts);
 	  register_edge_assert_for_1 (op1, EQ_EXPR, e, asserts);
+	}
+    }
+
+  /* Sometimes we can infer ranges from (NAME & MASK) == VALUE.  */
+  if ((comp_code == EQ_EXPR || comp_code == NE_EXPR)
+      && TREE_CODE (val) == INTEGER_CST)
+    {
+      enum tree_code low_code, high_code;
+      tree low, high;
+      if (is_masked_range_test (name, val, comp_code, &name, &low,
+				&low_code, &high, &high_code))
+	{
+	  if (low_code != ERROR_MARK)
+	    register_edge_assert_for_2 (name, e, low_code, name,
+					low, /*invert*/false, asserts);
+	  if (high_code != ERROR_MARK)
+	    register_edge_assert_for_2 (name, e, high_code, name,
+					high, /*invert*/false, asserts);
 	}
     }
 }
@@ -6300,20 +6394,37 @@ process_assert_insertions_for (tree name, assert_locus *loc)
   gcc_unreachable ();
 }
 
-/* Qsort helper for sorting assert locations.  */
+/* Qsort helper for sorting assert locations.  If stable is true, don't
+   use iterative_hash_expr because it can be unstable for -fcompare-debug,
+   on the other side some pointers might be NULL.  */
 
+template <bool stable>
 static int
 compare_assert_loc (const void *pa, const void *pb)
 {
   assert_locus * const a = *(assert_locus * const *)pa;
   assert_locus * const b = *(assert_locus * const *)pb;
-  if (! a->e && b->e)
+
+  /* If stable, some asserts might be optimized away already, sort
+     them last.  */
+  if (stable)
+    {
+      if (a == NULL)
+	return b != NULL;
+      else if (b == NULL)
+	return -1;
+    }
+
+  if (a->e == NULL && b->e != NULL)
     return 1;
-  else if (a->e && ! b->e)
+  else if (a->e != NULL && b->e == NULL)
     return -1;
 
+  /* After the above checks, we know that (a->e == NULL) == (b->e == NULL),
+     no need to test both a->e and b->e.  */
+
   /* Sort after destination index.  */
-  if (! a->e && ! b->e)
+  if (a->e == NULL)
     ;
   else if (a->e->dest->index > b->e->dest->index)
     return 1;
@@ -6326,14 +6437,30 @@ compare_assert_loc (const void *pa, const void *pb)
   else if (a->comp_code < b->comp_code)
     return -1;
 
+  hashval_t ha, hb;
+
+  /* E.g. if a->val is ADDR_EXPR of a VAR_DECL, iterative_hash_expr
+     uses DECL_UID of the VAR_DECL, so sorting might differ between
+     -g and -g0.  When doing the removal of redundant assert exprs
+     and commonization to successors, this does not matter, but for
+     the final sort needs to be stable.  */
+  if (stable)
+    {
+      ha = 0;
+      hb = 0;
+    }
+  else
+    {
+      ha = iterative_hash_expr (a->expr, iterative_hash_expr (a->val, 0));
+      hb = iterative_hash_expr (b->expr, iterative_hash_expr (b->val, 0));
+    }
+
   /* Break the tie using hashing and source/bb index.  */
-  hashval_t ha = iterative_hash_expr (a->expr, iterative_hash_expr (a->val, 0));
-  hashval_t hb = iterative_hash_expr (b->expr, iterative_hash_expr (b->val, 0));
   if (ha == hb)
-    return (a->e && b->e
+    return (a->e != NULL
 	    ? a->e->src->index - b->e->src->index
 	    : a->bb->index - b->bb->index);
-  return ha - hb;
+  return ha > hb ? 1 : -1;
 }
 
 /* Process all the insertions registered for every name N_i registered
@@ -6359,7 +6486,7 @@ process_assert_insertions (void)
       auto_vec<assert_locus *, 16> asserts;
       for (; loc; loc = loc->next)
 	asserts.safe_push (loc);
-      asserts.qsort (compare_assert_loc);
+      asserts.qsort (compare_assert_loc<false>);
 
       /* Push down common asserts to successors and remove redundant ones.  */
       unsigned ecnt = 0;
@@ -6413,11 +6540,14 @@ process_assert_insertions (void)
 	    }
 	}
 
+      /* The asserts vector sorting above might be unstable for
+	 -fcompare-debug, sort again to ensure a stable sort.  */
+      asserts.qsort (compare_assert_loc<true>);
       for (unsigned j = 0; j < asserts.length (); ++j)
 	{
 	  loc = asserts[j];
 	  if (! loc)
-	    continue;
+	    break;
 	  update_edges_p |= process_assert_insertions_for (ssa_name (i), loc);
 	  num_asserts++;
 	  free (loc);
@@ -7541,13 +7671,13 @@ vrp_visit_cond_stmt (gcond *stmt, edge *taken_edge_p)
       ssa_op_iter i;
 
       fprintf (dump_file, "\nVisiting conditional with predicate: ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
       fprintf (dump_file, "\nWith known ranges\n");
 
       FOR_EACH_SSA_TREE_OPERAND (use, stmt, i, SSA_OP_USE)
 	{
 	  fprintf (dump_file, "\t");
-	  print_generic_expr (dump_file, use, 0);
+	  print_generic_expr (dump_file, use);
 	  fprintf (dump_file, ": ");
 	  dump_value_range (dump_file, vr_value[SSA_NAME_VERSION (use)]);
 	}
@@ -7612,7 +7742,7 @@ vrp_visit_cond_stmt (gcond *stmt, edge *taken_edge_p)
       if (val == NULL_TREE)
 	fprintf (dump_file, "DON'T KNOW\n");
       else
-	print_generic_stmt (dump_file, val, 0);
+	print_generic_stmt (dump_file, val);
     }
 }
 
@@ -7829,7 +7959,7 @@ vrp_visit_switch_stmt (gswitch *stmt, edge *taken_edge_p)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "\nVisiting switch expression with operand ");
-      print_generic_expr (dump_file, op, 0);
+      print_generic_expr (dump_file, op);
       fprintf (dump_file, " with known range ");
       dump_value_range (dump_file, vr);
       fprintf (dump_file, "\n");
@@ -7893,7 +8023,7 @@ vrp_visit_switch_stmt (gswitch *stmt, edge *taken_edge_p)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "  will take edge to ");
-      print_generic_stmt (dump_file, CASE_LABEL (val), 0);
+      print_generic_stmt (dump_file, CASE_LABEL (val));
     }
 }
 
@@ -7948,7 +8078,7 @@ vrp_visit_stmt (gimple *stmt, edge *taken_edge_p, tree *output_p)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Found new range for ");
-	      print_generic_expr (dump_file, *output_p, 0);
+	      print_generic_expr (dump_file, *output_p);
 	      fprintf (dump_file, ": ");
 	      dump_value_range (dump_file, &vr);
 	      fprintf (dump_file, "\n");
@@ -9037,7 +9167,7 @@ vrp_visit_phi_node (gphi *phi)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Found new range for ");
-	  print_generic_expr (dump_file, lhs, 0);
+	  print_generic_expr (dump_file, lhs);
 	  fprintf (dump_file, ": ");
 	  dump_value_range (dump_file, &vr_result);
 	  fprintf (dump_file, "\n");
@@ -9579,7 +9709,7 @@ simplify_cond_using_ranges_1 (gcond *stmt)
 	      if (dump_file)
 		{
 		  fprintf (dump_file, "Simplified relational ");
-		  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
 		  fprintf (dump_file, " into ");
 		}
 
@@ -9591,7 +9721,7 @@ simplify_cond_using_ranges_1 (gcond *stmt)
 
 	      if (dump_file)
 		{
-		  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
 		  fprintf (dump_file, "\n");
 		}
 
@@ -9609,7 +9739,7 @@ simplify_cond_using_ranges_1 (gcond *stmt)
 	      if (dump_file)
 		{
 		  fprintf (dump_file, "Simplified relational ");
-		  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
 		  fprintf (dump_file, " into ");
 		}
 
@@ -9621,7 +9751,7 @@ simplify_cond_using_ranges_1 (gcond *stmt)
 
 	      if (dump_file)
 		{
-		  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
 		  fprintf (dump_file, "\n");
 		}
 
@@ -10335,9 +10465,9 @@ fold_predicate_in (gimple_stmt_iterator *si)
       if (dump_file)
 	{
 	  fprintf (dump_file, "Folding predicate ");
-	  print_gimple_expr (dump_file, stmt, 0, 0);
+	  print_gimple_expr (dump_file, stmt, 0);
 	  fprintf (dump_file, " to ");
-	  print_generic_expr (dump_file, val, 0);
+	  print_generic_expr (dump_file, val);
 	  fprintf (dump_file, "\n");
 	}
 
@@ -10817,7 +10947,7 @@ evrp_dom_walker::before_dom_children (basic_block bb)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Visiting controlling predicate ");
-	      print_gimple_stmt (dump_file, stmt, 0, 0);
+	      print_gimple_stmt (dump_file, stmt, 0);
 	    }
 	  /* Entering a new scope.  Try to see if we can find a VR
 	     here.  */
@@ -10870,7 +11000,7 @@ evrp_dom_walker::before_dom_children (basic_block bb)
       if (interesting && dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Visiting PHI node ");
-	  print_gimple_stmt (dump_file, phi, 0, 0);
+	  print_gimple_stmt (dump_file, phi, 0);
 	}
       if (!has_unvisited_preds
 	  && interesting)
@@ -10933,7 +11063,7 @@ evrp_dom_walker::before_dom_children (basic_block bb)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Visiting stmt ");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	  print_gimple_stmt (dump_file, stmt, 0);
 	}
 
       if (gcond *cond = dyn_cast <gcond *> (stmt))
@@ -11123,7 +11253,7 @@ evrp_dom_walker::push_value_range (tree var, value_range *vr)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "pushing new range for ");
-      print_generic_expr (dump_file, var, 0);
+      print_generic_expr (dump_file, var);
       fprintf (dump_file, ": ");
       dump_value_range (dump_file, vr);
       fprintf (dump_file, "\n");
@@ -11142,7 +11272,7 @@ evrp_dom_walker::pop_value_range (tree var)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "popping range for ");
-      print_generic_expr (dump_file, var, 0);
+      print_generic_expr (dump_file, var);
       fprintf (dump_file, ", restoring ");
       dump_value_range (dump_file, vr);
       fprintf (dump_file, "\n");
@@ -11194,7 +11324,7 @@ execute_early_vrp ()
       if (dump_file && dump_flags & TDF_DETAILS)
 	{
 	  fprintf (dump_file, "Removing dead stmt ");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	  print_gimple_stmt (dump_file, stmt, 0);
 	  fprintf (dump_file, "\n");
 	}
       gimple_stmt_iterator gsi = gsi_for_stmt (stmt);

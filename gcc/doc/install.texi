@@ -1047,6 +1047,11 @@ and for cross builds configured with @option{--with-sysroot}, and without
 More documentation about multiarch can be found at
 @uref{https://wiki.debian.org/Multiarch}.
 
+@item --enable-sjlj-exceptions
+Force use of the @code{setjmp}/@code{longjmp}-based scheme for exceptions.
+@samp{configure} ordinarily picks the correct value based on the platform.
+Only use this option if you are sure you need a different setting.
+
 @item --enable-vtable-verify
 Specify whether to enable or disable the vtable verification feature.
 Enabling this feature causes libstdc++ to be built with its virtual calls
@@ -1621,14 +1626,17 @@ their runtime libraries should be built.  For a list of valid values for
 grep ^language= */config-lang.in
 @end smallexample
 Currently, you can use any of the following:
-@code{all}, @code{ada}, @code{c}, @code{c++}, @code{fortran},
+@code{all}, @code{default}, @code{ada}, @code{c}, @code{c++}, @code{fortran},
 @code{go}, @code{jit}, @code{lto}, @code{objc}, @code{obj-c++}.
 Building the Ada compiler has special requirements, see below.
-If you do not pass this flag, or specify the option @code{all}, then all
+If you do not pass this flag, or specify the option @code{default}, then the
 default languages available in the @file{gcc} sub-tree will be configured.
 Ada, Go, Jit, and Objective-C++ are not default languages.  LTO is not a
 default language, but is built by default because @option{--enable-lto} is
-enabled by default.  The other languages are default languages.
+enabled by default.  The other languages are default languages.  If
+@code{all} is specified, then all available languages are built.  An
+exception is @code{jit} language, which requires
+@option{--enable-host-shared} to be included with @code{all}.
 
 @item --enable-stage1-languages=@var{lang1},@var{lang2},@dots{}
 Specify that a particular subset of compilers and their runtime
@@ -2611,8 +2619,9 @@ bootstrap the compiler with profile feedback, use @code{make profiledbootstrap}.
 When @samp{make profiledbootstrap} is run, it will first build a @code{stage1}
 compiler.  This compiler is used to build a @code{stageprofile} compiler
 instrumented to collect execution counts of instruction and branch
-probabilities.  Then runtime libraries are compiled with profile collected.
-Finally a @code{stagefeedback} compiler is built using the information collected.
+probabilities.  Training run is done by building @code{stagetrain}
+compiler.  Finally a @code{stagefeedback} compiler is built
+using the information collected.
 
 Unlike standard bootstrap, several additional restrictions apply.  The
 compiler used to build @code{stage1} needs to support a 64-bit integral type.
@@ -3073,6 +3082,15 @@ Solaris 2 (SPARC, Intel):
 
 @item
 @uref{http://jupiterrise.com/tgcware/,,TGCware}
+@end itemize
+
+@item
+macOS:
+@itemize
+@item
+The @uref{https://brew.sh,,Homebrew} package manager;
+@item
+@uref{https://www.macports.org,,MacPorts}.
 @end itemize
 
 @item

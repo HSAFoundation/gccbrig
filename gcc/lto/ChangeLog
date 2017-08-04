@@ -1,3 +1,57 @@
+2017-08-03  Richard Biener  <rguenther@suse.de>
+
+	* lto-symtab.h (lto_symtab_prevail_decl): Do not use
+	DECL_ABSTRACT_ORIGIN as flag we can end up using that.  Instead
+	use DECL_LANG_FLAG_0.
+	(lto_symtab_prevail_decl): Likewise.
+
+2017-07-07  Torsten Duwe  <duwe@suse.de>
+
+	* lto-lang.c (lto_attribute_table): Add entry for
+	"patchable_function_entry".
+
+2017-07-19  Nathan Sidwell  <nathan@acm.org>
+
+	* lto.c (mentions_vars_p_type): Use TYPE_{MIN,MAX}_VALUE_RAW.
+	(compare_tree_sccs_1, lto_fixup_prevailing_decls): Likewise.
+
+2017-07-06  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto-partition.c (lto_balanced_map): Do not check
+	flag_toplevel_reorder.
+
+2017-06-23  Marc Glisse  <marc.glisse@inria.fr>
+	* lto-lang.c (lto_init): Use builtin_structptr_types.
+
+2017-06-15  Jan Hubicka  <hubicka@ucw.cz>
+	    Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	PR lto/69866
+	* lto-symtab.c (lto_symtab_merge_symbols): Drop useless definitions
+	that resolved externally.
+
+2017-05-23  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto.c (do_whole_program_analysis): Replace inline_free_summary
+	by ipa_free_fn_summary.
+
+2017-05-23  Martin Liska  <mliska@suse.cz>
+
+	* lto-symtab.c (lto_cgraph_replace_node): Use
+	symtab_node::dump_{asm_,}name functions.
+	* lto.c (read_cgraph_and_symbols): Likewise.
+	(do_whole_program_analysis): Likewise.
+
+2017-05-23  Martin Liska  <mliska@suse.cz>
+
+	* lto.c (read_cgraph_and_symbols): Use the renamed function.
+	(do_whole_program_analysis): Use the renamed function.
+
+2017-05-22  Jan Hubicka  <hubicka@ucw.cz>
+
+	* lto.c: Replace ipa-inline.h by ipa-fnsummary.h
+	* lto-partition.c: Replace ipa-inline.h by ipa-fnsummary.h
+
 2017-05-01  Xi Ruoyao  <ryxi@stu.xidian.edu.cn>
 
         PR c++/80038

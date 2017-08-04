@@ -1,3 +1,20 @@
+2017-07-20  Nathan Sidwell  <nathan@acm.org>
+
+	Remove TYPE_METHODS.
+	* objc-runtime-shared-support.c (build_ivar_list_initializer):
+	Don't presume first item is a FIELD_DECL.
+
+2017-07-19  Nathan Sidwell  <nathan@acm.org>
+
+	* objc-act.h (CLASS_NST_METHODS, CLASS_CLS_METHODS): Use
+	TYPE_{MIN,MAX}_VALUE_RAW.
+
+2017-05-16  Sylvestre Ledru  <sylvestre@debian.org>
+
+	* objc-runtime-shared-support.c (build_module_descriptor):
+	Remove unnecessary conditional when building instance of
+	objc_module. CID 1406758
+
 2017-05-09  Nathan Sidwell  <nathan@acm.org>
 
 	* objc-gnu-runtime-abi-01.c (objc_add_static_instance): Use

@@ -60,7 +60,9 @@ enum
 
 #define TARGET_CPU_CPP_BUILTINS()	avr_cpu_cpp_builtins (pfile)
 
-#define AVR_HAVE_JMP_CALL (avr_arch->have_jmp_call)
+#define AVR_SHORT_CALLS (TARGET_SHORT_CALLS                             \
+                         && avr_arch == &avr_arch_types[ARCH_AVRXMEGA3])
+#define AVR_HAVE_JMP_CALL (avr_arch->have_jmp_call && ! AVR_SHORT_CALLS)
 #define AVR_HAVE_MUL (avr_arch->have_mul)
 #define AVR_HAVE_MOVW (avr_arch->have_movw_lpmx)
 #define AVR_HAVE_LPM (!AVR_TINY)
@@ -73,8 +75,6 @@ enum
 #define AVR_HAVE_RAMPZ (avr_arch->have_elpm             \
                         || avr_arch->have_rampd)
 #define AVR_HAVE_EIJMP_EICALL (avr_arch->have_eijmp_eicall)
-
-#define AVR_TINY_PM_OFFSET (0x4000)
 
 /* Handling of 8-bit SP versus 16-bit SP is as follows:
 
@@ -398,6 +398,10 @@ typedef struct avr_args
 
 #define SUPPORTS_INIT_PRIORITY 0
 
+/* We pretend jump tables are in text section because otherwise,
+   final.c will switch to .rodata before jump tables and thereby
+   triggers __do_copy_data.  As we implement ASM_OUTPUT_ADDR_VEC,
+   we still have full control over the jump tables themselves.  */
 #define JUMP_TABLES_IN_TEXT_SECTION 1
 
 #define ASM_COMMENT_START " ; "
@@ -447,8 +451,8 @@ typedef struct avr_args
   fprintf (STREAM, "\tpop\tr%d", REGNO);	\
 }
 
-#define ASM_OUTPUT_ADDR_VEC_ELT(STREAM, VALUE)  \
-  avr_output_addr_vec_elt (STREAM, VALUE)
+#define ASM_OUTPUT_ADDR_VEC(TLABEL, TDATA)      \
+  avr_output_addr_vec (TLABEL, TDATA)
 
 #define ASM_OUTPUT_ALIGN(STREAM, POWER)                 \
   do {                                                  \
@@ -581,6 +585,26 @@ struct GTY(()) machine_function
   /* 'true' if the above is_foo predicates are sanity-checked to avoid
      multiple diagnose for the same function.  */
   int attributes_checked_p;
+
+  /* 'true' - if current function shall not use '__gcc_isr' pseudo
+     instructions as specified by the "no_gccisr" attribute.  */
+  int is_no_gccisr;
+
+  /* Used for `__gcc_isr' pseudo instruction handling of
+     non-naked ISR prologue / epilogue(s).  */
+  struct
+  {
+    /* 'true' if this function actually uses "*gasisr" insns. */
+    int yes;
+    /* 'true' if this function is allowed to use "*gasisr" insns. */
+    int maybe;
+    /* The register numer as printed by the Done chunk.  */
+    int regno;
+  } gasisr;
+
+  /* 'true' if this function references .L__stack_usage like with
+     __builtin_return_address.  */
+  int use_L__stack_usage;
 };
 
 /* AVR does not round pushes, but the existence of this macro is

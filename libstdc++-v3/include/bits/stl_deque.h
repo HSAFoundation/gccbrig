@@ -67,6 +67,7 @@
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
   /**
@@ -2242,6 +2243,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 #endif
     };
 
+#if __cpp_deduction_guides >= 201606
+  template<typename _InputIterator, typename _ValT
+	     = typename iterator_traits<_InputIterator>::value_type,
+	   typename _Allocator = allocator<_ValT>,
+	   typename = _RequireInputIter<_InputIterator>,
+	   typename = _RequireAllocator<_Allocator>>
+    deque(_InputIterator, _InputIterator, _Allocator = _Allocator())
+      -> deque<_ValT, _Allocator>;
+#endif
 
   /**
    *  @brief  Deque equality comparison.
@@ -2316,6 +2326,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 #undef _GLIBCXX_DEQUE_BUF_SIZE
 
 _GLIBCXX_END_NAMESPACE_CONTAINER
+_GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
 #endif /* _STL_DEQUE_H */

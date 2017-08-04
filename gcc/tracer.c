@@ -132,12 +132,11 @@ count_insns (basic_block bb)
 static bool
 better_p (const_edge e1, const_edge e2)
 {
-  if (e1->count != e2->count)
+  if (e1->count.initialized_p () && e2->count.initialized_p ()
+      && !(e1->count == e2->count))
     return e1->count > e2->count;
-  if (e1->src->frequency * e1->probability !=
-      e2->src->frequency * e2->probability)
-    return (e1->src->frequency * e1->probability
-	    > e2->src->frequency * e2->probability);
+  if (EDGE_FREQUENCY (e1) != EDGE_FREQUENCY (e2))
+    return EDGE_FREQUENCY (e1) > EDGE_FREQUENCY (e2);
   /* This is needed to avoid changes in the decision after
      CFG is modified.  */
   if (e1->src != e2->src)
@@ -159,7 +158,8 @@ find_best_successor (basic_block bb)
       best = e;
   if (!best || ignore_bb_p (best->dest))
     return NULL;
-  if (best->probability <= probability_cutoff)
+  if (best->probability.initialized_p ()
+      && best->probability.to_reg_br_prob_base () <= probability_cutoff)
     return NULL;
   return best;
 }
@@ -269,7 +269,7 @@ tail_duplicate (void)
   bitmap_clear (bb_seen);
   initialize_original_copy_tables ();
 
-  if (profile_info && flag_branch_probabilities)
+  if (profile_info && profile_status_for_fn (cfun) == PROFILE_READ)
     probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY_FEEDBACK);
   else
     probability_cutoff = PARAM_VALUE (TRACER_MIN_BRANCH_PROBABILITY);
@@ -289,7 +289,7 @@ tail_duplicate (void)
       weighted_insns += n * bb->frequency;
     }
 
-  if (profile_info && flag_branch_probabilities)
+  if (profile_info && profile_status_for_fn (cfun) == PROFILE_READ)
     cover_insns = PARAM_VALUE (TRACER_DYNAMIC_COVERAGE_FEEDBACK);
   else
     cover_insns = PARAM_VALUE (TRACER_DYNAMIC_COVERAGE);

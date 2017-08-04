@@ -188,15 +188,11 @@ struct GTY(()) cp_binding_level {
       are wrapped in TREE_LISTs; the TREE_VALUE is the OVERLOAD.  */
   tree names;
 
-  /* A chain of NAMESPACE_DECL nodes.  */
-  tree namespaces;
-
   /* A list of USING_DECL nodes.  */
   tree usings;
 
-  /* A list of used namespaces. PURPOSE is the namespace,
-      VALUE the common ancestor with this binding_level's namespace.  */
-  tree using_directives;
+  /* Using directives.  */
+  vec<tree, va_gc> *using_directives;
 
   /* For the binding level corresponding to a class, the entities
       declared in the class or its base classes.  */
@@ -292,6 +288,8 @@ extern void print_binding_stack	(void);
 extern void pop_everything (void);
 extern void keep_next_level (bool);
 extern bool is_ancestor (tree ancestor, tree descendant);
+extern bool is_nested_namespace (tree parent, tree descendant,
+				 bool inline_only = false);
 extern tree push_scope (tree);
 extern void pop_scope (tree);
 extern tree push_inner_scope (tree);
@@ -306,14 +304,9 @@ extern tree lookup_name_real (tree, int, int, bool, int, int);
 extern tree lookup_type_scope (tree, tag_scope);
 extern tree get_namespace_binding (tree ns, tree id);
 extern void set_global_binding (tree id, tree val);
-extern bool hidden_name_p (tree);
-extern tree remove_hidden_names (tree);
 extern tree lookup_qualified_name (tree, tree, int, bool, /*hidden*/bool = false);
 extern tree lookup_name_nonclass (tree);
-extern tree lookup_name_innermost_nonclass_level (tree);
 extern bool is_local_extern (tree);
-extern tree lookup_function_nonclass (tree, vec<tree, va_gc> *, bool);
-extern void push_local_binding (tree, tree, int);
 extern bool pushdecl_class_level (tree);
 extern tree pushdecl_namespace_level (tree, bool);
 extern bool push_class_level_binding (tree, tree);
@@ -324,23 +317,22 @@ extern void set_decl_namespace (tree, tree, bool);
 extern void push_decl_namespace (tree);
 extern void pop_decl_namespace (void);
 extern void do_namespace_alias (tree, tree);
-extern void do_toplevel_using_decl (tree, tree, tree);
-extern void do_local_using_decl (tree, tree, tree);
 extern tree do_class_using_decl (tree, tree);
-extern void do_using_directive (tree);
-extern cp_expr lookup_arg_dependent (tree, tree, vec<tree, va_gc> *);
-extern bool is_associated_namespace (tree, tree);
-extern void parse_using_directive (tree, tree);
+extern tree lookup_arg_dependent (tree, tree, vec<tree, va_gc> *);
 extern tree innermost_non_namespace_value (tree);
 extern cxx_binding *outer_binding (tree, cxx_binding *, bool);
 extern void cp_emit_debug_info_for_using (tree, tree);
 
-extern tree pushdecl_outermost_localscope (tree);
+extern void finish_namespace_using_decl (tree, tree, tree);
+extern void finish_local_using_decl (tree, tree, tree);
+extern void finish_namespace_using_directive (tree, tree);
+extern void finish_local_using_directive (tree, tree);
 extern tree pushdecl (tree, bool is_friend = false);
+extern tree pushdecl_outermost_localscope (tree);
 extern tree pushdecl_top_level (tree, bool is_friend = false);
 extern tree pushdecl_top_level_and_finish (tree, tree);
 extern tree pushtag (tree, tree, tag_scope);
-extern bool push_namespace (tree);
+extern int push_namespace (tree, bool make_inline = false);
 extern void pop_namespace (void);
 extern void push_nested_namespace (tree);
 extern void pop_nested_namespace (tree);

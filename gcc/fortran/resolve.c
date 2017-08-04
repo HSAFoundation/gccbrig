@@ -9098,7 +9098,7 @@ find_reachable_labels (gfc_code *block)
   if (!block)
     return;
 
-  cs_base->reachable_labels = bitmap_obstack_alloc (&labels_obstack);
+  cs_base->reachable_labels = bitmap_alloc (&labels_obstack);
 
   /* Collect labels in this block.  We don't keep those corresponding
      to END {IF|SELECT}, these are checked in resolve_branch by going
@@ -13832,6 +13832,8 @@ resolve_fl_derived (gfc_symbol *sym)
 	  gfc_symbol *vtab = gfc_find_derived_vtab (data->ts.u.derived);
 	  gcc_assert (vtab);
 	  vptr->ts.u.derived = vtab->ts.u.derived;
+	  if (!resolve_fl_derived0 (vptr->ts.u.derived))
+	    return false;
 	}
     }
 
@@ -14523,7 +14525,7 @@ resolve_symbol (gfc_symbol *sym)
       && !sym->attr.codimension && !sym->ts.u.derived->attr.coarray_comp)
     {
       gfc_error ("Variable %s at %L of type EVENT_TYPE or with subcomponent of "
-		 "type LOCK_TYPE must be a coarray", sym->name,
+		 "type EVENT_TYPE must be a coarray", sym->name,
 		 &sym->declared_at);
       return;
     }

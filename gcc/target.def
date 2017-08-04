@@ -288,6 +288,17 @@ hidden, protected or internal visibility as specified by @var{visibility}.",
  void, (tree decl, int visibility),
  default_assemble_visibility)
 
+DEFHOOK
+(print_patchable_function_entry,
+ "Generate a patchable area at the function start, consisting of\n\
+@var{patch_area_size} NOP instructions.  If the target supports named\n\
+sections and if @var{record_p} is true, insert a pointer to the current\n\
+location in the table of patchable functions.  The default implementation\n\
+of the hook places the table of pointers in the special section named\n\
+@code{__patchable_function_entries}.",
+ void, (FILE *file, unsigned HOST_WIDE_INT patch_area_size, bool record_p),
+ default_print_patchable_function_entry)
+
 /* Output the assembler code for entry to a function.  */
 DEFHOOK
 (function_prologue,
@@ -2369,7 +2380,7 @@ DEFHOOK
 DEFHOOK
 (chkp_bound_mode,
  "Return mode to be used for bounds.",
- enum machine_mode, (void),
+ machine_mode, (void),
  default_chkp_bound_mode)
 
 DEFHOOK
@@ -4370,7 +4381,7 @@ DEFHOOK
  "Use it to store bounds for anonymous register arguments stored\n\
 into the stack.  Arguments meaning is similar to\n\
 @code{TARGET_SETUP_INCOMING_VARARGS}.",
- void, (cumulative_args_t args_so_far, enum machine_mode mode, tree type,
+ void, (cumulative_args_t args_so_far, machine_mode mode, tree type,
 	int *pretend_args_size, int second_time),
  default_setup_incoming_vararg_bounds)
 

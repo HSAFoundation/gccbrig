@@ -1639,6 +1639,7 @@ vn_reference_lookup_or_insert_for_pieces (tree vuse,
 }
 
 static vn_nary_op_t vn_nary_op_insert_stmt (gimple *stmt, tree result);
+static unsigned mprts_hook_cnt;
 
 /* Hook for maybe_push_res_to_seq, lookup the expression in the VN tables.  */
 
@@ -1648,8 +1649,22 @@ vn_lookup_simplify_result (code_helper rcode, tree type, tree *ops)
   if (!rcode.is_tree_code ())
     return NULL_TREE;
   vn_nary_op_t vnresult = NULL;
-  return vn_nary_op_lookup_pieces (TREE_CODE_LENGTH ((tree_code) rcode),
-				   (tree_code) rcode, type, ops, &vnresult);
+  tree res = vn_nary_op_lookup_pieces (TREE_CODE_LENGTH ((tree_code) rcode),
+				       (tree_code) rcode, type, ops, &vnresult);
+  /* We can end up endlessly recursing simplifications if the lookup above
+     presents us with a def-use chain that mirrors the original simplification.
+     See PR80887 for an example.  Limit successful lookup artificially
+     to 10 times if we are called as mprts_hook.  */
+  if (res
+      && mprts_hook
+      && --mprts_hook_cnt == 0)
+    {
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	fprintf (dump_file, "Resetting mprts_hook after too many "
+		 "invocations.\n");
+      mprts_hook = NULL;
+    }
+  return res;
 }
 
 /* Return a value-number for RCODE OPS... either by looking up an existing
@@ -1666,6 +1681,7 @@ vn_nary_build_or_lookup_1 (code_helper rcode, tree type, tree *ops,
      So first simplify and lookup this expression to see if it
      is already available.  */
   mprts_hook = vn_lookup_simplify_result;
+  mprts_hook_cnt = 9;
   bool res = false;
   switch (TREE_CODE_LENGTH ((tree_code) rcode))
     {
@@ -1740,7 +1756,7 @@ vn_nary_build_or_lookup_1 (code_helper rcode, tree type, tree *ops,
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Inserting name ");
-	  print_generic_expr (dump_file, result, 0);
+	  print_generic_expr (dump_file, result);
 	  fprintf (dump_file, " for expression ");
 	  print_gimple_expr (dump_file, new_stmt, 0, TDF_SLIM);
 	  fprintf (dump_file, "\n");
@@ -2035,7 +2051,9 @@ vn_reference_lookup_3 (ao_ref *ref, tree vuse, void *vr_,
 	  ops[1] = bitsize_int (ref->size);
 	  ops[2] = bitsize_int (offset - offset2);
 	  tree val = vn_nary_build_or_lookup (rcode, vr->type, ops);
-	  if (val)
+	  if (val
+	      && (TREE_CODE (val) != SSA_NAME
+		  || ! SSA_NAME_OCCURS_IN_ABNORMAL_PHI (val)))
 	    {
 	      vn_reference_t res = vn_reference_lookup_or_insert_for_pieces
 		  (vuse, vr->set, vr->type, vr->operands, val);
@@ -2618,6 +2636,14 @@ vn_nary_op_eq (const_vn_nary_op_t const vno1, const_vn_nary_op_t const vno2)
     if (!expressions_equal_p (vno1->op[i], vno2->op[i]))
       return false;
 
+  /* BIT_INSERT_EXPR has an implict operand as the type precision
+     of op1.  Need to check to make sure they are the same.  */
+  if (vno1->opcode == BIT_INSERT_EXPR
+      && TREE_CODE (vno1->op[1]) == INTEGER_CST
+      && TYPE_PRECISION (TREE_TYPE (vno1->op[1]))
+	 != TYPE_PRECISION (TREE_TYPE (vno2->op[1])))
+    return false;
+
   return true;
 }
 
@@ -3157,7 +3183,7 @@ print_scc (FILE *out, vec<tree> scc)
   FOR_EACH_VEC_ELT (scc, i, var)
     {
       fprintf (out, " ");
-      print_generic_expr (out, var, 0);
+      print_generic_expr (out, var);
     }
   fprintf (out, "\n");
 }
@@ -3279,9 +3305,9 @@ set_ssa_val_to (tree from, tree to)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Not changing value number of ");
-	      print_generic_expr (dump_file, from, 0);
+	      print_generic_expr (dump_file, from);
 	      fprintf (dump_file, " from VARYING to ");
-	      print_generic_expr (dump_file, to, 0);
+	      print_generic_expr (dump_file, to);
 	      fprintf (dump_file, "\n");
 	    }
 	  return false;
@@ -3294,11 +3320,11 @@ set_ssa_val_to (tree from, tree to)
 	    {
 	      fprintf (dump_file, "Forcing VARYING instead of changing "
 		       "value number of ");
-	      print_generic_expr (dump_file, from, 0);
+	      print_generic_expr (dump_file, from);
 	      fprintf (dump_file, " from ");
-	      print_generic_expr (dump_file, currval, 0);
+	      print_generic_expr (dump_file, currval);
 	      fprintf (dump_file, " (non-constant) to ");
-	      print_generic_expr (dump_file, to, 0);
+	      print_generic_expr (dump_file, to);
 	      fprintf (dump_file, " (constant)\n");
 	    }
 	  to = from;
@@ -3311,9 +3337,9 @@ set_ssa_val_to (tree from, tree to)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Setting value number of ");
-      print_generic_expr (dump_file, from, 0);
+      print_generic_expr (dump_file, from);
       fprintf (dump_file, " to ");
-      print_generic_expr (dump_file, to, 0);
+      print_generic_expr (dump_file, to);
     }
 
   if (currval != to
@@ -3328,6 +3354,9 @@ set_ssa_val_to (tree from, tree to)
 	       == get_addr_base_and_unit_offset (TREE_OPERAND (to, 0), &toff))
 	   && coff == toff))
     {
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	fprintf (dump_file, " (changed)\n");
+
       /* If we equate two SSA names we have to make the side-band info
          of the leader conservative (and remember whatever original value
 	 was present).  */
@@ -3342,22 +3371,6 @@ set_ssa_val_to (tree from, tree to)
 			 gimple_bb (SSA_NAME_DEF_STMT (to))))
 		/* Keep the info from the dominator.  */
 		;
-	      else if (SSA_NAME_IS_DEFAULT_DEF (from)
-		       || dominated_by_p_w_unex
-			    (gimple_bb (SSA_NAME_DEF_STMT (to)),
-			     gimple_bb (SSA_NAME_DEF_STMT (from))))
-		{
-		  /* Save old info.  */
-		  if (! VN_INFO (to)->info.range_info)
-		    {
-		      VN_INFO (to)->info.range_info = SSA_NAME_RANGE_INFO (to);
-		      VN_INFO (to)->range_info_anti_range_p
-			= SSA_NAME_ANTI_RANGE_P (to);
-		    }
-		  /* Use that from the dominator.  */
-		  SSA_NAME_RANGE_INFO (to) = SSA_NAME_RANGE_INFO (from);
-		  SSA_NAME_ANTI_RANGE_P (to) = SSA_NAME_ANTI_RANGE_P (from);
-		}
 	      else
 		{
 		  /* Save old info.  */
@@ -3369,6 +3382,12 @@ set_ssa_val_to (tree from, tree to)
 		    }
 		  /* Rather than allocating memory and unioning the info
 		     just clear it.  */
+		  if (dump_file && (dump_flags & TDF_DETAILS))
+		    {
+		      fprintf (dump_file, "clearing range info of ");
+		      print_generic_expr (dump_file, to);
+		      fprintf (dump_file, "\n");
+		    }
 		  SSA_NAME_RANGE_INFO (to) = NULL;
 		}
 	    }
@@ -3381,17 +3400,6 @@ set_ssa_val_to (tree from, tree to)
 			 gimple_bb (SSA_NAME_DEF_STMT (to))))
 		/* Keep the info from the dominator.  */
 		;
-	      else if (SSA_NAME_IS_DEFAULT_DEF (from)
-		       || dominated_by_p_w_unex
-			    (gimple_bb (SSA_NAME_DEF_STMT (to)),
-			     gimple_bb (SSA_NAME_DEF_STMT (from))))
-		{
-		  /* Save old info.  */
-		  if (! VN_INFO (to)->info.ptr_info)
-		    VN_INFO (to)->info.ptr_info = SSA_NAME_PTR_INFO (to);
-		  /* Use that from the dominator.  */
-		  SSA_NAME_PTR_INFO (to) = SSA_NAME_PTR_INFO (from);
-		}
 	      else if (! SSA_NAME_PTR_INFO (from)
 		       /* Handle the case of trivially equivalent info.  */
 		       || memcmp (SSA_NAME_PTR_INFO (to),
@@ -3403,14 +3411,18 @@ set_ssa_val_to (tree from, tree to)
 		    VN_INFO (to)->info.ptr_info = SSA_NAME_PTR_INFO (to);
 		  /* Rather than allocating memory and unioning the info
 		     just clear it.  */
+		  if (dump_file && (dump_flags & TDF_DETAILS))
+		    {
+		      fprintf (dump_file, "clearing points-to info of ");
+		      print_generic_expr (dump_file, to);
+		      fprintf (dump_file, "\n");
+		    }
 		  SSA_NAME_PTR_INFO (to) = NULL;
 		}
 	    }
 	}
 
       VN_INFO (from)->valnum = to;
-      if (dump_file && (dump_flags & TDF_DETAILS))
-	fprintf (dump_file, " (changed)\n");
       return true;
     }
   if (dump_file && (dump_flags & TDF_DETAILS))
@@ -3790,9 +3802,9 @@ visit_reference_op_store (tree lhs, tree op, gimple *stmt)
 	{
 	  fprintf (dump_file, "No store match\n");
 	  fprintf (dump_file, "Value numbering store ");
-	  print_generic_expr (dump_file, lhs, 0);
+	  print_generic_expr (dump_file, lhs);
 	  fprintf (dump_file, " to ");
-	  print_generic_expr (dump_file, op, 0);
+	  print_generic_expr (dump_file, op);
 	  fprintf (dump_file, "\n");
 	}
       /* Have to set value numbers before insert, since insert is
@@ -3908,6 +3920,7 @@ try_to_simplify (gassign *stmt)
 
   /* First try constant folding based on our current lattice.  */
   mprts_hook = vn_lookup_simplify_result;
+  mprts_hook_cnt = 9;
   tem = gimple_fold_stmt_to_constant_1 (stmt, vn_valueize, vn_valueize);
   mprts_hook = NULL;
   if (tem
@@ -3934,9 +3947,9 @@ visit_use (tree use)
       && !SSA_NAME_IS_DEFAULT_DEF (use))
     {
       fprintf (dump_file, "Value numbering ");
-      print_generic_expr (dump_file, use, 0);
+      print_generic_expr (dump_file, use);
       fprintf (dump_file, " stmt = ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
     }
 
   /* Handle uninitialized uses.  */
@@ -3967,9 +3980,9 @@ visit_use (tree use)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "RHS ");
-	      print_gimple_expr (dump_file, ass, 0, 0);
+	      print_gimple_expr (dump_file, ass, 0);
 	      fprintf (dump_file, " simplified to ");
-	      print_generic_expr (dump_file, simplified, 0);
+	      print_generic_expr (dump_file, simplified);
 	      fprintf (dump_file, "\n");
 	    }
 	}
@@ -4053,9 +4066,9 @@ visit_use (tree use)
 	      if (dump_file && (dump_flags & TDF_DETAILS))
 		{
 		  fprintf (dump_file, "call ");
-		  print_gimple_expr (dump_file, call_stmt, 0, 0);
+		  print_gimple_expr (dump_file, call_stmt, 0);
 		  fprintf (dump_file, " simplified to ");
-		  print_generic_expr (dump_file, simplified, 0);
+		  print_generic_expr (dump_file, simplified);
 		  fprintf (dump_file, "\n");
 		}
 	    }
@@ -4886,7 +4899,7 @@ sccvn_dom_walker::before_dom_children (basic_block bb)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Visiting control stmt ending BB %d: ", bb->index);
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
     }
 
   /* ???  We can even handle stmts with outgoing EH or ABNORMAL edges
@@ -5014,9 +5027,9 @@ run_scc_vn (vn_lookup_kind default_vn_walk_kind_)
 	  if (VN_INFO (name)->visited
 	      && SSA_VAL (name) != name)
 	    {
-	      print_generic_expr (dump_file, name, 0);
+	      print_generic_expr (dump_file, name);
 	      fprintf (dump_file, " = ");
-	      print_generic_expr (dump_file, SSA_VAL (name), 0);
+	      print_generic_expr (dump_file, SSA_VAL (name));
 	      fprintf (dump_file, "\n");
 	    }
 	}

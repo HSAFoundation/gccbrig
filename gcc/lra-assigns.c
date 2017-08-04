@@ -253,10 +253,9 @@ pseudo_compare_func (const void *v1p, const void *v2p)
 
   /* Assign hard reg to static chain pointer first pseudo when
      non-local goto is used.  */
-  if (non_spilled_static_chain_regno_p (r1))
-    return -1;
-  else if (non_spilled_static_chain_regno_p (r2))
-    return 1;
+  if ((diff = (non_spilled_static_chain_regno_p (r2)
+	       - non_spilled_static_chain_regno_p (r1))) != 0)
+    return diff;
 
   /* Prefer to assign more frequently used registers first.  */
   if ((diff = lra_reg_info[r2].freq - lra_reg_info[r1].freq) != 0)
@@ -585,7 +584,7 @@ find_hard_regno_for_1 (int regno, int *cost, int try_only_hard_regno,
 	}
       else
 	{
-	  enum machine_mode biggest_conflict_mode
+	  machine_mode biggest_conflict_mode
 	    = lra_reg_info[conflict_regno].biggest_mode;
 	  int biggest_conflict_nregs
 	    = hard_regno_nregs[conflict_hr][biggest_conflict_mode];

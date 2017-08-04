@@ -1,3 +1,66 @@
+2017-08-02  David Edelsohn  <dje.gcc@gmail.com>
+
+	PR bootstrap/81638
+	* xcoff.c (xcoff_process_linenos): Initialize incl to NULL.
+
+2017-07-28  Tony Reix  <tony.reix@atos.net>
+
+	* xcoff.c: Don't leak a file descriptor if an archive is malformed.
+
+2017-07-28  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* fileline.c (fileline_initialize): Print pid_t as long.
+
+2017-07-26  Tony Reix  <tony.reix@atos.net>
+
+	* configure.ac: Check for XCOFF32/XCOFF64.  Check for loadquery.
+	* filetype.awk: Separate AIX XCOFF32 and XCOFF64.
+	* xcoff.c: Add support for AIX XCOFF32 and XCOFF64 formats.
+	* configure, config.h.in: Regenerate.
+
+2017-07-21  Tony Reix  <tony.reix@atos.net>
+
+	* filetype.awk: Add AIX XCOFF type detection.
+	* configure.ac: Recognize xcoff format.
+	* Makefile.am (FORMAT_FILES): Add xcoff.c.
+	* fileline.c: Include <unistd.h>.
+	(fileline_initialize): Add case for AIX procfs.
+	* xcoff.c: New file.
+	* configure, Makefile.in: Rebuild.
+
+2017-06-21  Richard Biener  <rguenther@suse.de>
+
+	* configure.ac: Add AC_SYS_LARGEFILE.
+	* config.h.in: Regenerate.
+	* configure: Likewise.
+
+2017-06-11  Ian Lance Taylor  <iant@golang.org>
+
+	* elf.c (backtrace_initialize): Always set *fileline_fn.
+	* ttest.c: New file.
+	* btest.c: Move support functions into testlib.c.  Change calls to
+	check to pass file name.
+	* testlib.c: New file, copied from (part of) btest.c.
+	* testlib.h: New file, declarations for testlib.c.
+	* edtest.c: Use testlib.h and testlib.c.
+	* configure.ac: Test for -pthread, set HAVE_PTHREAD conditional.
+	* Makefile.am (btest_SOURCES): Add testlib.c.
+	(edtest_SOURCES): Likewise.
+	(CHECK_PROGRAMS): Add ttest if HAVE_PTHREAD.
+	(ttest_SOURCES, ttest_CFLAGS, ttest_LDADD): Define.
+	* configure, Makefile.in: Rebuild.
+
+2017-05-19  Than McIntosh  <thanm@google.com>
+
+	* dwarf.c (free_line_header): Don't free dirs if dirs_count == 0.
+	(read_line_header): Don't allocate dirs if dirs_count == 0.
+	* edtest.c: New file.
+	* edtest2.c: New file.
+	* Makefile.am (edtest_SOURCES, edtest_LDADD): Define.
+	(check_PROGRAMS): Add edtest.
+	(edtest2_build.c, gen_edtest2_build): New targets.
+	* Makefile.in: Rebuild.
+
 2017-03-08  Sam Thursfield  <sam.thursfield@codethink.co.uk>
 
 	* btest.c (test5): Replace #ifdef guard with 'unused' attribute

@@ -514,6 +514,8 @@ const struct c_common_resword c_common_reswords[] =
   { "volatile",		RID_VOLATILE,	0 },
   { "wchar_t",		RID_WCHAR,	D_CXXONLY },
   { "while",		RID_WHILE,	0 },
+  { "__is_assignable", RID_IS_ASSIGNABLE, D_CXXONLY },
+  { "__is_constructible", RID_IS_CONSTRUCTIBLE, D_CXXONLY },
 
   /* C++ transactional memory.  */
   { "synchronized",	RID_SYNCHRONIZED, D_CXX_OBJC | D_TRANSMEM },
@@ -1225,16 +1227,24 @@ int_safely_convertible_to_real_p (const_tree from_type, const_tree to_type)
    can return SAFE_CONVERSION (zero) in that case.  Function can produce
    signedness warnings if PRODUCE_WARNS is true.
 
+   RESULT, when non-null is the result of the conversion.  When constant
+   it is included in the text of diagnostics.
+
    Function allows conversions from complex constants to non-complex types,
    provided that imaginary part is zero and real part can be safely converted
    to TYPE.  */
 
 enum conversion_safety
-unsafe_conversion_p (location_t loc, tree type, tree expr, bool produce_warns)
+unsafe_conversion_p (location_t loc, tree type, tree expr, tree result,
+		     bool produce_warns)
 {
   enum conversion_safety give_warning = SAFE_CONVERSION; /* is 0 or false */
   tree expr_type = TREE_TYPE (expr);
-  loc = expansion_point_location_if_in_system_header (loc);
+
+  bool cstresult = (result
+		    && TREE_CODE_CLASS (TREE_CODE (result)) == tcc_constant);
+
+    loc = expansion_point_location_if_in_system_header (loc);
 
   if (TREE_CODE (expr) == REAL_CST || TREE_CODE (expr) == INTEGER_CST)
     {
@@ -1260,14 +1270,31 @@ unsafe_conversion_p (location_t loc, tree type, tree expr, bool produce_warns)
 	      && tree_int_cst_sgn (expr) < 0)
 	    {
 	      if (produce_warns)
-		warning_at (loc, OPT_Wsign_conversion, "negative integer"
-			    " implicitly converted to unsigned type");
+		{
+		  if (cstresult)
+		    warning_at (loc, OPT_Wsign_conversion,
+				"unsigned conversion from %qT to %qT "
+				"changes value from %qE to %qE",
+				expr_type, type, expr, result);
+		  else
+		    warning_at (loc, OPT_Wsign_conversion,
+				"unsigned conversion from %qT to %qT "
+				"changes the value of %qE",
+				expr_type, type, expr);
+		}
 	    }
 	  else if (!TYPE_UNSIGNED (type) && TYPE_UNSIGNED (expr_type))
 	    {
-	      if (produce_warns)
-		warning_at (loc, OPT_Wsign_conversion, "conversion of unsigned"
-			    " constant value to negative integer");
+	      if (cstresult)
+		warning_at (loc, OPT_Wsign_conversion,
+			    "signed conversion from %qT to %qT changes "
+			    "value from %qE to %qE",
+			    expr_type, type, expr, result);
+	      else
+		warning_at (loc, OPT_Wsign_conversion,
+			    "signed conversion from %qT to %qT changes "
+			    "the value of %qE",
+			    expr_type, type, expr);
 	    }
 	  else
 	    give_warning = UNSAFE_OTHER;
@@ -1306,7 +1333,7 @@ unsafe_conversion_p (location_t loc, tree type, tree expr, bool produce_warns)
 	   with different type of EXPR, but it is still safe, because when EXPR
 	   is a constant, it's type is not used in text of generated warnings
 	   (otherwise they could sound misleading).  */
-	return unsafe_conversion_p (loc, type, TREE_REALPART (expr),
+	return unsafe_conversion_p (loc, type, TREE_REALPART (expr), result,
 				    produce_warns);
       /* Conversion from complex constant with non-zero imaginary part.  */
       else
@@ -1326,9 +1353,10 @@ unsafe_conversion_p (location_t loc, tree type, tree expr, bool produce_warns)
 		 Possible solution: add a separate function for checking
 		 constants and combine result of two calls appropriately.  */
 	      enum conversion_safety re_safety =
-		  unsafe_conversion_p (loc, type, TREE_REALPART (expr), false);
+		  unsafe_conversion_p (loc, type, TREE_REALPART (expr),
+				       result, false);
 	      enum conversion_safety im_safety =
-		  unsafe_conversion_p (loc, type, imag_part, false);
+		unsafe_conversion_p (loc, type, imag_part, result, false);
 
 	      /* Merge the results into appropriate single warning.  */
 
@@ -2110,7 +2138,7 @@ c_common_type_for_size (unsigned int bits, int unsignedp)
   if (bits <= TYPE_PRECISION (intDI_type_node))
     return unsignedp ? unsigned_intDI_type_node : intDI_type_node;
 
-  return 0;
+  return NULL_TREE;
 }
 
 /* Return a fixed-point type that has at least IBIT ibits and FBIT fbits
@@ -2136,7 +2164,7 @@ c_common_fixed_point_type_for_size (unsigned int ibit, unsigned int fbit,
       sorry ("GCC cannot support operators with integer types and "
 	     "fixed-point types that have too many integral and "
 	     "fractional bits together");
-      return 0;
+      return NULL_TREE;
     }
 
   return c_common_type_for_mode (mode, satp);
@@ -2357,7 +2385,7 @@ c_common_type_for_mode (machine_mode mode, int unsignedp)
 	&& !!unsignedp == !!TYPE_UNSIGNED (TREE_VALUE (t)))
       return TREE_VALUE (t);
 
-  return 0;
+  return NULL_TREE;
 }
 
 tree
@@ -2688,7 +2716,7 @@ expr_original_type (tree expr)
 
    LOC is the location of the comparison.
 
-   If this function returns nonzero, it means that the comparison has
+   If this function returns non-NULL_TREE, it means that the comparison has
    a constant value.  What this function returns is an expression for
    that value.  */
 
@@ -2942,7 +2970,7 @@ shorten_compare (location_t loc, tree *op0_ptr, tree *op1_ptr,
   else if (real1 && real2
 	   && (DECIMAL_FLOAT_MODE_P (TYPE_MODE (TREE_TYPE (primop0)))
 	       || DECIMAL_FLOAT_MODE_P (TYPE_MODE (TREE_TYPE (primop1)))))
-    return 0;
+    return NULL_TREE;
 
   else if (real1 && real2
 	   && (TYPE_PRECISION (TREE_TYPE (primop0))
@@ -2987,7 +3015,7 @@ shorten_compare (location_t loc, tree *op0_ptr, tree *op1_ptr,
       if (!real1 && !real2 && integer_zerop (primop1)
 	  && TYPE_UNSIGNED (*restype_ptr))
 	{
-	  tree value = 0;
+	  tree value = NULL_TREE;
 	  /* All unsigned values are >= 0, so we warn.  However,
 	     if OP0 is a constant that is >= 0, the signedness of
 	     the comparison isn't an issue, so suppress the
@@ -3020,7 +3048,7 @@ shorten_compare (location_t loc, tree *op0_ptr, tree *op1_ptr,
 	      break;
 	    }
 
-	  if (value != 0)
+	  if (value != NULL_TREE)
 	    {
 	      /* Don't forget to evaluate PRIMOP0 if it has side effects.  */
 	      if (TREE_SIDE_EFFECTS (primop0))
@@ -3036,7 +3064,7 @@ shorten_compare (location_t loc, tree *op0_ptr, tree *op1_ptr,
 
   *restype_ptr = truthvalue_type_node;
 
-  return 0;
+  return NULL_TREE;
 }
 
 /* Return a tree for the sum or difference (RESULTCODE says which)
@@ -3161,24 +3189,6 @@ c_wrap_maybe_const (tree expr, bool non_const)
     TREE_NO_WARNING (expr) = 1;
   protected_set_expr_location (expr, loc);
 
-  return expr;
-}
-
-/* Wrap a SAVE_EXPR around EXPR, if appropriate.  Like save_expr, but
-   for C folds the inside expression and wraps a C_MAYBE_CONST_EXPR
-   around the SAVE_EXPR if needed so that c_fully_fold does not need
-   to look inside SAVE_EXPRs.  */
-
-tree
-c_save_expr (tree expr)
-{
-  bool maybe_const = true;
-  if (c_dialect_cxx ())
-    return save_expr (expr);
-  expr = c_fully_fold (expr, false, &maybe_const);
-  expr = save_expr (expr);
-  if (!maybe_const)
-    expr = c_wrap_maybe_const (expr, true);
   return expr;
 }
 
@@ -3436,7 +3446,7 @@ c_common_truthvalue_conversion (location_t location, tree expr)
 
   if (TREE_CODE (TREE_TYPE (expr)) == COMPLEX_TYPE)
     {
-      tree t = (in_late_binary_op ? save_expr (expr) : c_save_expr (expr));
+      tree t = save_expr (expr);
       expr = (build_binary_op
 	      (EXPR_LOCATION (expr),
 	       (TREE_SIDE_EFFECTS (expr)
@@ -4171,10 +4181,14 @@ c_common_nodes_and_builtins (void)
   if (c_dialect_cxx ())
     {
       /* For C++, make fileptr_type_node a distinct void * type until
-	 FILE type is defined.  */
-      fileptr_type_node = build_variant_type_copy (ptr_type_node);
-      /* Likewise for const struct tm*.  */
-      const_tm_ptr_type_node = build_variant_type_copy (const_ptr_type_node);
+	 FILE type is defined.  Likewise for const struct tm*.  */
+      for (unsigned i = 0;
+	   i < sizeof (builtin_structptr_types)
+	       / sizeof (builtin_structptr_type);
+	   ++i)
+	builtin_structptr_types[i].node =
+	  build_variant_type_copy (builtin_structptr_types[i].base);
+
     }
 
   record_builtin_type (RID_VOID, NULL, void_type_node);
@@ -4646,17 +4660,17 @@ c_promoting_integer_type_p (const_tree t)
       return TYPE_PRECISION (t) < TYPE_PRECISION (integer_type_node);
 
     case BOOLEAN_TYPE:
-      return 1;
+      return true;
 
     default:
-      return 0;
+      return false;
     }
 }
 
 /* Return 1 if PARMS specifies a fixed number of parameters
    and none of their types is affected by default promotions.  */
 
-int
+bool
 self_promoting_args_p (const_tree parms)
 {
   const_tree t;
@@ -4667,19 +4681,19 @@ self_promoting_args_p (const_tree parms)
       if (type == error_mark_node)
 	continue;
 
-      if (TREE_CHAIN (t) == 0 && type != void_type_node)
-	return 0;
+      if (TREE_CHAIN (t) == NULL_TREE && type != void_type_node)
+	return false;
 
-      if (type == 0)
-	return 0;
+      if (type == NULL_TREE)
+	return false;
 
       if (TYPE_MAIN_VARIANT (type) == float_type_node)
-	return 0;
+	return false;
 
       if (c_promoting_integer_type_p (type))
-	return 0;
+	return false;
     }
-  return 1;
+  return true;
 }
 
 /* Recursively remove any '*' or '&' operator from TYPE.  */
@@ -5595,7 +5609,7 @@ check_function_arguments_recurse (void (*callback)
 	    format_num = tree_to_uhwi (format_num_expr);
 
 	    for (inner_arg = first_call_expr_arg (param, &iter), i = 1;
-		 inner_arg != 0;
+		 inner_arg != NULL_TREE;
 		 inner_arg = next_call_expr_arg (&iter), i++)
 	      if (i == format_num)
 		{
@@ -5856,8 +5870,8 @@ check_builtin_function_arguments (location_t loc, vec<location_t> arg_loc,
 int
 field_decl_cmp (const void *x_p, const void *y_p)
 {
-  const tree *const x = (const tree *const) x_p;
-  const tree *const y = (const tree *const) y_p;
+  const tree *const x = (const tree *) x_p;
+  const tree *const y = (const tree *) y_p;
 
   if (DECL_NAME (*x) == DECL_NAME (*y))
     /* A nontype is "greater" than a type.  */
@@ -5882,8 +5896,8 @@ pointer operator in resort_data.  */
 static int
 resort_field_decl_cmp (const void *x_p, const void *y_p)
 {
-  const tree *const x = (const tree *const) x_p;
-  const tree *const y = (const tree *const) y_p;
+  const tree *const x = (const tree *) x_p;
+  const tree *const y = (const tree *) y_p;
 
   if (DECL_NAME (*x) == DECL_NAME (*y))
     /* A nontype is "greater" than a type.  */
@@ -6469,6 +6483,9 @@ sync_resolve_size (tree function, vec<tree, va_gc> *params, bool fetch)
 
   type = TREE_TYPE (type);
   if (!INTEGRAL_TYPE_P (type) && !POINTER_TYPE_P (type))
+    goto incompatible;
+
+  if (!COMPLETE_TYPE_P (type))
     goto incompatible;
 
   if (fetch && TREE_CODE (type) == BOOLEAN_TYPE)
@@ -7670,7 +7687,8 @@ scalar_to_vector (location_t loc, enum tree_code code, tree op0, tree op1,
 	if (TREE_CODE (type0) == INTEGER_TYPE
 	    && TREE_CODE (TREE_TYPE (type1)) == INTEGER_TYPE)
 	  {
-	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0, false))
+	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0,
+				     NULL_TREE, false))
 	      {
 		if (complain)
 		  error_at (loc, "conversion of scalar %qT to vector %qT "
@@ -7718,7 +7736,8 @@ scalar_to_vector (location_t loc, enum tree_code code, tree op0, tree op1,
 	if (TREE_CODE (type0) == INTEGER_TYPE
 	    && TREE_CODE (TREE_TYPE (type1)) == INTEGER_TYPE)
 	  {
-	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0, false))
+	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0,
+				     NULL_TREE, false))
 	      {
 		if (complain)
 		  error_at (loc, "conversion of scalar %qT to vector %qT "
@@ -7733,7 +7752,8 @@ scalar_to_vector (location_t loc, enum tree_code code, tree op0, tree op1,
 		     || TREE_CODE (type0) == INTEGER_TYPE)
 		 && SCALAR_FLOAT_TYPE_P (TREE_TYPE (type1)))
 	  {
-	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0, false))
+	    if (unsafe_conversion_p (loc, TREE_TYPE (type1), op0,
+				     NULL_TREE, false))
 	      {
 		if (complain)
 		  error_at (loc, "conversion of scalar %qT to vector %qT "
@@ -7981,6 +8001,153 @@ c_flt_eval_method (bool maybe_c11_only_p)
     return c_c11_flt_eval_method ();
   else
     return c_ts18661_flt_eval_method ();
+}
+
+#if CHECKING_P
+
+namespace selftest {
+
+/* Run all of the tests within c-family.  */
+
+void
+c_family_tests (void)
+{
+  c_format_c_tests ();
+}
+
+} // namespace selftest
+
+#endif /* #if CHECKING_P */
+
+/* Attempt to locate a suitable location within FILE for a
+   #include directive to be inserted before.  FILE should
+   be a string from libcpp (pointer equality is used).
+   LOC is the location of the relevant diagnostic.
+
+   Attempt to return the location within FILE immediately
+   after the last #include within that file, or the start of
+   that file if it has no #include directives.
+
+   Return UNKNOWN_LOCATION if no suitable location is found,
+   or if an error occurs.  */
+
+static location_t
+try_to_locate_new_include_insertion_point (const char *file, location_t loc)
+{
+  /* Locate the last ordinary map within FILE that ended with a #include.  */
+  const line_map_ordinary *last_include_ord_map = NULL;
+
+  /* ...and the next ordinary map within FILE after that one.  */
+  const line_map_ordinary *last_ord_map_after_include = NULL;
+
+  /* ...and the first ordinary map within FILE.  */
+  const line_map_ordinary *first_ord_map_in_file = NULL;
+
+  /*  Get ordinary map containing LOC (or its expansion).  */
+  const line_map_ordinary *ord_map_for_loc = NULL;
+  loc = linemap_resolve_location (line_table, loc, LRK_MACRO_EXPANSION_POINT,
+				  &ord_map_for_loc);
+  gcc_assert (ord_map_for_loc);
+
+  for (unsigned int i = 0; i < LINEMAPS_ORDINARY_USED (line_table); i++)
+    {
+      const line_map_ordinary *ord_map
+	= LINEMAPS_ORDINARY_MAP_AT (line_table, i);
+
+      const line_map_ordinary *from = INCLUDED_FROM (line_table, ord_map);
+      if (from)
+	if (from->to_file == file)
+	  {
+	    last_include_ord_map = from;
+	    last_ord_map_after_include = NULL;
+	  }
+
+      if (ord_map->to_file == file)
+	{
+	  if (!first_ord_map_in_file)
+	    first_ord_map_in_file = ord_map;
+	  if (last_include_ord_map && !last_ord_map_after_include)
+	    last_ord_map_after_include = ord_map;
+	}
+
+      /* Stop searching when reaching the ord_map containing LOC,
+	 as it makes no sense to provide fix-it hints that appear
+	 after the diagnostic in question.  */
+      if (ord_map == ord_map_for_loc)
+	break;
+    }
+
+  /* Determine where to insert the #include.  */
+  const line_map_ordinary *ord_map_for_insertion;
+
+  /* We want the next ordmap in the file after the last one that's a
+     #include, but failing that, the start of the file.  */
+  if (last_ord_map_after_include)
+    ord_map_for_insertion = last_ord_map_after_include;
+  else
+    ord_map_for_insertion = first_ord_map_in_file;
+
+  if (!ord_map_for_insertion)
+    return UNKNOWN_LOCATION;
+
+  /* The "start_location" is column 0, meaning "the whole line".
+     rich_location and edit_context can't cope with this, so use
+     column 1 instead.  */
+  location_t col_0 = ord_map_for_insertion->start_location;
+  return linemap_position_for_loc_and_offset (line_table, col_0, 1);
+}
+
+/* A map from filenames to sets of headers added to them, for
+   ensuring idempotency within maybe_add_include_fixit.  */
+
+/* The values within the map.  We need string comparison as there's
+   no guarantee that two different diagnostics that are recommending
+   adding e.g. "<stdio.h>" are using the same buffer.  */
+
+typedef hash_set <const char *, nofree_string_hash> per_file_includes_t;
+
+/* The map itself.  We don't need string comparison for the filename keys,
+   as they come from libcpp.  */
+
+typedef hash_map <const char *, per_file_includes_t *> added_includes_t;
+static added_includes_t *added_includes;
+
+/* Attempt to add a fix-it hint to RICHLOC, adding "#include HEADER\n"
+   in a suitable location within the file of RICHLOC's primary
+   location.
+
+   This function is idempotent: a header will be added at most once to
+   any given file.  */
+
+void
+maybe_add_include_fixit (rich_location *richloc, const char *header)
+{
+  location_t loc = richloc->get_loc ();
+  const char *file = LOCATION_FILE (loc);
+  if (!file)
+    return;
+
+  /* Idempotency: don't add the same header more than once to a given file.  */
+  if (!added_includes)
+    added_includes = new added_includes_t ();
+  per_file_includes_t *&set = added_includes->get_or_insert (file);
+  if (set)
+    if (set->contains (header))
+      /* ...then we've already added HEADER to that file.  */
+      return;
+  if (!set)
+    set = new per_file_includes_t ();
+  set->add (header);
+
+  /* Attempt to locate a suitable place for the new directive.  */
+  location_t include_insert_loc
+    = try_to_locate_new_include_insertion_point (file, loc);
+  if (include_insert_loc == UNKNOWN_LOCATION)
+    return;
+
+  char *text = xasprintf ("#include %s\n", header);
+  richloc->add_fixit_insert_before (include_insert_loc, text);
+  free (text);
 }
 
 #include "gt-c-family-c-common.h"

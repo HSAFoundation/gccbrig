@@ -763,11 +763,13 @@ gnat_pushdecl (tree decl, Node_Id gnat_node)
   if (!(TREE_CODE (decl) == TYPE_DECL
         && TREE_CODE (TREE_TYPE (decl)) == UNCONSTRAINED_ARRAY_TYPE))
     {
-      if (DECL_EXTERNAL (decl))
-	{
-	  if (TREE_CODE (decl) == FUNCTION_DECL && DECL_BUILT_IN (decl))
-	    vec_safe_push (builtin_decls, decl);
-	}
+      /* External declarations must go to the binding level they belong to.
+	 This will make corresponding imported entities are available in the
+	 debugger at the proper time.  */
+      if (DECL_EXTERNAL (decl)
+	  && TREE_CODE (decl) == FUNCTION_DECL
+	  && DECL_BUILT_IN (decl))
+	vec_safe_push (builtin_decls, decl);
       else if (global_bindings_p ())
 	vec_safe_push (global_decls, decl);
       else
@@ -2992,7 +2994,7 @@ process_deferred_decl_context (bool force)
   struct deferred_decl_context_node **it = &deferred_decl_context_queue;
   struct deferred_decl_context_node *node;
 
-  while (*it != NULL)
+  while (*it)
     {
       bool processed = false;
       tree context = NULL_TREE;
@@ -3000,7 +3002,7 @@ process_deferred_decl_context (bool force)
 
       node = *it;
 
-      /* If FORCE, get the innermost elaborated scope. Otherwise, just try to
+      /* If FORCE, get the innermost elaborated scope.  Otherwise, just try to
 	 get the first scope.  */
       gnat_scope = node->gnat_scope;
       while (Present (gnat_scope))
@@ -3057,7 +3059,6 @@ process_deferred_decl_context (bool force)
 	it = &node->next;
     }
 }
-
 
 /* Return VALUE scaled by the biggest power-of-2 factor of EXPR.  */
 
@@ -3190,6 +3191,8 @@ create_label_decl (tree name, Node_Id gnat_node)
 
    DEBUG_INFO_P is true if we need to write debug information for it.
 
+   DEFINITION is true if the subprogram is to be considered as a definition.
+
    ATTR_LIST is the list of attributes to be attached to the subprogram.
 
    GNAT_NODE is used for the position of the decl.  */
@@ -3198,7 +3201,8 @@ tree
 create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
 		     enum inline_status_t inline_status, bool public_flag,
 		     bool extern_flag, bool artificial_p, bool debug_info_p,
-		     struct attrib *attr_list, Node_Id gnat_node)
+		     bool definition, struct attrib *attr_list,
+		     Node_Id gnat_node)
 {
   tree subprog_decl = build_decl (input_location, FUNCTION_DECL, name, type);
   DECL_ARGUMENTS (subprog_decl) = param_decl_list;
@@ -3209,6 +3213,8 @@ create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
 
   if (!debug_info_p)
     DECL_IGNORED_P (subprog_decl) = 1;
+  if (definition)
+    DECL_FUNCTION_IS_DEF (subprog_decl) = 1;
 
   switch (inline_status)
     {
@@ -3221,10 +3227,19 @@ create_subprog_decl (tree name, tree asm_name, tree type, tree param_decl_list,
 
     case is_required:
       if (Back_End_Inlining)
-	decl_attributes (&subprog_decl,
-			 tree_cons (get_identifier ("always_inline"),
-				    NULL_TREE, NULL_TREE),
-			 ATTR_FLAG_TYPE_IN_PLACE);
+	{
+	  decl_attributes (&subprog_decl,
+			   tree_cons (get_identifier ("always_inline"),
+				      NULL_TREE, NULL_TREE),
+			   ATTR_FLAG_TYPE_IN_PLACE);
+
+	  /* Inline_Always guarantees that every direct call is inlined and
+	     that there is no indirect reference to the subprogram, so the
+	     instance in the original package (as well as its clones in the
+	     client packages created for inter-unit inlining) can be made
+	     private, which causes the out-of-line body to be eliminated.  */
+	  TREE_PUBLIC (subprog_decl) = 0;
+	}
 
       /* ... fall through ... */
 
@@ -5423,11 +5438,16 @@ can_materialize_object_renaming_p (Node_Id expr)
 {
   while (true)
     {
+      expr = Original_Node (expr);
+
       switch Nkind (expr)
 	{
 	case N_Identifier:
 	case N_Expanded_Name:
-	  return true;
+	  if (!Present (Renamed_Object (Entity (expr))))
+	    return true;
+	  expr = Renamed_Object (Entity (expr));
+	  break;
 
 	case N_Selected_Component:
 	  {
@@ -5510,10 +5530,22 @@ gnat_write_global_declarations (void)
     if (TREE_CODE (iter) == TYPE_DECL && !DECL_IGNORED_P (iter))
       debug_hooks->type_decl (iter, false);
 
-  /* Then output the global variables.  We need to do that after the debug
-     information for global types is emitted so that they are finalized.  */
+  /* Output imported functions.  */
   FOR_EACH_VEC_SAFE_ELT (global_decls, i, iter)
-    if (TREE_CODE (iter) == VAR_DECL)
+    if (TREE_CODE (iter) == FUNCTION_DECL
+	&& DECL_EXTERNAL (iter)
+	&& DECL_INITIAL (iter) == NULL
+	&& !DECL_IGNORED_P (iter)
+	&& DECL_FUNCTION_IS_DEF (iter))
+      debug_hooks->early_global_decl (iter);
+
+  /* Then output the global variables.  We need to do that after the debug
+     information for global types is emitted so that they are finalized.  Skip
+     external global variables, unless we need to emit debug info for them:
+     this is useful for imported variables, for instance.  */
+  FOR_EACH_VEC_SAFE_ELT (global_decls, i, iter)
+    if (TREE_CODE (iter) == VAR_DECL
+	&& (!DECL_EXTERNAL (iter) || !DECL_IGNORED_P (iter)))
       rest_of_decl_compilation (iter, true, 0);
 
   /* Output the imported modules/declarations.  In GNAT, these are only
@@ -5521,7 +5553,7 @@ gnat_write_global_declarations (void)
   FOR_EACH_VEC_SAFE_ELT (global_decls, i, iter)
    if (TREE_CODE (iter) == IMPORTED_DECL && !DECL_IGNORED_P (iter))
      debug_hooks->imported_module_or_decl (iter, DECL_NAME (iter),
-					   DECL_CONTEXT (iter), 0);
+					   DECL_CONTEXT (iter), false, false);
 }
 
 /* ************************************************************************

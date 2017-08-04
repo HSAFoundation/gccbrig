@@ -1259,9 +1259,9 @@ struct compiler
   const char *cpp_spec;         /* If non-NULL, substitute this spec
 				   for `%C', rather than the usual
 				   cpp_spec.  */
-  const int combinable;          /* If nonzero, compiler can deal with
+  int combinable;               /* If nonzero, compiler can deal with
 				    multiple source files at once (IMA).  */
-  const int needs_preprocessing; /* If nonzero, source files need to
+  int needs_preprocessing;       /* If nonzero, source files need to
 				    be run through a preprocessor.  */
 };
 
@@ -1305,9 +1305,6 @@ static const struct compiler default_compilers[] =
   {".f03", "#Fortran", 0, 0, 0}, {".F03", "#Fortran", 0, 0, 0},
   {".f08", "#Fortran", 0, 0, 0}, {".F08", "#Fortran", 0, 0, 0},
   {".r", "#Ratfor", 0, 0, 0},
-  {".p", "#Pascal", 0, 0, 0}, {".pas", "#Pascal", 0, 0, 0},
-  {".java", "#Java", 0, 0, 0}, {".class", "#Java", 0, 0, 0},
-  {".zip", "#Java", 0, 0, 0}, {".jar", "#Java", 0, 0, 0},
   {".go", "#Go", 0, 1, 0},
   /* Next come the entries for C.  */
   {".c", "@c", 0, 0, 1},
@@ -4478,6 +4475,9 @@ process_command (unsigned int decoded_options_count,
 		       output_file);
     }
 
+  if (output_file != NULL && output_file[0] == '\0')
+    fatal_error (input_location, "output filename may not be empty");
+
   /* If -save-temps=obj and -o name, create the prefix to use for %b.
      Otherwise just make -save-temps=obj the same as -save-temps=cwd.  */
   if (save_temps_flag == SAVE_TEMPS_OBJ && save_temps_prefix != NULL)
@@ -4612,23 +4612,23 @@ process_command (unsigned int decoded_options_count,
 
   /* Decide if undefined variable references are allowed in specs.  */
 
-  /* --version and --help alone or together are safe.  Note that -v would
-     make them unsafe, as they'd then be run for subprocesses as well, the
-     location of which might depend on variables possibly coming from
-     self-specs.
+  /* -v alone is safe. --version and --help alone or together are safe.  Note
+     that -v would make them unsafe, as they'd then be run for subprocesses as
+     well, the location of which might depend on variables possibly coming
+     from self-specs.  Note also that the command name is counted in
+     decoded_options_count.  */
 
-     Count the number of options we have for which undefined variables
-     are harmless for sure, and check that nothing else is set.  */
-
-  unsigned n_varsafe_options = 0;
+  unsigned help_version_count = 0;
 
   if (print_version)
-    n_varsafe_options++;
-  
+    help_version_count++;
+
   if (print_help_list)
-    n_varsafe_options++;
-  
-  spec_undefvar_allowed = (n_varsafe_options == decoded_options_count - 1);
+    help_version_count++;
+
+  spec_undefvar_allowed =
+    ((verbose_flag && decoded_options_count == 2)
+     || help_version_count == decoded_options_count - 1);
 
   alloc_switch ();
   switches[n_switches].part1 = 0;
@@ -9395,7 +9395,8 @@ sanitize_spec_function (int argc, const char **argv)
   if (strcmp (argv[0], "thread") == 0)
     return (flag_sanitize & SANITIZE_THREAD) ? "" : NULL;
   if (strcmp (argv[0], "undefined") == 0)
-    return ((flag_sanitize & (SANITIZE_UNDEFINED | SANITIZE_NONDEFAULT))
+    return ((flag_sanitize
+	     & (SANITIZE_UNDEFINED | SANITIZE_UNDEFINED_NONDEFAULT))
 	    && !flag_sanitize_undefined_trap_on_error) ? "" : NULL;
   if (strcmp (argv[0], "leak") == 0)
     return ((flag_sanitize

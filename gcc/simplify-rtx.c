@@ -857,6 +857,15 @@ simplify_truncation (machine_mode mode, rtx op,
     return simplify_gen_unary (TRUNCATE, mode, XEXP (op, 0),
 			       GET_MODE (XEXP (op, 0)));
 
+  /* (truncate:A (ior X C)) is (const_int -1) if C is equal to that already,
+     in mode A.  */
+  if (GET_CODE (op) == IOR
+      && SCALAR_INT_MODE_P (mode)
+      && SCALAR_INT_MODE_P (op_mode)
+      && CONST_INT_P (XEXP (op, 1))
+      && trunc_int_for_mode (INTVAL (XEXP (op, 1)), mode) == -1)
+    return constm1_rtx;
+
   return NULL_RTX;
 }
 
@@ -3196,7 +3205,8 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 
     case UDIV:
       /* 0/x is 0 (or x&0 if x has side-effects).  */
-      if (trueop0 == CONST0_RTX (mode))
+      if (trueop0 == CONST0_RTX (mode)
+	  && !cfun->can_throw_non_call_exceptions)
 	{
 	  if (side_effects_p (op1))
 	    return simplify_gen_binary (AND, mode, op1, trueop0);
@@ -6187,7 +6197,7 @@ simplify_subreg (machine_mode outermode, rtx op,
       unsigned int part_size, final_offset;
       rtx part, res;
 
-      enum machine_mode part_mode = GET_MODE (XEXP (op, 0));
+      machine_mode part_mode = GET_MODE (XEXP (op, 0));
       if (part_mode == VOIDmode)
 	part_mode = GET_MODE_INNER (GET_MODE (op));
       part_size = GET_MODE_SIZE (part_mode);

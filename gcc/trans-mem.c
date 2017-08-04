@@ -1275,7 +1275,7 @@ tm_log_emit (void)
       if (dump_file)
 	{
 	  fprintf (dump_file, "TM thread private mem logging: ");
-	  print_generic_expr (dump_file, lp->addr, 0);
+	  print_generic_expr (dump_file, lp->addr);
 	  fprintf (dump_file, "\n");
 	}
 
@@ -2934,11 +2934,11 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       join_bb->frequency = test_bb->frequency = transaction_bb->frequency;
       join_bb->count = test_bb->count = transaction_bb->count;
 
-      ei->probability = PROB_ALWAYS;
-      et->probability = PROB_LIKELY;
-      ef->probability = PROB_UNLIKELY;
-      et->count = apply_probability (test_bb->count, et->probability);
-      ef->count = apply_probability (test_bb->count, ef->probability);
+      ei->probability = profile_probability::always ();
+      et->probability = profile_probability::likely ();
+      ef->probability = profile_probability::unlikely ();
+      et->count = test_bb->count.apply_probability (et->probability);
+      ef->count = test_bb->count.apply_probability (ef->probability);
 
       code_bb->count = et->count;
       code_bb->frequency = EDGE_FREQUENCY (et);
@@ -2967,22 +2967,22 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       edge ei = make_edge (transaction_bb, test_bb, EDGE_FALLTHRU);
       test_bb->frequency = transaction_bb->frequency;
       test_bb->count = transaction_bb->count;
-      ei->probability = PROB_ALWAYS;
+      ei->probability = profile_probability::always ();
 
       // Not abort edge.  If both are live, chose one at random as we'll
       // we'll be fixing that up below.
       redirect_edge_pred (fallthru_edge, test_bb);
       fallthru_edge->flags = EDGE_FALSE_VALUE;
-      fallthru_edge->probability = PROB_VERY_LIKELY;
-      fallthru_edge->count
-	= apply_probability (test_bb->count, fallthru_edge->probability);
+      fallthru_edge->probability = profile_probability::very_likely ();
+      fallthru_edge->count = test_bb->count.apply_probability
+				(fallthru_edge->probability);
 
       // Abort/over edge.
       redirect_edge_pred (abort_edge, test_bb);
       abort_edge->flags = EDGE_TRUE_VALUE;
-      abort_edge->probability = PROB_VERY_UNLIKELY;
-      abort_edge->count
-	= apply_probability (test_bb->count, abort_edge->probability);
+      abort_edge->probability = profile_probability::unlikely ();
+      abort_edge->count = test_bb->count.apply_probability
+				(abort_edge->probability);
 
       transaction_bb = test_bb;
     }
@@ -3020,15 +3020,15 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       // use the uninst path when falling back to serial mode.
       redirect_edge_pred (inst_edge, test_bb);
       inst_edge->flags = EDGE_FALSE_VALUE;
-      inst_edge->probability = REG_BR_PROB_BASE / 2;
+      inst_edge->probability = profile_probability::even ();
       inst_edge->count
-	= apply_probability (test_bb->count, inst_edge->probability);
+	= test_bb->count.apply_probability (inst_edge->probability);
 
       redirect_edge_pred (uninst_edge, test_bb);
       uninst_edge->flags = EDGE_TRUE_VALUE;
-      uninst_edge->probability = REG_BR_PROB_BASE / 2;
+      uninst_edge->probability = profile_probability::even ();
       uninst_edge->count
-	= apply_probability (test_bb->count, uninst_edge->probability);
+	= test_bb->count.apply_probability (uninst_edge->probability);
     }
 
   // If we have no previous special cases, and we have PHIs at the beginning
@@ -3211,7 +3211,12 @@ split_bb_make_tm_edge (gimple *stmt, basic_block dest_bb,
       edge e = split_block (bb, stmt);
       *pnext = gsi_start_bb (e->dest);
     }
-  make_edge (bb, dest_bb, EDGE_ABNORMAL);
+  edge e = make_edge (bb, dest_bb, EDGE_ABNORMAL);
+  if (e)
+    {
+      e->probability = profile_probability::guessed_never ();
+      e->count = profile_count::guessed_zero ();
+    }
 
   // Record the need for the edge for the benefit of the rtl passes.
   if (cfun->gimple_df->tm_restart == NULL)
@@ -3582,7 +3587,7 @@ tm_memopt_accumulate_memops (basic_block bb)
 	  fprintf (dump_file, "TM memopt (%s): value num=%d, BB=%d, addr=",
 		   is_tm_load (stmt) ? "LOAD" : "STORE", loc,
 		   gimple_bb (stmt)->index);
-	  print_generic_expr (dump_file, gimple_call_arg (stmt, 0), 0);
+	  print_generic_expr (dump_file, gimple_call_arg (stmt, 0));
 	  fprintf (dump_file, "\n");
 	}
     }
@@ -3610,7 +3615,7 @@ dump_tm_memopt_set (const char *set_name, bitmap bits)
       gcc_assert (mem->value_id == i);
       fprintf (dump_file, "%s", comma);
       comma = ", ";
-      print_generic_expr (dump_file, mem->addr, 0);
+      print_generic_expr (dump_file, mem->addr);
     }
   fprintf (dump_file, "]\n");
 }
@@ -3910,7 +3915,7 @@ dump_tm_memopt_transform (gimple *stmt)
   if (dump_file)
     {
       fprintf (dump_file, "TM memopt: transforming: ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
       fprintf (dump_file, "\n");
     }
 }
@@ -5076,7 +5081,7 @@ ipa_tm_insert_irr_call (struct cgraph_node *node, struct tm_region *region,
 
   node->create_edge (cgraph_node::get_create
 		       (builtin_decl_explicit (BUILT_IN_TM_IRREVOCABLE)),
-		     g, 0,
+		     g, gimple_bb (g)->count,
 		     compute_call_stmt_bb_frequency (node->decl,
 						     gimple_bb (g)));
 }
@@ -5127,7 +5132,7 @@ ipa_tm_insert_gettmclone_call (struct cgraph_node *node,
 
   gsi_insert_before (gsi, g, GSI_SAME_STMT);
 
-  node->create_edge (cgraph_node::get_create (gettm_fn), g, 0,
+  node->create_edge (cgraph_node::get_create (gettm_fn), g, gimple_bb (g)->count,
 		     compute_call_stmt_bb_frequency (node->decl,
 						     gimple_bb (g)));
 

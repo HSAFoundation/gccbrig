@@ -422,7 +422,7 @@ show_expr (gfc_expr *p)
       switch (p->ts.type)
 	{
 	case BT_INTEGER:
-	  mpz_out_str (stdout, 10, p->value.integer);
+	  mpz_out_str (dumpfile, 10, p->value.integer);
 
 	  if (p->ts.kind != gfc_default_integer_kind)
 	    fprintf (dumpfile, "_%d", p->ts.kind);
@@ -436,7 +436,7 @@ show_expr (gfc_expr *p)
 	  break;
 
 	case BT_REAL:
-	  mpfr_out_str (stdout, 10, 0, p->value.real, GFC_RND_MODE);
+	  mpfr_out_str (dumpfile, 10, 0, p->value.real, GFC_RND_MODE);
 	  if (p->ts.kind != gfc_default_real_kind)
 	    fprintf (dumpfile, "_%d", p->ts.kind);
 	  break;
@@ -449,14 +449,14 @@ show_expr (gfc_expr *p)
 	case BT_COMPLEX:
 	  fputs ("(complex ", dumpfile);
 
-	  mpfr_out_str (stdout, 10, 0, mpc_realref (p->value.complex),
+	  mpfr_out_str (dumpfile, 10, 0, mpc_realref (p->value.complex),
 			GFC_RND_MODE);
 	  if (p->ts.kind != gfc_default_complex_kind)
 	    fprintf (dumpfile, "_%d", p->ts.kind);
 
 	  fputc (' ', dumpfile);
 
-	  mpfr_out_str (stdout, 10, 0, mpc_imagref (p->value.complex),
+	  mpfr_out_str (dumpfile, 10, 0, mpc_imagref (p->value.complex),
 			GFC_RND_MODE);
 	  if (p->ts.kind != gfc_default_complex_kind)
 	    fprintf (dumpfile, "_%d", p->ts.kind);
@@ -573,7 +573,7 @@ show_expr (gfc_expr *p)
 
 	default:
 	  gfc_internal_error
-	    ("show_expr(): Bad intrinsic in expression!");
+	    ("show_expr(): Bad intrinsic in expression");
 	}
 
       show_expr (p->value.op.op1);
@@ -856,6 +856,9 @@ show_symbol (gfc_symbol *sym)
   len = strlen (sym->name);
   for (i=len; i<12; i++)
     fputc(' ', dumpfile);
+
+  if (sym->binding_label)
+      fprintf (dumpfile,"|| binding_label: '%s' ", sym->binding_label);
 
   ++show_level;
 
@@ -1283,6 +1286,7 @@ show_omp_clauses (gfc_omp_clauses *omp_clauses)
 	case OMP_DEFAULT_PRIVATE: type = "PRIVATE"; break;
 	case OMP_DEFAULT_SHARED: type = "SHARED"; break;
 	case OMP_DEFAULT_FIRSTPRIVATE: type = "FIRSTPRIVATE"; break;
+	case OMP_DEFAULT_PRESENT: type = "PRESENT"; break;
 	default:
 	  gcc_unreachable ();
 	}
@@ -2887,3 +2891,253 @@ gfc_dump_parse_tree (gfc_namespace *ns, FILE *file)
   show_namespace (ns);
 }
 
+/* This part writes BIND(C) definition for use in external C programs.  */
+
+static void write_interop_decl (gfc_symbol *);
+
+void
+gfc_dump_c_prototypes (gfc_namespace *ns, FILE *file)
+{
+  int error_count;
+  gfc_get_errors (NULL, &error_count);
+  if (error_count != 0)
+    return;
+  dumpfile = file;
+  gfc_traverse_ns (ns, write_interop_decl);
+}
+
+enum type_return { T_OK=0, T_WARN, T_ERROR };
+
+/* Return the name of the type for later output.  Both function pointers and
+   void pointers will be mapped to void *.  */
+
+static enum type_return
+get_c_type_name (gfc_typespec *ts, gfc_array_spec *as, const char **pre,
+		 const char **type_name, bool *asterisk, const char **post,
+		 bool func_ret)
+{
+  static char post_buffer[40];
+  enum type_return ret;
+  ret = T_ERROR;
+
+  *pre = " ";
+  *asterisk = false;
+  *post = "";
+  *type_name = "<error>";
+  if (ts->type == BT_REAL || ts->type == BT_INTEGER)
+    {
+ 
+      if (ts->is_c_interop && ts->interop_kind)
+	{
+	  *type_name = ts->interop_kind->name + 2;
+	  if (strcmp (*type_name, "signed_char") == 0)
+	    *type_name = "signed char";
+	  else if (strcmp (*type_name, "size_t") == 0)
+	    *type_name = "ssize_t";
+
+	  ret = T_OK;
+	}
+      else
+	{
+	  /* The user did not specify a C interop type.  Let's look through
+	     the available table and use the first one, but warn.  */
+	  int i;
+	  for (i=0; i<ISOCBINDING_NUMBER; i++)
+	    {
+	      if (c_interop_kinds_table[i].f90_type == ts->type
+		  && c_interop_kinds_table[i].value == ts->kind)
+		{
+		  *type_name = c_interop_kinds_table[i].name + 2;
+		  if (strcmp (*type_name, "signed_char") == 0)
+		    *type_name = "signed char";
+		  else if (strcmp (*type_name, "size_t") == 0)
+		    *type_name = "ssize_t";
+
+		  ret = T_WARN;
+		  break;
+		}
+	    }
+	}
+    }
+  else if (ts->type == BT_DERIVED)
+    {
+      if (ts->u.derived->from_intmod == INTMOD_ISO_C_BINDING)
+	{
+	  if (strcmp (ts->u.derived->name, "c_ptr") == 0)
+	    *type_name = "void";
+	  else if (strcmp (ts->u.derived->name, "c_funptr") == 0)
+	    {
+	      *type_name = "int ";
+	      if (func_ret)
+		{
+		  *pre = "(";
+		  *post = "())";
+		}
+	      else
+		{
+		  *pre = "(";
+		  *post = ")()";
+		}
+	    }
+	  *asterisk = true;
+	}
+      else
+	*type_name = ts->u.derived->name;
+
+      ret = T_OK;
+    }
+  if (ret != T_ERROR && as)
+    {
+      mpz_t sz;
+      bool size_ok;
+      size_ok = spec_size (as, &sz);
+      gcc_assert (size_ok == true);
+      gmp_snprintf (post_buffer, sizeof(post_buffer), "[%Zd]", sz);
+      *post = post_buffer;
+      mpz_clear (sz);
+    }
+  return ret;
+}
+
+/* Write out a declaration.  */
+static void
+write_decl (gfc_typespec *ts, gfc_array_spec *as, const char *sym_name,
+	    bool func_ret)
+{
+    const char *pre, *type_name, *post;
+    bool asterisk;
+    enum type_return rok;
+
+    rok = get_c_type_name (ts, as, &pre, &type_name, &asterisk, &post, func_ret);
+    gcc_assert (rok != T_ERROR);
+    fputs (type_name, dumpfile);
+    fputs (pre, dumpfile);
+    if (asterisk)
+      fputs ("*", dumpfile);
+
+    fputs (sym_name, dumpfile);
+    fputs (post, dumpfile);
+    
+    if (rok == T_WARN)
+      fputs(" /* WARNING: non-interoperable KIND */", dumpfile);
+}
+
+/* Write out an interoperable type.  It will be written as a typedef
+   for a struct.  */
+
+static void
+write_type (gfc_symbol *sym)
+{
+  gfc_component *c;
+
+  fprintf (dumpfile, "typedef struct %s {\n", sym->name);
+  for (c = sym->components; c; c = c->next)
+    {
+      fputs ("    ", dumpfile);
+      write_decl (&(c->ts), c->as, c->name, false);
+      fputs (";\n", dumpfile);
+    }
+
+  fprintf (dumpfile, "} %s;\n", sym->name);
+}
+
+/* Write out a variable.  */
+
+static void
+write_variable (gfc_symbol *sym)
+{
+  const char *sym_name;
+
+  gcc_assert (sym->attr.flavor == FL_VARIABLE);
+
+  if (sym->binding_label)
+    sym_name = sym->binding_label;
+  else
+    sym_name = sym->name;
+
+  fputs ("extern ", dumpfile);
+  write_decl (&(sym->ts), sym->as, sym_name, false);
+  fputs (";\n", dumpfile);
+}
+
+
+/* Write out a procedure, including its arguments.  */
+static void
+write_proc (gfc_symbol *sym)
+{
+  const char *pre, *type_name, *post;
+  bool asterisk;
+  enum type_return rok;
+  gfc_formal_arglist *f;
+  const char *sym_name;
+  const char *intent_in;
+
+  if (sym->binding_label)
+    sym_name = sym->binding_label;
+  else
+    sym_name = sym->name;
+
+  if (sym->ts.type == BT_UNKNOWN)
+    {
+      fprintf (dumpfile, "void ");
+      fputs (sym_name, dumpfile);
+    }
+  else
+    write_decl (&(sym->ts), sym->as, sym->name, true);
+
+  fputs (" (", dumpfile);
+
+  for (f = sym->formal; f; f = f->next)
+    {
+      gfc_symbol *s;
+      s = f->sym;
+      rok = get_c_type_name (&(s->ts), NULL, &pre, &type_name, &asterisk,
+			     &post, false);
+      gcc_assert (rok != T_ERROR);
+
+      if (!s->attr.value)
+	asterisk = true;
+
+      if (s->attr.intent == INTENT_IN && !s->attr.value)
+	intent_in = "const ";
+      else
+	intent_in = "";
+
+      fputs (intent_in, dumpfile);
+      fputs (type_name, dumpfile);
+      fputs (pre, dumpfile);
+      if (asterisk)
+	fputs ("*", dumpfile);
+
+      fputs (s->name, dumpfile);
+      fputs (post, dumpfile);
+      if (rok == T_WARN)
+	fputs(" /* WARNING: non-interoperable KIND */ ", dumpfile);
+
+      fputs (f->next ? ", " : ")", dumpfile);
+    }
+  fputs (";\n", dumpfile);
+}
+
+
+/* Write a C-interoperable declaration as a C prototype or extern
+   declaration.  */
+
+static void
+write_interop_decl (gfc_symbol *sym)
+{
+  /* Only dump bind(c) entities.  */
+  if (!sym->attr.is_bind_c)
+    return;
+
+  /* Don't dump our iso c module.  */
+  if (sym->from_intmod == INTMOD_ISO_C_BINDING)
+    return;
+
+  if (sym->attr.flavor == FL_VARIABLE)
+    write_variable (sym);
+  else if (sym->attr.flavor == FL_DERIVED)
+    write_type (sym);
+  else if (sym->attr.flavor == FL_PROCEDURE)
+    write_proc (sym);
+}

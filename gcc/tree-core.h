@@ -93,6 +93,9 @@ struct die_struct;
 /* Nonzero if this is an indirect call by descriptor.  */
 #define ECF_BY_DESCRIPTOR	  (1 << 14)
 
+/* Nonzero if this is a cold function.  */
+#define ECF_COLD		  (1 << 15)
+
 /* Call argument flags.  */
 /* Nonzero if the argument is not dereferenced recursively, thus only
    directly reachable memory is read or written.  */
@@ -357,7 +360,7 @@ enum omp_clause_code {
   /* OpenMP clause: ordered [(constant-integer-expression)].  */
   OMP_CLAUSE_ORDERED,
 
-  /* OpenMP clause: default.  */
+  /* OpenACC/OpenMP clause: default.  */
   OMP_CLAUSE_DEFAULT,
 
   /* OpenACC/OpenMP clause: collapse (constant-integer-expression).  */
@@ -499,6 +502,7 @@ enum omp_clause_default_kind {
   OMP_CLAUSE_DEFAULT_NONE,
   OMP_CLAUSE_DEFAULT_PRIVATE,
   OMP_CLAUSE_DEFAULT_FIRSTPRIVATE,
+  OMP_CLAUSE_DEFAULT_PRESENT,
   OMP_CLAUSE_DEFAULT_LAST
 };
 
@@ -623,6 +627,10 @@ enum tree_index {
   TI_BOOLEAN_TYPE,
   TI_FILEPTR_TYPE,
   TI_CONST_TM_PTR_TYPE,
+  TI_FENV_T_PTR_TYPE,
+  TI_CONST_FENV_T_PTR_TYPE,
+  TI_FEXCEPT_T_PTR_TYPE,
+  TI_CONST_FEXCEPT_T_PTR_TYPE,
   TI_POINTER_SIZED_TYPE,
 
   TI_POINTER_BOUNDS_TYPE,

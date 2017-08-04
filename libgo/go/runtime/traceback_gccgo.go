@@ -77,7 +77,11 @@ func traceback(skip int32) {
 func printtrace(locbuf []location, gp *g) {
 	for i := range locbuf {
 		if showframe(locbuf[i].function, gp) {
-			print(locbuf[i].function, "\n\t", locbuf[i].filename, ":", locbuf[i].lineno, "\n")
+			name := locbuf[i].function
+			if name == "runtime.gopanic" {
+				name = "panic"
+			}
+			print(name, "\n\t", locbuf[i].filename, ":", locbuf[i].lineno, "\n")
 		}
 	}
 }
@@ -94,7 +98,7 @@ func showframe(name string, gp *g) bool {
 	// We want to print those in the traceback.
 	// But unless GOTRACEBACK > 1 (checked below), still skip
 	// internal C functions and cgo-generated functions.
-	if !contains(name, ".") && !hasprefix(name, "__go_") && !hasprefix(name, "_cgo_") {
+	if name != "" && !contains(name, ".") && !hasprefix(name, "__go_") && !hasprefix(name, "_cgo_") {
 		return true
 	}
 

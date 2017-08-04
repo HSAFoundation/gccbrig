@@ -56,6 +56,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "ipa-chkp.h"
 #include "tree-cfg.h"
 #include "fold-const-call.h"
+#include "asan.h"
 
 /* Return true when DECL can be referenced from current unit.
    FROM_DECL (if non-null) specify constructor of variable DECL was taken from.
@@ -570,7 +571,7 @@ gimplify_and_update_call_from_tree (gimple_stmt_iterator *si_p, tree expr)
 
 /* Replace the call at *GSI with the gimple value VAL.  */
 
-static void
+void
 replace_call_with_value (gimple_stmt_iterator *gsi, tree val)
 {
   gimple *stmt = gsi_stmt (*gsi);
@@ -606,9 +607,10 @@ replace_call_with_call_and_fold (gimple_stmt_iterator *gsi, gimple *repl)
       && TREE_CODE (gimple_vdef (stmt)) == SSA_NAME)
     {
       gimple_set_vdef (repl, gimple_vdef (stmt));
-      gimple_set_vuse (repl, gimple_vuse (stmt));
       SSA_NAME_DEF_STMT (gimple_vdef (repl)) = repl;
     }
+  if (gimple_vuse (stmt))
+    gimple_set_vuse (repl, gimple_vuse (stmt));
   gsi_replace (gsi, repl, false);
   fold_stmt (gsi);
 }
@@ -1073,6 +1075,83 @@ done:
   gsi_insert_seq_before (gsi, stmts, GSI_SAME_STMT);
   gimple *repl = gimple_build_assign (lhs, dest);
   gsi_replace (gsi, repl, false);
+  return true;
+}
+
+/* Transform a call to built-in bcmp(a, b, len) at *GSI into one
+   to built-in memcmp (a, b, len).  */
+
+static bool
+gimple_fold_builtin_bcmp (gimple_stmt_iterator *gsi)
+{
+  tree fn = builtin_decl_implicit (BUILT_IN_MEMCMP);
+
+  if (!fn)
+    return false;
+
+  /* Transform bcmp (a, b, len) into memcmp (a, b, len).  */
+
+  gimple *stmt = gsi_stmt (*gsi);
+  tree a = gimple_call_arg (stmt, 0);
+  tree b = gimple_call_arg (stmt, 1);
+  tree len = gimple_call_arg (stmt, 2);
+
+  gimple *repl = gimple_build_call (fn, 3, a, b, len);
+  replace_call_with_call_and_fold (gsi, repl);
+
+  return true;
+}
+
+/* Transform a call to built-in bcopy (src, dest, len) at *GSI into one
+   to built-in memmove (dest, src, len).  */
+
+static bool
+gimple_fold_builtin_bcopy (gimple_stmt_iterator *gsi)
+{
+  tree fn = builtin_decl_implicit (BUILT_IN_MEMMOVE);
+
+  if (!fn)
+    return false;
+
+  /* bcopy has been removed from POSIX in Issue 7 but Issue 6 specifies
+     it's quivalent to memmove (not memcpy).  Transform bcopy (src, dest,
+     len) into memmove (dest, src, len).  */
+
+  gimple *stmt = gsi_stmt (*gsi);
+  tree src = gimple_call_arg (stmt, 0);
+  tree dest = gimple_call_arg (stmt, 1);
+  tree len = gimple_call_arg (stmt, 2);
+
+  gimple *repl = gimple_build_call (fn, 3, dest, src, len);
+  gimple_call_set_fntype (as_a <gcall *> (stmt), TREE_TYPE (fn));
+  replace_call_with_call_and_fold (gsi, repl);
+
+  return true;
+}
+
+/* Transform a call to built-in bzero (dest, len) at *GSI into one
+   to built-in memset (dest, 0, len).  */
+
+static bool
+gimple_fold_builtin_bzero (gimple_stmt_iterator *gsi)
+{
+  tree fn = builtin_decl_implicit (BUILT_IN_MEMSET);
+
+  if (!fn)
+    return false;
+
+  /* Transform bzero (dest, len) into memset (dest, 0, len).  */
+
+  gimple *stmt = gsi_stmt (*gsi);
+  tree dest = gimple_call_arg (stmt, 0);
+  tree len = gimple_call_arg (stmt, 1);
+
+  gimple_seq seq = NULL;
+  gimple *repl = gimple_build_call (fn, 3, dest, integer_zero_node, len);
+  gimple_seq_add_stmt_without_update (&seq, repl);
+  gsi_replace_with_seq_vops (gsi, seq);
+  fold_stmt (gsi);
+
   return true;
 }
 
@@ -2670,11 +2749,9 @@ gimple_fold_builtin_sprintf_chk (gimple_stmt_iterator *gsi,
    ORIG may be null if this is a 2-argument call.  We don't attempt to
    simplify calls with more than 3 arguments.
 
-   Return NULL_TREE if no simplification was possible, otherwise return the
-   simplified form of the call as a tree.  If IGNORED is true, it means that
-   the caller does not use the returned value of the function.  */
+   Return true if simplification was possible, otherwise false.  */
 
-static bool
+bool
 gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
 {
   gimple *stmt = gsi_stmt (*gsi);
@@ -2795,11 +2872,9 @@ gimple_fold_builtin_sprintf (gimple_stmt_iterator *gsi)
    FMT, and ORIG.  ORIG may be null if this is a 3-argument call.  We don't
    attempt to simplify calls with more than 4 arguments.
 
-   Return NULL_TREE if no simplification was possible, otherwise return the
-   simplified form of the call as a tree.  If IGNORED is true, it means that
-   the caller does not use the returned value of the function.  */
+   Return true if simplification was possible, otherwise false.  */
 
-static bool
+bool
 gimple_fold_builtin_snprintf (gimple_stmt_iterator *gsi)
 {
   gcall *stmt = as_a <gcall *> (gsi_stmt (*gsi));
@@ -3291,16 +3366,17 @@ gimple_fold_builtin (gimple_stmt_iterator *gsi)
   enum built_in_function fcode = DECL_FUNCTION_CODE (callee);
   switch (fcode)
     {
+    case BUILT_IN_BCMP:
+      return gimple_fold_builtin_bcmp (gsi);
+    case BUILT_IN_BCOPY:
+      return gimple_fold_builtin_bcopy (gsi);
     case BUILT_IN_BZERO:
-      return gimple_fold_builtin_memset (gsi, integer_zero_node,
-					 gimple_call_arg (stmt, 1));
+      return gimple_fold_builtin_bzero (gsi);
+
     case BUILT_IN_MEMSET:
       return gimple_fold_builtin_memset (gsi,
 					 gimple_call_arg (stmt, 1),
 					 gimple_call_arg (stmt, 2));
-    case BUILT_IN_BCOPY:
-      return gimple_fold_builtin_memory_op (gsi, gimple_call_arg (stmt, 1),
-					    gimple_call_arg (stmt, 0), 3);
     case BUILT_IN_MEMCPY:
       return gimple_fold_builtin_memory_op (gsi, gimple_call_arg (stmt, 0),
 					    gimple_call_arg (stmt, 1), 0);
@@ -3384,10 +3460,7 @@ gimple_fold_builtin (gimple_stmt_iterator *gsi)
     case BUILT_IN_SNPRINTF_CHK:
     case BUILT_IN_VSNPRINTF_CHK:
       return gimple_fold_builtin_snprintf_chk (gsi, fcode);
-    case BUILT_IN_SNPRINTF:
-      return gimple_fold_builtin_snprintf (gsi);
-    case BUILT_IN_SPRINTF:
-      return gimple_fold_builtin_sprintf (gsi);
+
     case BUILT_IN_FPRINTF:
     case BUILT_IN_FPRINTF_UNLOCKED:
     case BUILT_IN_VFPRINTF:
@@ -3486,7 +3559,7 @@ optimize_atomic_compare_exchange_p (gimple *stmt)
   if (gimple_call_num_args (stmt) != 6
       || !flag_inline_atomics
       || !optimize
-      || (flag_sanitize & (SANITIZE_THREAD | SANITIZE_ADDRESS)) != 0
+      || sanitize_flags_p (SANITIZE_THREAD | SANITIZE_ADDRESS)
       || !gimple_call_builtin_p (stmt, BUILT_IN_NORMAL)
       || !gimple_vdef (stmt)
       || !gimple_vuse (stmt))
@@ -4172,7 +4245,7 @@ maybe_canonicalize_mem_ref_addr (tree *t)
 				       TREE_TYPE (*t),
 				       TREE_OPERAND (TREE_OPERAND (*t, 0), 0),
 				       TYPE_SIZE (TREE_TYPE (*t)),
-				       wide_int_to_tree (sizetype, idx));
+				       wide_int_to_tree (bitsizetype, idx));
 		      res = true;
 		    }
 		}
@@ -5748,7 +5821,7 @@ gimple_fold_stmt_to_constant_1 (gimple *stmt, tree (*valueize) (tree),
 	      fprintf (dump_file, "Match-and-simplified ");
 	      print_gimple_expr (dump_file, stmt, 0, TDF_SLIM);
 	      fprintf (dump_file, " to ");
-	      print_generic_expr (dump_file, res, 0);
+	      print_generic_expr (dump_file, res);
 	      fprintf (dump_file, "\n");
 	    }
 	  return res;

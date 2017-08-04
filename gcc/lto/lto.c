@@ -46,7 +46,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "lto-partition.h"
 #include "context.h"
 #include "pass_manager.h"
-#include "ipa-inline.h"
+#include "ipa-fnsummary.h"
 #include "params.h"
 #include "ipa-utils.h"
 #include "gomp-constants.h"
@@ -646,8 +646,8 @@ mentions_vars_p_type (tree t)
   CHECK_NO_VAR (TYPE_ATTRIBUTES (t));
   CHECK_NO_VAR (TYPE_NAME (t));
 
-  CHECK_VAR (TYPE_MINVAL (t));
-  CHECK_VAR (TYPE_MAXVAL (t));
+  CHECK_VAR (TYPE_MIN_VALUE_RAW (t));
+  CHECK_VAR (TYPE_MAX_VALUE_RAW (t));
 
   /* Accessor is for derived node types only. */
   CHECK_NO_VAR (t->type_non_common.binfo);
@@ -1414,9 +1414,10 @@ compare_tree_sccs_1 (tree t1, tree t2, tree **map)
       else if (code == FUNCTION_TYPE
 	       || code == METHOD_TYPE)
 	compare_tree_edges (TYPE_ARG_TYPES (t1), TYPE_ARG_TYPES (t2));
+
       if (!POINTER_TYPE_P (t1))
-	compare_tree_edges (TYPE_MINVAL (t1), TYPE_MINVAL (t2));
-      compare_tree_edges (TYPE_MAXVAL (t1), TYPE_MAXVAL (t2));
+	compare_tree_edges (TYPE_MIN_VALUE_RAW (t1), TYPE_MIN_VALUE_RAW (t2));
+      compare_tree_edges (TYPE_MAX_VALUE_RAW (t1), TYPE_MAX_VALUE_RAW (t2));
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_LIST))
@@ -2580,8 +2581,8 @@ lto_fixup_prevailing_decls (tree t)
       LTO_NO_PREVAIL (TYPE_ATTRIBUTES (t));
       LTO_NO_PREVAIL (TYPE_NAME (t));
 
-      LTO_SET_PREVAIL (TYPE_MINVAL (t));
-      LTO_SET_PREVAIL (TYPE_MAXVAL (t));
+      LTO_SET_PREVAIL (TYPE_MIN_VALUE_RAW (t));
+      LTO_SET_PREVAIL (TYPE_MAX_VALUE_RAW (t));
       LTO_NO_PREVAIL (t->type_non_common.binfo);
 
       LTO_SET_PREVAIL (TYPE_CONTEXT (t));
@@ -2927,7 +2928,7 @@ read_cgraph_and_symbols (unsigned nfiles, const char **fnames)
   if (symtab->dump_file)
     {
       fprintf (symtab->dump_file, "Before merging:\n");
-      symtab_node::dump_table (symtab->dump_file);
+      symtab->dump (symtab->dump_file);
     }
   if (!flag_ltrans)
     {
@@ -3092,7 +3093,7 @@ do_whole_program_analysis (void)
   symtab->function_flags_ready = true;
 
   if (symtab->dump_file)
-    symtab_node::dump_table (symtab->dump_file);
+    symtab->dump (symtab->dump_file);
   bitmap_obstack_initialize (NULL);
   symtab->state = IPA_SSA;
 
@@ -3105,7 +3106,7 @@ do_whole_program_analysis (void)
   if (symtab->dump_file)
     {
       fprintf (symtab->dump_file, "Optimized ");
-      symtab_node::dump_table (symtab->dump_file);
+      symtab->dump (symtab->dump_file);
     }
 
   symtab_node::checking_verify_symtab_nodes ();
@@ -3129,7 +3130,7 @@ do_whole_program_analysis (void)
 
   /* Inline summaries are needed for balanced partitioning.  Free them now so
      the memory can be used for streamer caches.  */
-  inline_free_summary ();
+  ipa_free_fn_summary ();
 
   /* AUX pointers are used by partitioning code to bookkeep number of
      partitions symbol is in.  This is no longer needed.  */

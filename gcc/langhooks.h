@@ -293,7 +293,7 @@ struct lang_hooks_for_lto
 struct lang_hooks
 {
   /* String identifying the front end and optionally language standard
-     version, e.g. "GNU C++98" or "GNU Java".  */
+     version, e.g. "GNU C++98".  */
   const char *name;
 
   /* sizeof (struct lang_identifier), so make_node () creates
@@ -325,6 +325,9 @@ struct lang_hooks
   /* Callback used to perform language-specific initialization for the
      global diagnostic context structure.  */
   void (*initialize_diagnostics) (diagnostic_context *);
+
+  /* Register language-specific dumps.  */
+  void (*register_dumps) (gcc::dump_manager *);
 
   /* Return true if a warning should be given about option OPTION,
      which is for the wrong language, false if it should be quietly

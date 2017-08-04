@@ -540,8 +540,6 @@ static void bitmap_set_copy (bitmap_set_t, bitmap_set_t);
 static void bitmap_set_and (bitmap_set_t, bitmap_set_t);
 static bool bitmap_set_contains_value (bitmap_set_t, unsigned int);
 static void bitmap_insert_into_set (bitmap_set_t, pre_expr);
-static void bitmap_insert_into_set_1 (bitmap_set_t, pre_expr,
-				      unsigned int, bool);
 static bitmap_set_t bitmap_set_new (void);
 static tree create_expression_by_pieces (basic_block, pre_expr, gimple_seq *,
 					 tree);
@@ -732,25 +730,20 @@ bitmap_remove_from_set (bitmap_set_t set, pre_expr expr)
     }
 }
 
-static void
-bitmap_insert_into_set_1 (bitmap_set_t set, pre_expr expr,
-			  unsigned int val, bool allow_constants)
-{
-  if (allow_constants || !value_id_constant_p (val))
-    {
-      /* We specifically expect this and only this function to be able to
-	 insert constants into a set.  */
-      bitmap_set_bit (&set->values, val);
-      bitmap_set_bit (&set->expressions, get_or_alloc_expression_id (expr));
-    }
-}
-
 /* Insert an expression EXPR into a bitmapped set.  */
 
 static void
 bitmap_insert_into_set (bitmap_set_t set, pre_expr expr)
 {
-  bitmap_insert_into_set_1 (set, expr, get_expr_value_id (expr), false);
+  unsigned int val = get_expr_value_id (expr);
+  if (! value_id_constant_p (val))
+    {
+      /* Note this is the only function causing multiple expressions
+         for the same value to appear in a set.  This is needed for
+	 TMP_GEN, PHI_GEN and NEW_SETs.  */
+      bitmap_set_bit (&set->values, val);
+      bitmap_set_bit (&set->expressions, get_or_alloc_expression_id (expr));
+    }
 }
 
 /* Copy a bitmapped set ORIG, into bitmapped set DEST.  */
@@ -837,7 +830,7 @@ bitmap_set_and (bitmap_set_t dest, bitmap_set_t orig)
     }
 }
 
-/* Subtract all values and expressions contained in ORIG from DEST.  */
+/* Subtract all expressions contained in ORIG from DEST.  */
 
 static bitmap_set_t
 bitmap_set_subtract (bitmap_set_t dest, bitmap_set_t orig)
@@ -859,7 +852,7 @@ bitmap_set_subtract (bitmap_set_t dest, bitmap_set_t orig)
   return result;
 }
 
-/* Subtract all the values in bitmap set B from bitmap set A.  */
+/* Subtract all values in bitmap set B from bitmap set A.  */
 
 static void
 bitmap_set_subtract_values (bitmap_set_t a, bitmap_set_t b)
@@ -987,13 +980,18 @@ bitmap_value_insert_into_set (bitmap_set_t set, pre_expr expr)
 static void
 print_pre_expr (FILE *outfile, const pre_expr expr)
 {
+  if (! expr)
+    {
+      fprintf (outfile, "NULL");
+      return;
+    }
   switch (expr->kind)
     {
     case CONSTANT:
-      print_generic_expr (outfile, PRE_EXPR_CONSTANT (expr), 0);
+      print_generic_expr (outfile, PRE_EXPR_CONSTANT (expr));
       break;
     case NAME:
-      print_generic_expr (outfile, PRE_EXPR_NAME (expr), 0);
+      print_generic_expr (outfile, PRE_EXPR_NAME (expr));
       break;
     case NARY:
       {
@@ -1002,7 +1000,7 @@ print_pre_expr (FILE *outfile, const pre_expr expr)
 	fprintf (outfile, "{%s,", get_tree_code_name (nary->opcode));
 	for (i = 0; i < nary->length; i++)
 	  {
-	    print_generic_expr (outfile, nary->op[i], 0);
+	    print_generic_expr (outfile, nary->op[i]);
 	    if (i != (unsigned) nary->length - 1)
 	      fprintf (outfile, ",");
 	  }
@@ -1033,16 +1031,16 @@ print_pre_expr (FILE *outfile, const pre_expr expr)
 	      }
 	    if (vro->op0)
 	      {
-		print_generic_expr (outfile, vro->op0, 0);
+		print_generic_expr (outfile, vro->op0);
 		if (vro->op1)
 		  {
 		    fprintf (outfile, ",");
-		    print_generic_expr (outfile, vro->op1, 0);
+		    print_generic_expr (outfile, vro->op1);
 		  }
 		if (vro->op2)
 		  {
 		    fprintf (outfile, ",");
-		    print_generic_expr (outfile, vro->op2, 0);
+		    print_generic_expr (outfile, vro->op2);
 		  }
 	      }
 	    if (closebrace)
@@ -1054,7 +1052,7 @@ print_pre_expr (FILE *outfile, const pre_expr expr)
 	if (ref->vuse)
 	  {
 	    fprintf (outfile, "@");
-	    print_generic_expr (outfile, ref->vuse, 0);
+	    print_generic_expr (outfile, ref->vuse);
 	  }
       }
       break;
@@ -1386,7 +1384,7 @@ get_representative_for (const pre_expr e)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Created SSA_NAME representative ");
-      print_generic_expr (dump_file, name, 0);
+      print_generic_expr (dump_file, name);
       fprintf (dump_file, " for expression:");
       print_pre_expr (dump_file, e);
       fprintf (dump_file, " (%04d)\n", value_id);
@@ -1489,6 +1487,45 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 		PRE_EXPR_NARY (expr) = nary;
 		new_val_id = nary->value_id;
 		get_or_alloc_expression_id (expr);
+		/* When we end up re-using a value number make sure that
+		   doesn't have unrelated (which we can't check here)
+		   range or points-to info on it.  */
+		if (result
+		    && INTEGRAL_TYPE_P (TREE_TYPE (result))
+		    && SSA_NAME_RANGE_INFO (result)
+		    && ! SSA_NAME_IS_DEFAULT_DEF (result))
+		  {
+		    if (! VN_INFO (result)->info.range_info)
+		      {
+			VN_INFO (result)->info.range_info
+			  = SSA_NAME_RANGE_INFO (result);
+			VN_INFO (result)->range_info_anti_range_p
+			  = SSA_NAME_ANTI_RANGE_P (result);
+		      }
+		    if (dump_file && (dump_flags & TDF_DETAILS))
+		      {
+			fprintf (dump_file, "clearing range info of ");
+			print_generic_expr (dump_file, result);
+			fprintf (dump_file, "\n");
+		      }
+		    SSA_NAME_RANGE_INFO (result) = NULL;
+		  }
+		else if (result
+			 && POINTER_TYPE_P (TREE_TYPE (result))
+			 && SSA_NAME_PTR_INFO (result)
+			 && ! SSA_NAME_IS_DEFAULT_DEF (result))
+		  {
+		    if (! VN_INFO (result)->info.ptr_info)
+		      VN_INFO (result)->info.ptr_info
+			= SSA_NAME_PTR_INFO (result);
+		    if (dump_file && (dump_flags & TDF_DETAILS))
+		      {
+			fprintf (dump_file, "clearing points-to info of ");
+			print_generic_expr (dump_file, result);
+			fprintf (dump_file, "\n");
+		      }
+		    SSA_NAME_PTR_INFO (result) = NULL;
+		  }
 	      }
 	    else
 	      {
@@ -2076,7 +2113,8 @@ static sbitmap has_abnormal_preds;
      ANTIC_OUT[BLOCK] = phi_translate (ANTIC_IN[succ(BLOCK)])
 
    ANTIC_IN[BLOCK] = clean(ANTIC_OUT[BLOCK] U EXP_GEN[BLOCK] - TMP_GEN[BLOCK])
-*/
+
+   Note that clean() is deferred until after the iteration.  */
 
 static bool
 compute_antic_aux (basic_block block, bool block_has_abnormal_pred_edge)
@@ -2176,7 +2214,8 @@ compute_antic_aux (basic_block block, bool block_has_abnormal_pred_edge)
     bitmap_value_insert_into_set (ANTIC_IN (block),
 				  expression_for_id (bii));
 
-  clean (ANTIC_IN (block));
+  /* clean (ANTIC_IN (block)) is defered to after the iteration converged
+     because it can cause non-convergence, see for example PR81181.  */
 
   if (!was_visited || !bitmap_set_equal (old, ANTIC_IN (block)))
     changed = true;
@@ -2375,11 +2414,13 @@ compute_antic (void)
   /* For ANTIC computation we need a postorder that also guarantees that
      a block with a single successor is visited after its successor.
      RPO on the inverted CFG has this property.  */
-  int *postorder = XNEWVEC (int, n_basic_blocks_for_fn (cfun));
-  int postorder_num = inverted_post_order_compute (postorder);
+  auto_vec<int, 20> postorder;
+  inverted_post_order_compute (&postorder);
 
   auto_sbitmap worklist (last_basic_block_for_fn (cfun) + 1);
-  bitmap_ones (worklist);
+  bitmap_clear (worklist);
+  FOR_EACH_EDGE (e, ei, EXIT_BLOCK_PTR_FOR_FN (cfun)->preds)
+    bitmap_set_bit (worklist, e->src->index);
   while (changed)
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
@@ -2390,7 +2431,7 @@ compute_antic (void)
 	 for PA ANTIC computation.  */
       num_iterations++;
       changed = false;
-      for (i = postorder_num - 1; i >= 0; i--)
+      for (i = postorder.length () - 1; i >= 0; i--)
 	{
 	  if (bitmap_bit_p (worklist, postorder[i]))
 	    {
@@ -2410,6 +2451,12 @@ compute_antic (void)
       gcc_checking_assert (num_iterations < 500);
     }
 
+  /* We have to clean after the dataflow problem converged as cleaning
+     can cause non-convergence because it is based on expressions
+     rather than values.  */
+  FOR_EACH_BB_FN (block, cfun)
+    clean (ANTIC_IN (block));
+
   statistics_histogram_event (cfun, "compute_antic iterations",
 			      num_iterations);
 
@@ -2417,7 +2464,8 @@ compute_antic (void)
     {
       /* For partial antic we ignore backedges and thus we do not need
          to perform any iteration when we process blocks in postorder.  */
-      postorder_num = pre_and_rev_post_order_compute (NULL, postorder, false);
+      int postorder_num
+	= pre_and_rev_post_order_compute (NULL, postorder.address (), false);
       for (i = postorder_num - 1 ; i >= 0; i--)
 	{
 	  basic_block block = BASIC_BLOCK_FOR_FN (cfun, postorder[i]);
@@ -2428,7 +2476,6 @@ compute_antic (void)
     }
 
   sbitmap_free (has_abnormal_preds);
-  free (postorder);
 }
 
 
@@ -2962,7 +3009,7 @@ create_expression_by_pieces (basic_block block, pre_expr expr,
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Inserted ");
-      print_gimple_stmt (dump_file, gsi_stmt (gsi_last (*stmts)), 0, 0);
+      print_gimple_stmt (dump_file, gsi_stmt (gsi_last (*stmts)), 0);
       fprintf (dump_file, " in predecessor %d (%04d)\n",
 	       block->index, value_id);
     }
@@ -3123,7 +3170,7 @@ insert_into_preds_of_block (basic_block block, unsigned int exprnum,
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Created phi ");
-      print_gimple_stmt (dump_file, phi, 0, 0);
+      print_gimple_stmt (dump_file, phi, 0);
       fprintf (dump_file, " in block %d (%04d)\n", block->index, val);
     }
   pre_stats.phis++;
@@ -4148,9 +4195,9 @@ eliminate_insert (gimple_stmt_iterator *gsi, tree val)
 	  if (res)
 	    {
 	      fprintf (dump_file, "Failed to insert expression for value ");
-	      print_generic_expr (dump_file, val, 0);
+	      print_generic_expr (dump_file, val);
 	      fprintf (dump_file, " which is really fully redundant to ");
-	      print_generic_expr (dump_file, res, 0);
+	      print_generic_expr (dump_file, res);
 	      fprintf (dump_file, "\n");
 	    }
 	}
@@ -4170,7 +4217,7 @@ eliminate_insert (gimple_stmt_iterator *gsi, tree val)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Inserted ");
-      print_gimple_stmt (dump_file, SSA_NAME_DEF_STMT (res), 0, 0);
+      print_gimple_stmt (dump_file, SSA_NAME_DEF_STMT (res), 0);
     }
 
   return res;
@@ -4223,9 +4270,9 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Replaced redundant PHI node defining ");
-	      print_generic_expr (dump_file, res, 0);
+	      print_generic_expr (dump_file, res);
 	      fprintf (dump_file, " with ");
-	      print_generic_expr (dump_file, sprime, 0);
+	      print_generic_expr (dump_file, sprime);
 	      fprintf (dump_file, "\n");
 	    }
 
@@ -4371,9 +4418,9 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 		      if (dump_file && (dump_flags & TDF_DETAILS))
 			{
 			  fprintf (dump_file, "Not replacing ");
-			  print_gimple_expr (dump_file, stmt, 0, 0);
+			  print_gimple_expr (dump_file, stmt, 0);
 			  fprintf (dump_file, " with ");
-			  print_generic_expr (dump_file, sprime, 0);
+			  print_generic_expr (dump_file, sprime);
 			  fprintf (dump_file, " which would add a loop"
 				   " carried dependence to loop %d\n",
 				   loop->num);
@@ -4402,11 +4449,11 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 		  if (dump_file && (dump_flags & TDF_DETAILS))
 		    {
 		      fprintf (dump_file, "Replaced ");
-		      print_gimple_expr (dump_file, stmt, 0, 0);
+		      print_gimple_expr (dump_file, stmt, 0);
 		      fprintf (dump_file, " with ");
-		      print_generic_expr (dump_file, sprime, 0);
+		      print_generic_expr (dump_file, sprime);
 		      fprintf (dump_file, " in all uses of ");
-		      print_gimple_stmt (dump_file, stmt, 0, 0);
+		      print_gimple_stmt (dump_file, stmt, 0);
 		    }
 
 		  pre_stats.eliminations++;
@@ -4428,11 +4475,11 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 	      if (dump_file && (dump_flags & TDF_DETAILS))
 		{
 		  fprintf (dump_file, "Replaced ");
-		  print_gimple_expr (dump_file, stmt, 0, 0);
+		  print_gimple_expr (dump_file, stmt, 0);
 		  fprintf (dump_file, " with ");
-		  print_generic_expr (dump_file, sprime, 0);
+		  print_generic_expr (dump_file, sprime);
 		  fprintf (dump_file, " in ");
-		  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
 		}
 
 	      if (TREE_CODE (sprime) == SSA_NAME)
@@ -4506,7 +4553,7 @@ eliminate_dom_walker::before_dom_children (basic_block b)
 		  if (dump_file && (dump_flags & TDF_DETAILS))
 		    {
 		      fprintf (dump_file, "Deleted redundant store ");
-		      print_gimple_stmt (dump_file, stmt, 0, 0);
+		      print_gimple_stmt (dump_file, stmt, 0);
 		    }
 
 		  /* Queue stmt for removal.  */
@@ -4527,7 +4574,7 @@ eliminate_dom_walker::before_dom_children (basic_block b)
               if (dump_file && (dump_flags & TDF_DETAILS))
                 {
                   fprintf (dump_file, "Removing unexecutable edge from ");
-                  print_gimple_stmt (dump_file, stmt, 0, 0);
+		  print_gimple_stmt (dump_file, stmt, 0);
                 }
 	      if (((EDGE_SUCC (b, 0)->flags & EDGE_TRUE_VALUE) != 0)
 		  == ((EDGE_SUCC (b, 0)->flags & EDGE_EXECUTABLE) != 0))
@@ -4848,7 +4895,7 @@ fini_eliminate (void)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Fixing up noreturn call ");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	  print_gimple_stmt (dump_file, stmt, 0);
 	}
 
       if (fixup_noreturn_call (stmt))
@@ -4910,12 +4957,11 @@ mark_operand_necessary (tree op)
 static void
 remove_dead_inserted_code (void)
 {
-  bitmap worklist;
   unsigned i;
   bitmap_iterator bi;
   gimple *t;
 
-  worklist = BITMAP_ALLOC (NULL);
+  auto_bitmap worklist;
   EXECUTE_IF_SET_IN_BITMAP (inserted_exprs, 0, i, bi)
     {
       t = SSA_NAME_DEF_STMT (ssa_name (i));
@@ -4984,7 +5030,7 @@ remove_dead_inserted_code (void)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Removing unnecessary insertion:");
-	      print_gimple_stmt (dump_file, t, 0, 0);
+	      print_gimple_stmt (dump_file, t, 0);
 	    }
 
 	  gsi = gsi_for_stmt (t);
@@ -5004,7 +5050,6 @@ remove_dead_inserted_code (void)
     }
   if (to_clear != -1U)
     bitmap_clear_bit (inserted_exprs, to_clear);
-  BITMAP_FREE (worklist);
 }
 
 

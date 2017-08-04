@@ -317,6 +317,16 @@ bool
 Type::are_identical(const Type* t1, const Type* t2, bool errors_are_identical,
 		    std::string* reason)
 {
+  return Type::are_identical_cmp_tags(t1, t2, COMPARE_TAGS,
+				      errors_are_identical, reason);
+}
+
+// Like are_identical, but with a CMP_TAGS parameter.
+
+bool
+Type::are_identical_cmp_tags(const Type* t1, const Type* t2, Cmp_tags cmp_tags,
+			     bool errors_are_identical, std::string* reason)
+{
   if (t1 == NULL || t2 == NULL)
     {
       // Something is wrong.
@@ -387,31 +397,33 @@ Type::are_identical(const Type* t1, const Type* t2, bool errors_are_identical,
     case TYPE_FUNCTION:
       return t1->function_type()->is_identical(t2->function_type(),
 					       false,
+					       cmp_tags,
 					       errors_are_identical,
 					       reason);
 
     case TYPE_POINTER:
-      return Type::are_identical(t1->points_to(), t2->points_to(),
-				 errors_are_identical, reason);
+      return Type::are_identical_cmp_tags(t1->points_to(), t2->points_to(),
+					  cmp_tags, errors_are_identical,
+					  reason);
 
     case TYPE_STRUCT:
-      return t1->struct_type()->is_identical(t2->struct_type(),
+      return t1->struct_type()->is_identical(t2->struct_type(), cmp_tags,
 					     errors_are_identical);
 
     case TYPE_ARRAY:
-      return t1->array_type()->is_identical(t2->array_type(),
+      return t1->array_type()->is_identical(t2->array_type(), cmp_tags,
 					    errors_are_identical);
 
     case TYPE_MAP:
-      return t1->map_type()->is_identical(t2->map_type(),
+      return t1->map_type()->is_identical(t2->map_type(), cmp_tags,
 					  errors_are_identical);
 
     case TYPE_CHANNEL:
-      return t1->channel_type()->is_identical(t2->channel_type(),
+      return t1->channel_type()->is_identical(t2->channel_type(), cmp_tags,
 					      errors_are_identical);
 
     case TYPE_INTERFACE:
-      return t1->interface_type()->is_identical(t2->interface_type(),
+      return t1->interface_type()->is_identical(t2->interface_type(), cmp_tags,
 						errors_are_identical);
 
     case TYPE_CALL_MULTIPLE_RESULT:
@@ -734,24 +746,41 @@ Type::are_convertible(const Type* lhs, const Type* rhs, std::string* reason)
   if (Type::are_assignable(lhs, rhs, reason))
     return true;
 
+  // A pointer to a regular type may not be converted to a pointer to
+  // a type that may not live in the heap, except when converting to
+  // unsafe.Pointer.
+  if (lhs->points_to() != NULL
+      && rhs->points_to() != NULL
+      && !rhs->points_to()->in_heap()
+      && lhs->points_to()->in_heap()
+      && !lhs->is_unsafe_pointer_type())
+    {
+      if (reason != NULL)
+	reason->assign(_("conversion from notinheap type to normal type"));
+      return false;
+    }
+
   // The types are convertible if they have identical underlying
-  // types.
+  // types, ignoring struct field tags.
   if ((lhs->named_type() != NULL || rhs->named_type() != NULL)
-      && Type::are_identical(lhs->base(), rhs->base(), true, reason))
+      && Type::are_identical_cmp_tags(lhs->base(), rhs->base(), IGNORE_TAGS,
+				      true, reason))
     return true;
 
   // The types are convertible if they are both unnamed pointer types
-  // and their pointer base types have identical underlying types.
+  // and their pointer base types have identical underlying types,
+  // ignoring struct field tags.
   if (lhs->named_type() == NULL
       && rhs->named_type() == NULL
       && lhs->points_to() != NULL
       && rhs->points_to() != NULL
       && (lhs->points_to()->named_type() != NULL
 	  || rhs->points_to()->named_type() != NULL)
-      && Type::are_identical(lhs->points_to()->base(),
-			     rhs->points_to()->base(),
-			     true,
-			     reason))
+      && Type::are_identical_cmp_tags(lhs->points_to()->base(),
+				      rhs->points_to()->base(),
+				      IGNORE_TAGS,
+				      true,
+				      reason))
     return true;
 
   // Integer and floating point types are convertible to each other.
@@ -1028,6 +1057,8 @@ Type::get_backend_placeholder(Gogo* gogo)
       {
 	Location loc = Linemap::unknown_location();
 	bt = gogo->backend()->placeholder_pointer_type("", loc, false);
+	Pointer_type* pt = this->convert<Pointer_type, TYPE_POINTER>();
+	Type::placeholder_pointers.push_back(pt);
       }
       break;
 
@@ -2555,15 +2586,15 @@ Type::make_gc_symbol_var(Gogo* gogo)
 bool
 Type::needs_gcprog(Gogo* gogo, int64_t* ptrsize, int64_t* ptrdata)
 {
+  Type* voidptr = Type::make_pointer_type(Type::make_void_type());
+  if (!voidptr->backend_type_size(gogo, ptrsize))
+    go_unreachable();
+
   if (!this->backend_type_ptrdata(gogo, ptrdata))
     {
       go_assert(saw_errors());
       return false;
     }
-
-  Type* voidptr = Type::make_pointer_type(Type::make_void_type());
-  if (!voidptr->backend_type_size(gogo, ptrsize))
-    go_unreachable();
 
   return *ptrdata / *ptrsize > max_ptrmask_bytes;
 }
@@ -2780,7 +2811,13 @@ Bvariable*
 Type::gc_ptrmask_var(Gogo* gogo, int64_t ptrsize, int64_t ptrdata)
 {
   Ptrmask ptrmask(ptrdata / ptrsize);
-  ptrmask.set_from(gogo, this, ptrsize, 0);
+  if (ptrdata >= ptrsize)
+    ptrmask.set_from(gogo, this, ptrsize, 0);
+  else
+    {
+      // This can happen in error cases.  Just build an empty gcbits.
+      go_assert(saw_errors());
+    }
   std::string sym_name = "runtime.gcbits." + ptrmask.symname();
   Bvariable* bvnull = NULL;
   std::pair<GC_gcbits_vars::iterator, bool> ins =
@@ -4502,7 +4539,7 @@ bool
 Function_type::is_valid_redeclaration(const Function_type* t,
 				      std::string* reason) const
 {
-  if (!this->is_identical(t, false, true, reason))
+  if (!this->is_identical(t, false, COMPARE_TAGS, true, reason))
     return false;
 
   // A redeclaration of a function is required to use the same names
@@ -4580,7 +4617,7 @@ Function_type::is_valid_redeclaration(const Function_type* t,
 
 bool
 Function_type::is_identical(const Function_type* t, bool ignore_receiver,
-			    bool errors_are_identical,
+			    Cmp_tags cmp_tags, bool errors_are_identical,
 			    std::string* reason) const
 {
   if (!ignore_receiver)
@@ -4595,8 +4632,8 @@ Function_type::is_identical(const Function_type* t, bool ignore_receiver,
 	}
       if (r1 != NULL)
 	{
-	  if (!Type::are_identical(r1->type(), r2->type(), errors_are_identical,
-				   reason))
+	  if (!Type::are_identical_cmp_tags(r1->type(), r2->type(), cmp_tags,
+					    errors_are_identical, reason))
 	    {
 	      if (reason != NULL && !reason->empty())
 		*reason = "receiver: " + *reason;
@@ -4627,8 +4664,8 @@ Function_type::is_identical(const Function_type* t, bool ignore_receiver,
 	      return false;
 	    }
 
-	  if (!Type::are_identical(p1->type(), p2->type(),
-				   errors_are_identical, NULL))
+	  if (!Type::are_identical_cmp_tags(p1->type(), p2->type(), cmp_tags,
+					    errors_are_identical, NULL))
 	    {
 	      if (reason != NULL)
 		*reason = _("different parameter types");
@@ -4672,8 +4709,9 @@ Function_type::is_identical(const Function_type* t, bool ignore_receiver,
 	      return false;
 	    }
 
-	  if (!Type::are_identical(res1->type(), res2->type(),
-				   errors_are_identical, NULL))
+	  if (!Type::are_identical_cmp_tags(res1->type(), res2->type(),
+					    cmp_tags, errors_are_identical,
+					    NULL))
 	    {
 	      if (reason != NULL)
 		*reason = _("different result types");
@@ -5480,19 +5518,58 @@ Pointer_type::do_import(Import* imp)
   return Type::make_pointer_type(to);
 }
 
+// Cache of pointer types. Key is "to" type, value is pointer type
+// that points to key.
+
+Type::Pointer_type_table Type::pointer_types;
+
+// A list of placeholder pointer types.  We keep this so we can ensure
+// they are finalized.
+
+std::vector<Pointer_type*> Type::placeholder_pointers;
+
 // Make a pointer type.
 
 Pointer_type*
 Type::make_pointer_type(Type* to_type)
 {
-  typedef Unordered_map(Type*, Pointer_type*) Hashtable;
-  static Hashtable pointer_types;
-  Hashtable::const_iterator p = pointer_types.find(to_type);
+  Pointer_type_table::const_iterator p = pointer_types.find(to_type);
   if (p != pointer_types.end())
     return p->second;
   Pointer_type* ret = new Pointer_type(to_type);
   pointer_types[to_type] = ret;
   return ret;
+}
+
+// This helper is invoked immediately after named types have been
+// converted, to clean up any unresolved pointer types remaining in
+// the pointer type cache.
+//
+// The motivation for this routine: occasionally the compiler creates
+// some specific pointer type as part of a lowering operation (ex:
+// pointer-to-void), then Type::backend_type_size() is invoked on the
+// type (which creates a Btype placeholder for it), that placeholder
+// passed somewhere along the line to the back end, but since there is
+// no reference to the type in user code, there is never a call to
+// Type::finish_backend for the type (hence the Btype remains as an
+// unresolved placeholder).  Calling this routine will clean up such
+// instances.
+
+void
+Type::finish_pointer_types(Gogo* gogo)
+{
+  // We don't use begin() and end() because it is possible to add new
+  // placeholder pointer types as we finalized existing ones.
+  for (size_t i = 0; i < Type::placeholder_pointers.size(); i++)
+    {
+      Pointer_type* pt = Type::placeholder_pointers[i];
+      Type_btypes::iterator tbti = Type::type_btypes.find(pt);
+      if (tbti != Type::type_btypes.end() && tbti->second.is_placeholder)
+        {
+          pt->finish_backend(gogo, tbti->second.btype);
+          tbti->second.is_placeholder = false;
+        }
+    }
 }
 
 // The nil type.  We use a special type for nil because it is not the
@@ -5803,7 +5880,7 @@ Struct_type::do_has_pointer() const
 // Whether this type is identical to T.
 
 bool
-Struct_type::is_identical(const Struct_type* t,
+Struct_type::is_identical(const Struct_type* t, Cmp_tags cmp_tags,
 			  bool errors_are_identical) const
 {
   if (this->is_struct_incomparable_ != t->is_struct_incomparable_)
@@ -5822,20 +5899,23 @@ Struct_type::is_identical(const Struct_type* t,
       if (pf1->field_name() != pf2->field_name())
 	return false;
       if (pf1->is_anonymous() != pf2->is_anonymous()
-	  || !Type::are_identical(pf1->type(), pf2->type(),
-				  errors_are_identical, NULL))
+	  || !Type::are_identical_cmp_tags(pf1->type(), pf2->type(), cmp_tags,
+					   errors_are_identical, NULL))
 	return false;
-      if (!pf1->has_tag())
+      if (cmp_tags == COMPARE_TAGS)
 	{
-	  if (pf2->has_tag())
-	    return false;
-	}
-      else
-	{
-	  if (!pf2->has_tag())
-	    return false;
-	  if (pf1->tag() != pf2->tag())
-	    return false;
+	  if (!pf1->has_tag())
+	    {
+	      if (pf2->has_tag())
+		return false;
+	    }
+	  else
+	    {
+	      if (!pf2->has_tag())
+		return false;
+	      if (pf1->tag() != pf2->tag())
+		return false;
+	    }
 	}
     }
   if (pf2 != fields2->end())
@@ -5928,6 +6008,24 @@ Struct_type::do_needs_key_update()
 	return true;
     }
   return false;
+}
+
+// Return whether this struct type is permitted to be in the heap.
+
+bool
+Struct_type::do_in_heap()
+{
+  const Struct_field_list* fields = this->fields_;
+  if (fields == NULL)
+    return true;
+  for (Struct_field_list::const_iterator pf = fields->begin();
+       pf != fields->end();
+       ++pf)
+    {
+      if (!pf->type()->in_heap())
+	return false;
+    }
+  return true;
 }
 
 // Build identity and hash functions for this struct.
@@ -7061,10 +7159,11 @@ Array_type::int_length(int64_t* plen)
 // Whether two array types are identical.
 
 bool
-Array_type::is_identical(const Array_type* t, bool errors_are_identical) const
+Array_type::is_identical(const Array_type* t, Cmp_tags cmp_tags,
+			 bool errors_are_identical) const
 {
-  if (!Type::are_identical(this->element_type(), t->element_type(),
-			   errors_are_identical, NULL))
+  if (!Type::are_identical_cmp_tags(this->element_type(), t->element_type(),
+				    cmp_tags, errors_are_identical, NULL))
     return false;
 
   if (this->is_array_incomparable_ != t->is_array_incomparable_)
@@ -7591,7 +7690,7 @@ Array_type::finish_backend_element(Gogo* gogo)
 // Return an expression for a pointer to the values in ARRAY.
 
 Expression*
-Array_type::get_value_pointer(Gogo*, Expression* array) const
+Array_type::get_value_pointer(Gogo*, Expression* array, bool is_lvalue) const
 {
   if (this->length() != NULL)
     {
@@ -7604,6 +7703,26 @@ Array_type::get_value_pointer(Gogo*, Expression* array) const
     }
 
   // Slice.
+
+  if (is_lvalue)
+    {
+      Temporary_reference_expression* tref =
+          array->temporary_reference_expression();
+      Var_expression* ve = array->var_expression();
+      if (tref != NULL)
+        {
+          tref = tref->copy()->temporary_reference_expression();
+          tref->set_is_lvalue();
+          array = tref;
+        }
+      else if (ve != NULL)
+        {
+          ve = new Var_expression(ve->named_object(), ve->location());
+          ve->set_in_lvalue_pos();
+          array = ve;
+        }
+    }
+
   return Expression::make_slice_info(array,
                                      Expression::SLICE_INFO_VALUE_POINTER,
                                      array->location());
@@ -7980,18 +8099,24 @@ Map_type::do_verify()
   // The runtime support uses "map[void]void".
   if (!this->key_type_->is_comparable() && !this->key_type_->is_void_type())
     go_error_at(this->location_, "invalid map key type");
+  if (!this->key_type_->in_heap())
+    go_error_at(this->location_, "go:notinheap map key not allowed");
+  if (!this->val_type_->in_heap())
+    go_error_at(this->location_, "go:notinheap map value not allowed");
   return true;
 }
 
 // Whether two map types are identical.
 
 bool
-Map_type::is_identical(const Map_type* t, bool errors_are_identical) const
+Map_type::is_identical(const Map_type* t, Cmp_tags cmp_tags,
+		       bool errors_are_identical) const
 {
-  return (Type::are_identical(this->key_type(), t->key_type(),
-			      errors_are_identical, NULL)
-	  && Type::are_identical(this->val_type(), t->val_type(),
-				 errors_are_identical, NULL));
+  return (Type::are_identical_cmp_tags(this->key_type(), t->key_type(),
+				       cmp_tags, errors_are_identical, NULL)
+	  && Type::are_identical_cmp_tags(this->val_type(), t->val_type(),
+					  cmp_tags, errors_are_identical,
+					  NULL));
 }
 
 // Hash code.
@@ -8492,6 +8617,19 @@ Type::make_map_type(Type* key_type, Type* val_type, Location location)
 
 // Class Channel_type.
 
+// Verify.
+
+bool
+Channel_type::do_verify()
+{
+  // We have no location for this error, but this is not something the
+  // ordinary user will see.
+  if (!this->element_type_->in_heap())
+    go_error_at(Linemap::unknown_location(),
+		"chan of go:notinheap type not allowed");
+  return true;
+}
+
 // Hash code.
 
 unsigned int
@@ -8510,11 +8648,11 @@ Channel_type::do_hash_for_method(Gogo* gogo) const
 // Whether this type is the same as T.
 
 bool
-Channel_type::is_identical(const Channel_type* t,
+Channel_type::is_identical(const Channel_type* t, Cmp_tags cmp_tags,
 			   bool errors_are_identical) const
 {
-  if (!Type::are_identical(this->element_type(), t->element_type(),
-			   errors_are_identical, NULL))
+  if (!Type::are_identical_cmp_tags(this->element_type(), t->element_type(),
+				    cmp_tags, errors_are_identical, NULL))
     return false;
   return (this->may_send_ == t->may_send_
 	  && this->may_receive_ == t->may_receive_);
@@ -8920,7 +9058,7 @@ Interface_type::is_unexported_method(Gogo* gogo, const std::string& name) const
 // Whether this type is identical with T.
 
 bool
-Interface_type::is_identical(const Interface_type* t,
+Interface_type::is_identical(const Interface_type* t, Cmp_tags cmp_tags,
 			     bool errors_are_identical) const
 {
   // If methods have not been finalized, then we are asking whether
@@ -8951,8 +9089,8 @@ Interface_type::is_identical(const Interface_type* t,
       if (p1 == this->all_methods_->end())
 	break;
       if (p1->name() != p2->name()
-	  || !Type::are_identical(p1->type(), p2->type(),
-				  errors_are_identical, NULL))
+	  || !Type::are_identical_cmp_tags(p1->type(), p2->type(), cmp_tags,
+					   errors_are_identical, NULL))
 	break;
     }
 
@@ -9150,7 +9288,8 @@ Interface_type::implements_interface(const Type* t, std::string* reason) const
       Function_type* m_fn_type = m->type()->function_type();
       go_assert(p_fn_type != NULL && m_fn_type != NULL);
       std::string subreason;
-      if (!p_fn_type->is_identical(m_fn_type, true, true, &subreason))
+      if (!p_fn_type->is_identical(m_fn_type, true, COMPARE_TAGS, true,
+				   &subreason))
 	{
 	  if (reason != NULL)
 	    {
@@ -9780,7 +9919,9 @@ Interface_type::do_import(Import* imp)
       methods = NULL;
     }
 
-  return Type::make_interface_type(methods, imp->location());
+  Interface_type* ret = Type::make_interface_type(methods, imp->location());
+  ret->package_ = imp->package();
+  return ret;
 }
 
 // Make an interface type.
@@ -10894,13 +11035,13 @@ Named_type::do_get_backend(Gogo* gogo)
       if (this->seen_in_get_backend_)
 	{
 	  this->is_circular_ = true;
-	  return gogo->backend()->circular_pointer_type(bt, false);
+	  return gogo->backend()->circular_pointer_type(bt, true);
 	}
       this->seen_in_get_backend_ = true;
       bt1 = Type::get_named_base_btype(gogo, base);
       this->seen_in_get_backend_ = false;
       if (this->is_circular_)
-	bt1 = gogo->backend()->circular_pointer_type(bt, false);
+	bt1 = gogo->backend()->circular_pointer_type(bt, true);
       if (!gogo->backend()->set_placeholder_pointer_type(bt, bt1))
 	bt = gogo->backend()->error_type();
       return bt;
@@ -12208,6 +12349,17 @@ Forward_declaration_type::add_method_declaration(const std::string& name,
     no->declare_as_type();
   Type_declaration* td = no->type_declaration_value();
   return td->add_method_declaration(name, package, type, location);
+}
+
+// Add an already created object as a method.
+
+void
+Forward_declaration_type::add_existing_method(Named_object* nom)
+{
+  Named_object* no = this->named_object();
+  if (no->is_unknown())
+    no->declare_as_type();
+  no->type_declaration_value()->add_existing_method(nom);
 }
 
 // Traversal.

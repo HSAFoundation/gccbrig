@@ -137,8 +137,8 @@ make_thunk (tree function, bool this_adjusting,
   DECL_SAVED_FUNCTION_DATA (thunk) = NULL;
   /* The thunk itself is not a constructor or destructor, even if
      the thing it is thunking to is.  */
-  DECL_DESTRUCTOR_P (thunk) = 0;
-  DECL_CONSTRUCTOR_P (thunk) = 0;
+  DECL_CXX_DESTRUCTOR_P (thunk) = 0;
+  DECL_CXX_CONSTRUCTOR_P (thunk) = 0;
   DECL_EXTERNAL (thunk) = 1;
   DECL_ARTIFICIAL (thunk) = 1;
   /* The THUNK is not a pending inline, even if the FUNCTION is.  */
@@ -223,8 +223,8 @@ make_alias_for (tree target, tree newid)
   if (TREE_CODE (alias) == FUNCTION_DECL)
     {
       DECL_SAVED_FUNCTION_DATA (alias) = NULL;
-      DECL_DESTRUCTOR_P (alias) = 0;
-      DECL_CONSTRUCTOR_P (alias) = 0;
+      DECL_CXX_DESTRUCTOR_P (alias) = 0;
+      DECL_CXX_CONSTRUCTOR_P (alias) = 0;
       DECL_PENDING_INLINE_P (alias) = 0;
       DECL_DECLARED_INLINE_P (alias) = 0;
       DECL_INITIAL (alias) = error_mark_node;
@@ -486,6 +486,7 @@ forward_parm (tree parm)
     type = PACK_EXPANSION_PATTERN (type);
   if (TREE_CODE (type) != REFERENCE_TYPE)
     type = cp_build_reference_type (type, /*rval=*/true);
+  warning_sentinel w (warn_useless_cast);
   exp = build_static_cast (type, exp, tf_warning_or_error);
   if (DECL_PACK_P (parm))
     exp = make_pack_expansion (exp);
@@ -502,10 +503,8 @@ strip_inheriting_ctors (tree dfn)
     return dfn;
   tree fn = dfn;
   while (tree inh = DECL_INHERITED_CTOR (fn))
-    {
-      inh = OVL_CURRENT (inh);
-      fn = inh;
-    }
+    fn = OVL_FIRST (inh);
+
   if (TREE_CODE (fn) == TEMPLATE_DECL
       && TREE_CODE (dfn) == FUNCTION_DECL)
     fn = DECL_TEMPLATE_RESULT (fn);
@@ -540,9 +539,9 @@ inherited_ctor_binfo (tree binfo, tree fndecl)
     return binfo;
 
   tree results = NULL_TREE;
-  for (; inh; inh = OVL_NEXT (inh))
+  for (ovl_iterator iter (inh); iter; ++iter)
     {
-      tree one = inherited_ctor_binfo_1 (binfo, OVL_CURRENT (inh));
+      tree one = inherited_ctor_binfo_1 (binfo, *iter);
       if (!results)
 	results = one;
       else if (one != results)
@@ -595,9 +594,9 @@ binfo_inherited_from (tree binfo, tree init_binfo, tree inh)
 {
   /* inh is an OVERLOAD if we inherited the same constructor along
      multiple paths, check all of them.  */
-  for (; inh; inh = OVL_NEXT (inh))
+  for (ovl_iterator iter (inh); iter; ++iter)
     {
-      tree fn = OVL_CURRENT (inh);
+      tree fn = *iter;
       tree base = DECL_CONTEXT (fn);
       tree base_binfo = NULL_TREE;
       for (int i = 0; BINFO_BASE_ITERATE (binfo, i, base_binfo); i++)
@@ -1164,6 +1163,7 @@ constructible_expr (tree to, tree from)
     {
       tree ctype = to;
       vec<tree, va_gc> *args = NULL;
+      cp_unevaluated cp_uneval_guard;
       if (TREE_CODE (to) != REFERENCE_TYPE)
 	to = cp_build_reference_type (to, /*rval*/false);
       tree ob = build_stub_object (to);
@@ -1189,7 +1189,7 @@ constructible_expr (tree to, tree from)
   else
     {
       if (from == NULL_TREE)
-	return build_value_init (to, tf_none);
+	return build_value_init (strip_array_types (to), tf_none);
       else if (TREE_CHAIN (from))
 	return error_mark_node; // too many initializers
       from = build_stub_object (TREE_VALUE (from));
@@ -1200,6 +1200,27 @@ constructible_expr (tree to, tree from)
   return expr;
 }
 
+/* Returns a tree iff TO is assignable (if CODE is MODIFY_EXPR) or
+   constructible (otherwise) from FROM, which is a single type for
+   assignment or a list of types for construction.  */
+
+static tree
+is_xible_helper (enum tree_code code, tree to, tree from, bool trivial)
+{
+  if (VOID_TYPE_P (to) || ABSTRACT_CLASS_TYPE_P (to)
+      || (from && FUNC_OR_METHOD_TYPE_P (from)
+	  && (TYPE_READONLY (from) || FUNCTION_REF_QUALIFIED (from))))
+    return error_mark_node;
+  tree expr;
+  if (code == MODIFY_EXPR)
+    expr = assignable_expr (to, from);
+  else if (trivial && from && TREE_CHAIN (from))
+    return error_mark_node; // only 0- and 1-argument ctors can be trivial
+  else
+    expr = constructible_expr (to, from);
+  return expr;
+}
+
 /* Returns true iff TO is trivially assignable (if CODE is MODIFY_EXPR) or
    constructible (otherwise) from FROM, which is a single type for
    assignment or a list of types for construction.  */
@@ -1207,20 +1228,26 @@ constructible_expr (tree to, tree from)
 bool
 is_trivially_xible (enum tree_code code, tree to, tree from)
 {
-  if (VOID_TYPE_P (to))
-    return false;
   tree expr;
-  if (code == MODIFY_EXPR)
-    expr = assignable_expr (to, from);
-  else if (from && TREE_CHAIN (from))
-    return false; // only 0- and 1-argument ctors can be trivial
-  else
-    expr = constructible_expr (to, from);
+  expr = is_xible_helper (code, to, from, /*trivial*/true);
 
   if (expr == error_mark_node)
     return false;
   tree nt = cp_walk_tree_without_duplicates (&expr, check_nontriv, NULL);
   return !nt;
+}
+
+/* Returns true iff TO is assignable (if CODE is MODIFY_EXPR) or
+   constructible (otherwise) from FROM, which is a single type for
+   assignment or a list of types for construction.  */
+
+bool
+is_xible (enum tree_code code, tree to, tree from)
+{
+  tree expr = is_xible_helper (code, to, from, /*trivial*/false);
+  if (expr == error_mark_node)
+    return false;
+  return !!expr;
 }
 
 /* Subroutine of synthesized_method_walk.  Update SPEC_P, TRIVIAL_P and
@@ -1315,7 +1342,7 @@ walk_field_subobs (tree fields, tree fnname, special_function_kind sfk,
 	  if (bad && deleted_p)
 	    *deleted_p = true;
 	}
-      else if (sfk == sfk_constructor)
+      else if (sfk == sfk_constructor || sfk == sfk_inheriting_constructor)
 	{
 	  bool bad;
 
@@ -1781,10 +1808,8 @@ maybe_explain_implicit_delete (tree decl)
 	    informed = false;
 	}
       else if (DECL_ARTIFICIAL (decl)
-	       && (sfk == sfk_copy_assignment
-		   || sfk == sfk_copy_constructor)
-	       && (type_has_user_declared_move_constructor (ctype)
-		   || type_has_user_declared_move_assign (ctype)))
+	       && (sfk == sfk_copy_assignment || sfk == sfk_copy_constructor)
+	       && classtype_has_move_assign_or_move_ctor_p (ctype, true))
 	{
 	  inform (DECL_SOURCE_LOCATION (decl),
 		  "%q#D is implicitly declared as deleted because %qT "
@@ -1941,12 +1966,12 @@ implicitly_declare_fn (special_function_kind kind, tree type,
     {
     case sfk_destructor:
       /* Destructor.  */
-      name = constructor_name (type);
+      name = dtor_identifier;
       break;
 
     case sfk_constructor:
       /* Default constructor.  */
-      name = constructor_name (type);
+      name = ctor_identifier;
       break;
 
     case sfk_copy_constructor:
@@ -1955,7 +1980,6 @@ implicitly_declare_fn (special_function_kind kind, tree type,
     case sfk_move_assignment:
     case sfk_inheriting_constructor:
     {
-      bool move_p;
       if (kind == sfk_copy_assignment
 	  || kind == sfk_move_assignment)
 	{
@@ -1963,7 +1987,7 @@ implicitly_declare_fn (special_function_kind kind, tree type,
 	  name = cp_assignment_operator_id (NOP_EXPR);
 	}
       else
-	name = constructor_name (type);
+	name = ctor_identifier;
 
       if (kind == sfk_inheriting_constructor)
 	parameter_types = inherited_parms;
@@ -1973,8 +1997,8 @@ implicitly_declare_fn (special_function_kind kind, tree type,
 	    rhs_parm_type = cp_build_qualified_type (type, TYPE_QUAL_CONST);
 	  else
 	    rhs_parm_type = type;
-	  move_p = (kind == sfk_move_assignment
-		    || kind == sfk_move_constructor);
+	  bool move_p = (kind == sfk_move_assignment
+			 || kind == sfk_move_constructor);
 	  rhs_parm_type = cp_build_reference_type (rhs_parm_type, move_p);
 
 	  parameter_types = tree_cons (NULL_TREE, rhs_parm_type, parameter_types);
@@ -1997,7 +2021,7 @@ implicitly_declare_fn (special_function_kind kind, tree type,
     }
   else if (cxx_dialect >= cxx11)
     {
-      raises = unevaluated_noexcept_spec ();
+      raises = noexcept_deferred_spec;
       synthesized_method_walk (type, kind, const_p, NULL, &trivial_p,
 			       &deleted_p, &constexpr_p, false,
 			       inherited_ctor, inherited_parms);
@@ -2027,16 +2051,14 @@ implicitly_declare_fn (special_function_kind kind, tree type,
   fn = build_lang_decl (FUNCTION_DECL, name, fn_type);
   if (kind != sfk_inheriting_constructor)
     DECL_SOURCE_LOCATION (fn) = DECL_SOURCE_LOCATION (TYPE_NAME (type));
-  if (kind == sfk_constructor || kind == sfk_copy_constructor
-      || kind == sfk_move_constructor || kind == sfk_inheriting_constructor)
-    DECL_CONSTRUCTOR_P (fn) = 1;
-  else if (kind == sfk_destructor)
-    DECL_DESTRUCTOR_P (fn) = 1;
+
+  if (!IDENTIFIER_CDTOR_P (name))
+    /* Assignment operator.  */
+    SET_OVERLOADED_OPERATOR_CODE (fn, NOP_EXPR);
+  else if (IDENTIFIER_CTOR_P (name))
+    DECL_CXX_CONSTRUCTOR_P (fn) = true;
   else
-    {
-      DECL_ASSIGNMENT_OPERATOR_P (fn) = 1;
-      SET_OVERLOADED_OPERATOR_CODE (fn, NOP_EXPR);
-    }
+    DECL_CXX_DESTRUCTOR_P (fn) = true;
 
   SET_DECL_ALIGN (fn, MINIMUM_METHOD_BOUNDARY);
 
@@ -2046,7 +2068,7 @@ implicitly_declare_fn (special_function_kind kind, tree type,
       /* Note that this parameter is *not* marked DECL_ARTIFICIAL; we
 	 want its type to be included in the mangled function
 	 name.  */
-      tree decl = cp_build_parm_decl (NULL_TREE, rhs_parm_type);
+      tree decl = cp_build_parm_decl (fn, NULL_TREE, rhs_parm_type);
       TREE_READONLY (decl) = 1;
       retrofit_lang_decl (decl);
       DECL_PARM_INDEX (decl) = DECL_PARM_LEVEL (decl) = 1;
@@ -2059,11 +2081,10 @@ implicitly_declare_fn (special_function_kind kind, tree type,
       for (tree parm = inherited_parms; parm && parm != void_list_node;
 	   parm = TREE_CHAIN (parm))
 	{
-	  *p = cp_build_parm_decl (NULL_TREE, TREE_VALUE (parm));
+	  *p = cp_build_parm_decl (fn, NULL_TREE, TREE_VALUE (parm));
 	  retrofit_lang_decl (*p);
 	  DECL_PARM_LEVEL (*p) = 1;
 	  DECL_PARM_INDEX (*p) = index++;
-	  DECL_CONTEXT (*p) = fn;
 	  p = &DECL_CHAIN (*p);
 	}
       SET_DECL_INHERITED_CTOR (fn, inherited_ctor);
@@ -2077,7 +2098,7 @@ implicitly_declare_fn (special_function_kind kind, tree type,
       constexpr_p = DECL_DECLARED_CONSTEXPR_P (inherited_ctor);
     }
   /* Add the "this" parameter.  */
-  this_parm = build_this_parm (fn_type, TYPE_UNQUALIFIED);
+  this_parm = build_this_parm (fn, fn_type, TYPE_UNQUALIFIED);
   DECL_CHAIN (this_parm) = DECL_ARGUMENTS (fn);
   DECL_ARGUMENTS (fn) = this_parm;
 
@@ -2225,8 +2246,10 @@ after_nsdmi_defaulted_late_checks (tree t)
     return;
   if (t == error_mark_node)
     return;
-  for (tree fn = TYPE_METHODS (t); fn; fn = DECL_CHAIN (fn))
-    if (!DECL_ARTIFICIAL (fn) && DECL_DEFAULTED_IN_CLASS_P (fn))
+  for (tree fn = TYPE_FIELDS (t); fn; fn = DECL_CHAIN (fn))
+    if (!DECL_ARTIFICIAL (fn)
+	&& DECL_DECLARES_FUNCTION_P (fn)
+	&& DECL_DEFAULTED_IN_CLASS_P (fn))
       {
 	tree fn_spec = TYPE_RAISES_EXCEPTIONS (TREE_TYPE (fn));
 	if (UNEVALUATED_NOEXCEPT_SPEC_P (fn_spec))
@@ -2349,30 +2372,34 @@ lazily_declare_fn (special_function_kind sfk, tree type)
   /* [class.copy]/8 If the class definition declares a move constructor or
      move assignment operator, the implicitly declared copy constructor is
      defined as deleted.... */
-  if ((sfk == sfk_copy_assignment
-       || sfk == sfk_copy_constructor)
-      && (type_has_user_declared_move_constructor (type)
-	  || type_has_user_declared_move_assign (type)))
+  if ((sfk == sfk_copy_assignment || sfk == sfk_copy_constructor)
+      && classtype_has_move_assign_or_move_ctor_p (type, true))
     DECL_DELETED_FN (fn) = true;
 
-  /* A destructor may be virtual.  */
+  /* Destructors and assignment operators may be virtual.  */
   if (sfk == sfk_destructor
       || sfk == sfk_move_assignment
       || sfk == sfk_copy_assignment)
     check_for_override (fn, type);
+
   /* Add it to CLASSTYPE_METHOD_VEC.  */
-  add_method (type, fn, false);
-  /* Add it to TYPE_METHODS.  */
+  bool added = add_method (type, fn, false);
+  gcc_assert (added);
+
+  /* Add it to TYPE_FIELDS.  */
   if (sfk == sfk_destructor
       && DECL_VIRTUAL_P (fn))
     /* The ABI requires that a virtual destructor go at the end of the
        vtable.  */
-    TYPE_METHODS (type) = chainon (TYPE_METHODS (type), fn);
+    TYPE_FIELDS (type) = chainon (TYPE_FIELDS (type), fn);
   else
     {
-      DECL_CHAIN (fn) = TYPE_METHODS (type);
-      TYPE_METHODS (type) = fn;
+      DECL_CHAIN (fn) = TYPE_FIELDS (type);
+      TYPE_FIELDS (type) = fn;
     }
+  /* Propagate TYPE_FIELDS.  */
+  fixup_type_variants (type);
+
   maybe_add_class_template_decl_list (type, fn, /*friend_p=*/0);
   if (DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (fn)
       || DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (fn))

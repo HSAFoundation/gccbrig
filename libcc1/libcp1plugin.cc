@@ -930,20 +930,11 @@ plugin_make_namespace_inline (cc1_plugin::connection *)
 
   tree parent_ns = CP_DECL_CONTEXT (inline_ns);
 
-  if (purpose_member (DECL_NAMESPACE_ASSOCIATIONS (inline_ns),
-		      parent_ns))
+  if (DECL_NAMESPACE_INLINE_P (inline_ns))
     return 0;
 
-  pop_namespace ();
-
-  gcc_assert (current_namespace == parent_ns);
-
-  DECL_NAMESPACE_ASSOCIATIONS (inline_ns)
-    = tree_cons (parent_ns, 0,
-		 DECL_NAMESPACE_ASSOCIATIONS (inline_ns));
-  do_using_directive (inline_ns);
-
-  push_namespace (DECL_NAME (inline_ns));
+  DECL_NAMESPACE_INLINE_P (inline_ns) = true;
+  vec_safe_push (DECL_NAMESPACE_INLINEES (parent_ns), inline_ns);
 
   return 1;
 }
@@ -956,7 +947,7 @@ plugin_add_using_namespace (cc1_plugin::connection *,
 
   gcc_assert (TREE_CODE (used_ns) == NAMESPACE_DECL);
 
-  do_using_directive (used_ns);
+  finish_namespace_using_directive (used_ns, NULL_TREE);
 
   return 1;
 }
@@ -1030,13 +1021,12 @@ plugin_add_using_decl (cc1_plugin::connection *,
 
       finish_member_declaration (decl);
     }
-  else if (!at_namespace_scope_p ())
-    {
-      gcc_unreachable ();
-      do_local_using_decl (target, tcontext, identifier);
-    }
   else
-    do_toplevel_using_decl (target, tcontext, identifier);
+    {
+      /* We can't be at local scope.  */
+      gcc_assert (at_namespace_scope_p ());
+      finish_namespace_using_decl (target, tcontext, identifier);
+    }
 
   return 1;
 }
@@ -1331,7 +1321,7 @@ plugin_build_decl (cc1_plugin::connection *self,
 	      opcode = ARRAY_REF;
 	      break;
 	    case CHARS2 ('c', 'v'): // operator <T> (conversion operator)
-	      identifier = mangle_conv_op_name_for_type (TREE_TYPE (sym_type));
+	      identifier = make_conv_op_name (TREE_TYPE (sym_type));
 	      break;
 	      // C++11-only:
 	    case CHARS2 ('l', 'i'): // operator "" <id>
@@ -1376,7 +1366,7 @@ plugin_build_decl (cc1_plugin::connection *self,
 	 overloading.  */
       SET_DECL_LANGUAGE (decl, lang_cplusplus);
       if (TREE_CODE (sym_type) == METHOD_TYPE)
-	DECL_ARGUMENTS (decl) = build_this_parm (current_class_type,
+	DECL_ARGUMENTS (decl) = build_this_parm (decl, current_class_type,
 						 cp_type_quals (sym_type));
       for (tree arg = TREE_CODE (sym_type) == METHOD_TYPE
 	     ? TREE_CHAIN (TYPE_ARG_TYPES (sym_type))
@@ -1384,7 +1374,7 @@ plugin_build_decl (cc1_plugin::connection *self,
 	   arg && arg != void_list_node;
 	   arg = TREE_CHAIN (arg))
 	{
-	  tree parm = cp_build_parm_decl (NULL_TREE, TREE_VALUE (arg));
+	  tree parm = cp_build_parm_decl (decl, NULL_TREE, TREE_VALUE (arg));
 	  DECL_CHAIN (parm) = DECL_ARGUMENTS (decl);
 	  DECL_ARGUMENTS (decl) = parm;
 	}
@@ -1429,17 +1419,15 @@ plugin_build_decl (cc1_plugin::connection *self,
       if (ctor || dtor)
 	{
 	  if (ctor)
-	    DECL_CONSTRUCTOR_P (decl) = 1;
+	    DECL_CXX_CONSTRUCTOR_P (decl) = 1;
 	  if (dtor)
-	    DECL_DESTRUCTOR_P (decl) = 1;
+	    DECL_CXX_DESTRUCTOR_P (decl) = 1;
 	}
       else
 	{
 	  if ((sym_flags & GCC_CP_FLAG_SPECIAL_FUNCTION)
 	      && opcode != ERROR_MARK)
 	    SET_OVERLOADED_OPERATOR_CODE (decl, opcode);
-	  if (assop)
-	    DECL_ASSIGNMENT_OPERATOR_P (decl) = true;
 	}
     }
   else if (RECORD_OR_UNION_CODE_P (code))
@@ -1568,7 +1556,7 @@ plugin_build_decl (cc1_plugin::connection *self,
 
   if ((ctor || dtor)
       /* Don't crash after a duplicate declaration of a cdtor.  */
-      && TYPE_METHODS (current_class_type) == decl)
+      && TYPE_FIELDS (current_class_type) == decl)
     {
       /* ctors and dtors clones are chained after DECL.
 	 However, we create the clones before TYPE_METHODS is
@@ -1580,9 +1568,9 @@ plugin_build_decl (cc1_plugin::connection *self,
       tree save = DECL_CHAIN (decl);
       DECL_CHAIN (decl) = NULL_TREE;
       clone_function_decl (decl, /*update_methods=*/true);
-      gcc_assert (TYPE_METHODS (current_class_type) == decl);
-      TYPE_METHODS (current_class_type)
-	= nreverse (TYPE_METHODS (current_class_type));
+      gcc_assert (TYPE_FIELDS (current_class_type) == decl);
+      TYPE_FIELDS (current_class_type)
+	= nreverse (TYPE_FIELDS (current_class_type));
       DECL_CHAIN (decl) = save;
     }
 
@@ -1899,7 +1887,7 @@ plugin_build_field (cc1_plugin::connection *,
 	= c_build_bitfield_integer_type (bitsize, TYPE_UNSIGNED (field_type));
     }
 
-  DECL_MODE (decl) = TYPE_MODE (TREE_TYPE (decl));
+  SET_DECL_MODE (decl, TYPE_MODE (TREE_TYPE (decl)));
 
   // There's no way to recover this from DWARF.
   SET_DECL_OFFSET_ALIGN (decl, TYPE_PRECISION (pointer_sized_int_node));
@@ -2634,7 +2622,7 @@ plugin_build_dependent_expr (cc1_plugin::connection *self,
 	  break;
 	case CHARS2 ('c', 'v'): // operator <T> (conversion operator)
 	  convop = true;
-	  identifier = mangle_conv_op_name_for_type (conv_type);
+	  identifier = make_conv_op_name (conv_type);
 	  break;
 	  // C++11-only:
 	case CHARS2 ('l', 'i'): // operator "" <id>

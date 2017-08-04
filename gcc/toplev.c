@@ -79,6 +79,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "omp-offload.h"
 #include "hsa-common.h"
 #include "edit-context.h"
+#include "tree-pass.h"
+#include "dumpfile.h"
 
 #if defined(DBX_DEBUGGING_INFO) || defined(XCOFF_DEBUGGING_INFO)
 #include "dbxout.h"
@@ -1063,6 +1065,26 @@ open_auxiliary_file (const char *ext)
   return file;
 }
 
+/* Alternative diagnostics callback for reentered ICE reporting.  */
+
+static void
+internal_error_reentered (diagnostic_context *, const char *, va_list *)
+{
+  /* Flush the dump file if emergency_dump_function itself caused an ICE.  */
+  if (dump_file)
+    fflush (dump_file);
+}
+
+/* Auxiliary callback for the diagnostics code.  */
+
+static void
+internal_error_function (diagnostic_context *, const char *, va_list *)
+{
+  global_dc->internal_error = internal_error_reentered;
+  warn_if_plugins ();
+  emergency_dump_function ();
+}
+
 /* Initialization of the front end environment, before command line
    options are parsed.  Signal handlers, internationalization etc.
    ARGV0 is main's argv[0].  */
@@ -1101,7 +1123,7 @@ general_init (const char *argv0, bool init_signals)
     = global_options_init.x_flag_diagnostics_show_option;
   global_dc->show_column
     = global_options_init.x_flag_show_column;
-  global_dc->internal_error = plugins_internal_error_function;
+  global_dc->internal_error = internal_error_function;
   global_dc->option_enabled = option_enabled;
   global_dc->option_state = &global_options;
   global_dc->option_name = option_name;
@@ -1154,9 +1176,17 @@ general_init (const char *argv0, bool init_signals)
      processing.  */
   init_ggc_heuristics ();
 
-  /* Create the singleton holder for global state.
-     Doing so also creates the pass manager and with it the passes.  */
+  /* Create the singleton holder for global state.  This creates the
+     dump manager.  */
   g = new gcc::context ();
+
+  /* Allow languages and middle-end to register their dumps before the
+     optimization passes.  */
+  g->get_dumps ()->register_dumps ();
+
+  /* Create the passes.  */
+  g->set_passes (new gcc::pass_manager (g));
+
   symtab = new (ggc_cleared_alloc <symbol_table> ()) symbol_table ();
 
   statistics_early_init ();
@@ -1612,8 +1642,10 @@ process_options (void)
     }
 
  /* Do not use IPA optimizations for register allocation if profiler is active
+    or patchable function entries are inserted for run-time instrumentation
     or port does not emit prologue and epilogue as RTL.  */
-  if (profile_flag || !targetm.have_prologue () || !targetm.have_epilogue ())
+  if (profile_flag || function_entry_patch_area_size
+      || !targetm.have_prologue () || !targetm.have_epilogue ())
     flag_ipa_ra = 0;
 
   /* Enable -Werror=coverage-mismatch when -Werror and -Wno-error
