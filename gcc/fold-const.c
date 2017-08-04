@@ -9592,12 +9592,13 @@ fold_binary_loc (location_t loc,
 	  if (POINTER_TYPE_P (atype)
 	      || (INTEGRAL_TYPE_P (atype) && !TYPE_OVERFLOW_WRAPS (atype)))
 	    {
-	      if (var0 && var1)
+	      if ((var0 && var1) || (minus_var0 && minus_var1))
 		{
 		  /* ???  If split_tree would handle NEGATE_EXPR we could
-		     simplify this down to the var0/minus_var1 cases.  */
-		  tree tmp0 = var0;
-		  tree tmp1 = var1;
+		     simply reject these cases and the allowed cases would
+		     be the var0/minus_var1 ones.  */
+		  tree tmp0 = var0 ? var0 : minus_var0;
+		  tree tmp1 = var1 ? var1 : minus_var1;
 		  bool one_neg = false;
 
 		  if (TREE_CODE (tmp0) == NEGATE_EXPR)
@@ -14106,14 +14107,21 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 		   && type == TREE_TYPE (op00type))
 	    {
 	      tree type_domain = TYPE_DOMAIN (op00type);
-	      tree min_val = size_zero_node;
-	      if (type_domain && TYPE_MIN_VALUE (type_domain))
-		min_val = TYPE_MIN_VALUE (type_domain);
-	      op01 = size_binop_loc (loc, EXACT_DIV_EXPR, op01,
-				     TYPE_SIZE_UNIT (type));
-	      op01 = size_binop_loc (loc, PLUS_EXPR, op01, min_val);
-	      return build4_loc (loc, ARRAY_REF, type, op00, op01,
-				 NULL_TREE, NULL_TREE);
+	      tree min = TYPE_MIN_VALUE (type_domain);
+	      if (min && TREE_CODE (min) == INTEGER_CST)
+		{
+		  offset_int off = wi::to_offset (op01);
+		  offset_int el_sz = wi::to_offset (TYPE_SIZE_UNIT (type));
+		  offset_int remainder;
+		  off = wi::divmod_trunc (off, el_sz, SIGNED, &remainder);
+		  if (remainder == 0)
+		    {
+		      off = off + wi::to_offset (min);
+		      op01 = wide_int_to_tree (sizetype, off);
+		      return build4_loc (loc, ARRAY_REF, type, op00, op01,
+					 NULL_TREE, NULL_TREE);
+		    }
+		}
 	    }
 	}
     }

@@ -1,3 +1,123 @@
+2017-08-04  Marek Polacek  <polacek@redhat.com>
+
+	PR middle-end/81695
+	* fold-const.c (fold_indirect_ref_1): For ((int *)&a + 4 -> a[1],
+	perform the computation in offset_int.
+
+2017-08-04  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	PR tree-optimization/81136
+	* tree-vectorizer.h: Include tree-hash-traits.h.
+	(vec_base_alignments): New typedef.
+	(vec_info): Add a base_alignments field.
+	(vect_record_base_alignments): Declare.
+	* tree-data-ref.h (data_reference): Add an is_conditional_in_stmt
+	field.
+	(DR_IS_CONDITIONAL_IN_STMT): New macro.
+	(create_data_ref): Add an is_conditional_in_stmt argument.
+	* tree-data-ref.c (create_data_ref): Likewise.  Use it to initialize
+	the is_conditional_in_stmt field.
+	(data_ref_loc): Add an is_conditional_in_stmt field.
+	(get_references_in_stmt): Set the is_conditional_in_stmt field.
+	(find_data_references_in_stmt): Update call to create_data_ref.
+	(graphite_find_data_references_in_stmt): Likewise.
+	* tree-ssa-loop-prefetch.c (determine_loop_nest_reuse): Likewise.
+	* tree-vect-data-refs.c (vect_analyze_data_refs): Likewise.
+	(vect_record_base_alignment): New function.
+	(vect_record_base_alignments): Likewise.
+	(vect_compute_data_ref_alignment): Adjust base_addr and aligned_to
+	for nested statements even if we fail to compute a misalignment.
+	Use pooled base alignments for unconditional references.
+	(vect_find_same_alignment_drs): Compare base addresses instead
+	of base objects.
+	(vect_analyze_data_refs_alignment): Call vect_record_base_alignments.
+	* tree-vect-slp.c (vect_slp_analyze_bb_1): Likewise.
+
+2017-08-04  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	* tree-vectorizer.h (vec_info): Add a constructor and destructor.
+	Add an explicit name for the enum.  Use auto_vec for slp_instances
+	and grouped_stores.
+	(_loop_vec_info): Add a constructor and destructor.  Use auto_vec
+	for all vectors.
+	(_bb_vec_info): Add a constructor and destructor.
+	(vinfo_for_stmt): Return NULL for uids of -1 as well.
+	(destroy_loop_vec_info): Delete.
+	(vect_destroy_datarefs): Likewise.
+	* tree-vectorizer.c (vect_destroy_datarefs): Delete.
+	(vec_info::vec_info): New function.
+	(vec_info::~vec_info): Likewise.
+	(vectorize_loops): Use delete instead of destroy_loop_vec_info.
+	* tree-parloops.c (gather_scalar_reductions): Use delete instead of
+	destroy_loop_vec_info.
+	* tree-vect-loop.c (new_loop_vec_info): Replace with...
+	(_loop_vec_info::_loop_vec_info): ...this.
+	(destroy_loop_vec_info): Replace with...
+	(_loop_vec_info::~_loop_vec_info): ...this.  Unconditionally delete
+	the stmt_vec_infos.  Leave handling of vec_info information to its
+	destructor.  Remove explicit vector releases.
+	(vect_analyze_loop_form): Use new instead of new_loop_vec_info.
+	(vect_analyze_loop): Use delete instead of destroy_loop_vec_info.
+	* tree-vect-slp.c (new_bb_vec_info): Replace with...
+	(_bb_vec_info::_bb_vec_info): ...this.  Don't reserve space in
+	BB_VINFO_GROUPED_STORES or BB_VINFO_SLP_INSTANCES.
+	(destroy_bb_vec_info): Replace with...
+	(_bb_vec_info::~_bb_vec_info): ...this.  Leave handling of vec_info
+	information to its destructor.
+	(vect_slp_analyze_bb_1): Use new and delete instead of
+	new_bb_vec_info and destroy_bb_vec_info.
+	(vect_slp_bb): Replace 2 calls to destroy_bb_vec_info with a
+	single delete.
+
+2017-08-04  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	* tree-data-ref.h (subscript): Add access_fn field.
+	(data_dependence_relation): Add could_be_independent_p.
+	(SUB_ACCESS_FN, DDR_COULD_BE_INDEPENDENT_P): New macros.
+	(same_access_functions): Move to tree-data-ref.c.
+	* tree-data-ref.c (ref_contains_union_access_p): New function.
+	(access_fn_component_p): Likewise.
+	(access_fn_components_comparable_p): Likewise.
+	(dr_analyze_indices): Add a reference to access_fn_component_p.
+	(dump_data_dependence_relation): Use SUB_ACCESS_FN instead of
+	DR_ACCESS_FN.
+	(constant_access_functions): Likewise.
+	(add_other_self_distances): Likewise.
+	(same_access_functions): Likewise.  (Moved from tree-data-ref.h.)
+	(initialize_data_dependence_relation): Use XCNEW and remove
+	explicit zeroing of DDR_REVERSED_P.  Look for a subsequence
+	of access functions that have the same type.  Allow the
+	subsequence to end with different bases in some circumstances.
+	Record the chosen access functions in SUB_ACCESS_FN.
+	(build_classic_dist_vector_1): Replace ddr_a and ddr_b with
+	a_index and b_index.  Use SUB_ACCESS_FN instead of DR_ACCESS_FN.
+	(subscript_dependence_tester_1): Likewise dra and drb.
+	(build_classic_dist_vector): Update calls accordingly.
+	(subscript_dependence_tester): Likewise.
+	* tree-ssa-loop-prefetch.c (determine_loop_nest_reuse): Check
+	DDR_COULD_BE_INDEPENDENT_P.
+	* tree-vectorizer.h (LOOP_REQUIRES_VERSIONING_FOR_ALIAS): Test
+	comp_alias_ddrs instead of may_alias_ddrs.
+	* tree-vect-data-refs.c (vect_analyze_possibly_independent_ddr):
+	New function.
+	(vect_analyze_data_ref_dependence): Use it if
+	DDR_COULD_BE_INDEPENDENT_P, but fall back to using the recorded
+	distance vectors if that fails.
+	(dependence_distance_ge_vf): New function.
+	(vect_prune_runtime_alias_test_list): Use it.  Don't clear
+	LOOP_VINFO_MAY_ALIAS_DDRS.
+
+2017-08-04  Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/81705
+	* fold-const.c (fold_binary_loc): Properly restrict
+	minus_var0 && minus_var1 case when associating undefined overflow
+	entities.
+
+2017-08-04  Tom de Vries  <tom@codesourcery.com>
+
+	* omp-simd-clone.c (simd_clone_adjust): Add missing edge probability.
+
 2017-08-03  Bill Schmidt  <wschmidt@linux.vnet.ibm.com>
 
 	* config/rs6000/rs6000-c.c (altivec_resolve_overloaded_builtin):
