@@ -133,6 +133,8 @@ brig_langhook_init_options_struct (struct gcc_options *opts)
      example, X * (+/-)1.0 -> (+/-)X simplification is not valid for
      subnormals. */
   opts->x_flag_ftz_math = 1;
+
+  opts->x_optimize = 3;
 }
 
 /* Handle Brig specific options.  Return 0 if we didn't do anything.  */
