@@ -79,6 +79,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-vrp.h"
 #include "tree-ssanames.h"
 #include "selftest.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 /* Nonzero if we are folding constants inside an initializer; zero
    otherwise.  */
@@ -14107,8 +14109,10 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 		   && type == TREE_TYPE (op00type))
 	    {
 	      tree type_domain = TYPE_DOMAIN (op00type);
-	      tree min = TYPE_MIN_VALUE (type_domain);
-	      if (min && TREE_CODE (min) == INTEGER_CST)
+	      tree min;
+	      if (type_domain != NULL_TREE
+		  && (min = TYPE_MIN_VALUE (type_domain))
+		  && TREE_CODE (min) == INTEGER_CST)
 		{
 		  offset_int off = wi::to_offset (op01);
 		  offset_int el_sz = wi::to_offset (TYPE_SIZE_UNIT (type));

@@ -1,3 +1,62 @@
+2017-08-09  Jason Merrill  <jason@redhat.com>
+
+	PR c++/81525 - wrong constant value with generic lambda
+	* pt.c (tsubst_decl) [VAR_DECL]: Avoid clobbering auto.
+	(tsubst_copy) [VAR_DECL]: Handle auto.
+
+	PR c++/81359 - Unparsed NSDMI error from SFINAE context.
+	* init.c (get_nsdmi): Add complain parm.
+	* typeck2.c (digest_nsdmi_init): Add complain parm.
+	(process_init_constructor_record): Pass complain to get_nsdmi.
+	* pt.c (maybe_instantiate_noexcept): Add complain parm, return bool.
+	* method.c (get_defaulted_eh_spec): Add complain parm.  Pass it into
+	synthesized_method_walk.
+	(synthesized_method_walk): Adjust.
+	(walk_field_subobs): Pass complain to get_nsdmi.
+	(defaulted_late_check): Skip other checks if deleted.
+	* decl2.c (mark_used): Pass complain to maybe_instantiate_noexcept.
+	* call.c (build_aggr_conv): Pass complain to get_nsdmi.
+	* parser.c (defarg_location): New.
+	* error.c (location_of): Use it.
+
+2017-08-09  Marek Polacek  <polacek@redhat.com>
+
+	* parser.c (cp_parser_perform_range_for_lookup): Use false instead of 0.
+	* typeck.c (build_binary_op): Change the type of a parameter to bool.
+	(cp_truthvalue_conversion): Use true instead of 1.
+
+2017-08-08  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/81607
+	* cp-gimplify.c (cp_fold): If folding exposed a branch of
+	a COND_EXPR, convert it to the original type of the COND_EXPR, if
+	they differ.		   
+
+2017-08-08  Martin Liska  <mliska@suse.cz>
+
+	* call.c: Include header files.
+	* cp-gimplify.c: Likewise.
+	* cp-ubsan.c: Likewise.
+	* cvt.c: Likewise.
+	* init.c: Likewise.
+	* search.c: Likewise.
+	* semantics.c: Likewise.
+	* typeck.c: Likewise.
+
+2017-08-07  Martin Liska  <mliska@suse.cz>
+
+	* parser.c (cp_parser_gnu_attribute_list): Canonicalize name of an
+	attribute.
+	(cp_parser_std_attribute): Likewise.
+	* tree.c: Add new include.
+
+2017-08-04  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/79790
+	* pt.c (do_class_deduction): Handle the case of no viable implicit
+	deduction guides; simplify the code generating implicit deduction
+	guides.
+
 2017-08-03  Paolo Carlini  <paolo.carlini@oracle.com>
 
 	PR c++/71440

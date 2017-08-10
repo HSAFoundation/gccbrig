@@ -1,6 +1,6 @@
 2017-08-04  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
-	PR hsa/81713
+	Fix PR 81713
 	* brigfrontend/brig-basic-inst-handler.cc: replace build_int_cst with
 	bitsize_int in building BIT_FIELD_REF.
 	* brigfrontend/brig-code-entry-handler.cc: likewise.

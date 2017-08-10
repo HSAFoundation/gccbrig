@@ -11925,7 +11925,7 @@ cp_parser_perform_range_for_lookup (tree range, tree *begin, tree *end)
       *end = build_binary_op (input_location, PLUS_EXPR,
 			      range,
 			      array_type_nelts_top (TREE_TYPE (range)),
-			      0);
+			      false);
       return TREE_TYPE (*begin);
     }
   else
@@ -24782,7 +24782,8 @@ cp_parser_gnu_attribute_list (cp_parser* parser)
 	       parsed identifier.  */
 	    ? ridpointers[(int) token->keyword]
 	    : id_token->u.value;
-	  
+
+	  identifier = canonicalize_attr_name (identifier);
 	  attribute = build_tree_list (identifier, NULL_TREE);
 
 	  /* Peek at the next token.  */
@@ -24928,6 +24929,8 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
 		    "expected an identifier for the attribute name");
 	  return error_mark_node;
 	}
+
+      attr_id = canonicalize_attr_name (attr_id);
       attribute = build_tree_list (build_tree_list (attr_ns, attr_id),
 				   NULL_TREE);
       token = cp_lexer_peek_token (parser->lexer);
@@ -24937,6 +24940,7 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
 				 NULL_TREE);
   else
     {
+      attr_id = canonicalize_attr_name (attr_id);
       attribute = build_tree_list (build_tree_list (NULL_TREE, attr_id),
 				   NULL_TREE);
       /* C++11 noreturn attribute is equivalent to GNU's.  */
@@ -27427,7 +27431,7 @@ cp_parser_late_parse_one_default_arg (cp_parser *parser, tree decl,
       else if (maybe_reject_flexarray_init (decl, parsed_arg))
 	parsed_arg = error_mark_node;
       else
-	parsed_arg = digest_nsdmi_init (decl, parsed_arg);
+	parsed_arg = digest_nsdmi_init (decl, parsed_arg, tf_warning_or_error);
     }
 
   /* If the token stream has not been completely used up, then
@@ -28675,6 +28679,17 @@ cp_parser_cache_defarg (cp_parser *parser, bool nsdmi)
   DEFARG_INSTANTIATIONS (default_argument) = NULL;
 
   return default_argument;
+}
+
+/* A location to use for diagnostics about an unparsed DEFAULT_ARG.  */
+
+location_t
+defarg_location (tree default_argument)
+{
+  cp_token_cache *tokens = DEFARG_TOKENS (default_argument);
+  location_t start = tokens->first->location;
+  location_t end = tokens->last->location;
+  return make_location (start, start, end);
 }
 
 /* Begin parsing tentatively.  We always save tokens while parsing

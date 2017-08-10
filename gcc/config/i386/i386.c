@@ -6662,6 +6662,69 @@ ix86_option_override_internal (bool main_args_p,
     opts->x_ix86_stack_protector_guard
       = TARGET_HAS_BIONIC ? SSP_GLOBAL : SSP_TLS;
 
+#ifdef TARGET_THREAD_SSP_OFFSET
+  ix86_stack_protector_guard_offset = TARGET_THREAD_SSP_OFFSET;
+#endif
+
+  if (global_options_set.x_ix86_stack_protector_guard_offset_str)
+    {
+      char *endp;
+      const char *str = ix86_stack_protector_guard_offset_str;
+
+      errno = 0;
+      int64_t offset;
+
+#if defined(INT64_T_IS_LONG)
+      offset = strtol (str, &endp, 0);
+#else
+      offset = strtoll (str, &endp, 0);
+#endif
+
+      if (!*str || *endp || errno)
+	error ("%qs is not a valid number "
+	       "in -mstack-protector-guard-offset=", str);
+
+      if (!IN_RANGE (offset, HOST_WIDE_INT_C (-0x80000000),
+		     HOST_WIDE_INT_C (0x7fffffff)))
+	error ("%qs is not a valid offset "
+	       "in -mstack-protector-guard-offset=", str);
+
+      ix86_stack_protector_guard_offset = offset;
+    }
+
+  ix86_stack_protector_guard_reg = DEFAULT_TLS_SEG_REG;
+
+  /* The kernel uses a different segment register for performance
+     reasons; a system call would not have to trash the userspace
+     segment register, which would be expensive.  */
+  if (ix86_cmodel == CM_KERNEL)
+    ix86_stack_protector_guard_reg = ADDR_SPACE_SEG_GS;
+
+  if (global_options_set.x_ix86_stack_protector_guard_reg_str)
+    {
+      const char *str = ix86_stack_protector_guard_reg_str;
+      addr_space_t seg = ADDR_SPACE_GENERIC;
+
+      /* Discard optional register prefix.  */
+      if (str[0] == '%')
+	str++;
+
+      if (strlen (str) == 2 && str[1] == 's')
+	{
+	  if (str[0] == 'f')
+	    seg = ADDR_SPACE_SEG_FS;
+	  else if (str[0] == 'g')
+	    seg = ADDR_SPACE_SEG_GS;
+	}
+
+      if (seg == ADDR_SPACE_GENERIC)
+	error ("%qs is not a valid base register "
+	       "in -mstack-protector-guard-reg=",
+	       ix86_stack_protector_guard_reg_str);
+
+      ix86_stack_protector_guard_reg = seg;
+    }
+
   /* Handle -mmemcpy-strategy= and -mmemset-strategy=  */
   if (opts->x_ix86_tune_memcpy_strategy)
     {
@@ -18624,7 +18687,6 @@ print_reg (rtx x, int code, FILE *file)
    + -- print a branch hint as 'cs' or 'ds' prefix
    ; -- print a semicolon (after prefixes due to bug in older gas).
    ~ -- print "i" if TARGET_AVX2, "f" otherwise.
-   @ -- print a segment register of thread base pointer load
    ^ -- print addr32 prefix if TARGET_64BIT and Pmode != word_mode
    ! -- print MPX prefix for jxx/call/ret instructions if required.
  */
@@ -19168,19 +19230,6 @@ ix86_print_operand (FILE *file, rtx x, int code)
 #endif
 	  return;
 
-	case '@':
-	  if (ASSEMBLER_DIALECT == ASM_ATT)
-	    putc ('%', file);
-
-	  /* The kernel uses a different segment register for performance
-	     reasons; a system call would not have to trash the userspace
-	     segment register, which would be expensive.  */
-	  if (TARGET_64BIT && ix86_cmodel != CM_KERNEL)
-	    fputs ("fs", file);
-	  else
-	    fputs ("gs", file);
-	  return;
-
 	case '~':
 	  putc (TARGET_AVX2 ? 'i' : 'f', file);
 	  return;
@@ -19339,8 +19388,8 @@ ix86_print_operand (FILE *file, rtx x, int code)
 static bool
 ix86_print_operand_punct_valid_p (unsigned char code)
 {
-  return (code == '@' || code == '*' || code == '+' || code == '&'
-	  || code == ';' || code == '~' || code == '^' || code == '!');
+  return (code == '*' || code == '+' || code == '&' || code == ';'
+	  || code == '~' || code == '^' || code == '!');
 }
 
 /* Print a memory operand whose address is ADDR.  */
@@ -33417,13 +33466,18 @@ get_builtin_code_for_version (tree decl, tree *predicate_list)
 	      break;
 	    case PROCESSOR_NEHALEM:
 	      if (new_target->x_ix86_isa_flags & OPTION_MASK_ISA_AES)
-		arg_str = "westmere";
+		{
+		  arg_str = "westmere";
+		  priority = P_AES;
+		}
 	      else
-		/* We translate "arch=corei7" and "arch=nehalem" to
-		   "corei7" so that it will be mapped to M_INTEL_COREI7
-		   as cpu type to cover all M_INTEL_COREI7_XXXs.  */
-		arg_str = "corei7";
-	      priority = P_PROC_SSE4_2;
+		{
+		  /* We translate "arch=corei7" and "arch=nehalem" to
+		     "corei7" so that it will be mapped to M_INTEL_COREI7
+		     as cpu type to cover all M_INTEL_COREI7_XXXs.  */
+		  arg_str = "corei7";
+		  priority = P_PROC_SSE4_2;
+		}
 	      break;
 	    case PROCESSOR_SANDYBRIDGE:
 	      if (new_target->x_ix86_isa_flags & OPTION_MASK_ISA_F16C)
@@ -45804,17 +45858,26 @@ ix86_mangle_type (const_tree type)
     }
 }
 
-#ifdef TARGET_THREAD_SSP_OFFSET
-/* If using TLS guards, don't waste time creating and expanding
-   __stack_chk_guard decl and MEM as we are going to ignore it.  */
 static tree
 ix86_stack_protect_guard (void)
 {
   if (TARGET_SSP_TLS_GUARD)
-    return NULL_TREE;
+    {
+      tree type_node = lang_hooks.types.type_for_mode (ptr_mode, 1);
+
+      int qual = ENCODE_QUAL_ADDR_SPACE (ix86_stack_protector_guard_reg);
+
+      tree type = build_qualified_type (type_node, qual);
+      tree asptrtype = build_pointer_type (type);
+      tree sspoff = build_int_cst (asptrtype,
+				   ix86_stack_protector_guard_offset);
+      tree t = build2 (MEM_REF, asptrtype, sspoff,
+		       build_int_cst (asptrtype, 0));
+      return t;
+    }
+
   return default_stack_protect_guard ();
 }
-#endif
 
 /* For 32-bit code we can save PIC register setup by using
    __stack_chk_fail_local hidden function instead of calling
@@ -52822,10 +52885,8 @@ ix86_run_selftests (void)
 #undef TARGET_MANGLE_TYPE
 #define TARGET_MANGLE_TYPE ix86_mangle_type
 
-#ifdef TARGET_THREAD_SSP_OFFSET
 #undef TARGET_STACK_PROTECT_GUARD
 #define TARGET_STACK_PROTECT_GUARD ix86_stack_protect_guard
-#endif
 
 #if !TARGET_MACHO
 #undef TARGET_STACK_PROTECT_FAIL
