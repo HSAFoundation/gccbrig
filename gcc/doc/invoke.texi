@@ -9461,13 +9461,13 @@ disable all GCC optimizations that affect signaling NaN behavior.
 @item -fftz-math
 @opindex ftz-math
 This option is experimental. With this flag on GCC treats
-floating-point operations (except abs, class, copysign and neg) as
-they must flush subnormal input operands and results to zero
-(FTZ). The FTZ rules are derived from HSA Programmers Reference Manual
-for the base profile. This alters optimizations that would break the
-rules, for example X * 1 -> X simplification. The option assumes the
-target supports FTZ in hardware and has it enabled - either by default
-or set by the user.
+floating-point operations (except abs, classify, copysign and
+negation) as they must flush subnormal input operands and results to
+zero (FTZ). The FTZ rules are derived from HSA Programmers Reference
+Manual for the base profile. This alters optimizations that would
+break the rules, for example X * 1 -> X simplification. The option
+assumes the target supports FTZ in hardware and has it enabled -
+either by default or set by the user.
 
 @item -fno-fp-int-builtin-inexact
 @opindex fno-fp-int-builtin-inexact

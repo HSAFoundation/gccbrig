@@ -1152,6 +1152,10 @@ const_binop (enum tree_code code, tree arg1, tree arg2)
       bool inexact;
       tree t, type;
 
+      /* For ftz-math disable all constant folding for now.  */
+      if (flag_ftz_math)
+	return NULL_TREE;
+
       /* The following codes are handled by real_arithmetic.  */
       switch (code)
 	{
@@ -1999,6 +2003,10 @@ fold_convert_const_real_from_real (tree type, const_tree arg1)
   if (HONOR_SNANS (TYPE_MODE (TREE_TYPE (arg1)))
       && REAL_VALUE_ISSIGNALING_NAN (TREE_REAL_CST (arg1)))
     return NULL_TREE; 
+
+  /* For ftz-math constant folding is disabled for now.  */
+  if (flag_ftz_math)
+    return NULL_TREE;
 
   real_convert (&value, TYPE_MODE (type), &TREE_REAL_CST (arg1));
   t = build_real (type, value);
@@ -6529,6 +6537,11 @@ fold_real_zero_addition_p (const_tree type, const_tree addend, int negate)
   if (!real_zerop (addend))
     return false;
 
+  /* For ftz-math subnormals must be flushed to zero. Disable folding
+     for now.  */
+  if (flag_ftz_math)
+    return false;
+
   /* Don't allow the fold with -fsignaling-nans.  */
   if (HONOR_SNANS (element_mode (type)))
     return false;
@@ -9109,6 +9122,10 @@ fold_binary_loc (location_t loc,
 
   arg0 = op0;
   arg1 = op1;
+
+  /* For ftz-math disable all constant folding for now.  */
+  if (flag_ftz_math && FLOAT_TYPE_P (type))
+    return NULL_TREE;
 
   /* Strip any conversions that don't change the mode.  This is
      safe for every expression, except for a comparison expression
@@ -13821,6 +13838,10 @@ fold_relational_const (enum tree_code code, tree type, tree op0, tree op1)
 
   if (TREE_CODE (op0) == REAL_CST && TREE_CODE (op1) == REAL_CST)
     {
+      /* For ftz-math disable all constant folding for now.  */
+      if (flag_ftz_math)
+	return NULL_TREE;
+
       const REAL_VALUE_TYPE *c0 = TREE_REAL_CST_PTR (op0);
       const REAL_VALUE_TYPE *c1 = TREE_REAL_CST_PTR (op1);
 
