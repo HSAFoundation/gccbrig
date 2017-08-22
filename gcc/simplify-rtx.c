@@ -1249,8 +1249,12 @@ simplify_unary_operation_1 (enum rtx_code code, machine_mode mode, rtx op)
       if (DECIMAL_FLOAT_MODE_P (mode))
 	break;
 
-      /* (float_truncate:SF (float_extend:DF foo:SF)) = foo:SF.  */
-      if (GET_CODE (op) == FLOAT_EXTEND
+      /* (float_truncate:SF (float_extend:DF foo:SF)) = foo:SF except
+	 for -fftz-math with subnormal input. Simplifications like
+	 this must be prevented as they no longer perform
+	 flush-to-zero as required by the semantics of -fftz-math
+	 flag.  */
+      if (!flag_ftz_math && GET_CODE (op) == FLOAT_EXTEND
 	  && GET_MODE (XEXP (op, 0)) == mode)
 	return XEXP (op, 0);
 
@@ -1900,14 +1904,16 @@ simplify_const_unary_operation (enum rtx_code code, machine_mode mode,
 	case FLOAT_TRUNCATE:
 	  /* Don't perform the operation if flag_signaling_nans is on
 	     and the operand is a signaling NaN.  */
-	  if (HONOR_SNANS (mode) && REAL_VALUE_ISSIGNALING_NAN (d))
+	  if ((HONOR_SNANS (mode) && REAL_VALUE_ISSIGNALING_NAN (d))
+	      || flag_ftz_math)
 	    return NULL_RTX;
 	  d = real_value_truncate (mode, d);
 	  break;
 	case FLOAT_EXTEND:
 	  /* Don't perform the operation if flag_signaling_nans is on
 	     and the operand is a signaling NaN.  */
-	  if (HONOR_SNANS (mode) && REAL_VALUE_ISSIGNALING_NAN (d))
+	  if ((HONOR_SNANS (mode) && REAL_VALUE_ISSIGNALING_NAN (d))
+	       || flag_ftz_math)
 	    return NULL_RTX;
 	  /* All this does is change the mode, unless changing
 	     mode class.  */
@@ -2146,7 +2152,8 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	 when x is NaN, infinite, or finite and nonzero.  They aren't
 	 when x is -0 and the rounding mode is not towards -infinity,
 	 since (-0) + 0 is then 0.  */
-      if (!HONOR_SIGNED_ZEROS (mode) && trueop1 == CONST0_RTX (mode))
+      if (!HONOR_SIGNED_ZEROS (mode) && !flag_ftz_math
+	  && trueop1 == CONST0_RTX (mode))
 	return op0;
 
       /* ((-a) + b) -> (b - a) and similarly for (a + (-b)).  These
@@ -2351,8 +2358,9 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
       /* Subtracting 0 has no effect unless the mode has signed zeros
 	 and supports rounding towards -infinity.  In such a case,
 	 0 - 0 is -0.  */
-      if (!(HONOR_SIGNED_ZEROS (mode)
-	    && HONOR_SIGN_DEPENDENT_ROUNDING (mode))
+      if (!((HONOR_SIGNED_ZEROS (mode)
+	     && HONOR_SIGN_DEPENDENT_ROUNDING (mode))
+	    || flag_ftz_math)
 	  && trueop1 == CONST0_RTX (mode))
 	return op0;
 
@@ -2565,8 +2573,7 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	return op1;
 
       /* In IEEE floating point, x*1 is not equivalent to x for
-	 signalling NaNs.
-	 For -fftz-math, x*1 is not equivalent to x for subnormals. */
+	 signalling NaNs.  */
       if (!HONOR_SNANS (mode)
 	  && (FLOAT_MODE_P (mode) && !flag_ftz_math)
 	  && trueop1 == CONST1_RTX (mode))
@@ -4013,6 +4020,10 @@ simplify_const_binary_operation (enum rtx_code code, machine_mode mode,
 	  const REAL_VALUE_TYPE *opr0, *opr1;
 	  bool inexact;
 
+	  /* Subnormals are not handled correctly with -fftz-math.  */
+	  if (flag_ftz_math)
+	    return 0;
+
 	  opr0 = CONST_DOUBLE_REAL_VALUE (op0);
 	  opr1 = CONST_DOUBLE_REAL_VALUE (op1);
 
@@ -5095,7 +5106,8 @@ simplify_const_relational_operation (enum rtx_code code,
 
   /* If the operands are floating-point constants, see if we can fold
      the result.  */
-  if (CONST_DOUBLE_AS_FLOAT_P (trueop0)
+  if (!flag_ftz_math
+      && CONST_DOUBLE_AS_FLOAT_P (trueop0)
       && CONST_DOUBLE_AS_FLOAT_P (trueop1)
       && SCALAR_FLOAT_MODE_P (GET_MODE (trueop0)))
     {
