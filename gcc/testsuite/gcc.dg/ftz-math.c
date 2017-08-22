@@ -1,6 +1,6 @@
 /* Tests -fftz-math flag */
 /* { dg-do run { target x86_64-*-* } } */
-/* { dg-options "-O2 -Wall -Wpedantic -fftz-math" } */
+/* { dg-options "-O2 -fftz-math" } */
 
 #include <math.h>
 

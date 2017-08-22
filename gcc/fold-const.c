@@ -1152,7 +1152,8 @@ const_binop (enum tree_code code, tree arg1, tree arg2)
       bool inexact;
       tree t, type;
 
-      /* For ftz-math disable all constant folding for now.  */
+      /* For ftz-math disable all floating point constant folding for
+	 now.  */
       if (flag_ftz_math)
 	return NULL_TREE;
 
@@ -6537,8 +6538,7 @@ fold_real_zero_addition_p (const_tree type, const_tree addend, int negate)
   if (!real_zerop (addend))
     return false;
 
-  /* For ftz-math subnormals must be flushed to zero. Disable folding
-     for now.  */
+  /* X +/- 0 flushes subnormals to zero but plain X does not.  */
   if (flag_ftz_math)
     return false;
 
@@ -9123,7 +9123,8 @@ fold_binary_loc (location_t loc,
   arg0 = op0;
   arg1 = op1;
 
-  /* For ftz-math disable all constant folding for now.  */
+  /* For ftz-math disable all floating point constant folding for
+     now.  */
   if (flag_ftz_math && FLOAT_TYPE_P (type))
     return NULL_TREE;
 
