@@ -1,3 +1,7 @@
+2017-08-31  Henry Linjamäki  <henry.linjamaki@parmance.com>
+
+	* brig-lang.c: Added function attributes and their handlers.
+
 2017-08-04  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
 	Fix PR 81713
