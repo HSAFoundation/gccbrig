@@ -1,3 +1,7 @@
+2017-08-31  Henry Linjamäki  <henry.linjamaki@parmance.com>
+
+	* brig-builtins.def: Change pure attributes to const.
+
 2017-08-09  Jakub Jelinek  <jakub@redhat.com>
 
 	PR c/81687
