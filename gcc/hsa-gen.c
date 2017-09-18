@@ -37,6 +37,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-iterator.h"
 #include "bitmap.h"
 #include "dumpfile.h"
+#include "tree-pretty-print.h"
 #include "gimple-pretty-print.h"
 #include "diagnostic-core.h"
 #include "gimple-ssa.h"
@@ -5468,11 +5469,6 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
   if (!gimple_call_builtin_p (stmt, BUILT_IN_NORMAL))
     {
       tree function_decl = gimple_call_fndecl (stmt);
-      /* Prefetch pass can create type-mismatching prefetch builtin calls which
-	 fail the gimple_call_builtin_p test above.  Handle them here.  */
-      if (DECL_BUILT_IN_CLASS (function_decl)
-	  && DECL_FUNCTION_CODE (function_decl) == BUILT_IN_PREFETCH)
-	return;
 
       if (function_decl == NULL_TREE)
 	{
@@ -5481,7 +5477,14 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
 	  return;
 	}
 
-      if (hsa_callable_function_p (function_decl))
+      /* Prefetch pass can create type-mismatching prefetch builtin calls which
+	 fail the gimple_call_builtin_p test above.  Handle them here.  */
+      if (DECL_BUILT_IN_CLASS (function_decl)
+	  && DECL_FUNCTION_CODE (function_decl) == BUILT_IN_PREFETCH)
+	return;
+
+      if (DECL_EXTERNAL (function_decl)
+	  || hsa_callable_function_p (function_decl))
 	gen_hsa_insns_for_direct_call (stmt, hbb);
       else if (!gen_hsa_insns_for_known_library_call (stmt, hbb))
 	HSA_SORRY_AT (gimple_location (stmt),
