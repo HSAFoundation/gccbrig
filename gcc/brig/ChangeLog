@@ -1,12 +1,20 @@
-2017-09-18  Henry Linjamäki  <henry.linjamaki@parmance.com>
+2017-09-20  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
 	* brigfrontend/brig-branch-inst-handler.cc: Fix brig code with
 	many function arguments crashes brig1. Fix only one work-item is
 	executed.
-
-2017-08-31  Henry Linjamäki  <henry.linjamaki@parmance.com>
-
 	* brig-lang.c: Added function attributes and their handlers.
+
+2017-09-17  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* Make-lang.in (GO_TEXI_FILES): Rename to...
+	(BRIG_TEXI_FILES): ... this.
+	(doc/gccbrig.info, doc/gccbrig.dvi, doc/gccbrig.pdf, brig.info)
+	(brig.srcinfo, brig.man, brig.srcman, brig.install-man)
+	($(DESTDIR)$(man1dir)/$(GCCBRIG_INSTALL_NAME)$(man1ext)):
+	Uncomment/enable targets.
+	(gccbrig.pod): New target.
+	* gccbrig.texi: New file.
 
 2017-08-04  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
