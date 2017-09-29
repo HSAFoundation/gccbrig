@@ -69,7 +69,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 	  const BrigOperandOffset32_t *operand_ptr
 	    = (const BrigOperandOffset32_t *) data->bytes;
 
-	  vec<tree, va_gc> *args = i == 0 ? out_args : in_args;
+	  vec<tree, va_gc> *&args = i == 0 ? out_args : in_args;
 
 	  while (bytes > 0)
 	    {
@@ -147,7 +147,6 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
 	  m_parent.m_cf->append_statement (call);
 	}
 
-      m_parent.m_cf->m_has_unexpanded_dp_builtins = false;
       m_parent.m_cf->m_called_functions.push_back (func_ref);
 
       return base->byteCount;
