@@ -1,3 +1,8 @@
+2017-10-02  Henry Linjamäki  <henry.linjamaki@parmance.com>
+
+	* brig-branch-inst-handler.cc: Fix brig1 crashed on HSAIL function
+	calls having 5+ args. Fix only one work-item is executed.
+
 2017-08-31  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
 	* brig-lang.c: Added function attributes and their handlers.
