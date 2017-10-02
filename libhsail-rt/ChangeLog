@@ -1,10 +1,22 @@
-2017-07-18  Henry Linjamäki  <henry.linjamaki@parmance.com>
+2017-10-02  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
 	* rt/ftz.c: New file.
 	* rt/ftz.h: Likewise.
 	* rt/arithemic.c: Migrated ftz routines to ftz.c.
 	* Makefile.am: Added ftz.c source.
 	* Makefile.in: Regenerated.
+
+2017-09-27  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* include/internal/phsa-rt.h: Support for improved group segment
+	handling with a stack-like allocation scheme.
+	* include/internal/workitems.h: Likewise.
+	* rt/workitems.c: Likewise.
+
+2017-09-25  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* rt/workitems.c: Assume the host runtime allocates the work group
+	memory.
 
 2017-05-03  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 

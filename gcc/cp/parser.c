@@ -1691,6 +1691,7 @@ cp_parameter_declarator *
 make_parameter_declarator (cp_decl_specifier_seq *decl_specifiers,
 			   cp_declarator *declarator,
 			   tree default_argument,
+			   location_t loc,
 			   bool template_parameter_pack_p = false)
 {
   cp_parameter_declarator *parameter;
@@ -1705,6 +1706,7 @@ make_parameter_declarator (cp_decl_specifier_seq *decl_specifiers,
   parameter->declarator = declarator;
   parameter->default_argument = default_argument;
   parameter->template_parameter_pack_p = template_parameter_pack_p;
+  parameter->loc = loc;
 
   return parameter;
 }
@@ -2087,7 +2089,7 @@ static enum tree_code cp_parser_assignment_operator_opt
 static cp_expr cp_parser_expression
   (cp_parser *, cp_id_kind * = NULL, bool = false, bool = false);
 static cp_expr cp_parser_constant_expression
-  (cp_parser *, bool = false, bool * = NULL);
+  (cp_parser *, bool = false, bool * = NULL, bool = false);
 static cp_expr cp_parser_builtin_offsetof
   (cp_parser *);
 static cp_expr cp_parser_lambda_expression
@@ -4379,7 +4381,8 @@ cp_parser_translation_unit (cp_parser* parser)
       /* Create the error declarator.  */
       cp_error_declarator = make_declarator (cdk_error);
       /* Create the empty parameter list.  */
-      no_parameters = make_parameter_declarator (NULL, NULL, NULL_TREE);
+      no_parameters = make_parameter_declarator (NULL, NULL, NULL_TREE,
+						 UNKNOWN_LOCATION);
       /* Remember where the base of the declarator obstack lies.  */
       declarator_obstack_base = obstack_next_free (&declarator_obstack);
     }
@@ -9623,12 +9626,15 @@ cp_parser_expression (cp_parser* parser, cp_id_kind * pidk,
   If ALLOW_NON_CONSTANT_P a non-constant expression is silently
   accepted.  If ALLOW_NON_CONSTANT_P is true and the expression is not
   constant, *NON_CONSTANT_P is set to TRUE.  If ALLOW_NON_CONSTANT_P
-  is false, NON_CONSTANT_P should be NULL.  */
+  is false, NON_CONSTANT_P should be NULL.  If STRICT_P is true,
+  only parse a conditional-expression, otherwise parse an
+  assignment-expression.  See below for rationale.  */
 
 static cp_expr
 cp_parser_constant_expression (cp_parser* parser,
 			       bool allow_non_constant_p,
-			       bool *non_constant_p)
+			       bool *non_constant_p,
+			       bool strict_p)
 {
   bool saved_integral_constant_expression_p;
   bool saved_allow_non_integral_constant_expression_p;
@@ -9662,16 +9668,27 @@ cp_parser_constant_expression (cp_parser* parser,
   parser->allow_non_integral_constant_expression_p
     = (allow_non_constant_p || cxx_dialect >= cxx11);
   parser->non_integral_constant_expression_p = false;
-  /* Although the grammar says "conditional-expression", we parse an
-     "assignment-expression", which also permits "throw-expression"
-     and the use of assignment operators.  In the case that
-     ALLOW_NON_CONSTANT_P is false, we get better errors than we would
+  /* Although the grammar says "conditional-expression", when not STRICT_P,
+     we parse an "assignment-expression", which also permits
+     "throw-expression" and the use of assignment operators.  In the case
+     that ALLOW_NON_CONSTANT_P is false, we get better errors than we would
      otherwise.  In the case that ALLOW_NON_CONSTANT_P is true, it is
      actually essential that we look for an assignment-expression.
      For example, cp_parser_initializer_clauses uses this function to
      determine whether a particular assignment-expression is in fact
      constant.  */
-  expression = cp_parser_assignment_expression (parser);
+  if (strict_p)
+    {
+      /* Parse the binary expressions (logical-or-expression).  */
+      expression = cp_parser_binary_expression (parser, false, false, false,
+						PREC_NOT_OPERATOR, NULL);
+      /* If the next token is a `?' then we're actually looking at
+	 a conditional-expression; otherwise we're done.  */
+      if (cp_lexer_next_token_is (parser->lexer, CPP_QUERY))
+	expression = cp_parser_question_colon_clause (parser, expression);
+    }
+  else
+    expression = cp_parser_assignment_expression (parser);
   /* Restore the old settings.  */
   parser->integral_constant_expression_p
     = saved_integral_constant_expression_p;
@@ -10183,7 +10200,8 @@ cp_parser_lambda_introducer (cp_parser* parser, tree lambda_expr)
       if (cp_lexer_next_token_is_keyword (parser->lexer, RID_THIS))
 	{
 	  location_t loc = cp_lexer_peek_token (parser->lexer)->location;
-	  if (LAMBDA_EXPR_DEFAULT_CAPTURE_MODE (lambda_expr) == CPLD_COPY)
+	  if (cxx_dialect < cxx2a
+	      && LAMBDA_EXPR_DEFAULT_CAPTURE_MODE (lambda_expr) == CPLD_COPY)
 	    pedwarn (loc, 0, "explicit by-copy capture of %<this%> redundant "
 		     "with by-copy capture default");
 	  cp_lexer_consume_token (parser->lexer);
@@ -10556,6 +10574,8 @@ cp_parser_lambda_body (cp_parser* parser, tree lambda_expr)
      + function_definition_after_declarator
      + ctor_initializer_opt_and_function_body  */
   {
+    local_specialization_stack s (lss_copy);
+
     tree fco = lambda_function (lambda_expr);
     tree body = start_lambda_function (fco, lambda_expr);
     bool done = false;
@@ -21217,6 +21237,8 @@ cp_parser_parameter_declaration_list (cp_parser* parser, bool *is_error)
 				 PARM,
 				 parameter->default_argument != NULL_TREE,
 				 &parameter->decl_specifiers.attributes);
+	  if (decl != error_mark_node && parameter->loc != UNKNOWN_LOCATION)
+	    DECL_SOURCE_LOCATION (decl) = parameter->loc;
 	}
 
       deprecated_state = DEPRECATED_NORMAL;
@@ -21370,6 +21392,7 @@ cp_parser_parameter_declaration (cp_parser *parser,
     = G_("types may not be defined in parameter types");
 
   /* Parse the declaration-specifiers.  */
+  cp_token *decl_spec_token_start = cp_lexer_peek_token (parser->lexer);
   cp_parser_decl_specifier_seq (parser,
 				CP_PARSER_FLAGS_NONE,
 				&decl_specifiers,
@@ -21554,9 +21577,33 @@ cp_parser_parameter_declaration (cp_parser *parser,
   else
     default_argument = NULL_TREE;
 
+  /* Generate a location for the parameter, ranging from the start of the
+     initial token to the end of the final token (using input_location for
+     the latter, set up by cp_lexer_set_source_position_from_token when
+     consuming tokens).
+
+     If we have a identifier, then use it for the caret location, e.g.
+
+       extern int callee (int one, int (*two)(int, int), float three);
+                                   ~~~~~~^~~~~~~~~~~~~~
+
+     otherwise, reuse the start location for the caret location e.g.:
+
+       extern int callee (int one, int (*)(int, int), float three);
+                                   ^~~~~~~~~~~~~~~~~
+
+  */
+  location_t caret_loc = (declarator && declarator->id_loc != UNKNOWN_LOCATION
+			  ? declarator->id_loc
+			  : decl_spec_token_start->location);
+  location_t param_loc = make_location (caret_loc,
+					decl_spec_token_start->location,
+					input_location);
+
   return make_parameter_declarator (&decl_specifiers,
 				    declarator,
 				    default_argument,
+				    param_loc,
 				    template_parameter_pack_p);
 }
 
@@ -23412,35 +23459,99 @@ cp_parser_member_declaration (cp_parser* parser)
 	{
 	  tree attributes = NULL_TREE;
 	  tree first_attribute;
+	  tree initializer;
+	  bool is_bitfld = false;
+	  bool named_bitfld = false;
 
 	  /* Peek at the next token.  */
 	  token = cp_lexer_peek_token (parser->lexer);
 
-	  /* Check for a bitfield declaration.  */
-	  if (token->type == CPP_COLON
+	  /* The following code wants to know early if it is a bit-field
+	     or some other declaration.  Attributes can appear before
+	     the `:' token, but are hopefully rare enough that the
+	     simplicity of the tentative lookup pays off.  */
+	  if (cp_next_tokens_can_be_attribute_p (parser)
 	      || (token->type == CPP_NAME
-		  && cp_lexer_peek_nth_token (parser->lexer, 2)->type
-		  == CPP_COLON))
+		  && cp_nth_tokens_can_be_attribute_p (parser, 2)
+		  && (named_bitfld = true)))
+	    {
+	      cp_parser_parse_tentatively (parser);
+	      if (named_bitfld)
+		cp_lexer_consume_token (parser->lexer);
+	      cp_parser_attributes_opt (parser);
+	      token = cp_lexer_peek_token (parser->lexer);
+	      is_bitfld = cp_lexer_next_token_is (parser->lexer, CPP_COLON);
+	      cp_parser_abort_tentative_parse (parser);
+	    }
+
+	  /* Check for a bitfield declaration.  */
+	  if (is_bitfld
+	      || token->type == CPP_COLON
+	      || (token->type == CPP_NAME
+		  && cp_lexer_nth_token_is (parser->lexer, 2, CPP_COLON)
+		  && (named_bitfld = true)))
 	    {
 	      tree identifier;
 	      tree width;
+	      tree late_attributes = NULL_TREE;
 
-	      /* Get the name of the bitfield.  Note that we cannot just
-		 check TOKEN here because it may have been invalidated by
-		 the call to cp_lexer_peek_nth_token above.  */
-	      if (cp_lexer_peek_token (parser->lexer)->type != CPP_COLON)
+	      if (named_bitfld)
 		identifier = cp_parser_identifier (parser);
 	      else
 		identifier = NULL_TREE;
 
-	      /* Consume the `:' token.  */
-	      cp_lexer_consume_token (parser->lexer);
-	      /* Get the width of the bitfield.  */
-	      width
-		= cp_parser_constant_expression (parser);
-
 	      /* Look for attributes that apply to the bitfield.  */
 	      attributes = cp_parser_attributes_opt (parser);
+
+	      /* Consume the `:' token.  */
+	      cp_lexer_consume_token (parser->lexer);
+
+	      /* Get the width of the bitfield.  */
+	      width = cp_parser_constant_expression (parser, false, NULL,
+						     cxx_dialect >= cxx11);
+
+	      /* In C++2A and as extension for C++11 and above we allow
+		 default member initializers for bit-fields.  */
+	      initializer = NULL_TREE;
+	      if (cxx_dialect >= cxx11
+		  && (cp_lexer_next_token_is (parser->lexer, CPP_EQ)
+		      || cp_lexer_next_token_is (parser->lexer,
+						 CPP_OPEN_BRACE)))
+		{
+		  location_t loc
+		    = cp_lexer_peek_token (parser->lexer)->location;
+		  if (cxx_dialect < cxx2a
+		      && !in_system_header_at (loc)
+		      && identifier != NULL_TREE)
+		    pedwarn (loc, 0,
+			     "default member initializers for bit-fields "
+			     "only available with -std=c++2a or "
+			     "-std=gnu++2a");
+
+		  initializer = cp_parser_save_nsdmi (parser);
+		  if (identifier == NULL_TREE)
+		    {
+		      error_at (loc, "default member initializer for "
+				     "unnamed bit-field");
+		      initializer = NULL_TREE;
+		    }
+		}
+	      else
+		{ 
+		  /* Look for attributes that apply to the bitfield after
+		     the `:' token and width.  This is where GCC used to
+		     parse attributes in the past, pedwarn if there is
+		     a std attribute.  */
+		  if (cp_next_tokens_can_be_std_attribute_p (parser))
+		    pedwarn (input_location, OPT_Wpedantic,
+			     "ISO C++ allows bit-field attributes only "
+			     "before the %<:%> token");
+
+		  late_attributes = cp_parser_attributes_opt (parser);
+		}
+
+	      attributes = chainon (attributes, late_attributes);
+
 	      /* Remember which attributes are prefix attributes and
 		 which are not.  */
 	      first_attribute = attributes;
@@ -23454,13 +23565,12 @@ cp_parser_member_declaration (cp_parser* parser)
 							 sfk_none)
 				   : NULL,
 				   &decl_specifiers,
-				   width,
+				   width, initializer,
 				   attributes);
 	    }
 	  else
 	    {
 	      cp_declarator *declarator;
-	      tree initializer;
 	      tree asm_specification;
 	      int ctor_dtor_or_conv_p;
 
@@ -23679,7 +23789,6 @@ cp_parser_member_declaration (cp_parser* parser)
 	      if (TREE_CODE (decl) == FUNCTION_DECL)
 		cp_parser_save_default_args (parser, decl);
 	      else if (TREE_CODE (decl) == FIELD_DECL
-		       && !DECL_C_BIT_FIELD (decl)
 		       && DECL_INITIAL (decl))
 		/* Add DECL to the queue of NSDMI to be parsed later.  */
 		vec_safe_push (unparsed_nsdmis, decl);
@@ -30020,10 +30129,9 @@ cp_parser_objc_class_ivars (cp_parser* parser)
 	  attributes = chainon (prefix_attributes, attributes);
 
 	  if (width)
-	      /* Create the bitfield declaration.  */
-	      decl = grokbitfield (declarator, &declspecs,
-				   width,
-				   attributes);
+	    /* Create the bitfield declaration.  */
+	    decl = grokbitfield (declarator, &declspecs,
+				 width, NULL_TREE, attributes);
 	  else
 	    decl = grokfield (declarator, &declspecs,
 			      NULL_TREE, /*init_const_expr_p=*/false,
@@ -31681,7 +31789,7 @@ cp_parser_oacc_wait_list (cp_parser *parser, location_t clause_loc, tree list)
 	    {
 	      tree c = build_omp_clause (clause_loc, OMP_CLAUSE_WAIT);
 
-	      mark_rvalue_use (targ);
+	      targ = mark_rvalue_use (targ);
 	      OMP_CLAUSE_DECL (c) = targ;
 	      OMP_CLAUSE_CHAIN (c) = list;
 	      list = c;

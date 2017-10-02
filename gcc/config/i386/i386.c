@@ -2192,6 +2192,7 @@ const struct processor_costs *ix86_cost = &pentium_cost;
 #define m_BONNELL (1U<<PROCESSOR_BONNELL)
 #define m_SILVERMONT (1U<<PROCESSOR_SILVERMONT)
 #define m_KNL (1U<<PROCESSOR_KNL)
+#define m_KNM (1U<<PROCESSOR_KNM)
 #define m_SKYLAKE_AVX512 (1U<<PROCESSOR_SKYLAKE_AVX512)
 #define m_INTEL (1U<<PROCESSOR_INTEL)
 
@@ -2903,6 +2904,7 @@ static const struct ptt processor_target_table[PROCESSOR_max] =
   {"bonnell", &atom_cost, 16, 15, 16, 7, 16},
   {"silvermont", &slm_cost, 16, 15, 16, 7, 16},
   {"knl", &slm_cost, 16, 15, 16, 7, 16},
+  {"knm", &slm_cost, 16, 15, 16, 7, 16},
   {"skylake-avx512", &core_cost, 16, 10, 16, 10, 16},
   {"intel", &intel_cost, 16, 15, 16, 7, 16},
   {"geode", &geode_cost, 0, 0, 0, 0, 0},
@@ -4756,6 +4758,7 @@ ix86_target_string (HOST_WIDE_INT isa, HOST_WIDE_INT isa2,
   static struct ix86_target_opts flag2_opts[] =
   {
     { "-mgeneral-regs-only",		OPTION_MASK_GENERAL_REGS_ONLY },
+    { "-mprefer-avx256",		OPTION_MASK_PREFER_AVX256 },
   };
 
   const char *opts[ARRAY_SIZE (isa_opts) + ARRAY_SIZE (isa2_opts)
@@ -5352,6 +5355,8 @@ ix86_option_override_internal (bool main_args_p,
   (PTA_CORE2 | PTA_MOVBE)
 #define PTA_SILVERMONT \
   (PTA_WESTMERE | PTA_MOVBE)
+#define PTA_KNM \
+  (PTA_KNL | PTA_AVX5124VNNIW | PTA_AVX5124FMAPS | PTA_AVX512VPOPCNTDQ)
 
 /* if this reaches 64, need to widen struct pta flags below */
 
@@ -5422,6 +5427,7 @@ ix86_option_override_internal (bool main_args_p,
       {"silvermont", PROCESSOR_SILVERMONT, CPU_SLM, PTA_SILVERMONT},
       {"slm", PROCESSOR_SILVERMONT, CPU_SLM, PTA_SILVERMONT},
       {"knl", PROCESSOR_KNL, CPU_SLM, PTA_KNL},
+      {"knm", PROCESSOR_KNM, CPU_SLM, PTA_KNM},
       {"intel", PROCESSOR_INTEL, CPU_SLM, PTA_NEHALEM},
       {"geode", PROCESSOR_GEODE, CPU_GEODE,
 	PTA_MMX | PTA_3DNOW | PTA_3DNOW_A | PTA_PREFETCH_SSE},
@@ -13941,7 +13947,13 @@ ix86_adjust_stack_and_probe_stack_clash (const HOST_WIDE_INT size)
      no probes are needed.  */
   if (!size)
     {
-      dump_stack_clash_frame_info (NO_PROBE_NO_FRAME, false);
+      /* However, the allocation of space via pushes for register
+	 saves could be viewed as allocating space, but without the
+	 need to probe.  */
+      if (m->frame.nregs || m->frame.nsseregs || frame_pointer_needed)
+        dump_stack_clash_frame_info (NO_PROBE_SMALL_FRAME, true);
+      else
+	dump_stack_clash_frame_info (NO_PROBE_NO_FRAME, false);
       return;
     }
 
@@ -13955,7 +13967,7 @@ ix86_adjust_stack_and_probe_stack_clash (const HOST_WIDE_INT size)
 
      ?!? This should be revamped to work like aarch64 and s390 where
      we track the offset from the most recent probe.  Normally that
-     offset would be zero.  For a non-return function we would reset
+     offset would be zero.  For a noreturn function we would reset
      it to PROBE_INTERVAL - (STACK_BOUNDARY / BITS_PER_UNIT).   Then
      we just probe when we cross PROBE_INTERVAL.  */
   if (TREE_THIS_VOLATILE (cfun->decl))
@@ -14035,7 +14047,7 @@ ix86_adjust_stack_and_probe_stack_clash (const HOST_WIDE_INT size)
 			plus_constant (Pmode, sr.reg,
 				       m->fs.cfa_offset + rounded_size));
 	  RTX_FRAME_RELATED_P (insn) = 1;
-        }
+	}
 
       /* Step 3: the loop.  */
       rtx size_rtx = GEN_INT (rounded_size);
@@ -14048,7 +14060,7 @@ ix86_adjust_stack_and_probe_stack_clash (const HOST_WIDE_INT size)
 			plus_constant (Pmode, stack_pointer_rtx,
 				       m->fs.cfa_offset));
 	  RTX_FRAME_RELATED_P (insn) = 1;
-        }
+	}
       m->fs.sp_offset += rounded_size;
       emit_insn (gen_blockage ());
 
@@ -19941,6 +19953,13 @@ ix86_print_operand_address_as (FILE *file, rtx addr,
 	  code = 'k';
 	}
 
+      /* Since the upper 32 bits of RSP are always zero for x32,
+	 we can encode %esp as %rsp to avoid 0x67 prefix if
+	 there is no index register.  */
+      if (TARGET_X32 && Pmode == SImode
+	  && !index && base && REG_P (base) && REGNO (base) == SP_REG)
+	code = 'q';
+
       if (ASSEMBLER_DIALECT == ASM_ATT)
 	{
 	  if (disp)
@@ -21908,9 +21927,22 @@ ix86_split_idivmod (machine_mode mode, rtx operands[],
   switch (mode)
     {
     case E_SImode:
-      gen_divmod4_1 = signed_p ? gen_divmodsi4_1 : gen_udivmodsi4_1;
+      if (GET_MODE (operands[0]) == SImode)
+	{
+	  if (GET_MODE (operands[1]) == SImode)
+	    gen_divmod4_1 = signed_p ? gen_divmodsi4_1 : gen_udivmodsi4_1;
+	  else
+	    gen_divmod4_1
+	      = signed_p ? gen_divmodsi4_zext_2 : gen_udivmodsi4_zext_2;
+	  gen_zero_extend = gen_zero_extendqisi2;
+	}
+      else
+	{
+	  gen_divmod4_1
+	    = signed_p ? gen_divmodsi4_zext_1 : gen_udivmodsi4_zext_1;
+	  gen_zero_extend = gen_zero_extendqidi2;
+	}
       gen_test_ccno_1 = gen_testsi_ccno_1;
-      gen_zero_extend = gen_zero_extendqisi2;
       break;
     case E_DImode:
       gen_divmod4_1 = signed_p ? gen_divmoddi4_1 : gen_udivmoddi4_1;
@@ -21961,24 +21993,32 @@ ix86_split_idivmod (machine_mode mode, rtx operands[],
 
   if (signed_p)
     {
-      div = gen_rtx_DIV (SImode, operands[2], operands[3]);
-      mod = gen_rtx_MOD (SImode, operands[2], operands[3]);
+      div = gen_rtx_DIV (mode, operands[2], operands[3]);
+      mod = gen_rtx_MOD (mode, operands[2], operands[3]);
     }
   else
     {
-      div = gen_rtx_UDIV (SImode, operands[2], operands[3]);
-      mod = gen_rtx_UMOD (SImode, operands[2], operands[3]);
+      div = gen_rtx_UDIV (mode, operands[2], operands[3]);
+      mod = gen_rtx_UMOD (mode, operands[2], operands[3]);
+    }
+  if (mode == SImode)
+    {
+      if (GET_MODE (operands[0]) != SImode)
+	div = gen_rtx_ZERO_EXTEND (DImode, div);
+      if (GET_MODE (operands[1]) != SImode)
+	mod = gen_rtx_ZERO_EXTEND (DImode, mod);
     }
 
   /* Extract remainder from AH.  */
-  tmp1 = gen_rtx_ZERO_EXTRACT (mode, tmp0, GEN_INT (8), GEN_INT (8));
+  tmp1 = gen_rtx_ZERO_EXTRACT (GET_MODE (operands[1]),
+			       tmp0, GEN_INT (8), GEN_INT (8));
   if (REG_P (operands[1]))
     insn = emit_move_insn (operands[1], tmp1);
   else
     {
       /* Need a new scratch register since the old one has result
 	 of 8bit divide.  */
-      scratch = gen_reg_rtx (mode);
+      scratch = gen_reg_rtx (GET_MODE (operands[1]));
       emit_move_insn (scratch, tmp1);
       insn = emit_move_insn (operands[1], scratch);
     }
@@ -30282,6 +30322,7 @@ ix86_issue_rate (void)
     case PROCESSOR_BONNELL:
     case PROCESSOR_SILVERMONT:
     case PROCESSOR_KNL:
+    case PROCESSOR_KNM:
     case PROCESSOR_INTEL:
     case PROCESSOR_K6:
     case PROCESSOR_BTVER2:
@@ -30648,6 +30689,7 @@ ix86_adjust_cost (rtx_insn *insn, int dep_type, rtx_insn *dep_insn, int cost,
 
     case PROCESSOR_SILVERMONT:
     case PROCESSOR_KNL:
+    case PROCESSOR_KNM:
     case PROCESSOR_INTEL:
       if (!reload_completed)
 	return cost;
@@ -30719,6 +30761,7 @@ ia32_multipass_dfa_lookahead (void)
     case PROCESSOR_BONNELL:
     case PROCESSOR_SILVERMONT:
     case PROCESSOR_KNL:
+    case PROCESSOR_KNM:
     case PROCESSOR_INTEL:
       /* Generally, we want haifa-sched:max_issue() to look ahead as far
 	 as many instructions can be executed on a cycle, i.e.,
@@ -31540,14 +31583,10 @@ ix86_sched_init_global (FILE *, int, int)
 }
 
 
-/* Compute the alignment given to a constant that is being placed in memory.
-   EXP is the constant and ALIGN is the alignment that the object would
-   ordinarily have.
-   The value of this function is used instead of that alignment to align
-   the object.  */
+/* Implement TARGET_CONSTANT_ALIGNMENT.  */
 
-int
-ix86_constant_alignment (tree exp, int align)
+static HOST_WIDE_INT
+ix86_constant_alignment (const_tree exp, HOST_WIDE_INT align)
 {
   if (TREE_CODE (exp) == REAL_CST || TREE_CODE (exp) == VECTOR_CST
       || TREE_CODE (exp) == INTEGER_CST)
@@ -33844,6 +33883,10 @@ get_builtin_code_for_version (tree decl, tree *predicate_list)
 	      arg_str = "knl";
 	      priority = P_PROC_AVX512F;
 	      break;
+	    case PROCESSOR_KNM:
+	      arg_str = "knm";
+	      priority = P_PROC_AVX512F;
+	      break;
 	    case PROCESSOR_SILVERMONT:
 	      arg_str = "silvermont";
 	      priority = P_PROC_SSE4_2;
@@ -34527,6 +34570,7 @@ fold_builtin_cpu (tree fndecl, tree *args)
     M_AMD_BTVER1,
     M_AMD_BTVER2,    
     M_AMDFAM17H,
+    M_INTEL_KNM,
     M_CPU_SUBTYPE_START,
     M_INTEL_COREI7_NEHALEM,
     M_INTEL_COREI7_WESTMERE,
@@ -34570,6 +34614,7 @@ fold_builtin_cpu (tree fndecl, tree *args)
       {"bonnell", M_INTEL_BONNELL},
       {"silvermont", M_INTEL_SILVERMONT},
       {"knl", M_INTEL_KNL},
+      {"knm", M_INTEL_KNM},
       {"amdfam10h", M_AMDFAM10H},
       {"barcelona", M_AMDFAM10H_BARCELONA},
       {"shanghai", M_AMDFAM10H_SHANGHAI},
@@ -50003,8 +50048,7 @@ ix86_expand_vec_perm_const (rtx operands[4])
 /* Implement targetm.vectorize.vec_perm_const_ok.  */
 
 static bool
-ix86_vectorize_vec_perm_const_ok (machine_mode vmode,
-				  const unsigned char *sel)
+ix86_vectorize_vec_perm_const_ok (machine_mode vmode, vec_perm_indices sel)
 {
   struct expand_vec_perm_d d;
   unsigned int i, nelt, which;
@@ -50075,11 +50119,11 @@ ix86_vectorize_vec_perm_const_ok (machine_mode vmode,
 
   /* Extract the values from the vector CST into the permutation
      array in D.  */
-  memcpy (d.perm, sel, nelt);
   for (i = which = 0; i < nelt; ++i)
     {
-      unsigned char e = d.perm[i];
+      unsigned char e = sel[i];
       gcc_assert (e < 2 * nelt);
+      d.perm[i] = e;
       which |= (e < nelt ? 1 : 2);
     }
 
@@ -51828,20 +51872,39 @@ ix86_preferred_simd_mode (scalar_mode mode)
   switch (mode)
     {
     case E_QImode:
-      return TARGET_AVX512BW ? V64QImode :
-       (TARGET_AVX && !TARGET_PREFER_AVX128) ? V32QImode : V16QImode;
+      if (TARGET_AVX512BW && !TARGET_PREFER_AVX256)
+	return V64QImode;
+      else if (TARGET_AVX && !TARGET_PREFER_AVX128)
+	return V32QImode;
+      else
+	return V16QImode;
+
     case E_HImode:
-      return TARGET_AVX512BW ? V32HImode :
-       (TARGET_AVX && !TARGET_PREFER_AVX128) ? V16HImode : V8HImode;
+      if (TARGET_AVX512BW && !TARGET_PREFER_AVX256)
+	return V32HImode;
+      else if (TARGET_AVX && !TARGET_PREFER_AVX128)
+	return V16HImode;
+      else
+	return V8HImode;
+
     case E_SImode:
-      return TARGET_AVX512F ? V16SImode :
-	(TARGET_AVX && !TARGET_PREFER_AVX128) ? V8SImode : V4SImode;
+      if (TARGET_AVX512F && !TARGET_PREFER_AVX256)
+	return V16SImode;
+      else if (TARGET_AVX && !TARGET_PREFER_AVX128)
+	return V8SImode;
+      else
+	return V4SImode;
+
     case E_DImode:
-      return TARGET_AVX512F ? V8DImode :
-	(TARGET_AVX && !TARGET_PREFER_AVX128) ? V4DImode : V2DImode;
+      if (TARGET_AVX512F && !TARGET_PREFER_AVX256)
+	return V8DImode;
+      else if (TARGET_AVX && !TARGET_PREFER_AVX128)
+	return V4DImode;
+      else
+	return V2DImode;
 
     case E_SFmode:
-      if (TARGET_AVX512F)
+      if (TARGET_AVX512F && !TARGET_PREFER_AVX256)
 	return V16SFmode;
       else if (TARGET_AVX && !TARGET_PREFER_AVX128)
 	return V8SFmode;
@@ -51849,7 +51912,7 @@ ix86_preferred_simd_mode (scalar_mode mode)
 	return V4SFmode;
 
     case E_DFmode:
-      if (TARGET_AVX512F)
+      if (TARGET_AVX512F && !TARGET_PREFER_AVX256)
 	return V8DFmode;
       else if (TARGET_AVX && !TARGET_PREFER_AVX128)
 	return V4DFmode;
@@ -51869,8 +51932,14 @@ ix86_preferred_simd_mode (scalar_mode mode)
 static unsigned int
 ix86_autovectorize_vector_sizes (void)
 {
-  return TARGET_AVX512F ? 64 | 32 | 16 :
-    (TARGET_AVX && !TARGET_PREFER_AVX128) ? 32 | 16 : 0;
+  unsigned int bytesizes = 0;
+
+  if (TARGET_AVX512F && !TARGET_PREFER_AVX256)
+    bytesizes |= (64 | 32 | 16);
+  else if (TARGET_AVX && !TARGET_PREFER_AVX128)
+    bytesizes |= (32 | 16);
+
+  return bytesizes;
 }
 
 /* Implemenation of targetm.vectorize.get_mask_mode.  */
@@ -53555,6 +53624,9 @@ ix86_run_selftests (void)
 
 #undef TARGET_CAN_CHANGE_MODE_CLASS
 #define TARGET_CAN_CHANGE_MODE_CLASS ix86_can_change_mode_class
+
+#undef TARGET_CONSTANT_ALIGNMENT
+#define TARGET_CONSTANT_ALIGNMENT ix86_constant_alignment
 
 #if CHECKING_P
 #undef TARGET_RUN_TARGET_SELFTESTS

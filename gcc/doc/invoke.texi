@@ -1194,7 +1194,7 @@ See RS/6000 and PowerPC Options.
 -mincoming-stack-boundary=@var{num} @gol
 -mcld  -mcx16  -msahf  -mmovbe  -mcrc32 @gol
 -mrecip  -mrecip=@var{opt} @gol
--mvzeroupper  -mprefer-avx128 @gol
+-mvzeroupper  -mprefer-avx128 -mprefer-avx256 @gol
 -mmmx  -msse  -msse2  -msse3  -mssse3  -msse4.1  -msse4.2  -msse4  -mavx @gol
 -mavx2  -mavx512f  -mavx512pf  -mavx512er  -mavx512cd  -mavx512vl @gol
 -mavx512bw  -mavx512dq  -mavx512ifma  -mavx512vbmi  -msha  -maes @gol
@@ -10523,13 +10523,9 @@ sequence pairs.  This option only applies when using
 @item graphite-max-nb-scop-params
 To avoid exponential effects in the Graphite loop transforms, the
 number of parameters in a Static Control Part (SCoP) is bounded.  The
-default value is 10 parameters.  A variable whose value is unknown at
-compilation time and defined outside a SCoP is a parameter of the SCoP.
-
-@item graphite-max-bbs-per-function
-To avoid exponential effects in the detection of SCoPs, the size of
-the functions analyzed by Graphite is bounded.  The default value is
-100 basic blocks.
+default value is 10 parameters, a value of zero can be used to lift
+the bound.  A variable whose value is unknown at compilation time and
+defined outside a SCoP is a parameter of the SCoP.
 
 @item loop-block-tile-size
 Loop blocking or strip mining transforms, enabled with
@@ -25100,6 +25096,12 @@ SSSE3, SSE4.1, SSE4.2, POPCNT, AVX, AVX2, AES, PCLMUL, FSGSBASE, RDRND, FMA,
 BMI, BMI2, F16C, RDSEED, ADCX, PREFETCHW, AVX512F, AVX512PF, AVX512ER and
 AVX512CD instruction set support.
 
+@item knm
+Intel Knights Mill CPU with 64-bit extensions, MOVBE, MMX, SSE, SSE2, SSE3,
+SSSE3, SSE4.1, SSE4.2, POPCNT, AVX, AVX2, AES, PCLMUL, FSGSBASE, RDRND, FMA,
+BMI, BMI2, F16C, RDSEED, ADCX, PREFETCHW, AVX512F, AVX512PF, AVX512ER, AVX512CD,
+AVX5124VNNIW, AVX5124FMAPS and AVX512VPOPCNTDQ instruction set support.
+
 @item skylake-avx512
 Intel Skylake Server CPU with 64-bit extensions, MOVBE, MMX, SSE, SSE2, SSE3,
 SSSE3, SSE4.1, SSE4.2, POPCNT, PKU, AVX, AVX2, AES, PCLMUL, FSGSBASE, RDRND, FMA,
@@ -25862,6 +25864,11 @@ intrinsics.
 @opindex mprefer-avx128
 This option instructs GCC to use 128-bit AVX instructions instead of
 256-bit AVX instructions in the auto-vectorizer.
+
+@item -mprefer-avx256
+@opindex mprefer-avx256
+This option instructs GCC to use 256-bit AVX instructions instead of
+512-bit AVX instructions in the auto-vectorizer.
 
 @item -mcx16
 @opindex mcx16
