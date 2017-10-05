@@ -1,3 +1,203 @@
+2017-10-04  Nathan Sidwell  <nathan@acm.org>
+
+	* toplev.c (toplev::main): Remove excess parens on pretty_printer
+	decl.
+	* caller-save.c (insert_save): Remove excess parens on TO_SAVE parm.
+
+2017-10-04  Sudakshina Das  <sudi.das@arm.com>
+
+	* config/aarch64/aarch64-protos.h (enum simd_immediate_check): New
+	check type for aarch64_simd_valid_immediate.
+	(aarch64_output_simd_mov_immediate): Update prototype.
+	(aarch64_simd_valid_immediate): Update prototype.
+	* config/aarch64/aarch64-simd.md (orr<mode>3): modified pattern to add
+	support for ORR-immediate.
+	(and<mode>3): modified pattern to add support for BIC-immediate.
+	* config/aarch64/aarch64.c (aarch64_simd_valid_immediate): Function
+	now checks for valid immediate for BIC and ORR based on new enum
+	argument.
+	(aarch64_output_simd_mov_immediate): Function now used to output
+	BIC/ORR imm as well based on new enum argument.
+	* config/aarch64/constraints.md (Do): New vector immediate constraint.
+	(Db) : Likewise.
+	* config/aarch64/predicates.md (aarch64_reg_or_orr_imm): New predicate.
+	(aarch64_reg_or_bic_imm): Likewise.
+
+2017-10-04  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* config/s390/vx-builtins.md ("vec_mergeh<mode>")
+	("vec_mergel<mode>"): Change mode iterator to V_128_NOSINGLE.
+
+2017-10-04  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	Revert r253399:
+
+	PR rtl-optimization/82396
+	* haifa-sched.c (autopref_multipass_init): Simplify
+	initialization.
+	(autopref_rank_data): Simplify sort order.
+	* sched-int.h (autopref_multipass_data_): Remove
+	multi_mem_insn_p, min_offset and max_offset.
+
+2017-10-04  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* doc/sourcebuild.texi: Document vect_peeling_profitable.
+
+2017-10-04  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* doc/sourcebuild.texi: Document vect_intdouble_cvt and
+	vect_doubleint_cvt.
+
+2017-10-04  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* doc/sourcebuild.texi: Document vect_long_mult.
+
+2017-10-04  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	PR tree-optimization/82413
+	* fold-const.c (build_range_check): Use widest_int when comparing
+	the maximum ETYPE value with HIGH.
+
+2017-10-04  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	PR rtl-optimization/82396
+	* haifa-sched.c (autopref_multipass_init): Simplify
+	initialization.
+	(autopref_rank_data): Simplify sort order.
+	* sched-int.h (autopref_multipass_data_): Remove
+	multi_mem_insn_p, min_offset and max_offset.
+
+2017-10-04  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/82381
+	* tree-ssa-reassoc.c (sort_by_operand_rank): Check for different
+	oeN->rank first.  Return 1 or -1 if one op is SSA_NAME and the other
+	is not.
+
+	PR tree-optimization/82374
+	* omp-low.c (create_omp_child_function): Copy DECL_ATTRIBUTES,
+	DECL_FUNCTION_SPECIFIC_OPTIMIZATION,
+	DECL_FUNCTION_SPECIFIC_TARGET and DECL_FUNCTION_VERSIONED from
+	current_function_decl to the new decl.
+
+2017-10-03  Michael Meissner  <meissner@linux.vnet.ibm.com>
+
+	* config/rs6000/rs6000-builtin.def (BU_FLOAT128_2_HW): Define new
+	helper macro for IEEE float128 hardware built-in functions.
+	(SQRTF128_ODD): Add built-in functions with the round-to-odd
+	semantics.
+	(TRUNCF128_ODD): Likewise.
+	(ADDF128_ODD): Likewise.
+	(SUBF128_ODD): Likewise.
+	(MULF128_ODD): Likewise.
+	(DIVF128_ODD): Likewise.
+	(FMAF128_ODD): Likewise.
+	* config/rs6000/rs6000.md (UNSPEC_ROUND_TO_ODD): Rename to
+	UNSPEC_TRUNC_ROUND_TO_ODD.
+	(UNSPEC_TRUNC_ROUND_TO_ODD): Likewise.
+	(UNSPEC_ADD_ROUND_TO_ODD): New unspec codes for the IEEE 128-bit
+	floating point round to odd instructions.
+	(UNSPEC_SUB_ROUND_TO_ODD): Likewise.
+	(UNSPEC_MUL_ROUND_TO_ODD): Likewise.
+	(UNSPEC_DIV_ROUND_TO_ODD): Likewise.
+	(UNSPEC_FMA_ROUND_TO_ODD): Likewise.
+	(UNSPEC_SQRT_ROUND_TO_ODD): Likewise.
+	(trunc<mode>sf2_hw): Change the truncate with round to odd
+	expansion to use UNSPEC_TRUNC_ROUND_TO_ODD.
+	(add<mode>3_odd): Add insns for IEEE 128-bit floating point round
+	to odd hardware instructions.
+	(sub<mode>3_odd): Likewise.
+	(mul<mode>3_odd): Likewise.
+	(div<mode>3_odd): Likewise.
+	(sqrt<mode>2_odd): Likewise.
+	(fma<mode>4_odd): Likewise.
+	(fms<mode>4_odd): Likewise.
+	(nfma<mode>4_odd): Likewise.
+	(nfms<mode>4_odd): Likewise.
+	(trunc<mode>df2_odd): Change the truncate with round to odd
+	expansion to use UNSPEC_TRUNC_ROUND_TO_ODD.  Add a generator
+	function.
+	* doc/extend.texi (PowerPC built-in functions): Update documentation
+	for existing IEEE float128-bit built-in functions.  Add built-in
+	functions that generate the IEEE 128-bit floating point round to
+	odd instructions.
+
+2017-10-03  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR rtl-optimization/77729
+	* simplify-rtx.c (simplify_binary_operation_1): Delete the (X&C1)|C2
+	to (X&(C1&~C2))|C2 transformations.
+
+2017-10-03  Martin Jambor  <mjambor@suse.cz>
+
+	PR tree-optimization/82363
+	* tree-sra.c (propagate_subaccesses_across_link): In unrecoverable
+	mismatch, mark lacc written regardless of racc.
+
+2017-10-03  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/82381
+	* tree-ssa-reassoc.c (sort_by_operand_rank): Don't check
+	stmt_to_insert nor wheather SSA_NAMEs are default defs.
+	Return 1 or -1 if one of bba and bbb is NULL. If bb_rank is equal,
+	fallthrough into reassoc_stmt_dominates_stmt_p.
+
+	PR target/82386
+	* combine.c (combine_instructions): Don't combine in unreachable
+	basic blocks.
+
+2017-08-18  Peter Bergner  <bergner@vnet.ibm.com>
+
+	PR target/80210
+	* config/rs6000/rs6000.c (rs6000_option_override_internal): Rewrite
+	function to not use the have_cpu variable.  Do not set cpu_index,
+	rs6000_cpu_index or rs6000_tune_index if we end up using TARGET_DEFAULT
+	or the default cpu.
+	(rs6000_valid_attribute_p): Remove duplicate initializations of
+	old_optimize and func_optimize.
+	(rs6000_pragma_target_parse): Call rs6000_activate_target_options ().
+	(rs6000_activate_target_options): Make global.
+	* config/rs6000/rs6000-protos.h (rs6000_activate_target_options): Add
+	prototype.
+
+2017-10-02  Jakub Jelinek  <jakub@redhat.com>
+
+	* tree-dfa.c (get_ref_base_and_extent): Set *pmax_size to -1
+	if *poffset + *pmax_size overflows in HOST_WIDE_INT.
+	Set *poffset to 0 and *psize and *pmax_size to -1 if
+	*poffset + *psize overflows in HOST_WIDE_INT.
+
+	PR tree-optimization/82387
+	PR tree-optimization/82388
+	PR tree-optimization/82389
+	* tree-ssa-dse.c (dse_classify_store): Test byte_tracking_enabled
+	instead of live_bytes non-NULL.
+
+2017-10-02  Georg-Johann Lay  <avr@gjlay.de>
+
+	PR target/41076
+	* confg/avr/avr.md (*iorhi3.ashift8-ext.zerox): Add "r,r,0"
+	alternative.
+
+2017-10-02  Richard Biener  <rguenther@suse.de>
+
+	* graphite-isl-ast-to-gimple.c (set_codegen_error): With
+	-fchecking and --param graphite-allow-codegen-errors=0 ICE.
+	* params.def (PARAM_GRAPHITE_ALLOW_CODEGEN_ERRORS): New param.
+
+2017-10-02  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	* tree.h (wi::int_traits <const_tree>::decompose): Assert that the
+	requested precision matches the type's.
+	* calls.c (alloc_max_size): Calculate the new candidate size as
+	a widest_int and use wi::to_widest when comparing it with the
+	current candidate size.
+	* gimple-ssa-warn-alloca.c (pass_walloca::execute): Compare with
+	zero rather than integer_zero_node.
+	* match.pd: Check for a no-op conversion before using wi::add
+	rather than after.  Use tree_to_uhwi when summing small shift
+	counts into an unsigned int.
+
 2017-10-02  Richard Sandiford  <richard.sandiford@linaro.org>
 	    Alan Hayward  <alan.hayward@arm.com>
 	    David Sherwood  <david.sherwood@arm.com>

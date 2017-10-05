@@ -2255,12 +2255,6 @@ supplement_binding_1 (cxx_binding *binding, tree decl)
       region to refer only to the namespace to which it already
       refers.  */
     ok = false;
-  else if (maybe_remove_implicit_alias (bval))
-    {
-      /* There was a mangling compatibility alias using this mangled name,
-	 but now we have a real decl that wants to use it instead.  */
-      binding->value = decl;
-    }
   else
     {
       if (!error_operand_p (bval))
@@ -4853,6 +4847,7 @@ set_global_binding (tree name, tree val)
 {
   bool subtime = timevar_cond_start (TV_NAME_LOOKUP);
 
+  gcc_checking_assert (name == DECL_NAME (val));
   tree *slot = find_namespace_slot (global_namespace, name, true);
   tree old = MAYBE_STAT_DECL (*slot);
 

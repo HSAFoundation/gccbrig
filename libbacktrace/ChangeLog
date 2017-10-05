@@ -1,3 +1,30 @@
+2017-10-02  Ian Lance Taylor  <iant@golang.org>
+
+	* ztest.c: #include <errno.h>.
+	(TEST_TIMING): Don't define, don't test.
+	(xclock_gettime, xclockid_t): Define if !HAVE_CLOCK_GETTIME.
+	(clockid_t, clock_gettime, CLOCK_REALTIME): Likewise.
+	(ZLIB_CLOCK_GETTIME_ARG): Define.
+	* configure.ac: Change clock_gettime_link to CLOCK_GETTIME_LINK.
+	* Makefile.am: Likewise.
+	* configure, Makefile.in: Rebuild.
+
+2017-10-02  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR other/67165
+	* Makefile.am: Append the content of clock_gettime_link to
+	ztest_LDADD.
+	* configure.ac: Test for the case that clock_gettime is in librt.
+	* Makefile.in: Regenerate.
+	* configure: Likewise.
+
+	PR other/67165
+	* configure.ac: Check for clock_gettime.
+	* config.h.in: Regenerate.
+	* configure: Likewise.
+	* ztest.c (average_time, test_large): Conditionalize test timing
+	on clock_gettime availability.
+
 2017-09-29  Tony Reix  <tony.reix@atos.net>
 
 	* xcoff.c: Initial support for DWARF debug sections in XCOFF.

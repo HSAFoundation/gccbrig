@@ -1404,6 +1404,9 @@ Target supports a vector misalign access.
 @item vect_no_align
 Target does not support a vector alignment mechanism.
 
+@item vect_peeling_profitable
+Target might require to peel loops for alignment purposes.
+
 @item vect_no_int_min_max
 Target does not support a vector min and max instruction on @code{int}.
 
@@ -1421,6 +1424,9 @@ Target supports @code{vector short} multiplication.
 
 @item vect_int_mult
 Target supports @code{vector int} multiplication.
+
+@item vect_long_mult
+Target supports 64 bit @code{vector long} multiplication.
 
 @item vect_extract_even_odd
 Target supports vector even/odd element extraction.
@@ -1504,6 +1510,12 @@ Target supports conversion from @code{float} to @code{signed int}.
 
 @item vect_floatuint_cvt
 Target supports conversion from @code{float} to @code{unsigned int}.
+
+@item vect_intdouble_cvt
+Target supports conversion from @code{signed int} to @code{double}.
+
+@item vect_doubleint_cvt
+Target supports conversion from @code{double} to @code{signed int}.
 
 @item vect_max_reduc
 Target supports max reduction for vectors.
