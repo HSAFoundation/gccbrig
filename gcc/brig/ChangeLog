@@ -1,3 +1,8 @@
+2017-10-06  Henry Linjamäki  <henry.linjamaki@parmance.com>
+
+	* brigfrontend/brig-branch-inst-handler.cc: Fix crash introduced
+	by the earlier patch.
+
 2017-10-03  Henry Linjamäki  <henry.linjamaki@parmance.com>
 
 	* brigfrontend/brig-branch-inst-handler.cc: Fix (more) crash with
