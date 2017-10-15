@@ -4579,6 +4579,17 @@ in the @code{?}: operator is a boolean expression, the omitted value is
 always 1.  Often programmers expect it to be a value computed
 inside the conditional expression instead.
 
+For C++ this also warns for some cases of unnecessary parentheses in
+declarations, which can indicate an attempt at a function call instead
+of a declaration:
+@smallexample
+@{
+  // Declares a local variable called mymutex.
+  std::unique_lock<std::mutex> (mymutex);
+  // User meant std::unique_lock<std::mutex> lock (mymutex);
+@}
+@end smallexample
+
 This warning is enabled by @option{-Wall}.
 
 @item -Wsequence-point
@@ -5190,7 +5201,7 @@ whether to issue a warning.  Similarly to @option{-Wstringop-overflow=3} this
 setting of the option may result in warnings for benign code.
 @end table
 
-@item -Wsuggest-attribute=@r{[}pure@r{|}const@r{|}noreturn@r{|}format@r{]}
+@item -Wsuggest-attribute=@r{[}pure@r{|}const@r{|}noreturn@r{|}format@r{|}cold@r{]}
 @opindex Wsuggest-attribute=
 @opindex Wno-suggest-attribute=
 Warn for cases where adding an attribute may be beneficial. The
@@ -5242,6 +5253,15 @@ might be appropriate for any function that calls a function like
 @code{vprintf} or @code{vscanf}, but this might not always be the
 case, and some functions for which @code{format} attributes are
 appropriate may not be detected.
+
+@item -Wsuggest-attribute=cold
+@opindex Wsuggest-attribute=cold
+@opindex Wno-suggest-attribute=cold
+
+Warn about functions that might be candidates for @code{cold} attribute.  This
+is based on static detection and generally will only warn about functions which
+always leads to a call to another @code{cold} function such as wrappers of
+C++ @code{throw} or fatal error reporting functions leading to @code{abort}.
 @end table
 
 @item -Wsuggest-final-types
@@ -5381,6 +5401,11 @@ arrays at the end of a struct and for arrays accessed through
 pointers. This warning level may give a larger number of
 false positives and is deactivated by default.
 @end table
+
+@item -Wattribute-alias
+Warn about declarations using the @code{alias} and similar attributes whose
+target is incompatible with the type of the alias.  @xref{Function Attributes,
+,Declaring Attributes of Functions}.
 
 @item -Wbool-compare
 @opindex Wno-bool-compare

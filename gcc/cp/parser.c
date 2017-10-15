@@ -1451,6 +1451,7 @@ make_declarator (cp_declarator_kind kind)
 
   declarator = (cp_declarator *) alloc_declarator (sizeof (cp_declarator));
   declarator->kind = kind;
+  declarator->parenthesized = UNKNOWN_LOCATION;
   declarator->attributes = NULL_TREE;
   declarator->std_attributes = NULL_TREE;
   declarator->declarator = NULL;
@@ -2256,7 +2257,7 @@ static cp_expr cp_parser_braced_list
 static vec<constructor_elt, va_gc> *cp_parser_initializer_list
   (cp_parser *, bool *);
 
-static bool cp_parser_ctor_initializer_opt_and_function_body
+static void cp_parser_ctor_initializer_opt_and_function_body
   (cp_parser *, bool);
 
 static tree cp_parser_late_parsing_omp_declare_simd
@@ -2309,7 +2310,7 @@ static tree cp_parser_conversion_type_id
   (cp_parser *);
 static cp_declarator *cp_parser_conversion_declarator_opt
   (cp_parser *);
-static bool cp_parser_ctor_initializer_opt
+static void cp_parser_ctor_initializer_opt
   (cp_parser *);
 static void cp_parser_mem_initializer_list
   (cp_parser *);
@@ -2352,7 +2353,7 @@ static void cp_parser_explicit_specialization
 
 static tree cp_parser_try_block
   (cp_parser *);
-static bool cp_parser_function_try_block
+static void cp_parser_function_try_block
   (cp_parser *);
 static void cp_parser_handler_seq
   (cp_parser *);
@@ -2437,7 +2438,7 @@ static tree cp_parser_transaction
   (cp_parser *, cp_token *);
 static tree cp_parser_transaction_expression
   (cp_parser *, enum rid);
-static bool cp_parser_function_transaction
+static void cp_parser_function_transaction
   (cp_parser *, enum rid);
 static tree cp_parser_transaction_cancel
   (cp_parser *);
@@ -2769,6 +2770,148 @@ cp_lexer_peek_conflict_marker (cp_lexer *lexer, enum cpp_ttype tok1_kind,
   return true;
 }
 
+/* Get a description of the matching symbol to TOKEN_DESC e.g. "(" for
+   RT_CLOSE_PAREN.  */
+
+static const char *
+get_matching_symbol (required_token token_desc)
+{
+  switch (token_desc)
+    {
+    default:
+      gcc_unreachable ();
+      return "";
+    case RT_CLOSE_BRACE:
+      return "{";
+    case RT_CLOSE_PAREN:
+      return "(";
+    }
+}
+
+/* Attempt to convert TOKEN_DESC from a required_token to an
+   enum cpp_ttype, returning CPP_EOF if there is no good conversion.  */
+
+static enum cpp_ttype
+get_required_cpp_ttype (required_token token_desc)
+{
+  switch (token_desc)
+    {
+    case RT_SEMICOLON:
+      return CPP_SEMICOLON;
+    case RT_OPEN_PAREN:
+      return CPP_OPEN_PAREN;
+    case RT_CLOSE_BRACE:
+      return CPP_CLOSE_BRACE;
+    case RT_OPEN_BRACE:
+      return CPP_OPEN_BRACE;
+    case RT_CLOSE_SQUARE:
+      return CPP_CLOSE_SQUARE;
+    case RT_OPEN_SQUARE:
+      return CPP_OPEN_SQUARE;
+    case RT_COMMA:
+      return CPP_COMMA;
+    case RT_COLON:
+      return CPP_COLON;
+    case RT_CLOSE_PAREN:
+      return CPP_CLOSE_PAREN;
+
+    default:
+      /* Use CPP_EOF as a "no completions possible" code.  */
+      return CPP_EOF;
+    }
+}
+
+
+/* Subroutine of cp_parser_error and cp_parser_required_error.
+
+   Issue a diagnostic of the form
+      FILE:LINE: MESSAGE before TOKEN
+   where TOKEN is the next token in the input stream.  MESSAGE
+   (specified by the caller) is usually of the form "expected
+   OTHER-TOKEN".
+
+   This bypasses the check for tentative passing, and potentially
+   adds material needed by cp_parser_required_error.
+
+   If MISSING_TOKEN_DESC is not RT_NONE, then potentially add fix-it hints
+   suggesting insertion of the missing token.
+
+   Additionally, if MATCHING_LOCATION is not UNKNOWN_LOCATION, then we
+   have an unmatched symbol at MATCHING_LOCATION; highlight this secondary
+   location.  */
+
+static void
+cp_parser_error_1 (cp_parser* parser, const char* gmsgid,
+		   required_token missing_token_desc,
+		   location_t matching_location)
+{
+  cp_token *token = cp_lexer_peek_token (parser->lexer);
+  /* This diagnostic makes more sense if it is tagged to the line
+     of the token we just peeked at.  */
+  cp_lexer_set_source_position_from_token (token);
+
+  if (token->type == CPP_PRAGMA)
+    {
+      error_at (token->location,
+		"%<#pragma%> is not allowed here");
+      cp_parser_skip_to_pragma_eol (parser, token);
+      return;
+    }
+
+  /* If this is actually a conflict marker, report it as such.  */
+  if (token->type == CPP_LSHIFT
+      || token->type == CPP_RSHIFT
+      || token->type == CPP_EQ_EQ)
+    {
+      location_t loc;
+      if (cp_lexer_peek_conflict_marker (parser->lexer, token->type, &loc))
+	{
+	  error_at (loc, "version control conflict marker in file");
+	  return;
+	}
+    }
+
+  gcc_rich_location richloc (input_location);
+
+  bool added_matching_location = false;
+
+  if (missing_token_desc != RT_NONE)
+    {
+      /* Potentially supply a fix-it hint, suggesting to add the
+	 missing token immediately after the *previous* token.
+	 This may move the primary location within richloc.  */
+      enum cpp_ttype ttype = get_required_cpp_ttype (missing_token_desc);
+      location_t prev_token_loc
+	= cp_lexer_previous_token (parser->lexer)->location;
+      maybe_suggest_missing_token_insertion (&richloc, ttype, prev_token_loc);
+
+      /* If matching_location != UNKNOWN_LOCATION, highlight it.
+	 Attempt to consolidate diagnostics by printing it as a
+	secondary range within the main diagnostic.  */
+      if (matching_location != UNKNOWN_LOCATION)
+	added_matching_location
+	  = richloc.add_location_if_nearby (matching_location);
+    }
+
+  /* Actually emit the error.  */
+  c_parse_error (gmsgid,
+		 /* Because c_parser_error does not understand
+		    CPP_KEYWORD, keywords are treated like
+		    identifiers.  */
+		 (token->type == CPP_KEYWORD ? CPP_NAME : token->type),
+		 token->u.value, token->flags, &richloc);
+
+  if (missing_token_desc != RT_NONE)
+    {
+      /* If we weren't able to consolidate matching_location, then
+	 print it as a secondary diagnostic.  */
+      if (matching_location != UNKNOWN_LOCATION
+	  && !added_matching_location)
+	inform (matching_location, "to match this %qs",
+		get_matching_symbol (missing_token_desc));
+    }
+}
+
 /* If not parsing tentatively, issue a diagnostic of the form
       FILE:LINE: MESSAGE before TOKEN
    where TOKEN is the next token in the input stream.  MESSAGE
@@ -2779,41 +2922,7 @@ static void
 cp_parser_error (cp_parser* parser, const char* gmsgid)
 {
   if (!cp_parser_simulate_error (parser))
-    {
-      cp_token *token = cp_lexer_peek_token (parser->lexer);
-      /* This diagnostic makes more sense if it is tagged to the line
-	 of the token we just peeked at.  */
-      cp_lexer_set_source_position_from_token (token);
-
-      if (token->type == CPP_PRAGMA)
-	{
-	  error_at (token->location,
-		    "%<#pragma%> is not allowed here");
-	  cp_parser_skip_to_pragma_eol (parser, token);
-	  return;
-	}
-
-      /* If this is actually a conflict marker, report it as such.  */
-      if (token->type == CPP_LSHIFT
-	  || token->type == CPP_RSHIFT
-	  || token->type == CPP_EQ_EQ)
-	{
-	  location_t loc;
-	  if (cp_lexer_peek_conflict_marker (parser->lexer, token->type, &loc))
-	    {
-	      error_at (loc, "version control conflict marker in file");
-	      return;
-	    }
-	}
-
-      rich_location richloc (line_table, input_location);
-      c_parse_error (gmsgid,
-		     /* Because c_parser_error does not understand
-			CPP_KEYWORD, keywords are treated like
-			identifiers.  */
-		     (token->type == CPP_KEYWORD ? CPP_NAME : token->type),
-		     token->u.value, token->flags, &richloc);
-    }
+    cp_parser_error_1 (parser, gmsgid, RT_NONE, UNKNOWN_LOCATION);
 }
 
 /* Issue an error about name-lookup failing.  NAME is the
@@ -3827,6 +3936,9 @@ cp_parser_new (void)
 
   /* Allow constrained-type-specifiers. */
   parser->prevent_constrained_type_specifiers = 0;
+
+  /* We haven't yet seen an 'extern "C"'.  */
+  parser->innermost_linkage_specification_location = UNKNOWN_LOCATION;
 
   return parser;
 }
@@ -11872,6 +11984,8 @@ cp_convert_range_for (tree statement, tree range_decl, tree range_expr,
   tree iter_type, begin_expr, end_expr;
   tree condition, expression;
 
+  range_expr = mark_lvalue_use (range_expr);
+
   if (range_decl == error_mark_node || range_expr == error_mark_node)
     /* If an error happened previously do nothing or else a lot of
        unhelpful errors would be issued.  */
@@ -13737,9 +13851,11 @@ cp_parser_linkage_specification (cp_parser* parser)
   tree linkage;
 
   /* Look for the `extern' keyword.  */
-  cp_parser_require_keyword (parser, RID_EXTERN, RT_EXTERN);
+  cp_token *extern_token
+    = cp_parser_require_keyword (parser, RID_EXTERN, RT_EXTERN);
 
   /* Look for the string-literal.  */
+  cp_token *string_token = cp_lexer_peek_token (parser->lexer);
   linkage = cp_parser_string_literal (parser, false, false);
 
   /* Transform the literal into an identifier.  If the literal is a
@@ -13757,6 +13873,20 @@ cp_parser_linkage_specification (cp_parser* parser)
 
   /* We're now using the new linkage.  */
   push_lang_context (linkage);
+
+  /* Preserve the location of the the innermost linkage specification,
+     tracking the locations of nested specifications via a local.  */
+  location_t saved_location
+    = parser->innermost_linkage_specification_location;
+  /* Construct a location ranging from the start of the "extern" to
+     the end of the string-literal, with the caret at the start, e.g.:
+       extern "C" {
+       ^~~~~~~~~~
+  */
+  parser->innermost_linkage_specification_location
+    = make_location (extern_token->location,
+		     extern_token->location,
+		     get_finish (string_token->location));
 
   /* If the next token is a `{', then we're using the first
      production.  */
@@ -13788,6 +13918,9 @@ cp_parser_linkage_specification (cp_parser* parser)
 
   /* We're done with the linkage-specification.  */
   pop_lang_context ();
+
+  /* Restore location of parent linkage specification, if any.  */
+  parser->innermost_linkage_specification_location = saved_location;
 }
 
 /* Parse a static_assert-declaration.
@@ -14252,11 +14385,9 @@ cp_parser_conversion_declarator_opt (cp_parser* parser)
 /* Parse an (optional) ctor-initializer.
 
    ctor-initializer:
-     : mem-initializer-list
+     : mem-initializer-list  */
 
-   Returns TRUE iff the ctor-initializer was actually present.  */
-
-static bool
+static void
 cp_parser_ctor_initializer_opt (cp_parser* parser)
 {
   /* If the next token is not a `:', then there is no
@@ -14266,16 +14397,13 @@ cp_parser_ctor_initializer_opt (cp_parser* parser)
       /* Do default initialization of any bases and members.  */
       if (DECL_CONSTRUCTOR_P (current_function_decl))
 	finish_mem_initializers (NULL_TREE);
-
-      return false;
+      return;
     }
 
   /* Consume the `:' token.  */
   cp_lexer_consume_token (parser->lexer);
   /* And the mem-initializer-list.  */
   cp_parser_mem_initializer_list (parser);
-
-  return true;
 }
 
 /* Parse a mem-initializer-list.
@@ -16537,6 +16665,7 @@ cp_parser_explicit_specialization (cp_parser* parser)
   if (current_lang_name == lang_name_c)
     {
       error_at (token->location, "template specialization with C linkage");
+      maybe_show_extern_c_location ();
       /* Give it C++ linkage to avoid confusing other parts of the
 	 front end.  */
       push_lang_context (lang_name_cplusplus);
@@ -19808,6 +19937,7 @@ cp_parser_direct_declarator (cp_parser* parser,
   bool saved_in_declarator_p = parser->in_declarator_p;
   bool first = true;
   tree pushed_scope = NULL_TREE;
+  cp_token *open_paren = NULL, *close_paren = NULL;
 
   while (true)
     {
@@ -19857,6 +19987,8 @@ cp_parser_direct_declarator (cp_parser* parser,
 	    {
 	      tree params;
 	      bool is_declarator = false;
+
+	      open_paren = NULL;
 
 	      /* In a member-declarator, the only valid interpretation
 		 of a parenthesis is the start of a
@@ -19979,6 +20111,7 @@ cp_parser_direct_declarator (cp_parser* parser,
 	      parser->default_arg_ok_p = saved_default_arg_ok_p;
 	      parser->in_declarator_p = saved_in_declarator_p;
 
+	      open_paren = token;
 	      /* Consume the `('.  */
 	      matching_parens parens;
 	      parens.consume_open (parser);
@@ -19992,6 +20125,7 @@ cp_parser_direct_declarator (cp_parser* parser,
 	      parser->in_type_id_in_expr_p = saved_in_type_id_in_expr_p;
 	      first = false;
 	      /* Expect a `)'.  */
+	      close_paren = cp_lexer_peek_token (parser->lexer);
 	      if (!parens.require_close (parser))
 		declarator = cp_error_declarator;
 	      if (declarator == cp_error_declarator)
@@ -20013,6 +20147,7 @@ cp_parser_direct_declarator (cp_parser* parser,
 	  if (ctor_dtor_or_conv_p)
 	    *ctor_dtor_or_conv_p = 0;
 
+	  open_paren = NULL;
 	  first = false;
 	  parser->default_arg_ok_p = false;
 	  parser->in_declarator_p = true;
@@ -20308,6 +20443,22 @@ cp_parser_direct_declarator (cp_parser* parser,
      point.  That's an error; the declarator is not optional.  */
   if (!declarator)
     cp_parser_error (parser, "expected declarator");
+  else if (open_paren)
+    {
+      /* Record overly parenthesized declarator so we can give a
+	 diagnostic about confusing decl/expr disambiguation.  */
+      if (declarator->kind == cdk_array)
+	{
+	  /* If the open and close parens are on different lines, this
+	     is probably a formatting thing, so ignore.  */
+	  expanded_location open = expand_location (open_paren->location);
+	  expanded_location close = expand_location (close_paren->location);
+	  if (open.line != close.line || open.file != close.file)
+	    open_paren = NULL;
+	}
+      if (open_paren)
+	declarator->parenthesized = open_paren->location;
+    }
 
   /* If we entered a scope, we must exit it now.  */
   if (pushed_scope)
@@ -21678,12 +21829,11 @@ cp_parser_function_body (cp_parser *parser, bool in_function_try_block)
    true if a ctor-initializer was present.  When IN_FUNCTION_TRY_BLOCK
    is true we are parsing a function-try-block.  */
 
-static bool
+static void
 cp_parser_ctor_initializer_opt_and_function_body (cp_parser *parser,
 						  bool in_function_try_block)
 {
   tree body, list;
-  bool ctor_initializer_p;
   const bool check_body_p =
      DECL_CONSTRUCTOR_P (current_function_decl)
      && DECL_DECLARED_CONSTEXPR_P (current_function_decl);
@@ -21692,7 +21842,7 @@ cp_parser_ctor_initializer_opt_and_function_body (cp_parser *parser,
   /* Begin the function body.  */
   body = begin_function_body ();
   /* Parse the optional ctor-initializer.  */
-  ctor_initializer_p = cp_parser_ctor_initializer_opt (parser);
+  cp_parser_ctor_initializer_opt (parser);
 
   /* If we're parsing a constexpr constructor definition, we need
      to check that the constructor body is indeed empty.  However,
@@ -21712,8 +21862,6 @@ cp_parser_ctor_initializer_opt_and_function_body (cp_parser *parser,
     check_constexpr_ctor_body (last, list, /*complain=*/true);
   /* Finish the function body.  */
   finish_function_body (body);
-
-  return ctor_initializer_p;
 }
 
 /* Parse an initializer.
@@ -24341,20 +24489,19 @@ cp_parser_try_block (cp_parser* parser)
    function-try-block:
      try ctor-initializer [opt] function-body handler-seq  */
 
-static bool
+static void
 cp_parser_function_try_block (cp_parser* parser)
 {
   tree compound_stmt;
   tree try_block;
-  bool ctor_initializer_p;
 
   /* Look for the `try' keyword.  */
   if (!cp_parser_require_keyword (parser, RID_TRY, RT_TRY))
-    return false;
+    return;
   /* Let the rest of the front end know where we are.  */
   try_block = begin_function_try_block (&compound_stmt);
   /* Parse the function-body.  */
-  ctor_initializer_p = cp_parser_ctor_initializer_opt_and_function_body
+  cp_parser_ctor_initializer_opt_and_function_body
     (parser, /*in_function_try_block=*/true);
   /* We're done with the `try' part.  */
   finish_function_try_block (try_block);
@@ -24362,8 +24509,6 @@ cp_parser_function_try_block (cp_parser* parser)
   cp_parser_handler_seq (parser);
   /* We're done with the handlers.  */
   finish_function_handler_sequence (try_block, compound_stmt);
-
-  return ctor_initializer_p;
 }
 
 /* Parse a handler-seq.
@@ -26538,7 +26683,6 @@ cp_parser_function_definition_after_declarator (cp_parser* parser,
 						bool inline_p)
 {
   tree fn;
-  bool ctor_initializer_p = false;
   bool saved_in_unbraced_linkage_specification_p;
   bool saved_in_function_body;
   unsigned saved_num_template_parameter_lists;
@@ -26596,21 +26740,18 @@ cp_parser_function_definition_after_declarator (cp_parser* parser,
      or function-transaction-block.  Note that all of these include the
      function-body.  */
   if (cp_lexer_next_token_is_keyword (parser->lexer, RID_TRANSACTION_ATOMIC))
-    ctor_initializer_p = cp_parser_function_transaction (parser,
-	RID_TRANSACTION_ATOMIC);
+    cp_parser_function_transaction (parser, RID_TRANSACTION_ATOMIC);
   else if (cp_lexer_next_token_is_keyword (parser->lexer,
       RID_TRANSACTION_RELAXED))
-    ctor_initializer_p = cp_parser_function_transaction (parser,
-	RID_TRANSACTION_RELAXED);
+    cp_parser_function_transaction (parser, RID_TRANSACTION_RELAXED);
   else if (cp_lexer_next_token_is_keyword (parser->lexer, RID_TRY))
-    ctor_initializer_p = cp_parser_function_try_block (parser);
+    cp_parser_function_try_block (parser);
   else
-    ctor_initializer_p = cp_parser_ctor_initializer_opt_and_function_body
+    cp_parser_ctor_initializer_opt_and_function_body
       (parser, /*in_function_try_block=*/false);
 
   /* Finish the function.  */
-  fn = finish_function ((ctor_initializer_p ? 1 : 0) |
-			(inline_p ? 2 : 0));
+  fn = finish_function (inline_p);
   /* Generate code for it, if necessary.  */
   expand_or_defer_fn (fn);
   /* Restore the saved values.  */
@@ -26861,6 +27002,7 @@ cp_parser_explicit_template_declaration (cp_parser* parser, bool member_p)
   if (current_lang_name == lang_name_c)
     {
       error_at (location, "template with C linkage");
+      maybe_show_extern_c_location ();
       /* Give it C++ linkage to avoid confusing other parts of the
          front end.  */
       push_lang_context (lang_name_cplusplus);
@@ -27481,7 +27623,7 @@ cp_parser_late_parsing_for_member (cp_parser* parser, tree member_function)
 	{
 	  parser->lexer->in_pragma = true;
 	  cp_parser_omp_declare_reduction_exprs (member_function, parser);
-	  finish_function (/*inline*/2);
+	  finish_function (/*inline_p=*/true);
 	  cp_check_omp_declare_reduction (member_function);
 	}
       else
@@ -28071,24 +28213,6 @@ cp_parser_friend_p (const cp_decl_specifier_seq *decl_specifiers)
   return decl_spec_seq_has_spec_p (decl_specifiers, ds_friend);
 }
 
-/* Get a description of the matching symbol to TOKEN_DESC e.g. "(" for
-   RT_CLOSE_PAREN.  */
-
-static const char *
-get_matching_symbol (required_token token_desc)
-{
-  switch (token_desc)
-    {
-    default:
-      gcc_unreachable ();
-      return "";
-    case RT_CLOSE_BRACE:
-      return "{";
-    case RT_CLOSE_PAREN:
-      return "(";
-    }
-}
-
 /* Issue an error message indicating that TOKEN_DESC was expected.
    If KEYWORD is true, it indicated this function is called by
    cp_parser_require_keword and the required token can only be
@@ -28266,31 +28390,7 @@ cp_parser_required_error (cp_parser *parser,
     }
 
   if (gmsgid)
-    {
-      /* Emulate rest of cp_parser_error.  */
-      cp_token *token = cp_lexer_peek_token (parser->lexer);
-      cp_lexer_set_source_position_from_token (token);
-
-      gcc_rich_location richloc (input_location);
-
-      /* If matching_location != UNKNOWN_LOCATION, highlight it.
-	 Attempt to consolidate diagnostics by printing it as a
-	secondary range within the main diagnostic.  */
-      bool added_matching_location = false;
-      if (matching_location != UNKNOWN_LOCATION)
-	added_matching_location
-	  = richloc.add_location_if_nearby (matching_location);
-
-      c_parse_error (gmsgid,
-		     (token->type == CPP_KEYWORD ? CPP_NAME : token->type),
-		     token->u.value, token->flags, &richloc);
-
-      /* If we weren't able to consolidate matching_location, then
-	 print it as a secondary diagnostic.  */
-      if (matching_location != UNKNOWN_LOCATION && !added_matching_location)
-	inform (matching_location, "to match this %qs",
-		get_matching_symbol (token_desc));
-    }
+    cp_parser_error_1 (parser, gmsgid, token_desc, matching_location);
 }
 
 
@@ -37669,7 +37769,7 @@ cp_parser_omp_declare_reduction (cp_parser *parser, cp_token *pragma_tok,
       if (!cp_parser_omp_declare_reduction_exprs (fndecl, parser))
 	{
 	  if (!block_scope)
-	    finish_function (0);
+	    finish_function (/*inline_p=*/false);
 	  else
 	    DECL_CONTEXT (fndecl) = current_function_decl;
 	  if (cp)
@@ -37679,7 +37779,7 @@ cp_parser_omp_declare_reduction (cp_parser *parser, cp_token *pragma_tok,
       if (cp)
 	cp_parser_pop_lexer (parser);
       if (!block_scope)
-	finish_function (0);
+	finish_function (/*inline_p=*/false);
       else
 	{
 	  DECL_CONTEXT (fndecl) = current_function_decl;
@@ -38374,13 +38474,12 @@ cp_parser_transaction_expression (cp_parser *parser, enum rid keyword)
      __transaction_relaxed function-try-block
 */
 
-static bool
+static void
 cp_parser_function_transaction (cp_parser *parser, enum rid keyword)
 {
   unsigned char old_in = parser->in_transaction;
   unsigned char new_in = 1;
   tree compound_stmt, stmt, attrs;
-  bool ctor_initializer_p;
   cp_token *token;
 
   gcc_assert (keyword == RID_TRANSACTION_ATOMIC
@@ -38404,16 +38503,14 @@ cp_parser_function_transaction (cp_parser *parser, enum rid keyword)
   parser->in_transaction = new_in;
 
   if (cp_lexer_next_token_is_keyword (parser->lexer, RID_TRY))
-    ctor_initializer_p = cp_parser_function_try_block (parser);
+    cp_parser_function_try_block (parser);
   else
-    ctor_initializer_p = cp_parser_ctor_initializer_opt_and_function_body
+    cp_parser_ctor_initializer_opt_and_function_body
       (parser, /*in_function_try_block=*/false);
 
   parser->in_transaction = old_in;
 
   finish_transaction_stmt (stmt, compound_stmt, new_in, NULL_TREE);
-
-  return ctor_initializer_p;
 }
 
 /* Parse a __transaction_cancel statement.
@@ -39477,6 +39574,19 @@ finish_fully_implicit_template (cp_parser *parser, tree member_decl_opt)
   --parser->num_template_parameter_lists;
 
   return member_decl_opt;
+}
+
+/* Helper function for diagnostics that have complained about things
+   being used with 'extern "C"' linkage.
+
+   Attempt to issue a note showing where the 'extern "C"' linkage began.  */
+
+void
+maybe_show_extern_c_location (void)
+{
+  if (the_parser->innermost_linkage_specification_location != UNKNOWN_LOCATION)
+    inform (the_parser->innermost_linkage_specification_location,
+	    "%<extern \"C\"%> linkage started here");
 }
 
 #include "gt-cp-parser.h"

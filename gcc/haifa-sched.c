@@ -3084,7 +3084,8 @@ ready_sort_real (struct ready_list *ready)
   if (n_ready_real == 2)
     swap_sort (first, n_ready_real);
   else if (n_ready_real > 2)
-    qsort (first, n_ready_real, sizeof (rtx), rank_for_schedule);
+    /* HACK: Disable qsort checking for now (PR82396).  */
+    (qsort) (first, n_ready_real, sizeof (rtx), rank_for_schedule);
 
   if (sched_verbose >= 4)
     {
@@ -6302,7 +6303,7 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
 {
   int i, pass;
   bool sched_group_found = false;
-  int min_cost_group = 1;
+  int min_cost_group = 0;
 
   if (sched_fusion)
     return;
@@ -6318,8 +6319,8 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
     }
 
   /* Make two passes if there's a SCHED_GROUP_P insn; make sure to handle
-     such an insn first and note its cost, then schedule all other insns
-     for one cycle later.  */
+     such an insn first and note its cost.  If at least one SCHED_GROUP_P insn
+     gets queued, then all other insns get queued for one cycle later.  */
   for (pass = sched_group_found ? 0 : 1; pass < 2; )
     {
       int n = ready.n_ready;
@@ -6332,7 +6333,8 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
 	  if (DEBUG_INSN_P (insn))
 	    continue;
 
-	  if (sched_group_found && !SCHED_GROUP_P (insn))
+	  if (sched_group_found && !SCHED_GROUP_P (insn)
+	      && ((pass == 0) || (min_cost_group >= 1)))
 	    {
 	      if (pass == 0)
 		continue;

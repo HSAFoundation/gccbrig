@@ -2160,7 +2160,10 @@ add_function_candidate (struct z_candidate **candidates,
 	      else
 		{
 		  parmtype = build_pointer_type (parmtype);
-		  arg = build_this (arg);
+		  /* We don't use build_this here because we don't want to
+		     capture the object argument until we've chosen a
+		     non-static member function.  */
+		  arg = build_address (arg);
 		  argtype = lvalue_type (arg);
 		}
 	    }
@@ -4446,13 +4449,16 @@ build_op_call_1 (tree obj, vec<tree, va_gc> **args, tsubst_flags_t complain)
 {
   struct z_candidate *candidates = 0, *cand;
   tree fns, convs, first_mem_arg = NULL_TREE;
-  tree type = TREE_TYPE (obj);
   bool any_viable_p;
   tree result = NULL_TREE;
   void *p;
 
+  obj = mark_lvalue_use (obj);
+
   if (error_operand_p (obj))
     return error_mark_node;
+
+  tree type = TREE_TYPE (obj);
 
   obj = prep_operand (obj);
 
@@ -7165,29 +7171,24 @@ convert_arg_to_ellipsis (tree arg, tsubst_flags_t complain)
       /* In a template (or ill-formed code), we can have an incomplete type
 	 even after require_complete_type_sfinae, in which case we don't know
 	 whether it has trivial copy or not.  */
-      && COMPLETE_TYPE_P (arg_type))
+      && COMPLETE_TYPE_P (arg_type)
+      && !cp_unevaluated_operand)
     {
-      /* Build up a real lvalue-to-rvalue conversion in case the
-	 copy constructor is trivial but not callable.  */
-      if (!cp_unevaluated_operand && CLASS_TYPE_P (arg_type))
-	force_rvalue (arg, complain);
-
       /* [expr.call] 5.2.2/7:
 	 Passing a potentially-evaluated argument of class type (Clause 9)
 	 with a non-trivial copy constructor or a non-trivial destructor
 	 with no corresponding parameter is conditionally-supported, with
 	 implementation-defined semantics.
 
-	 We support it as pass-by-invisible-reference to the caller's
-	 object.  That's different to named by-value parameters, which
-	 construct a copy and pass a reference to that.
+	 We support it as pass-by-invisible-reference, just like a normal
+	 value parameter.
 
 	 If the call appears in the context of a sizeof expression,
 	 it is not potentially-evaluated.  */
-      if (cp_unevaluated_operand == 0
-	  && (type_has_nontrivial_copy_init (arg_type)
-	      || TYPE_HAS_NONTRIVIAL_DESTRUCTOR (arg_type)))
+      if (type_has_nontrivial_copy_init (arg_type)
+	  || TYPE_HAS_NONTRIVIAL_DESTRUCTOR (arg_type))
 	{
+	  arg = force_rvalue (arg, complain);
 	  if (complain & tf_warning)
 	    warning (OPT_Wconditionally_supported,
 		     "passing objects of non-trivially-copyable "
@@ -7195,6 +7196,11 @@ convert_arg_to_ellipsis (tree arg, tsubst_flags_t complain)
 		     arg_type);
 	  return cp_build_addr_expr (arg, complain);
 	}
+      /* Build up a real lvalue-to-rvalue conversion in case the
+	 copy constructor is trivial but not callable.  */
+      else if (CLASS_TYPE_P (arg_type))
+	force_rvalue (arg, complain);
+
     }
 
   return arg;
@@ -7771,6 +7777,9 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
       tree argtype = TREE_TYPE (arg);
       tree converted_arg;
       tree base_binfo;
+
+      if (arg == error_mark_node)
+	return error_mark_node;
 
       if (convs[i]->bad_p)
 	{

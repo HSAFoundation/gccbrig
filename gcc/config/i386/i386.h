@@ -257,6 +257,13 @@ struct processor_costs {
   const int fsqrt;		/* cost of FSQRT instruction.  */
 				/* Specify what algorithm
 				   to use for stringops on unknown size.  */
+  const int reassoc_int, reassoc_fp, reassoc_vec_int, reassoc_vec_fp;
+				/* Specify reassociation width for integer,
+				   fp, vector integer and vector fp
+				   operations.  Generally should correspond
+				   to number of instructions executed in
+				   parallel.  See also
+				   ix86_reassociation_width.  */
   struct stringop_algs *memcpy, *memset;
   const int scalar_stmt_cost;   /* Cost of any scalar operation, excluding
 				   load and store.  */
@@ -466,8 +473,6 @@ extern unsigned char ix86_tune_features[X86_TUNE_LAST];
 	ix86_tune_features[X86_TUNE_USE_VECTOR_CONVERTS]
 #define TARGET_SLOW_PSHUFB \
 	ix86_tune_features[X86_TUNE_SLOW_PSHUFB]
-#define TARGET_VECTOR_PARALLEL_EXECUTION \
-	ix86_tune_features[X86_TUNE_VECTOR_PARALLEL_EXECUTION]
 #define TARGET_AVOID_4BYTE_PREFIXES \
 	ix86_tune_features[X86_TUNE_AVOID_4BYTE_PREFIXES]
 #define TARGET_FUSE_CMP_AND_BRANCH_32 \
@@ -488,10 +493,6 @@ extern unsigned char ix86_tune_features[X86_TUNE_LAST];
 	ix86_tune_features[X86_TUNE_SOFTWARE_PREFETCHING_BENEFICIAL]
 #define TARGET_AVX128_OPTIMAL \
 	ix86_tune_features[X86_TUNE_AVX128_OPTIMAL]
-#define TARGET_REASSOC_INT_TO_PARALLEL \
-	ix86_tune_features[X86_TUNE_REASSOC_INT_TO_PARALLEL]
-#define TARGET_REASSOC_FP_TO_PARALLEL \
-	ix86_tune_features[X86_TUNE_REASSOC_FP_TO_PARALLEL]
 #define TARGET_GENERAL_REGS_SSE_SPILL \
 	ix86_tune_features[X86_TUNE_GENERAL_REGS_SSE_SPILL]
 #define TARGET_AVOID_MEM_OPND_FOR_CMOVE \
@@ -2602,6 +2603,7 @@ struct GTY(()) machine_function {
 #define ix86_current_function_calls_tls_descriptor \
   (ix86_tls_descriptor_calls_expanded_in_cfun && df_regs_ever_live_p (SP_REG))
 #define ix86_static_chain_on_stack (cfun->machine->static_chain_on_stack)
+#define ix86_red_zone_size (cfun->machine->frame.red_zone_size)
 
 /* Control behavior of x86_file_start.  */
 #define X86_FILE_START_VERSION_DIRECTIVE false

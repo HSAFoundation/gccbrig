@@ -369,6 +369,8 @@ test_large (struct backtrace_state *state)
 
   for (i = 0; i < trials; ++i)
     {
+      unsigned long uncompress_sizearg;
+
       cid = ZLIB_CLOCK_GETTIME_ARG;
       if (clock_gettime (cid, &ts1) < 0)
 	{
@@ -406,7 +408,8 @@ test_large (struct backtrace_state *state)
 	  return;
 	}
 
-      r = uncompress (uncompressed_buf, &uncompressed_bufsize,
+      uncompress_sizearg = uncompressed_bufsize;
+      r = uncompress (uncompressed_buf, &uncompress_sizearg,
 		      compressed_buf + 12, compressed_bufsize - 12);
 
       if (clock_gettime (cid, &ts2) < 0)
@@ -432,9 +435,9 @@ test_large (struct backtrace_state *state)
   ctime = average_time (ctimes, trials);
   ztime = average_time (ztimes, trials);
 
-  printf ("backtrace time: %zu ns\n", ctime);
-  printf ("zlib time:    : %zu ns\n", ztime);
-  printf ("percentage    : %g\n", (double) ztime / (double) ctime);
+  printf ("backtrace: %zu ns\n", ctime);
+  printf ("zlib     : %zu ns\n", ztime);
+  printf ("ratio    : %g\n", (double) ztime / (double) ctime);
 
   return;
 

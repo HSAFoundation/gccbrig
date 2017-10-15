@@ -1490,7 +1490,8 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	  tp = gen_lowpart (mode, tp);
 
 	emit_insn (gen_rtx_SET (dest, gen_rtx_PLUS (mode, tp, x0)));
-	set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
+	if (REG_P (dest))
+	  set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
 	return;
       }
 
@@ -1524,7 +1525,8 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	  }
 
 	emit_insn (gen_rtx_SET (dest, gen_rtx_PLUS (mode, tp, tmp_reg)));
-	set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
+	if (REG_P (dest))
+	  set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
 	return;
       }
 
@@ -1565,7 +1567,8 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	    gcc_unreachable ();
 	  }
 
-	set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
+	if (REG_P (dest))
+	  set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
 	return;
       }
 
@@ -1594,7 +1597,8 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	    emit_insn (gen_tlsie_tiny_sidi (dest, imm, tp));
 	  }
 
-	set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
+	if (REG_P (dest))
+	  set_unique_reg_note (get_last_insn (), REG_EQUIV, imm);
 	return;
       }
 
@@ -11039,7 +11043,8 @@ aapcs_vfp_sub_candidate (const_tree type, machine_mode *modep)
 		      - tree_to_uhwi (TYPE_MIN_VALUE (index)));
 
 	/* There must be no padding.  */
-	if (wi::ne_p (TYPE_SIZE (type), count * GET_MODE_BITSIZE (*modep)))
+	if (wi::to_wide (TYPE_SIZE (type))
+	    != count * GET_MODE_BITSIZE (*modep))
 	  return -1;
 
 	return count;
@@ -11069,7 +11074,8 @@ aapcs_vfp_sub_candidate (const_tree type, machine_mode *modep)
 	  }
 
 	/* There must be no padding.  */
-	if (wi::ne_p (TYPE_SIZE (type), count * GET_MODE_BITSIZE (*modep)))
+	if (wi::to_wide (TYPE_SIZE (type))
+	    != count * GET_MODE_BITSIZE (*modep))
 	  return -1;
 
 	return count;
@@ -11101,7 +11107,8 @@ aapcs_vfp_sub_candidate (const_tree type, machine_mode *modep)
 	  }
 
 	/* There must be no padding.  */
-	if (wi::ne_p (TYPE_SIZE (type), count * GET_MODE_BITSIZE (*modep)))
+	if (wi::to_wide (TYPE_SIZE (type))
+	    != count * GET_MODE_BITSIZE (*modep))
 	  return -1;
 
 	return count;

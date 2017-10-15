@@ -5728,10 +5728,9 @@ vectorizable_store (gimple *stmt, gimple_stmt_iterator *gsi, gimple **vec_stmt,
 
   op = gimple_assign_rhs1 (stmt);
 
-  /* In the case this is a store from a STRING_CST make sure
+  /* In the case this is a store from a constant make sure
      native_encode_expr can handle it.  */
-  if (TREE_CODE (op) == STRING_CST
-      && ! can_native_encode_string_p (op))
+  if (CONSTANT_CLASS_P (op) && native_encode_expr (op, NULL, 64) == 0)
     return false;
 
   if (!vect_is_simple_use (op, vinfo, &def_stmt, &dt, &rhs_vectype))
@@ -7713,11 +7712,9 @@ vectorizable_load (gimple *stmt, gimple_stmt_iterator *gsi, gimple **vec_stmt,
 	      if (group_gap_adj != 0 && ! slp_perm
 		  && group_elt == group_size - group_gap_adj)
 		{
-		  bool ovf;
-		  tree bump
-		    = wide_int_to_tree (sizetype,
-					wi::smul (TYPE_SIZE_UNIT (elem_type),
-						  group_gap_adj, &ovf));
+		  wide_int bump_val = (wi::to_wide (TYPE_SIZE_UNIT (elem_type))
+				       * group_gap_adj);
+		  tree bump = wide_int_to_tree (sizetype, bump_val);
 		  dataref_ptr = bump_vector_ptr (dataref_ptr, ptr_incr, gsi,
 						 stmt, bump);
 		  group_elt = 0;
@@ -7727,11 +7724,9 @@ vectorizable_load (gimple *stmt, gimple_stmt_iterator *gsi, gimple **vec_stmt,
 	     elements loaded for a permuted SLP load.  */
 	  if (group_gap_adj != 0 && slp_perm)
 	    {
-	      bool ovf;
-	      tree bump
-		= wide_int_to_tree (sizetype,
-				    wi::smul (TYPE_SIZE_UNIT (elem_type),
-					      group_gap_adj, &ovf));
+	      wide_int bump_val = (wi::to_wide (TYPE_SIZE_UNIT (elem_type))
+				   * group_gap_adj);
+	      tree bump = wide_int_to_tree (sizetype, bump_val);
 	      dataref_ptr = bump_vector_ptr (dataref_ptr, ptr_incr, gsi,
 					     stmt, bump);
 	    }
