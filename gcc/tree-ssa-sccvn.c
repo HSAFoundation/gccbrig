@@ -60,6 +60,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "domwalk.h"
 #include "gimple-iterator.h"
 #include "gimple-match.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 /* This algorithm is based on the SCC algorithm presented by Keith
    Cooper and L. Taylor Simpson in "SCC-Based Value numbering"
@@ -1165,7 +1167,7 @@ vn_reference_fold_indirect (vec<vn_reference_op_s> *ops,
   gcc_checking_assert (addr_base && TREE_CODE (addr_base) != MEM_REF);
   if (addr_base != TREE_OPERAND (op->op0, 0))
     {
-      offset_int off = offset_int::from (mem_op->op0, SIGNED);
+      offset_int off = offset_int::from (wi::to_wide (mem_op->op0), SIGNED);
       off += addr_offset;
       mem_op->op0 = wide_int_to_tree (TREE_TYPE (mem_op->op0), off);
       op->op0 = build_fold_addr_expr (addr_base);
@@ -1200,7 +1202,7 @@ vn_reference_maybe_forwprop_address (vec<vn_reference_op_s> *ops,
       && code != POINTER_PLUS_EXPR)
     return false;
 
-  off = offset_int::from (mem_op->op0, SIGNED);
+  off = offset_int::from (wi::to_wide (mem_op->op0), SIGNED);
 
   /* The only thing we have to do is from &OBJ.foo.bar add the offset
      from .foo.bar to the preceding MEM_REF offset and replace the
@@ -1233,8 +1235,9 @@ vn_reference_maybe_forwprop_address (vec<vn_reference_op_s> *ops,
 	      && tem[tem.length () - 2].opcode == MEM_REF)
 	    {
 	      vn_reference_op_t new_mem_op = &tem[tem.length () - 2];
-	      new_mem_op->op0 = wide_int_to_tree (TREE_TYPE (mem_op->op0),
-						  new_mem_op->op0);
+	      new_mem_op->op0
+		= wide_int_to_tree (TREE_TYPE (mem_op->op0),
+				    wi::to_wide (new_mem_op->op0));
 	    }
 	  else
 	    gcc_assert (tem.last ().opcode == STRING_CST);
@@ -1639,17 +1642,44 @@ vn_reference_lookup_or_insert_for_pieces (tree vuse,
 }
 
 static vn_nary_op_t vn_nary_op_insert_stmt (gimple *stmt, tree result);
+static unsigned mprts_hook_cnt;
 
 /* Hook for maybe_push_res_to_seq, lookup the expression in the VN tables.  */
 
 static tree
-vn_lookup_simplify_result (code_helper rcode, tree type, tree *ops)
+vn_lookup_simplify_result (code_helper rcode, tree type, tree *ops_)
 {
   if (!rcode.is_tree_code ())
     return NULL_TREE;
+  tree *ops = ops_;
+  unsigned int length = TREE_CODE_LENGTH ((tree_code) rcode);
+  if (rcode == CONSTRUCTOR
+      /* ???  We're arriving here with SCCVNs view, decomposed CONSTRUCTOR
+         and GIMPLEs / match-and-simplifies, CONSTRUCTOR as GENERIC tree.  */
+      && TREE_CODE (ops_[0]) == CONSTRUCTOR)
+    {
+      length = CONSTRUCTOR_NELTS (ops_[0]);
+      ops = XALLOCAVEC (tree, length);
+      for (unsigned i = 0; i < length; ++i)
+	ops[i] = CONSTRUCTOR_ELT (ops_[0], i)->value;
+    }
   vn_nary_op_t vnresult = NULL;
-  return vn_nary_op_lookup_pieces (TREE_CODE_LENGTH ((tree_code) rcode),
-				   (tree_code) rcode, type, ops, &vnresult);
+  tree res = vn_nary_op_lookup_pieces (length, (tree_code) rcode,
+				       type, ops, &vnresult);
+  /* We can end up endlessly recursing simplifications if the lookup above
+     presents us with a def-use chain that mirrors the original simplification.
+     See PR80887 for an example.  Limit successful lookup artificially
+     to 10 times if we are called as mprts_hook.  */
+  if (res
+      && mprts_hook
+      && --mprts_hook_cnt == 0)
+    {
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	fprintf (dump_file, "Resetting mprts_hook after too many "
+		 "invocations.\n");
+      mprts_hook = NULL;
+    }
+  return res;
 }
 
 /* Return a value-number for RCODE OPS... either by looking up an existing
@@ -1666,6 +1696,7 @@ vn_nary_build_or_lookup_1 (code_helper rcode, tree type, tree *ops,
      So first simplify and lookup this expression to see if it
      is already available.  */
   mprts_hook = vn_lookup_simplify_result;
+  mprts_hook_cnt = 9;
   bool res = false;
   switch (TREE_CODE_LENGTH ((tree_code) rcode))
     {
@@ -1740,7 +1771,7 @@ vn_nary_build_or_lookup_1 (code_helper rcode, tree type, tree *ops,
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "Inserting name ");
-	  print_generic_expr (dump_file, result, 0);
+	  print_generic_expr (dump_file, result);
 	  fprintf (dump_file, " for expression ");
 	  print_gimple_expr (dump_file, new_stmt, 0, TDF_SLIM);
 	  fprintf (dump_file, "\n");
@@ -1844,10 +1875,10 @@ vn_reference_lookup_3 (ao_ref *ref, tree vuse, void *vr_,
       for (unsigned i = 0; i < gimple_call_num_args (def_stmt); ++i)
 	{
 	  oldargs[i] = gimple_call_arg (def_stmt, i);
-	  if (TREE_CODE (oldargs[i]) == SSA_NAME
-	      && VN_INFO (oldargs[i])->valnum != oldargs[i])
+	  tree val = vn_valueize (oldargs[i]);
+	  if (val != oldargs[i])
 	    {
-	      gimple_call_set_arg (def_stmt, i, VN_INFO (oldargs[i])->valnum);
+	      gimple_call_set_arg (def_stmt, i, val);
 	      valueized_anything = true;
 	    }
 	}
@@ -2035,7 +2066,9 @@ vn_reference_lookup_3 (ao_ref *ref, tree vuse, void *vr_,
 	  ops[1] = bitsize_int (ref->size);
 	  ops[2] = bitsize_int (offset - offset2);
 	  tree val = vn_nary_build_or_lookup (rcode, vr->type, ops);
-	  if (val)
+	  if (val
+	      && (TREE_CODE (val) != SSA_NAME
+		  || ! SSA_NAME_OCCURS_IN_ABNORMAL_PHI (val)))
 	    {
 	      vn_reference_t res = vn_reference_lookup_or_insert_for_pieces
 		  (vuse, vr->set, vr->type, vr->operands, val);
@@ -2302,7 +2335,7 @@ vn_reference_lookup_3 (ao_ref *ref, tree vuse, void *vr_,
       memset (&op, 0, sizeof (op));
       op.type = vr->type;
       op.opcode = MEM_REF;
-      op.op0 = build_int_cst (ptr_type_node, at - rhs_offset);
+      op.op0 = build_int_cst (ptr_type_node, at - lhs_offset + rhs_offset);
       op.off = at - lhs_offset + rhs_offset;
       vr->operands[0] = op;
       op.type = TREE_TYPE (rhs);
@@ -2617,6 +2650,14 @@ vn_nary_op_eq (const_vn_nary_op_t const vno1, const_vn_nary_op_t const vno2)
   for (i = 0; i < vno1->length; ++i)
     if (!expressions_equal_p (vno1->op[i], vno2->op[i]))
       return false;
+
+  /* BIT_INSERT_EXPR has an implict operand as the type precision
+     of op1.  Need to check to make sure they are the same.  */
+  if (vno1->opcode == BIT_INSERT_EXPR
+      && TREE_CODE (vno1->op[1]) == INTEGER_CST
+      && TYPE_PRECISION (TREE_TYPE (vno1->op[1]))
+	 != TYPE_PRECISION (TREE_TYPE (vno2->op[1])))
+    return false;
 
   return true;
 }
@@ -2988,16 +3029,13 @@ vn_phi_eq (const_vn_phi_t const vp1, const_vn_phi_t const vp2)
 	      return false;
 
 	    /* Verify the controlling stmt is the same.  */
-	    gimple *last1 = last_stmt (idom1);
-	    gimple *last2 = last_stmt (idom2);
-	    if (gimple_code (last1) != GIMPLE_COND
-		|| gimple_code (last2) != GIMPLE_COND)
+	    gcond *last1 = safe_dyn_cast <gcond *> (last_stmt (idom1));
+	    gcond *last2 = safe_dyn_cast <gcond *> (last_stmt (idom2));
+	    if (! last1 || ! last2)
 	      return false;
 	    bool inverted_p;
-	    if (! cond_stmts_equal_p (as_a <gcond *> (last1),
-				      vp1->cclhs, vp1->ccrhs,
-				      as_a <gcond *> (last2),
-				      vp2->cclhs, vp2->ccrhs,
+	    if (! cond_stmts_equal_p (last1, vp1->cclhs, vp1->ccrhs,
+				      last2, vp2->cclhs, vp2->ccrhs,
 				      &inverted_p))
 	      return false;
 
@@ -3082,7 +3120,7 @@ vn_phi_lookup (gimple *phi)
   vp1.ccrhs = NULL_TREE;
   basic_block idom1 = get_immediate_dominator (CDI_DOMINATORS, vp1.block);
   if (EDGE_COUNT (idom1->succs) == 2)
-    if (gcond *last1 = dyn_cast <gcond *> (last_stmt (idom1)))
+    if (gcond *last1 = safe_dyn_cast <gcond *> (last_stmt (idom1)))
       {
 	vp1.cclhs = vn_valueize (gimple_cond_lhs (last1));
 	vp1.ccrhs = vn_valueize (gimple_cond_rhs (last1));
@@ -3128,7 +3166,7 @@ vn_phi_insert (gimple *phi, tree result)
   vp1->ccrhs = NULL_TREE;
   basic_block idom1 = get_immediate_dominator (CDI_DOMINATORS, vp1->block);
   if (EDGE_COUNT (idom1->succs) == 2)
-    if (gcond *last1 = dyn_cast <gcond *> (last_stmt (idom1)))
+    if (gcond *last1 = safe_dyn_cast <gcond *> (last_stmt (idom1)))
       {
 	vp1->cclhs = vn_valueize (gimple_cond_lhs (last1));
 	vp1->ccrhs = vn_valueize (gimple_cond_rhs (last1));
@@ -3157,7 +3195,7 @@ print_scc (FILE *out, vec<tree> scc)
   FOR_EACH_VEC_ELT (scc, i, var)
     {
       fprintf (out, " ");
-      print_generic_expr (out, var, 0);
+      print_generic_expr (out, var);
     }
   fprintf (out, "\n");
 }
@@ -3279,9 +3317,9 @@ set_ssa_val_to (tree from, tree to)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Not changing value number of ");
-	      print_generic_expr (dump_file, from, 0);
+	      print_generic_expr (dump_file, from);
 	      fprintf (dump_file, " from VARYING to ");
-	      print_generic_expr (dump_file, to, 0);
+	      print_generic_expr (dump_file, to);
 	      fprintf (dump_file, "\n");
 	    }
 	  return false;
@@ -3294,11 +3332,11 @@ set_ssa_val_to (tree from, tree to)
 	    {
 	      fprintf (dump_file, "Forcing VARYING instead of changing "
 		       "value number of ");
-	      print_generic_expr (dump_file, from, 0);
+	      print_generic_expr (dump_file, from);
 	      fprintf (dump_file, " from ");
-	      print_generic_expr (dump_file, currval, 0);
+	      print_generic_expr (dump_file, currval);
 	      fprintf (dump_file, " (non-constant) to ");
-	      print_generic_expr (dump_file, to, 0);
+	      print_generic_expr (dump_file, to);
 	      fprintf (dump_file, " (constant)\n");
 	    }
 	  to = from;
@@ -3311,13 +3349,19 @@ set_ssa_val_to (tree from, tree to)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Setting value number of ");
-      print_generic_expr (dump_file, from, 0);
+      print_generic_expr (dump_file, from);
       fprintf (dump_file, " to ");
-      print_generic_expr (dump_file, to, 0);
+      print_generic_expr (dump_file, to);
     }
 
   if (currval != to
       && !operand_equal_p (currval, to, 0)
+      /* Different undefined SSA names are not actually different.  See
+         PR82320 for a testcase were we'd otherwise not terminate iteration.  */
+      && !(TREE_CODE (currval) == SSA_NAME
+	   && TREE_CODE (to) == SSA_NAME
+	   && ssa_undefined_value_p (currval, false)
+	   && ssa_undefined_value_p (to, false))
       /* ???  For addresses involving volatile objects or types operand_equal_p
          does not reliably detect ADDR_EXPRs as equal.  We know we are only
 	 getting invariant gimple addresses here, so can use
@@ -3328,6 +3372,9 @@ set_ssa_val_to (tree from, tree to)
 	       == get_addr_base_and_unit_offset (TREE_OPERAND (to, 0), &toff))
 	   && coff == toff))
     {
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	fprintf (dump_file, " (changed)\n");
+
       /* If we equate two SSA names we have to make the side-band info
          of the leader conservative (and remember whatever original value
 	 was present).  */
@@ -3342,22 +3389,6 @@ set_ssa_val_to (tree from, tree to)
 			 gimple_bb (SSA_NAME_DEF_STMT (to))))
 		/* Keep the info from the dominator.  */
 		;
-	      else if (SSA_NAME_IS_DEFAULT_DEF (from)
-		       || dominated_by_p_w_unex
-			    (gimple_bb (SSA_NAME_DEF_STMT (to)),
-			     gimple_bb (SSA_NAME_DEF_STMT (from))))
-		{
-		  /* Save old info.  */
-		  if (! VN_INFO (to)->info.range_info)
-		    {
-		      VN_INFO (to)->info.range_info = SSA_NAME_RANGE_INFO (to);
-		      VN_INFO (to)->range_info_anti_range_p
-			= SSA_NAME_ANTI_RANGE_P (to);
-		    }
-		  /* Use that from the dominator.  */
-		  SSA_NAME_RANGE_INFO (to) = SSA_NAME_RANGE_INFO (from);
-		  SSA_NAME_ANTI_RANGE_P (to) = SSA_NAME_ANTI_RANGE_P (from);
-		}
 	      else
 		{
 		  /* Save old info.  */
@@ -3369,6 +3400,12 @@ set_ssa_val_to (tree from, tree to)
 		    }
 		  /* Rather than allocating memory and unioning the info
 		     just clear it.  */
+		  if (dump_file && (dump_flags & TDF_DETAILS))
+		    {
+		      fprintf (dump_file, "clearing range info of ");
+		      print_generic_expr (dump_file, to);
+		      fprintf (dump_file, "\n");
+		    }
 		  SSA_NAME_RANGE_INFO (to) = NULL;
 		}
 	    }
@@ -3381,17 +3418,6 @@ set_ssa_val_to (tree from, tree to)
 			 gimple_bb (SSA_NAME_DEF_STMT (to))))
 		/* Keep the info from the dominator.  */
 		;
-	      else if (SSA_NAME_IS_DEFAULT_DEF (from)
-		       || dominated_by_p_w_unex
-			    (gimple_bb (SSA_NAME_DEF_STMT (to)),
-			     gimple_bb (SSA_NAME_DEF_STMT (from))))
-		{
-		  /* Save old info.  */
-		  if (! VN_INFO (to)->info.ptr_info)
-		    VN_INFO (to)->info.ptr_info = SSA_NAME_PTR_INFO (to);
-		  /* Use that from the dominator.  */
-		  SSA_NAME_PTR_INFO (to) = SSA_NAME_PTR_INFO (from);
-		}
 	      else if (! SSA_NAME_PTR_INFO (from)
 		       /* Handle the case of trivially equivalent info.  */
 		       || memcmp (SSA_NAME_PTR_INFO (to),
@@ -3403,14 +3429,18 @@ set_ssa_val_to (tree from, tree to)
 		    VN_INFO (to)->info.ptr_info = SSA_NAME_PTR_INFO (to);
 		  /* Rather than allocating memory and unioning the info
 		     just clear it.  */
+		  if (dump_file && (dump_flags & TDF_DETAILS))
+		    {
+		      fprintf (dump_file, "clearing points-to info of ");
+		      print_generic_expr (dump_file, to);
+		      fprintf (dump_file, "\n");
+		    }
 		  SSA_NAME_PTR_INFO (to) = NULL;
 		}
 	    }
 	}
 
       VN_INFO (from)->valnum = to;
-      if (dump_file && (dump_flags & TDF_DETAILS))
-	fprintf (dump_file, " (changed)\n");
       return true;
     }
   if (dump_file && (dump_flags & TDF_DETAILS))
@@ -3508,7 +3538,7 @@ valueized_wider_op (tree wide_type, tree op)
 
   /* For constants simply extend it.  */
   if (TREE_CODE (op) == INTEGER_CST)
-    return wide_int_to_tree (wide_type, op);
+    return wide_int_to_tree (wide_type, wi::to_wide (op));
 
   return NULL_TREE;
 }
@@ -3790,9 +3820,9 @@ visit_reference_op_store (tree lhs, tree op, gimple *stmt)
 	{
 	  fprintf (dump_file, "No store match\n");
 	  fprintf (dump_file, "Value numbering store ");
-	  print_generic_expr (dump_file, lhs, 0);
+	  print_generic_expr (dump_file, lhs);
 	  fprintf (dump_file, " to ");
-	  print_generic_expr (dump_file, op, 0);
+	  print_generic_expr (dump_file, op);
 	  fprintf (dump_file, "\n");
 	}
       /* Have to set value numbers before insert, since insert is
@@ -3834,11 +3864,11 @@ visit_reference_op_store (tree lhs, tree op, gimple *stmt)
 static bool
 visit_phi (gimple *phi)
 {
-  bool changed = false;
-  tree result;
-  tree sameval = VN_TOP;
-  bool allsame = true;
+  tree result, sameval = VN_TOP, seen_undef = NULL_TREE;
   unsigned n_executable = 0;
+  bool allsame = true;
+  edge_iterator ei;
+  edge e;
 
   /* TODO: We could check for this in init_sccvn, and replace this
      with a gcc_assert.  */
@@ -3847,8 +3877,6 @@ visit_phi (gimple *phi)
 
   /* See if all non-TOP arguments have the same value.  TOP is
      equivalent to everything, so we can ignore it.  */
-  edge_iterator ei;
-  edge e;
   FOR_EACH_EDGE (e, ei, gimple_bb (phi)->preds)
     if (e->flags & EDGE_EXECUTABLE)
       {
@@ -3858,8 +3886,12 @@ visit_phi (gimple *phi)
 	if (TREE_CODE (def) == SSA_NAME)
 	  def = SSA_VAL (def);
 	if (def == VN_TOP)
-	  continue;
-	if (sameval == VN_TOP)
+	  ;
+	/* Ignore undefined defs for sameval but record one.  */
+	else if (TREE_CODE (def) == SSA_NAME
+		 && ssa_undefined_value_p (def, false))
+	  seen_undef = def;
+	else if (sameval == VN_TOP)
 	  sameval = def;
 	else if (!expressions_equal_p (def, sameval))
 	  {
@@ -3867,30 +3899,36 @@ visit_phi (gimple *phi)
 	    break;
 	  }
       }
-  
-  /* If none of the edges was executable or all incoming values are
-     undefined keep the value-number at VN_TOP.  If only a single edge
-     is exectuable use its value.  */
-  if (sameval == VN_TOP
-      || n_executable == 1)
-    return set_ssa_val_to (PHI_RESULT (phi), sameval);
 
+
+  /* If none of the edges was executable keep the value-number at VN_TOP,
+     if only a single edge is exectuable use its value.  */
+  if (n_executable <= 1)
+    result = seen_undef ? seen_undef : sameval;
+  /* If we saw only undefined values and VN_TOP use one of the
+     undefined values.  */
+  else if (sameval == VN_TOP)
+    result = seen_undef ? seen_undef : sameval;
   /* First see if it is equivalent to a phi node in this block.  We prefer
      this as it allows IV elimination - see PRs 66502 and 67167.  */
-  result = vn_phi_lookup (phi);
-  if (result)
-    changed = set_ssa_val_to (PHI_RESULT (phi), result);
-  /* Otherwise all value numbered to the same value, the phi node has that
-     value.  */
-  else if (allsame)
-    changed = set_ssa_val_to (PHI_RESULT (phi), sameval);
+  else if ((result = vn_phi_lookup (phi)))
+    ;
+  /* If all values are the same use that, unless we've seen undefined
+     values as well and the value isn't constant.
+     CCP/copyprop have the same restriction to not remove uninit warnings.  */
+  else if (allsame
+	   && (! seen_undef || is_gimple_min_invariant (sameval)))
+    result = sameval;
   else
     {
-      vn_phi_insert (phi, PHI_RESULT (phi));
-      changed = set_ssa_val_to (PHI_RESULT (phi), PHI_RESULT (phi));
+      result = PHI_RESULT (phi);
+      /* Only insert PHIs that are varying, for constant value numbers
+         we mess up equivalences otherwise as we are only comparing
+	 the immediate controlling predicates.  */
+      vn_phi_insert (phi, result);
     }
 
-  return changed;
+  return set_ssa_val_to (PHI_RESULT (phi), result);
 }
 
 /* Try to simplify RHS using equivalences and constant folding.  */
@@ -3908,6 +3946,7 @@ try_to_simplify (gassign *stmt)
 
   /* First try constant folding based on our current lattice.  */
   mprts_hook = vn_lookup_simplify_result;
+  mprts_hook_cnt = 9;
   tem = gimple_fold_stmt_to_constant_1 (stmt, vn_valueize, vn_valueize);
   mprts_hook = NULL;
   if (tem
@@ -3929,20 +3968,18 @@ visit_use (tree use)
 
   mark_use_processed (use);
 
-  gcc_assert (!SSA_NAME_IN_FREE_LIST (use));
-  if (dump_file && (dump_flags & TDF_DETAILS)
-      && !SSA_NAME_IS_DEFAULT_DEF (use))
+  gcc_assert (!SSA_NAME_IN_FREE_LIST (use)
+	      && !SSA_NAME_IS_DEFAULT_DEF (use));
+
+  if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Value numbering ");
-      print_generic_expr (dump_file, use, 0);
+      print_generic_expr (dump_file, use);
       fprintf (dump_file, " stmt = ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
     }
 
-  /* Handle uninitialized uses.  */
-  if (SSA_NAME_IS_DEFAULT_DEF (use))
-    changed = set_ssa_val_to (use, use);
-  else if (gimple_code (stmt) == GIMPLE_PHI)
+  if (gimple_code (stmt) == GIMPLE_PHI)
     changed = visit_phi (stmt);
   else if (gimple_has_volatile_ops (stmt))
     changed = defs_to_varying (stmt);
@@ -3967,9 +4004,9 @@ visit_use (tree use)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "RHS ");
-	      print_gimple_expr (dump_file, ass, 0, 0);
+	      print_gimple_expr (dump_file, ass, 0);
 	      fprintf (dump_file, " simplified to ");
-	      print_generic_expr (dump_file, simplified, 0);
+	      print_generic_expr (dump_file, simplified);
 	      fprintf (dump_file, "\n");
 	    }
 	}
@@ -4053,9 +4090,9 @@ visit_use (tree use)
 	      if (dump_file && (dump_flags & TDF_DETAILS))
 		{
 		  fprintf (dump_file, "call ");
-		  print_gimple_expr (dump_file, call_stmt, 0, 0);
+		  print_gimple_expr (dump_file, call_stmt, 0);
 		  fprintf (dump_file, " simplified to ");
-		  print_generic_expr (dump_file, simplified, 0);
+		  print_generic_expr (dump_file, simplified);
 		  fprintf (dump_file, "\n");
 		}
 	    }
@@ -4527,7 +4564,8 @@ init_scc_vn (void)
 
   XDELETE (rpo_numbers_temp);
 
-  VN_TOP = create_tmp_var_raw (void_type_node, "vn_top");
+  VN_TOP = build_decl (UNKNOWN_LOCATION, VAR_DECL,
+		       get_identifier ("VN_TOP"), error_mark_node);
 
   renumber_gimple_stmt_uids ();
 
@@ -4556,7 +4594,9 @@ init_scc_vn (void)
       switch (TREE_CODE (SSA_NAME_VAR (name)))
 	{
 	case VAR_DECL:
-	  /* Undefined vars keep TOP.  */
+	  /* All undefined vars are VARYING.  */
+	  VN_INFO (name)->valnum = name; 
+	  VN_INFO (name)->visited = true;
 	  break;
 
 	case PARM_DECL:
@@ -4583,12 +4623,10 @@ init_scc_vn (void)
 
 	case RESULT_DECL:
 	  /* If the result is passed by invisible reference the default
-	     def is initialized, otherwise it's uninitialized.  */
-	  if (DECL_BY_REFERENCE (SSA_NAME_VAR (name)))
-	    {
-	      VN_INFO (name)->visited = true;
-	      VN_INFO (name)->valnum = name; 
-	    }
+	     def is initialized, otherwise it's uninitialized.  Still
+	     undefined is varying.  */
+	  VN_INFO (name)->visited = true;
+	  VN_INFO (name)->valnum = name; 
 	  break;
 
 	default:
@@ -4886,7 +4924,7 @@ sccvn_dom_walker::before_dom_children (basic_block bb)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Visiting control stmt ending BB %d: ", bb->index);
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
     }
 
   /* ???  We can even handle stmts with outgoing EH or ABNORMAL edges
@@ -4981,14 +5019,13 @@ run_scc_vn (vn_lookup_kind default_vn_walk_kind_)
   /* Initialize the value ids and prune out remaining VN_TOPs
      from dead code.  */
   tree name;
-
   FOR_EACH_SSA_NAME (i, name, cfun)
     {
       vn_ssa_aux_t info = VN_INFO (name);
-      if (!info->visited)
-	info->valnum = name;
-      if (info->valnum == name
+      if (!info->visited
 	  || info->valnum == VN_TOP)
+	info->valnum = name;
+      if (info->valnum == name)
 	info->value_id = get_next_value_id ();
       else if (is_gimple_min_invariant (info->valnum))
 	info->value_id = get_or_alloc_constant_value_id (info->valnum);
@@ -5014,9 +5051,9 @@ run_scc_vn (vn_lookup_kind default_vn_walk_kind_)
 	  if (VN_INFO (name)->visited
 	      && SSA_VAL (name) != name)
 	    {
-	      print_generic_expr (dump_file, name, 0);
+	      print_generic_expr (dump_file, name);
 	      fprintf (dump_file, " = ");
-	      print_generic_expr (dump_file, SSA_VAL (name), 0);
+	      print_generic_expr (dump_file, SSA_VAL (name));
 	      fprintf (dump_file, "\n");
 	    }
 	}

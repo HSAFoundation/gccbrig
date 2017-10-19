@@ -88,14 +88,6 @@ pp_cxx_separate_with (cxx_pretty_printer *pp, int c)
 
 /* Expressions.  */
 
-static inline bool
-is_destructor_name (tree name)
-{
-  return name == complete_dtor_identifier
-    || name == base_dtor_identifier
-    || name == deleting_dtor_identifier;
-}
-
 /* conversion-function-id:
       operator conversion-type-id
 
@@ -141,7 +133,7 @@ pp_cxx_unqualified_id (cxx_pretty_printer *pp, tree t)
       break;
 
     case OVERLOAD:
-      t = OVL_CURRENT (t);
+      t = OVL_FIRST (t);
       /* FALLTHRU */
     case VAR_DECL:
     case PARM_DECL:
@@ -159,19 +151,10 @@ pp_cxx_unqualified_id (cxx_pretty_printer *pp, tree t)
     case IDENTIFIER_NODE:
       if (t == NULL)
 	pp->translate_string ("<unnamed>");
-      else if (IDENTIFIER_TYPENAME_P (t))
+      else if (IDENTIFIER_CONV_OP_P (t))
 	pp_cxx_conversion_function_id (pp, t);
       else
-	{
-	  if (is_destructor_name (t))
-	    {
-	      pp_complement (pp);
-	      /* FIXME: Why is this necessary? */
-	      if (TREE_TYPE (t))
-		t = constructor_name (TREE_TYPE (t));
-	    }
-	  pp_cxx_tree_identifier (pp, t);
-	}
+	pp_cxx_tree_identifier (pp, t);
       break;
 
     case TEMPLATE_ID_EXPR:
@@ -281,7 +264,7 @@ pp_cxx_qualified_id (cxx_pretty_printer *pp, tree t)
 	 FIXME:  This is probably the wrong pretty-printing for conversion
 	 functions and some function templates.  */
     case OVERLOAD:
-      t = OVL_CURRENT (t);
+      t = OVL_FIRST (t);
       /* FALLTHRU */
     case FUNCTION_DECL:
       if (DECL_FUNCTION_MEMBER_P (t))
@@ -350,7 +333,7 @@ void
 cxx_pretty_printer::id_expression (tree t)
 {
   if (TREE_CODE (t) == OVERLOAD)
-    t = OVL_CURRENT (t);
+    t = OVL_FIRST (t);
   if (DECL_P (t) && DECL_CONTEXT (t))
     pp_cxx_qualified_id (this, t);
   else
@@ -1066,7 +1049,7 @@ cxx_pretty_printer::expression (tree t)
       break;
 
     case OVERLOAD:
-      t = OVL_CURRENT (t);
+      t = OVL_FIRST (t);
       /* FALLTHRU */
     case VAR_DECL:
     case PARM_DECL:
@@ -2633,6 +2616,12 @@ pp_cxx_trait_expression (cxx_pretty_printer *pp, tree t)
       break;
     case CPTK_IS_LITERAL_TYPE:
       pp_cxx_ws_string (pp, "__is_literal_type");
+      break;
+    case CPTK_IS_ASSIGNABLE:
+      pp_cxx_ws_string (pp, "__is_assignable");
+      break;
+    case CPTK_IS_CONSTRUCTIBLE:
+      pp_cxx_ws_string (pp, "__is_constructible");
       break;
 
     default:

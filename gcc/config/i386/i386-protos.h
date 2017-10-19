@@ -27,6 +27,7 @@ extern bool ix86_handle_option (struct gcc_options *opts,
 extern bool ix86_target_stack_probe (void);
 extern bool ix86_can_use_return_insn_p (void);
 extern void ix86_setup_frame_addresses (void);
+extern bool ix86_rip_relative_addr_p (struct ix86_address *parts);
 
 extern HOST_WIDE_INT ix86_initial_elimination_offset (int, int);
 extern void ix86_expand_prologue (void);
@@ -165,15 +166,6 @@ extern void ix86_asm_output_function_label (FILE *, const char *, tree);
 extern void ix86_call_abi_override (const_tree);
 extern int ix86_reg_parm_stack_space (const_tree);
 
-extern void ix86_split_fp_branch (enum rtx_code code, rtx, rtx,
-				  rtx, rtx, rtx);
-extern bool ix86_hard_regno_mode_ok (int, machine_mode);
-extern bool ix86_modes_tieable_p (machine_mode, machine_mode);
-extern bool ix86_secondary_memory_needed (enum reg_class, enum reg_class,
-					  machine_mode, int);
-extern bool ix86_cannot_change_mode_class (machine_mode,
-					   machine_mode, enum reg_class);
-
 extern bool ix86_libc_has_function (enum function_class fn_class);
 
 extern void x86_order_regs_for_local_alloc (void);
@@ -201,6 +193,8 @@ extern void ix86_expand_truncdf_32 (rtx, rtx);
 
 extern void ix86_expand_vecop_qihi (enum rtx_code, rtx, rtx, rtx);
 
+extern rtx ix86_split_stack_guard (void);
+
 #ifdef TREE_CODE
 extern void init_cumulative_args (CUMULATIVE_ARGS *, tree, rtx, tree, int);
 #endif	/* TREE_CODE  */
@@ -213,7 +207,6 @@ extern unsigned int ix86_local_alignment (tree, machine_mode,
 					  unsigned int);
 extern unsigned int ix86_minimum_alignment (tree, machine_mode,
 					    unsigned int);
-extern int ix86_constant_alignment (tree, int);
 extern tree ix86_handle_shared_attribute (tree *, tree, tree, int, bool *);
 extern tree ix86_handle_selectany_attribute (tree *, tree, tree, int, bool *);
 extern int x86_field_alignment (tree, int);
@@ -225,6 +218,8 @@ extern unsigned int ix86_get_callcvt (const_tree);
 #endif
 
 extern rtx ix86_tls_module_base (void);
+extern bool ix86_tls_address_pattern_p (rtx);
+extern rtx ix86_rewrite_tls_address (rtx);
 
 extern void ix86_expand_vector_init (bool, rtx, rtx);
 extern void ix86_expand_vector_set (bool, rtx, rtx, int);
@@ -316,7 +311,22 @@ extern enum attr_cpu ix86_schedule;
 
 extern const char * ix86_output_call_insn (rtx_insn *insn, rtx call_op);
 extern bool ix86_operands_ok_for_move_multiple (rtx *operands, bool load,
-						enum machine_mode mode);
+						machine_mode mode);
+extern int ix86_min_insn_size (rtx_insn *);
+
+extern int ix86_issue_rate (void);
+extern int ix86_adjust_cost (rtx_insn *insn, int dep_type, rtx_insn *dep_insn,
+			     int cost, unsigned int);
+extern int ia32_multipass_dfa_lookahead (void);
+extern bool ix86_macro_fusion_p (void);
+extern bool ix86_macro_fusion_pair_p (rtx_insn *condgen, rtx_insn *condjmp);
+
+extern bool ix86_bd_has_dispatch (rtx_insn *insn, int action);
+extern void ix86_bd_do_dispatch (rtx_insn *insn, int mode);
+
+extern void ix86_core2i7_init_hooks (void);
+
+extern int ix86_atom_sched_reorder (FILE *, int, rtx_insn **, int *, int);
 
 #ifdef RTX_CODE
 /* Target data for multipass lookahead scheduling.

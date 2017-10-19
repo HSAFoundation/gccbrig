@@ -115,7 +115,7 @@ void
 c_genericize (tree fndecl)
 {
   FILE *dump_orig;
-  int local_dump_flags;
+  dump_flags_t local_dump_flags;
   struct cgraph_node *cgn;
 
   if (flag_sanitize & SANITIZE_BOUNDS)
@@ -229,6 +229,8 @@ c_gimplify_expr (tree *expr_p, gimple_seq *pre_p ATTRIBUTE_UNUSED,
     {
     case LSHIFT_EXPR:
     case RSHIFT_EXPR:
+    case LROTATE_EXPR:
+    case RROTATE_EXPR:
       {
 	/* We used to convert the right operand of a shift-expression
 	   to an integer_type_node in the FEs.  But it is unnecessary

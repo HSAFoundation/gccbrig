@@ -228,7 +228,7 @@ enum lto_section_type
   LTO_section_symtab_nodes,
   LTO_section_opts,
   LTO_section_cgraph_opt_sum,
-  LTO_section_inline_summary,
+  LTO_section_ipa_fn_summary,
   LTO_section_ipcp_transform,
   LTO_section_ipa_icf,
   LTO_section_offload_table,
@@ -1211,5 +1211,15 @@ DEFINE_DECL_STREAM_FUNCS (VAR_DECL, var_decl)
 DEFINE_DECL_STREAM_FUNCS (TYPE_DECL, type_decl)
 DEFINE_DECL_STREAM_FUNCS (NAMESPACE_DECL, namespace_decl)
 DEFINE_DECL_STREAM_FUNCS (LABEL_DECL, label_decl)
+
+/* Entry for the delayed registering of decl -> DIE references.  */
+struct dref_entry {
+    tree decl;
+    const char *sym;
+    unsigned HOST_WIDE_INT off;
+};
+
+extern vec<dref_entry> dref_queue;
+
 
 #endif /* GCC_LTO_STREAMER_H  */

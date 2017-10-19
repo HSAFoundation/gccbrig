@@ -126,7 +126,7 @@ DEFPARAM (PARAM_COMDAT_SHARING_PROBABILITY,
 DEFPARAM (PARAM_PARTIAL_INLINING_ENTRY_PROBABILITY,
 	  "partial-inlining-entry-probability",
 	  "Maximum probability of the entry BB of split region (in percent relative to entry BB of the function) to make partial inlining happen.",
-	  70, 0, 0)
+	  70, 0, 100)
 
 /* Limit the number of expansions created by the variable expansion
    optimization to avoid register pressure.  */
@@ -212,6 +212,16 @@ DEFPARAM(PARAM_STACK_FRAME_GROWTH,
 	 "large-stack-frame-growth",
 	 "Maximal stack frame growth due to inlining (in percent).",
 	 1000, 0, 0)
+
+DEFPARAM(PARAM_STACK_CLASH_PROTECTION_GUARD_SIZE,
+	 "stack-clash-protection-guard-size",
+	 "Size of the stack guard expressed as a power of two.",
+	 12, 12, 30)
+
+DEFPARAM(PARAM_STACK_CLASH_PROTECTION_PROBE_INTERVAL,
+	 "stack-clash-protection-probe-interval",
+	 "Interval in which to probe the stack expressed as a power of two.",
+	 12, 10, 16)
 
 /* The GCSE optimization will be disabled if it would require
    significantly more memory than this value.  */
@@ -863,14 +873,7 @@ DEFPARAM (PARAM_LOOP_BLOCK_TILE_SIZE,
 DEFPARAM (PARAM_GRAPHITE_MAX_NB_SCOP_PARAMS,
 	  "graphite-max-nb-scop-params",
 	  "maximum number of parameters in a SCoP.",
-	  7, 0, 0)
-
-/* Maximal number of basic blocks in the functions analyzed by Graphite.  */
-
-DEFPARAM (PARAM_GRAPHITE_MAX_BBS_PER_FUNCTION,
-	  "graphite-max-bbs-per-function",
-	  "maximum number of basic blocks per function to be analyzed by Graphite.",
-	  100, 0, 0)
+	  10, 0, 0)
 
 /* Maximal number of array references in a scop.  */
 
@@ -879,17 +882,16 @@ DEFPARAM (PARAM_GRAPHITE_MAX_ARRAYS_PER_SCOP,
 	  "maximum number of arrays per scop.",
 	  100, 0, 0)
 
-/* Maximal number of basic blocks in the functions analyzed by Graphite.  */
-
-DEFPARAM (PARAM_GRAPHITE_MIN_LOOPS_PER_FUNCTION,
-	  "graphite-min-loops-per-function",
-	  "minimal number of loops per function to be analyzed by Graphite.",
-	  2, 0, 0)
-
 DEFPARAM (PARAM_MAX_ISL_OPERATIONS,
 	  "max-isl-operations",
 	  "maximum number of isl operations, 0 means unlimited",
 	  350000, 0, 0)
+
+/* For testsuite purposes allow to check for codegen error handling.  */
+DEFPARAM (PARAM_GRAPHITE_ALLOW_CODEGEN_ERRORS,
+	  "graphite-allow-codegen-errors",
+	  "whether codegen errors should be ICEs when -fchecking.",
+	  0, 0, 1)
 
 /* Avoid data dependence analysis on very large loops.  */
 DEFPARAM (PARAM_LOOP_MAX_DATAREFS_FOR_DATADEPS,
@@ -1141,6 +1143,11 @@ DEFPARAM (PARAM_ASAN_STACK,
          "asan-stack",
          "Enable asan stack protection.",
          1, 0, 1)
+
+DEFPARAM (PARAM_ASAN_PROTECT_ALLOCAS,
+	"asan-instrument-allocas",
+	"Enable asan allocas/VLAs protection.",
+	1, 0, 1)
 
 DEFPARAM (PARAM_ASAN_GLOBALS,
          "asan-globals",

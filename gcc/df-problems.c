@@ -461,19 +461,17 @@ df_rd_confluence_n (edge e)
       bitmap dense_invalidated = &problem_data->dense_invalidated_by_call;
       bitmap_iterator bi;
       unsigned int regno;
-      bitmap_head tmp;
 
-      bitmap_initialize (&tmp, &df_bitmap_obstack);
-      bitmap_and_compl (&tmp, op2, dense_invalidated);
+      auto_bitmap tmp (&df_bitmap_obstack);
+      bitmap_and_compl (tmp, op2, dense_invalidated);
 
       EXECUTE_IF_SET_IN_BITMAP (sparse_invalidated, 0, regno, bi)
  	{
- 	  bitmap_clear_range (&tmp,
+	  bitmap_clear_range (tmp,
  			      DF_DEFS_BEGIN (regno),
  			      DF_DEFS_COUNT (regno));
 	}
-      changed |= bitmap_ior_into (op1, &tmp);
-      bitmap_clear (&tmp);
+      changed |= bitmap_ior_into (op1, tmp);
       return changed;
     }
   else
@@ -2821,7 +2819,7 @@ df_word_lr_mark_ref (df_ref ref, bool is_set, regset live)
     return true;
 
   if (GET_CODE (orig_reg) == SUBREG
-      && df_read_modify_subreg_p (orig_reg))
+      && read_modify_subreg_p (orig_reg))
     {
       gcc_assert (DF_REF_FLAGS_IS_SET (ref, DF_REF_PARTIAL));
       if (subreg_lowpart_p (orig_reg))

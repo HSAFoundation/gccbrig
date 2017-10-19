@@ -35,6 +35,7 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef GENERATOR_FILE
 #include "alias.h"
 #include "tree.h"
+#include "basic-block.h"
 #include "cfg.h"
 #include "print-tree.h"
 #include "flags.h"
@@ -90,7 +91,6 @@ rtx_writer::rtx_writer (FILE *outf, int ind, bool simple, bool compact,
 rtx_reuse_manager::rtx_reuse_manager ()
 : m_next_id (0)
 {
-  bitmap_initialize (&m_defs_seen, NULL);
 }
 
 /* Determine if X is of a kind suitable for dumping via reuse_rtx.  */
@@ -158,7 +158,7 @@ rtx_reuse_manager::has_reuse_id (const_rtx x, int *out)
 bool
 rtx_reuse_manager::seen_def_p (int reuse_id)
 {
-  return bitmap_bit_p (&m_defs_seen, reuse_id);
+  return bitmap_bit_p (m_defs_seen, reuse_id);
 }
 
 /* Record that the definition of the given reuse ID has been seen.  */
@@ -166,7 +166,7 @@ rtx_reuse_manager::seen_def_p (int reuse_id)
 void
 rtx_reuse_manager::set_seen_def (int reuse_id)
 {
-  bitmap_set_bit (&m_defs_seen, reuse_id);
+  bitmap_set_bit (m_defs_seen, reuse_id);
 }
 
 #endif /* #ifndef GENERATOR_FILE */
@@ -1283,7 +1283,7 @@ print_exp (pretty_printer *pp, const_rtx x, int verbose)
       op[1] = XEXP (x, 1);
       break;
     case NOT:
-      st[0] = "!";
+      st[0] = "~";
       op[0] = XEXP (x, 0);
       break;
     case AND:
@@ -1792,11 +1792,11 @@ print_insn (pretty_printer *pp, const rtx_insn *x, int verbose)
     case DEBUG_INSN:
       {
 	const char *name = "?";
+	char idbuf[32];
 
 	if (DECL_P (INSN_VAR_LOCATION_DECL (x)))
 	  {
 	    tree id = DECL_NAME (INSN_VAR_LOCATION_DECL (x));
-	    char idbuf[32];
 	    if (id)
 	      name = IDENTIFIER_POINTER (id);
 	    else if (TREE_CODE (INSN_VAR_LOCATION_DECL (x))

@@ -722,7 +722,8 @@ extern int vsnprintf (char *, size_t, const char *, va_list);
 
 /* Redefine abort to report an internal error w/o coredump, and
    reporting the location of the error in the source file.  */
-extern void fancy_abort (const char *, int, const char *) ATTRIBUTE_NORETURN;
+extern void fancy_abort (const char *, int, const char *)
+					 ATTRIBUTE_NORETURN ATTRIBUTE_COLD;
 #define abort() fancy_abort (__FILE__, __LINE__, __FUNCTION__)
 
 /* Use gcc_assert(EXPR) to test invariants.  */
@@ -742,6 +743,12 @@ extern void fancy_abort (const char *, int, const char *) ATTRIBUTE_NORETURN;
 #else
 /* N.B.: in release build EXPR is not evaluated.  */
 #define gcc_checking_assert(EXPR) ((void)(0 && (EXPR)))
+#endif
+
+#if GCC_VERSION >= 4000
+#define ALWAYS_INLINE inline __attribute__ ((always_inline))
+#else
+#define ALWAYS_INLINE inline
 #endif
 
 /* Use gcc_unreachable() to mark unreachable locations (like an
@@ -903,7 +910,12 @@ extern void fancy_abort (const char *, int, const char *) ATTRIBUTE_NORETURN;
 	ASM_BYTE_OP MEMBER_TYPE_FORCES_BLK LIBGCC2_HAS_SF_MODE		\
 	LIBGCC2_HAS_DF_MODE LIBGCC2_HAS_XF_MODE LIBGCC2_HAS_TF_MODE	\
 	CLEAR_BY_PIECES_P MOVE_BY_PIECES_P SET_BY_PIECES_P		\
-	STORE_BY_PIECES_P TARGET_FLT_EVAL_METHOD
+	STORE_BY_PIECES_P TARGET_FLT_EVAL_METHOD			\
+	HARD_REGNO_CALL_PART_CLOBBERED HARD_REGNO_MODE_OK		\
+	MODES_TIEABLE_P FUNCTION_ARG_PADDING SLOW_UNALIGNED_ACCESS	\
+	HARD_REGNO_NREGS SECONDARY_MEMORY_NEEDED_MODE			\
+	SECONDARY_MEMORY_NEEDED CANNOT_CHANGE_MODE_CLASS		\
+	TRULY_NOOP_TRUNCATION FUNCTION_ARG_OFFSET CONSTANT_ALIGNMENT
 
 /* Target macros only used for code built for the target, that have
    moved to libgcc-tm.h or have never been present elsewhere.  */
@@ -1168,5 +1180,15 @@ helper_const_non_const_cast (const char *p)
 
 /* Get definitions of HOST_WIDE_INT.  */
 #include "hwint.h"
+
+/* qsort comparator consistency checking: except in release-checking compilers,
+   redirect 4-argument qsort calls to qsort_chk; keep 1-argument invocations
+   corresponding to vec::qsort (cmp): they use C qsort internally anyway.  */
+#if CHECKING_P
+#define PP_5th(a1, a2, a3, a4, a5, ...) a5
+#undef qsort
+#define qsort(...) PP_5th (__VA_ARGS__, qsort_chk, 3, 2, qsort, 0) (__VA_ARGS__)
+void qsort_chk (void *, size_t, size_t, int (*)(const void *, const void *));
+#endif
 
 #endif /* ! GCC_SYSTEM_H */

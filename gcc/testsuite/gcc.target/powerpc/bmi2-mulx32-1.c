@@ -1,6 +1,7 @@
 /* { dg-do run } */
-/* { dg-options "-O3 -m64 -mcpu=power7" } */
-/* { dg-require-effective-target powerpc_vsx_ok } */
+/* { dg-options "-O3" } */
+/* { dg-require-effective-target lp64 } */
+/* { dg-require-effective-target ppc_cpu_supports_hw } */
 
 #define NO_WARN_X86_INTRINSICS 1
 #include "bmi2-check.h"

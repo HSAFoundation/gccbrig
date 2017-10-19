@@ -35,6 +35,10 @@
   (and (match_code "const_int")
        (match_test "op == CONST0_RTX (mode)")))
 
+(define_special_predicate "subreg_lowpart_operator"
+  (and (match_code "subreg")
+       (match_test "subreg_lowpart_p (op)")))
+
 (define_predicate "aarch64_ccmp_immediate"
   (and (match_code "const_int")
        (match_test "IN_RANGE (INTVAL (op), -31, 31)")))
@@ -65,6 +69,18 @@
 		 (ior (match_test "op == constm1_rtx")
 		      (match_test "op == const1_rtx"))))))
 
+(define_predicate "aarch64_reg_or_orr_imm"
+   (ior (match_operand 0 "register_operand")
+	(and (match_code "const_vector")
+	     (match_test "aarch64_simd_valid_immediate (op, mode, false,
+						NULL, AARCH64_CHECK_ORR)"))))
+
+(define_predicate "aarch64_reg_or_bic_imm"
+   (ior (match_operand 0 "register_operand")
+	(and (match_code "const_vector")
+	     (match_test "aarch64_simd_valid_immediate (op, mode, false,
+						NULL, AARCH64_CHECK_BIC)"))))
+
 (define_predicate "aarch64_fp_compare_operand"
   (ior (match_operand 0 "register_operand")
        (and (match_code "const_double")
@@ -76,6 +92,10 @@
 
 (define_predicate "aarch64_fp_vec_pow2"
   (match_test "aarch64_vec_fpconst_pow_of_2 (op) > 0"))
+
+(define_predicate "aarch64_sub_immediate"
+  (and (match_code "const_int")
+       (match_test "aarch64_uimm12_shift (-INTVAL (op))")))
 
 (define_predicate "aarch64_plus_immediate"
   (and (match_code "const_int")
@@ -105,6 +125,10 @@
 (define_predicate "aarch64_logical_operand"
   (ior (match_operand 0 "register_operand")
        (match_operand 0 "aarch64_logical_immediate")))
+
+(define_predicate "aarch64_mov_imm_operand"
+  (and (match_code "const_int")
+       (match_test "aarch64_move_imm (INTVAL (op), mode)")))
 
 (define_predicate "aarch64_logical_and_immediate"
   (and (match_code "const_int")

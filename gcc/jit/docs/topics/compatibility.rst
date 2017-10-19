@@ -149,3 +149,25 @@ entrypoints:
 -------------------
 ``LIBGCCJIT_ABI_7`` covers the addition of
 :func:`gcc_jit_type_get_aligned`
+
+.. _LIBGCCJIT_ABI_8:
+
+``LIBGCCJIT_ABI_8``
+-------------------
+``LIBGCCJIT_ABI_8`` covers the addition of
+:func:`gcc_jit_type_get_vector`
+
+.. _LIBGCCJIT_ABI_9:
+
+``LIBGCCJIT_ABI_9``
+-------------------
+``LIBGCCJIT_ABI_9`` covers the addition of
+:func:`gcc_jit_function_get_address`
+
+.. _LIBGCCJIT_ABI_10:
+
+``LIBGCCJIT_ABI_10``
+--------------------
+
+``LIBGCCJIT_ABI_10`` covers the addition of
+:func:`gcc_jit_context_new_rvalue_from_vector`

@@ -654,7 +654,22 @@ get_ref_base_and_extent (tree exp, HOST_WIDE_INT *poffset,
   if (!wi::fits_shwi_p (maxsize) || wi::neg_p (maxsize))
     *pmax_size = -1;
   else
-    *pmax_size = maxsize.to_shwi ();
+    {
+      *pmax_size = maxsize.to_shwi ();
+      if (*poffset > HOST_WIDE_INT_MAX - *pmax_size)
+	*pmax_size = -1;
+    }
+
+  /* Punt if *POFFSET + *PSIZE overflows in HOST_WIDE_INT, the callers don't
+     check for such overflows individually and assume it works.  */
+  if (*psize != -1 && *poffset > HOST_WIDE_INT_MAX - *psize)
+    {
+      *poffset = 0;
+      *psize = -1;
+      *pmax_size = -1;
+
+      return exp;
+    }
 
   return exp;
 }
@@ -898,7 +913,7 @@ dump_enumerated_decls_push (tree *tp, int *walk_subtrees, void *data)
    FILE is the dump file where to output the list and FLAGS is as in
    print_generic_expr.  */
 void
-dump_enumerated_decls (FILE *file, int flags)
+dump_enumerated_decls (FILE *file, dump_flags_t flags)
 {
   basic_block bb;
   struct walk_stmt_info wi;

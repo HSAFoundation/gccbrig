@@ -52,6 +52,7 @@ with Sem_Ch8;  use Sem_Ch8;
 with Sem_Ch12; use Sem_Ch12;
 with Sem_Ch13; use Sem_Ch13;
 with Sem_Disp; use Sem_Disp;
+with Sem_Elab; use Sem_Elab;
 with Sem_Eval; use Sem_Eval;
 with Sem_Res;  use Sem_Res;
 with Sem_Type; use Sem_Type;
@@ -65,8 +66,7 @@ with Ttypes;   use Ttypes;
 with Urealp;   use Urealp;
 with Validsw;  use Validsw;
 
-with GNAT.HTable; use GNAT.HTable;
-
+with GNAT.HTable;
 package body Exp_Util is
 
    ---------------------------------------------------------
@@ -650,7 +650,10 @@ package body Exp_Util is
       --  Do not process allocations on / deallocations from the secondary
       --  stack.
 
-      elsif Is_RTE (Pool_Id, RE_SS_Pool) then
+      elsif Is_RTE (Pool_Id, RE_SS_Pool)
+        or else (Nkind (Expr) = N_Allocator
+                  and then Is_RTE (Storage_Pool (Expr), RE_SS_Pool))
+      then
          return;
 
       --  Optimize the case where we are using the default Global_Pool_Object,
@@ -823,6 +826,7 @@ package body Exp_Util is
                Flag_Id   : constant Entity_Id := Make_Temporary (Loc, 'F');
                Flag_Expr : Node_Id;
                Param     : Node_Id;
+               Pref      : Node_Id;
                Temp      : Node_Id;
 
             begin
@@ -871,10 +875,22 @@ package body Exp_Util is
 
                   --    Temp'Tag
 
+                  --  If the object is an unchecked conversion (typically to
+                  --  an access to class-wide type), we must preserve the
+                  --  conversion to ensure that the object is seen as tagged
+                  --  in the code that follows.
+
                   else
+                     Pref := Temp;
+
+                     if Nkind (Parent (Pref)) = N_Unchecked_Type_Conversion
+                     then
+                        Pref := Parent (Pref);
+                     end if;
+
                      Param :=
                        Make_Attribute_Reference (Loc,
-                         Prefix         => Relocate_Node (Temp),
+                         Prefix         => Relocate_Node (Pref),
                          Attribute_Name => Name_Tag);
                   end if;
 
@@ -1747,9 +1763,12 @@ package body Exp_Util is
 
          --  Perform minor decoration in case the body is not analyzed
 
-         Set_Ekind (Proc_Body_Id, E_Subprogram_Body);
-         Set_Etype (Proc_Body_Id, Standard_Void_Type);
-         Set_Scope (Proc_Body_Id, Current_Scope);
+         Set_Ekind        (Proc_Body_Id, E_Subprogram_Body);
+         Set_Etype        (Proc_Body_Id, Standard_Void_Type);
+         Set_Scope        (Proc_Body_Id, Current_Scope);
+         Set_SPARK_Pragma (Proc_Body_Id, SPARK_Pragma (Proc_Id));
+         Set_SPARK_Pragma_Inherited
+                          (Proc_Body_Id, SPARK_Pragma_Inherited (Proc_Id));
 
          --  Link both spec and body to avoid generating duplicates
 
@@ -1889,17 +1908,19 @@ package body Exp_Util is
 
       --  Perform minor decoration in case the declaration is not analyzed
 
-      Set_Ekind (Proc_Id, E_Procedure);
-      Set_Etype (Proc_Id, Standard_Void_Type);
-      Set_Scope (Proc_Id, Current_Scope);
+      Set_Ekind                  (Proc_Id, E_Procedure);
+      Set_Etype                  (Proc_Id, Standard_Void_Type);
+      Set_Is_DIC_Procedure       (Proc_Id);
+      Set_Scope                  (Proc_Id, Current_Scope);
+      Set_SPARK_Pragma           (Proc_Id, SPARK_Mode_Pragma);
+      Set_SPARK_Pragma_Inherited (Proc_Id);
 
-      Set_Is_DIC_Procedure (Proc_Id);
       Set_DIC_Procedure (Work_Typ, Proc_Id);
 
       --  The DIC procedure requires debug info when the assertion expression
       --  is subject to Source Coverage Obligations.
 
-      if Opt.Generate_SCO then
+      if Generate_SCO then
          Set_Needs_Debug_Info (Proc_Id);
       end if;
 
@@ -3371,7 +3392,7 @@ package body Exp_Util is
       --  The invariant procedure requires debug info when the invariants are
       --  subject to Source Coverage Obligations.
 
-      if Opt.Generate_SCO then
+      if Generate_SCO then
          Set_Needs_Debug_Info (Proc_Id);
       end if;
 
@@ -3392,6 +3413,12 @@ package body Exp_Util is
 
       if Present (Priv_Typ) then
          Typ_Decl := Declaration_Node (Priv_Typ);
+
+      --  Anonymous arrays in object declarations have no explicit declaration
+      --  so use the related object declaration as the insertion point.
+
+      elsif Is_Itype (Work_Typ) and then Is_Array_Type (Work_Typ)  then
+         Typ_Decl := Associated_Node_For_Itype (Work_Typ);
 
       --  Derived types with the full view as parent do not have a partial
       --  view. Insert the invariant procedure after the derived type.
@@ -7210,7 +7237,7 @@ package body Exp_Util is
                   null;
                end if;
 
-            --  Another special case, an attribute denoting a procedure call
+            --  Special case: an attribute denoting a procedure call
 
             when N_Attribute_Reference =>
                if Is_Procedure_Attribute_Name (Attribute_Name (P)) then
@@ -7226,6 +7253,14 @@ package body Exp_Util is
 
                else
                   null;
+               end if;
+
+            --  Special case: a call marker
+
+            when N_Call_Marker =>
+               if Is_List_Member (P) then
+                  Insert_List_Before_And_Analyze (P, Ins_Actions);
+                  return;
                end if;
 
             --  A contract node should not belong to the tree
@@ -7577,22 +7612,28 @@ package body Exp_Util is
      (Obj_Id : Entity_Id) return Boolean
    is
       function Is_Controlled_Function_Call (N : Node_Id) return Boolean;
-      --  Determine if particular node denotes a controlled function call. The
-      --  call may have been heavily expanded.
+      --  Determine whether node N denotes a controlled function call
+
+      function Is_Controlled_Indexing (N : Node_Id) return Boolean;
+      --  Determine whether node N denotes a generalized indexing form which
+      --  involves a controlled result.
 
       function Is_Displace_Call (N : Node_Id) return Boolean;
-      --  Determine whether a particular node is a call to Ada.Tags.Displace.
-      --  The call might be nested within other actions such as conversions.
+      --  Determine whether node N denotes a call to Ada.Tags.Displace
 
       function Is_Source_Object (N : Node_Id) return Boolean;
       --  Determine whether a particular node denotes a source object
+
+      function Strip (N : Node_Id) return Node_Id;
+      --  Examine arbitrary node N by stripping various indirections and return
+      --  the "real" node.
 
       ---------------------------------
       -- Is_Controlled_Function_Call --
       ---------------------------------
 
       function Is_Controlled_Function_Call (N : Node_Id) return Boolean is
-         Expr : Node_Id := Original_Node (N);
+         Expr : Node_Id;
 
       begin
          --  When a function call appears in Object.Operation format, the
@@ -7604,6 +7645,7 @@ package body Exp_Util is
          --    Obj.Func (Formal => Actual) N_Function_Call, whose Name is an
          --                                N_Selected_Component
 
+         Expr := Original_Node (N);
          loop
             if Nkind (Expr) = N_Function_Call then
                Expr := Name (Expr);
@@ -7630,33 +7672,32 @@ package body Exp_Util is
              and then Needs_Finalization (Etype (Entity (Expr)));
       end Is_Controlled_Function_Call;
 
+      ----------------------------
+      -- Is_Controlled_Indexing --
+      ----------------------------
+
+      function Is_Controlled_Indexing (N : Node_Id) return Boolean is
+         Expr : constant Node_Id := Original_Node (N);
+
+      begin
+         return
+           Nkind (Expr) = N_Indexed_Component
+             and then Present (Generalized_Indexing (Expr))
+             and then Needs_Finalization (Etype (Expr));
+      end Is_Controlled_Indexing;
+
       ----------------------
       -- Is_Displace_Call --
       ----------------------
 
       function Is_Displace_Call (N : Node_Id) return Boolean is
-         Call : Node_Id := N;
+         Call : constant Node_Id := Strip (N);
 
       begin
-         --  Strip various actions which may precede a call to Displace
-
-         loop
-            if Nkind (Call) = N_Explicit_Dereference then
-               Call := Prefix (Call);
-
-            elsif Nkind_In (Call, N_Type_Conversion,
-                                  N_Unchecked_Type_Conversion)
-            then
-               Call := Expression (Call);
-
-            else
-               exit;
-            end if;
-         end loop;
-
          return
            Present (Call)
              and then Nkind (Call) = N_Function_Call
+             and then Nkind (Name (Call)) in N_Has_Entity
              and then Is_RTE (Entity (Name (Call)), RE_Displace);
       end Is_Displace_Call;
 
@@ -7665,19 +7706,48 @@ package body Exp_Util is
       ----------------------
 
       function Is_Source_Object (N : Node_Id) return Boolean is
+         Obj : constant Node_Id := Strip (N);
+
       begin
          return
-           Present (N)
-             and then Nkind (N) in N_Has_Entity
-             and then Is_Object (Entity (N))
-             and then Comes_From_Source (N);
+           Present (Obj)
+             and then Comes_From_Source (Obj)
+             and then Nkind (Obj) in N_Has_Entity
+             and then Is_Object (Entity (Obj));
       end Is_Source_Object;
+
+      -----------
+      -- Strip --
+      -----------
+
+      function Strip (N : Node_Id) return Node_Id is
+         Result : Node_Id;
+
+      begin
+         Result := N;
+         loop
+            if Nkind (Result) = N_Explicit_Dereference then
+               Result := Prefix (Result);
+
+            elsif Nkind_In (Result, N_Type_Conversion,
+                                    N_Unchecked_Type_Conversion)
+            then
+               Result := Expression (Result);
+
+            else
+               exit;
+            end if;
+         end loop;
+
+         return Result;
+      end Strip;
 
       --  Local variables
 
-      Decl      : constant Node_Id   := Parent (Obj_Id);
+      Obj_Decl  : constant Node_Id   := Declaration_Node (Obj_Id);
       Obj_Typ   : constant Entity_Id := Base_Type (Etype (Obj_Id));
-      Orig_Decl : constant Node_Id   := Original_Node (Decl);
+      Orig_Decl : constant Node_Id   := Original_Node (Obj_Decl);
+      Orig_Expr : Node_Id;
 
    --  Start of processing for Is_Displacement_Of_Object_Or_Function_Result
 
@@ -7686,34 +7756,52 @@ package body Exp_Util is
 
       --     Obj : CW_Type := Function_Call (...);
 
-      --  rewritten into:
+      --  is rewritten into:
 
-      --     Tmp : ... := Function_Call (...)'reference;
-      --     Obj : CW_Type renames (... Ada.Tags.Displace (Tmp));
+      --     Temp : ... := Function_Call (...)'reference;
+      --     Obj  : CW_Type renames (... Ada.Tags.Displace (Temp));
 
       --  where the return type of the function and the class-wide type require
       --  dispatch table pointer displacement.
 
       --  Case 2:
 
+      --     Obj : CW_Type := Container (...);
+
+      --  is rewritten into:
+
+      --     Temp : ... := Function_Call (Container, ...)'reference;
+      --     Obj  : CW_Type renames (... Ada.Tags.Displace (Temp));
+
+      --  where the container element type and the class-wide type require
+      --  dispatch table pointer dispacement.
+
+      --  Case 3:
+
       --     Obj : CW_Type := Src_Obj;
 
-      --  rewritten into:
+      --  is rewritten into:
 
       --     Obj : CW_Type renames (... Ada.Tags.Displace (Src_Obj));
 
       --  where the type of the source object and the class-wide type require
       --  dispatch table pointer displacement.
 
-      return
-        Nkind (Decl) = N_Object_Renaming_Declaration
-          and then Nkind (Orig_Decl) = N_Object_Declaration
-          and then Comes_From_Source (Orig_Decl)
-          and then Is_Class_Wide_Type (Obj_Typ)
-          and then Is_Displace_Call (Renamed_Object (Obj_Id))
-          and then
-            (Is_Controlled_Function_Call (Expression (Orig_Decl))
-              or else Is_Source_Object (Expression (Orig_Decl)));
+      if Nkind (Obj_Decl) = N_Object_Renaming_Declaration
+        and then Is_Class_Wide_Type (Obj_Typ)
+        and then Is_Displace_Call (Renamed_Object (Obj_Id))
+        and then Nkind (Orig_Decl) = N_Object_Declaration
+        and then Comes_From_Source (Orig_Decl)
+      then
+         Orig_Expr := Expression (Orig_Decl);
+
+         return
+           Is_Controlled_Function_Call (Orig_Expr)
+             or else Is_Controlled_Indexing (Orig_Expr)
+             or else Is_Source_Object (Orig_Expr);
+      end if;
+
+      return False;
    end Is_Displacement_Of_Object_Or_Function_Result;
 
    ------------------------------
@@ -7785,6 +7873,8 @@ package body Exp_Util is
          if Nkind (Call) = N_Reference then
             Call := Prefix (Call);
          end if;
+
+         Call := Unqual_Conv (Call);
 
          if Is_Build_In_Place_Function_Call (Call) then
             declare
@@ -8208,79 +8298,6 @@ package body Exp_Util is
           and then not Is_Build_In_Place_Function_Call (Prefix (Expr));
    end Is_Non_BIP_Func_Call;
 
-   ------------------------------------
-   -- Is_Object_Access_BIP_Func_Call --
-   ------------------------------------
-
-   function Is_Object_Access_BIP_Func_Call
-      (Expr   : Node_Id;
-       Obj_Id : Entity_Id) return Boolean
-   is
-      Access_Nam : Name_Id := No_Name;
-      Actual     : Node_Id;
-      Call       : Node_Id;
-      Formal     : Node_Id;
-      Param      : Node_Id;
-
-   begin
-      --  Build-in-place calls usually appear in 'reference format. Note that
-      --  the accessibility check machinery may add an extra 'reference due to
-      --  side effect removal.
-
-      Call := Expr;
-      while Nkind (Call) = N_Reference loop
-         Call := Prefix (Call);
-      end loop;
-
-      if Nkind_In (Call, N_Qualified_Expression,
-                         N_Unchecked_Type_Conversion)
-      then
-         Call := Expression (Call);
-      end if;
-
-      if Is_Build_In_Place_Function_Call (Call) then
-
-         --  Examine all parameter associations of the function call
-
-         Param := First (Parameter_Associations (Call));
-         while Present (Param) loop
-            if Nkind (Param) = N_Parameter_Association
-              and then Nkind (Selector_Name (Param)) = N_Identifier
-            then
-               Formal := Selector_Name (Param);
-               Actual := Explicit_Actual_Parameter (Param);
-
-               --  Construct the name of formal BIPaccess. It is much easier to
-               --  extract the name of the function using an arbitrary formal's
-               --  scope rather than the Name field of Call.
-
-               if Access_Nam = No_Name and then Present (Entity (Formal)) then
-                  Access_Nam :=
-                    New_External_Name
-                      (Chars (Scope (Entity (Formal))),
-                       BIP_Formal_Suffix (BIP_Object_Access));
-               end if;
-
-               --  A match for BIPaccess => Obj_Id'Unrestricted_Access has been
-               --  found.
-
-               if Chars (Formal) = Access_Nam
-                 and then Nkind (Actual) = N_Attribute_Reference
-                 and then Attribute_Name (Actual) = Name_Unrestricted_Access
-                 and then Nkind (Prefix (Actual)) = N_Identifier
-                 and then Entity (Prefix (Actual)) = Obj_Id
-               then
-                  return True;
-               end if;
-            end if;
-
-            Next (Param);
-         end loop;
-      end if;
-
-      return False;
-   end Is_Object_Access_BIP_Func_Call;
-
    ----------------------------------
    -- Is_Possibly_Unaligned_Object --
    ----------------------------------
@@ -8673,11 +8690,7 @@ package body Exp_Util is
          Call := Prefix (Call);
       end loop;
 
-      if Nkind_In (Call, N_Qualified_Expression,
-                         N_Unchecked_Type_Conversion)
-      then
-         Call := Expression (Call);
-      end if;
+      Call := Unqual_Conv (Call);
 
       if Is_Build_In_Place_Function_Call (Call) then
 
@@ -8685,9 +8698,7 @@ package body Exp_Util is
 
          Param := First (Parameter_Associations (Call));
          while Present (Param) loop
-            if Nkind (Param) = N_Parameter_Association
-              and then Nkind (Selector_Name (Param)) = N_Identifier
-            then
+            if Nkind (Param) = N_Parameter_Association then
                Formal := Selector_Name (Param);
                Actual := Explicit_Actual_Parameter (Param);
 
@@ -8835,6 +8846,11 @@ package body Exp_Util is
    begin
       if Present (N) then
          Remove_Warning_Messages (N);
+
+         --  Update the internal structures of the ABE mechanism in case the
+         --  dead node is an elaboration scenario.
+
+         Kill_Elaboration_Scenario (N);
 
          --  Generate warning if appropriate
 
@@ -9192,43 +9208,42 @@ package body Exp_Util is
       Lo          : constant Node_Id :=
                       New_Copy_Tree (String_Literal_Low_Bound (Literal_Typ));
       Index       : constant Entity_Id := Etype (Lo);
-
-      Hi          : Node_Id;
       Length_Expr : constant Node_Id :=
                       Make_Op_Subtract (Loc,
-                        Left_Opnd =>
+                        Left_Opnd  =>
                           Make_Integer_Literal (Loc,
                             Intval => String_Literal_Length (Literal_Typ)),
-                        Right_Opnd =>
-                          Make_Integer_Literal (Loc, 1));
+                        Right_Opnd => Make_Integer_Literal (Loc, 1));
+
+      Hi : Node_Id;
 
    begin
       Set_Analyzed (Lo, False);
 
-         if Is_Integer_Type (Index) then
-            Hi :=
-              Make_Op_Add (Loc,
-                Left_Opnd  => New_Copy_Tree (Lo),
-                Right_Opnd => Length_Expr);
-         else
-            Hi :=
-              Make_Attribute_Reference (Loc,
-                Attribute_Name => Name_Val,
-                Prefix => New_Occurrence_Of (Index, Loc),
-                Expressions => New_List (
-                 Make_Op_Add (Loc,
-                   Left_Opnd =>
-                     Make_Attribute_Reference (Loc,
-                       Attribute_Name => Name_Pos,
-                       Prefix => New_Occurrence_Of (Index, Loc),
-                       Expressions => New_List (New_Copy_Tree (Lo))),
-                  Right_Opnd => Length_Expr)));
-         end if;
+      if Is_Integer_Type (Index) then
+         Hi :=
+           Make_Op_Add (Loc,
+             Left_Opnd  => New_Copy_Tree (Lo),
+             Right_Opnd => Length_Expr);
+      else
+         Hi :=
+           Make_Attribute_Reference (Loc,
+             Attribute_Name => Name_Val,
+             Prefix         => New_Occurrence_Of (Index, Loc),
+             Expressions    => New_List (
+               Make_Op_Add (Loc,
+                 Left_Opnd  =>
+                   Make_Attribute_Reference (Loc,
+                     Attribute_Name => Name_Pos,
+                     Prefix         => New_Occurrence_Of (Index, Loc),
+                     Expressions    => New_List (New_Copy_Tree (Lo))),
+                 Right_Opnd => Length_Expr)));
+      end if;
 
-         return
-           Make_Range (Loc,
-             Low_Bound  => Lo,
-             High_Bound => Hi);
+      return
+        Make_Range (Loc,
+          Low_Bound  => Lo,
+          High_Bound => Hi);
    end Make_Literal_Range;
 
    --------------------------
@@ -9289,10 +9304,22 @@ package body Exp_Util is
 
       --  Case of calling normal predicate function
 
-      Call :=
-        Make_Function_Call (Loc,
-          Name                   => New_Occurrence_Of (Func_Id, Loc),
-          Parameter_Associations => New_List (Relocate_Node (Expr)));
+      --  If the type is tagged, the expression may be class-wide, in which
+      --  case it has to be converted to its root type, given that the
+      --  generated predicate function is not dispatching.
+
+      if Is_Tagged_Type (Typ) then
+         Call :=
+           Make_Function_Call (Loc,
+             Name                   => New_Occurrence_Of (Func_Id, Loc),
+             Parameter_Associations =>
+               New_List (Convert_To (Typ, Relocate_Node (Expr))));
+      else
+         Call :=
+           Make_Function_Call (Loc,
+             Name                   => New_Occurrence_Of (Func_Id, Loc),
+             Parameter_Associations => New_List (Relocate_Node (Expr)));
+      end if;
 
       Restore_Ghost_Mode (Saved_GM);
 
@@ -10301,48 +10328,48 @@ package body Exp_Util is
    -- Needs_Finalization --
    ------------------------
 
-   function Needs_Finalization (T : Entity_Id) return Boolean is
-      function Has_Some_Controlled_Component (Rec : Entity_Id) return Boolean;
-      --  If type is not frozen yet, check explicitly among its components,
-      --  because the Has_Controlled_Component flag is not necessarily set.
+   function Needs_Finalization (Typ : Entity_Id) return Boolean is
+      function Has_Some_Controlled_Component
+        (Input_Typ : Entity_Id) return Boolean;
+      --  Determine whether type Input_Typ has at least one controlled
+      --  component.
 
       -----------------------------------
       -- Has_Some_Controlled_Component --
       -----------------------------------
 
       function Has_Some_Controlled_Component
-        (Rec : Entity_Id) return Boolean
+        (Input_Typ : Entity_Id) return Boolean
       is
          Comp : Entity_Id;
 
       begin
-         if Has_Controlled_Component (Rec) then
+         --  When a type is already frozen and has at least one controlled
+         --  component, or is manually decorated, it is sufficient to inspect
+         --  flag Has_Controlled_Component.
+
+         if Has_Controlled_Component (Input_Typ) then
             return True;
 
-         elsif not Is_Frozen (Rec) then
-            if Is_Record_Type (Rec) then
-               Comp := First_Entity (Rec);
+         --  Otherwise inspect the internals of the type
 
+         elsif not Is_Frozen (Input_Typ) then
+            if Is_Array_Type (Input_Typ) then
+               return Needs_Finalization (Component_Type (Input_Typ));
+
+            elsif Is_Record_Type (Input_Typ) then
+               Comp := First_Component (Input_Typ);
                while Present (Comp) loop
-                  if not Is_Type (Comp)
-                    and then Needs_Finalization (Etype (Comp))
-                  then
+                  if Needs_Finalization (Etype (Comp)) then
                      return True;
                   end if;
 
-                  Next_Entity (Comp);
+                  Next_Component (Comp);
                end loop;
-
-               return False;
-
-            else
-               return
-                 Is_Array_Type (Rec)
-                   and then Needs_Finalization (Component_Type (Rec));
             end if;
-         else
-            return False;
          end if;
+
+         return False;
       end Has_Some_Controlled_Component;
 
    --  Start of processing for Needs_Finalization
@@ -10354,32 +10381,34 @@ package body Exp_Util is
       if Restriction_Active (No_Finalization) then
          return False;
 
-      --  C++ types are not considered controlled. It is assumed that the
-      --  non-Ada side will handle their clean up.
+      --  C++ types are not considered controlled. It is assumed that the non-
+      --  Ada side will handle their clean up.
 
-      elsif Convention (T) = Convention_CPP then
+      elsif Convention (Typ) = Convention_CPP then
          return False;
 
-      --  Never needs finalization if Disable_Controlled set
+      --  Class-wide types are treated as controlled because derivations from
+      --  the root type may introduce controlled components.
 
-      elsif Disable_Controlled (T) then
-         return False;
+      elsif Is_Class_Wide_Type (Typ) then
+         return True;
 
-      elsif Is_Class_Wide_Type (T) and then Disable_Controlled (Etype (T)) then
-         return False;
+      --  Concurrent types are controlled as long as their corresponding record
+      --  is controlled.
+
+      elsif Is_Concurrent_Type (Typ)
+        and then Present (Corresponding_Record_Type (Typ))
+        and then Needs_Finalization (Corresponding_Record_Type (Typ))
+      then
+         return True;
+
+      --  Otherwise the type is controlled when it is either derived from type
+      --  [Limited_]Controlled and not subject to aspect Disable_Controlled, or
+      --  contains at least one controlled component.
 
       else
-         --  Class-wide types are treated as controlled because derivations
-         --  from the root type can introduce controlled components.
-
          return
-           Is_Class_Wide_Type (T)
-             or else Is_Controlled (T)
-             or else Has_Some_Controlled_Component (T)
-             or else
-               (Is_Concurrent_Type (T)
-                 and then Present (Corresponding_Record_Type (T))
-                 and then Needs_Finalization (Corresponding_Record_Type (T)));
+           Is_Controlled (Typ) or else Has_Some_Controlled_Component (Typ);
       end if;
    end Needs_Finalization;
 
@@ -10392,7 +10421,6 @@ package body Exp_Util is
       Typ  : Entity_Id) return Boolean
    is
    begin
-
       --  If we have no initialization of any kind, then we don't need to place
       --  any restrictions on the address clause, because the object will be
       --  elaborated after the address clause is evaluated. This happens if the
@@ -11221,7 +11249,7 @@ package body Exp_Util is
          --  Exp_Ch2.Expand_Renaming). Otherwise the temporary must be
          --  elaborated by gigi, and is of course not to be replaced in-line
          --  by the expression it renames, which would defeat the purpose of
-         --  removing the side-effect.
+         --  removing the side effect.
 
          if Nkind_In (Exp, N_Selected_Component, N_Indexed_Component)
            and then Has_Non_Standard_Rep (Etype (Prefix (Exp)))
@@ -11939,16 +11967,6 @@ package body Exp_Util is
             elsif Is_Ignored_Ghost_Entity (Obj_Id) then
                null;
 
-            --  The expansion of iterator loops generates an object declaration
-            --  where the Ekind is explicitly set to loop parameter. This is to
-            --  ensure that the loop parameter behaves as a constant from user
-            --  code point of view. Such object are never controlled and do not
-            --  require cleanup actions. An iterator loop over a container of
-            --  controlled objects does not produce such object declarations.
-
-            elsif Ekind (Obj_Id) = E_Loop_Parameter then
-               return False;
-
             --  The object is of the form:
             --    Obj : [constant] Typ [:= Expr];
             --
@@ -12632,7 +12650,7 @@ package body Exp_Util is
            and then Variable_Ref
          then
             --  Exception is a prefix that is the result of a previous removal
-            --  of side-effects.
+            --  of side effects.
 
             return Is_Entity_Name (Prefix (N))
               and then not Comes_From_Source (Prefix (N))
@@ -12878,12 +12896,51 @@ package body Exp_Util is
          --  Is this right? what about x'first where x is a variable???
 
          when N_Attribute_Reference =>
-            return
-              Side_Effect_Free (Expressions (N), Name_Req, Variable_Ref)
-                and then Attribute_Name (N) /= Name_Input
-                and then (Is_Entity_Name (Prefix (N))
-                           or else Side_Effect_Free
-                                     (Prefix (N), Name_Req, Variable_Ref));
+            Attribute_Reference : declare
+
+               function Side_Effect_Free_Attribute
+                 (Attribute_Name : Name_Id) return Boolean;
+               --  Returns True if evaluation of the given attribute is
+               --  considered side-effect free (independent of prefix and
+               --  arguments).
+
+               --------------------------------
+               -- Side_Effect_Free_Attribute --
+               --------------------------------
+
+               function Side_Effect_Free_Attribute
+                 (Attribute_Name : Name_Id) return Boolean
+               is
+               begin
+                  case Attribute_Name is
+                     when Name_Input =>
+                        return False;
+
+                     when Name_Image
+                        | Name_Img
+                        | Name_Wide_Image
+                        | Name_Wide_Wide_Image
+                     =>
+                        --  CodePeer doesn't want to see replicated copies of
+                        --  'Image calls.
+
+                        return not CodePeer_Mode;
+
+                     when others =>
+                        return True;
+                  end case;
+               end Side_Effect_Free_Attribute;
+
+            --  Start of processing for Attribute_Reference
+
+            begin
+               return
+                 Side_Effect_Free (Expressions (N), Name_Req, Variable_Ref)
+                   and then Side_Effect_Free_Attribute (Attribute_Name (N))
+                   and then (Is_Entity_Name (Prefix (N))
+                              or else Side_Effect_Free
+                                        (Prefix (N), Name_Req, Variable_Ref));
+            end Attribute_Reference;
 
          --  A binary operator is side effect free if and both operands are
          --  side effect free. For this purpose binary operators include

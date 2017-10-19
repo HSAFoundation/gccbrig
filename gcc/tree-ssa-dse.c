@@ -131,6 +131,7 @@ valid_ao_ref_for_dse (ao_ref *ref)
 	  && ref->max_size != -1
 	  && ref->size != 0
 	  && ref->max_size == ref->size
+	  && ref->offset >= 0
 	  && (ref->offset % BITS_PER_UNIT) == 0
 	  && (ref->size % BITS_PER_UNIT) == 0
 	  && (ref->size != -1));
@@ -241,7 +242,7 @@ compute_trims (ao_ref *ref, sbitmap live, int *trim_head, int *trim_tail,
     {
       fprintf (dump_file, "  Trimming statement (head = %d, tail = %d): ",
 	       *trim_head, *trim_tail);
-      print_gimple_stmt (dump_file, stmt, dump_flags, 0);
+      print_gimple_stmt (dump_file, stmt, 0, dump_flags);
       fprintf (dump_file, "\n");
     }
 }
@@ -468,6 +469,36 @@ maybe_trim_partially_dead_store (ao_ref *ref, sbitmap live, gimple *stmt)
     }
 }
 
+/* Return TRUE if USE_REF reads bytes from LIVE where live is
+   derived from REF, a write reference.
+
+   While this routine may modify USE_REF, it's passed by value, not
+   location.  So callers do not see those modifications.  */
+
+static bool
+live_bytes_read (ao_ref use_ref, ao_ref *ref, sbitmap live)
+{
+  /* We have already verified that USE_REF and REF hit the same object.
+     Now verify that there's actually an overlap between USE_REF and REF.  */
+  if (ranges_overlap_p (use_ref.offset, use_ref.size, ref->offset, ref->size))
+    {
+      normalize_ref (&use_ref, ref);
+
+      /* If USE_REF covers all of REF, then it will hit one or more
+	 live bytes.   This avoids useless iteration over the bitmap
+	 below.  */
+      if (use_ref.offset <= ref->offset
+	  && use_ref.offset + use_ref.size >= ref->offset + ref->size)
+	return true;
+
+      /* Now check if any of the remaining bits in use_ref are set in LIVE.  */
+      unsigned int start = (use_ref.offset - ref->offset) / BITS_PER_UNIT;
+      unsigned int end  = ((use_ref.offset + use_ref.size) / BITS_PER_UNIT) - 1;
+      return bitmap_bit_in_range_p (live, start, end);
+    }
+  return true;
+}
+
 /* A helper of dse_optimize_stmt.
    Given a GIMPLE_ASSIGN in STMT that writes to REF, find a candidate
    statement *USE_STMT that may prove STMT to be dead.
@@ -547,6 +578,31 @@ dse_classify_store (ao_ref *ref, gimple *stmt, gimple **use_stmt,
 	  /* If the statement is a use the store is not dead.  */
 	  else if (ref_maybe_used_by_stmt_p (use_stmt, ref))
 	    {
+	      /* Handle common cases where we can easily build an ao_ref
+		 structure for USE_STMT and in doing so we find that the
+		 references hit non-live bytes and thus can be ignored.  */
+	      if (byte_tracking_enabled && (!gimple_vdef (use_stmt) || !temp))
+		{
+		  if (is_gimple_assign (use_stmt))
+		    {
+		      /* Other cases were noted as non-aliasing by
+			 the call to ref_maybe_used_by_stmt_p.  */
+		      ao_ref use_ref;
+		      ao_ref_init (&use_ref, gimple_assign_rhs1 (use_stmt));
+		      if (valid_ao_ref_for_dse (&use_ref)
+			  && use_ref.base == ref->base
+			  && use_ref.size == use_ref.max_size
+			  && !live_bytes_read (use_ref, ref, live_bytes))
+			{
+			  /* If this statement has a VDEF, then it is the
+			     first store we have seen, so walk through it.  */
+			  if (gimple_vdef (use_stmt))
+			    temp = use_stmt;
+			  continue;
+			}
+		    }
+		}
+
 	      fail = true;
 	      BREAK_FROM_IMM_USE_STMT (ui);
 	    }
@@ -601,16 +657,14 @@ class dse_dom_walker : public dom_walker
 {
 public:
   dse_dom_walker (cdi_direction direction)
-    : dom_walker (direction), m_byte_tracking_enabled (false)
-
-  { m_live_bytes = sbitmap_alloc (PARAM_VALUE (PARAM_DSE_MAX_OBJECT_SIZE)); }
-
-  ~dse_dom_walker () { sbitmap_free (m_live_bytes); }
+    : dom_walker (direction),
+    m_live_bytes (PARAM_VALUE (PARAM_DSE_MAX_OBJECT_SIZE)),
+    m_byte_tracking_enabled (false) {}
 
   virtual edge before_dom_children (basic_block);
 
 private:
-  sbitmap m_live_bytes;
+  auto_sbitmap m_live_bytes;
   bool m_byte_tracking_enabled;
   void dse_optimize_stmt (gimple_stmt_iterator *);
 };
@@ -623,7 +677,7 @@ delete_dead_call (gimple_stmt_iterator *gsi)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "  Deleted dead call: ");
-      print_gimple_stmt (dump_file, stmt, dump_flags, 0);
+      print_gimple_stmt (dump_file, stmt, 0, dump_flags);
       fprintf (dump_file, "\n");
     }
 
@@ -657,7 +711,7 @@ delete_dead_assignment (gimple_stmt_iterator *gsi)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "  Deleted dead store: ");
-      print_gimple_stmt (dump_file, stmt, dump_flags, 0);
+      print_gimple_stmt (dump_file, stmt, 0, dump_flags);
       fprintf (dump_file, "\n");
     }
 

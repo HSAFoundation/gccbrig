@@ -137,6 +137,10 @@ get_intel_cpu (unsigned int family, unsigned int model, unsigned int brand_id)
 	      /* Knights Landing.  */
 	      __cpu_model.__cpu_type = INTEL_KNL;
 	      break;
+	    case 0x85:
+	      /* Knights Mill. */
+	      __cpu_model.__cpu_type = INTEL_KNM;
+	      break;
 	    case 0x1a:
 	    case 0x1e:
 	    case 0x1f:
@@ -183,6 +187,9 @@ get_intel_cpu (unsigned int family, unsigned int model, unsigned int brand_id)
 	    case 0x4e:
 	    case 0x5e:
 	      /* Skylake.  */
+	    case 0x8e:
+	    case 0x9e:
+	      /* Kaby Lake.  */
 	      __cpu_model.__cpu_type = INTEL_COREI7;
 	      __cpu_model.__cpu_subtype = INTEL_COREI7_SKYLAKE;
 	      break;

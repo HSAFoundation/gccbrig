@@ -150,7 +150,7 @@ am__dirstamp = $(am__leading_dot)dirstamp
 am__objects_1 = rt/arithmetic.lo rt/atomics.lo rt/bitstring.lo \
 	rt/fbarrier.lo rt/fp16.lo rt/misc.lo rt/multimedia.lo \
 	rt/queue.lo rt/sat_arithmetic.lo rt/segment.lo rt/workitems.lo \
-	rt/fibers.lo
+	rt/fibers.lo rt/ftz.lo
 am_libhsail_rt_la_OBJECTS = $(am__objects_1)
 libhsail_rt_la_OBJECTS = $(am_libhsail_rt_la_OBJECTS)
 libhsail_rt_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -240,6 +240,7 @@ SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
+TARGET_CONFIG_INCLUDE_PATHS = @TARGET_INCLUDES@
 VERSION = @VERSION@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
@@ -310,10 +311,12 @@ WARN_CFLAGS = $(WARN_FLAGS) $(WERROR)
 
 # -I/-D flags to pass when compiling.
 AM_CPPFLAGS = -I$(srcdir)/rt -I$(srcdir)/include/internal
+TARGET_INCLUDES = $(addprefix -I$(srcdir)/../,$(TARGET_INCLUDE_PATHS))
 AM_CFLAGS = \
 	-I $(srcdir)/../include \
 	-I $(srcdir)/../libgcc \
-	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS)
+	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS) \
+	$(TARGET_INCLUDES)
 
 toolexeclib_LTLIBRARIES = libhsail-rt.la
 runtime_files = \
@@ -328,7 +331,8 @@ runtime_files = \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
 	rt/workitems.c \
-	rt/fibers.c
+	rt/fibers.c \
+	rt/ftz.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
 libhsail_rt_la_LDFLAGS = -rpath '$(libdir)'
@@ -476,6 +480,7 @@ rt/sat_arithmetic.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/segment.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/workitems.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 rt/fibers.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
+rt/ftz.lo: rt/$(am__dirstamp) rt/$(DEPDIR)/$(am__dirstamp)
 libhsail-rt.la: $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_DEPENDENCIES) $(EXTRA_libhsail_rt_la_DEPENDENCIES) 
 	$(libhsail_rt_la_LINK) -rpath $(toolexeclibdir) $(libhsail_rt_la_OBJECTS) $(libhsail_rt_la_LIBADD) $(LIBS)
 
@@ -493,6 +498,8 @@ mostlyclean-compile:
 	-rm -f rt/fibers.lo
 	-rm -f rt/fp16.$(OBJEXT)
 	-rm -f rt/fp16.lo
+	-rm -f rt/ftz.$(OBJEXT)
+	-rm -f rt/ftz.lo
 	-rm -f rt/misc.$(OBJEXT)
 	-rm -f rt/misc.lo
 	-rm -f rt/multimedia.$(OBJEXT)
@@ -515,6 +522,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fbarrier.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fibers.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/fp16.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/ftz.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/misc.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/multimedia.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@rt/$(DEPDIR)/queue.Plo@am__quote@

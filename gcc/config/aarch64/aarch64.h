@@ -90,22 +90,24 @@
    port.  */
 #define TARGET_PTRMEMFUNC_VBIT_LOCATION ptrmemfunc_vbit_in_delta
 
-/* Make strings word-aligned so that strcpy from constants will be
-   faster.  */
-#define CONSTANT_ALIGNMENT(EXP, ALIGN)		\
-  ((TREE_CODE (EXP) == STRING_CST		\
-    && !optimize_size				\
-    && (ALIGN) < BITS_PER_WORD)			\
-   ? BITS_PER_WORD : ALIGN)
+/* Align definitions of arrays, unions and structures so that
+   initializations and copies can be made more efficient.  This is not
+   ABI-changing, so it only affects places where we can see the
+   definition.  Increasing the alignment tends to introduce padding,
+   so don't do this when optimizing for size/conserving stack space.  */
+#define AARCH64_EXPAND_ALIGNMENT(COND, EXP, ALIGN)			\
+  (((COND) && ((ALIGN) < BITS_PER_WORD)					\
+    && (TREE_CODE (EXP) == ARRAY_TYPE					\
+	|| TREE_CODE (EXP) == UNION_TYPE				\
+	|| TREE_CODE (EXP) == RECORD_TYPE)) ? BITS_PER_WORD : (ALIGN))
 
-#define DATA_ALIGNMENT(EXP, ALIGN)		\
-  ((((ALIGN) < BITS_PER_WORD)			\
-    && (TREE_CODE (EXP) == ARRAY_TYPE		\
-	|| TREE_CODE (EXP) == UNION_TYPE	\
-	|| TREE_CODE (EXP) == RECORD_TYPE))	\
-   ? BITS_PER_WORD : (ALIGN))
+/* Align global data.  */
+#define DATA_ALIGNMENT(EXP, ALIGN)			\
+  AARCH64_EXPAND_ALIGNMENT (!optimize_size, EXP, ALIGN)
 
-#define LOCAL_ALIGNMENT(EXP, ALIGN) DATA_ALIGNMENT(EXP, ALIGN)
+/* Similarly, make sure that objects on the stack are sensibly aligned.  */
+#define LOCAL_ALIGNMENT(EXP, ALIGN)				\
+  AARCH64_EXPAND_ALIGNMENT (!flag_conserve_stack, EXP, ALIGN)
 
 #define STRUCTURE_SIZE_BOUNDARY		8
 
@@ -134,12 +136,14 @@ extern unsigned aarch64_architecture_version;
 #define AARCH64_FL_CRC        (1 << 3)	/* Has CRC.  */
 /* ARMv8.1-A architecture extensions.  */
 #define AARCH64_FL_LSE	      (1 << 4)  /* Has Large System Extensions.  */
-#define AARCH64_FL_V8_1	      (1 << 5)  /* Has ARMv8.1-A extensions.  */
+#define AARCH64_FL_RDMA	      (1 << 5)  /* Has Round Double Multiply Add.  */
+#define AARCH64_FL_V8_1	      (1 << 6)  /* Has ARMv8.1-A extensions.  */
 /* ARMv8.2-A architecture extensions.  */
 #define AARCH64_FL_V8_2	      (1 << 8)  /* Has ARMv8.2-A features.  */
 #define AARCH64_FL_F16	      (1 << 9)  /* Has ARMv8.2-A FP16 extensions.  */
 /* ARMv8.3-A architecture extensions.  */
 #define AARCH64_FL_V8_3	      (1 << 10)  /* Has ARMv8.3-A features.  */
+#define AARCH64_FL_RCPC	      (1 << 11)  /* Has support for RCpc model.  */
 
 /* Has FP and SIMD.  */
 #define AARCH64_FL_FPSIMD     (AARCH64_FL_FP | AARCH64_FL_SIMD)
@@ -150,7 +154,8 @@ extern unsigned aarch64_architecture_version;
 /* Architecture flags that effect instruction selection.  */
 #define AARCH64_FL_FOR_ARCH8       (AARCH64_FL_FPSIMD)
 #define AARCH64_FL_FOR_ARCH8_1			       \
-  (AARCH64_FL_FOR_ARCH8 | AARCH64_FL_LSE | AARCH64_FL_CRC | AARCH64_FL_V8_1)
+  (AARCH64_FL_FOR_ARCH8 | AARCH64_FL_LSE | AARCH64_FL_CRC \
+   | AARCH64_FL_RDMA | AARCH64_FL_V8_1)
 #define AARCH64_FL_FOR_ARCH8_2			\
   (AARCH64_FL_FOR_ARCH8_1 | AARCH64_FL_V8_2)
 #define AARCH64_FL_FOR_ARCH8_3			\
@@ -163,7 +168,7 @@ extern unsigned aarch64_architecture_version;
 #define AARCH64_ISA_FP             (aarch64_isa_flags & AARCH64_FL_FP)
 #define AARCH64_ISA_SIMD           (aarch64_isa_flags & AARCH64_FL_SIMD)
 #define AARCH64_ISA_LSE		   (aarch64_isa_flags & AARCH64_FL_LSE)
-#define AARCH64_ISA_RDMA	   (aarch64_isa_flags & AARCH64_FL_V8_1)
+#define AARCH64_ISA_RDMA	   (aarch64_isa_flags & AARCH64_FL_RDMA)
 #define AARCH64_ISA_V8_2	   (aarch64_isa_flags & AARCH64_FL_V8_2)
 #define AARCH64_ISA_F16		   (aarch64_isa_flags & AARCH64_FL_F16)
 #define AARCH64_ISA_V8_3	   (aarch64_isa_flags & AARCH64_FL_V8_3)
@@ -388,12 +393,6 @@ extern unsigned aarch64_architecture_version;
 
 #define DWARF_FRAME_RETURN_COLUMN	DWARF_FRAME_REGNUM (LR_REGNUM)
 
-#define HARD_REGNO_NREGS(REGNO, MODE)	aarch64_hard_regno_nregs (REGNO, MODE)
-
-#define HARD_REGNO_MODE_OK(REGNO, MODE)	aarch64_hard_regno_mode_ok (REGNO, MODE)
-
-#define MODES_TIEABLE_P(MODE1, MODE2) aarch64_modes_tieable_p (MODE1, MODE2)
-
 #define DWARF2_UNWIND_INFO 1
 
 /* Use R0 through R3 to pass exception handling information.  */
@@ -445,6 +444,7 @@ enum reg_class
   POINTER_REGS,
   FP_LO_REGS,
   FP_REGS,
+  POINTER_AND_FP_REGS,
   ALL_REGS,
   LIM_REG_CLASSES		/* Last */
 };
@@ -460,6 +460,7 @@ enum reg_class
   "POINTER_REGS",				\
   "FP_LO_REGS",					\
   "FP_REGS",					\
+  "POINTER_AND_FP_REGS",			\
   "ALL_REGS"					\
 }
 
@@ -472,6 +473,7 @@ enum reg_class
   { 0xffffffff, 0x00000000, 0x00000003 },	/* POINTER_REGS */	\
   { 0x00000000, 0x0000ffff, 0x00000000 },       /* FP_LO_REGS  */	\
   { 0x00000000, 0xffffffff, 0x00000000 },       /* FP_REGS  */		\
+  { 0xffffffff, 0xffffffff, 0x00000003 },	/* POINTER_AND_FP_REGS */\
   { 0xffffffff, 0xffffffff, 0x00000007 }	/* ALL_REGS */		\
 }
 
@@ -659,11 +661,8 @@ typedef struct
 } CUMULATIVE_ARGS;
 #endif
 
-#define FUNCTION_ARG_PADDING(MODE, TYPE) \
-  (aarch64_pad_arg_upward (MODE, TYPE) ? upward : downward)
-
 #define BLOCK_REG_PADDING(MODE, TYPE, FIRST) \
-  (aarch64_pad_reg_upward (MODE, TYPE, FIRST) ? upward : downward)
+  (aarch64_pad_reg_upward (MODE, TYPE, FIRST) ? PAD_UPWARD : PAD_DOWNWARD)
 
 #define PAD_VARARGS_DOWN	0
 
@@ -769,8 +768,6 @@ typedef struct
    if we don't have to, for power-saving reasons.  */
 #define SLOW_BYTE_ACCESS		0
 
-#define TRULY_NOOP_TRUNCATION(OUTPREC, INPREC) 1
-
 #define NO_FUNCTION_CSE	1
 
 /* Specify the machine mode that the hardware addresses have.
@@ -844,7 +841,7 @@ typedef struct
     rtx fun, lr;							\
     lr = get_hard_reg_initial_val (Pmode, LR_REGNUM);			\
     fun = gen_rtx_SYMBOL_REF (Pmode, MCOUNT_NAME);			\
-    emit_library_call (fun, LCT_NORMAL, VOIDmode, 1, lr, Pmode);	\
+    emit_library_call (fun, LCT_NORMAL, VOIDmode, lr, Pmode);		\
   }
 
 /* All the work done in PROFILE_HOOK, but still required.  */
@@ -874,12 +871,6 @@ typedef struct
    required size of load/store.  */
 #define HARD_REGNO_CALLER_SAVE_MODE(REGNO, NREGS, MODE) \
   aarch64_hard_regno_caller_save_mode ((REGNO), (NREGS), (MODE))
-
-/* Callee only saves lower 64-bits of a 128-bit register.  Tell the
-   compiler the callee clobbers the top 64-bits when restoring the
-   bottom 64-bits.  */
-#define HARD_REGNO_CALL_PART_CLOBBERED(REGNO, MODE) \
-		(FP_REGNUM_P (REGNO) && GET_MODE_SIZE (MODE) > 8)
 
 #undef SWITCHABLE_TARGET
 #define SWITCHABLE_TARGET 1
@@ -957,5 +948,13 @@ extern const char *host_detect_local_cpu (int argc, const char **argv);
    need it in many places in the backend.  Defined in aarch64-builtins.c.  */
 extern tree aarch64_fp16_type_node;
 extern tree aarch64_fp16_ptr_type_node;
+
+/* The generic unwind code in libgcc does not initialize the frame pointer.
+   So in order to unwind a function using a frame pointer, the very first
+   function that is unwound must save the frame pointer.  That way the frame
+   pointer is restored and its value is now valid - otherwise _Unwind_GetGR
+   crashes.  Libgcc can now be safely built with -fomit-frame-pointer.  */
+#define LIBGCC2_UNWIND_ATTRIBUTE \
+  __attribute__((optimize ("no-omit-frame-pointer")))
 
 #endif /* GCC_AARCH64_H */

@@ -1225,6 +1225,15 @@ package body Sprint is
 
             Write_Char (';');
 
+         when N_Call_Marker =>
+            null;
+
+            --  Enable the following code for debugging purposes only
+
+            --  Write_Indent_Str ("#");
+            --  Write_Id (Target (Node));
+            --  Write_Char ('#');
+
          when N_Case_Expression =>
             declare
                Has_Parens : constant Boolean := Paren_Count (Node) > 0;
@@ -3435,12 +3444,12 @@ package body Sprint is
 
          when N_Use_Package_Clause =>
             Write_Indent_Str_Sloc ("use ");
-            Sprint_Comma_List (Names (Node));
+            Sprint_Node_Sloc (Name (Node));
             Write_Char (';');
 
          when N_Use_Type_Clause =>
             Write_Indent_Str_Sloc ("use type ");
-            Sprint_Comma_List (Subtype_Marks (Node));
+            Sprint_Node_Sloc (Subtype_Mark (Node));
             Write_Char (';');
 
          when N_Validate_Unchecked_Conversion =>
@@ -3749,9 +3758,13 @@ package body Sprint is
       Src : Source_Buffer_Ptr;
 
    begin
-      --  Ignore if not in dump source text mode, or if in freeze actions
+      --  Ignore if there is no current source file, or we're not in dump
+      --  source text mode, or if in freeze actions.
 
-      if Dump_Source_Text and then Freeze_Indent = 0 then
+      if Current_Source_File > No_Source_File
+        and then Dump_Source_Text
+        and then Freeze_Indent = 0
+      then
 
          --  Ignore null string
 
@@ -4504,6 +4517,15 @@ package body Sprint is
       L : Natural;
 
    begin
+      --  Avoid crashing on invalid Name_Ids
+
+      if not Is_Valid_Name (N) then
+         Write_Str ("<invalid name ");
+         Write_Int (Int (N));
+         Write_Str (">");
+         return;
+      end if;
+
       Get_Name_String (N);
 
       --  Deal with -gnatdI which replaces any sequence Cnnnb where C is an
@@ -4552,6 +4574,15 @@ package body Sprint is
 
    procedure Write_Name_With_Col_Check_Sloc (N : Name_Id) is
    begin
+      --  Avoid crashing on invalid Name_Ids
+
+      if not Is_Valid_Name (N) then
+         Write_Str ("<invalid name ");
+         Write_Int (Int (N));
+         Write_Str (">");
+         return;
+      end if;
+
       Get_Name_String (N);
       Write_Str_With_Col_Check_Sloc (Name_Buffer (1 .. Name_Len));
    end Write_Name_With_Col_Check_Sloc;

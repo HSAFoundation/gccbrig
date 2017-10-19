@@ -366,7 +366,7 @@ package Opt is
    Check_Validity_Of_Parameters : Boolean := False;
    --  GNAT
    --  Set to True to check for proper scalar initialization of subprogram
-   --  parameters on both entry and exit. Turned on by??? turned off by???
+   --  parameters on both entry and exit. This is turned on by -gnateV.
 
    Check_Withs : Boolean := False;
    --  GNAT
@@ -462,18 +462,21 @@ package Opt is
    --    otherwise:   "pragma Default_Storage_Pool (X);" applies, and
    --                 this points to the name X.
    --  Push_Scope and Pop_Scope in Sem_Ch8 save and restore this value.
-   Default_Stack_Size : Int := -1;
-   --  GNATBIND
-   --  Set to default primary stack size in units of bytes. Set by
-   --  the -dnnn switch for the binder. A value of -1 indicates that no
-   --  default was set by the binder.
 
-   Default_Sec_Stack_Size : Int := -1;
+   No_Stack_Size : constant := -1;
+
+   Default_Stack_Size : Int := No_Stack_Size;
    --  GNATBIND
-   --  Set to default secondary stack size in units of bytes. Set by
-   --  the -Dnnn switch for the binder. A value of -1 indicates that no
-   --  default was set by the binder, and that the default should be the
-   --  initial value of System.Secondary_Stack.Default_Secondary_Stack_Size.
+   --  Set to default primary stack size in units of bytes. Set by the -dnnn
+   --  switch for the binder. A value of No_Stack_Size indicates that
+   --  no default was set by the binder.
+
+   Default_Sec_Stack_Size : Int := No_Stack_Size;
+   --  GNATBIND
+   --  Set to default secondary stack size in units of bytes. Set by the -Dnnn
+   --  switch for the binder. A value of No_Stack_Size indicates that no
+   --  default was set by the binder and the run-time value should be used
+   --  instead.
 
    Default_SSO : Character := ' ';
    --  GNAT
@@ -848,6 +851,10 @@ package Opt is
    --  cause implicit packing instead of generating an error message. Set by
    --  use of pragma Implicit_Packing.
 
+   Include_Subprogram_In_Messages : Boolean := False;
+   --  GNAT
+   --  Set True to include the enclosing subprogram in compiler messages.
+
    Ineffective_Inline_Warnings : Boolean := False;
    --  GNAT
    --  Set True to activate warnings if front-end inlining (-gnatN) is not able
@@ -982,6 +989,11 @@ package Opt is
    --  Set true by -gnatRm switch. Causes information on mechanisms to be
    --  included in the representation output information.
 
+   List_Representation_Info_Extended : Boolean := False;
+   --  GNAT
+   --  Set true by -gnatRe switch. Causes extended information for record types
+   --  to be included in the representation output information.
+
    List_Preprocessing_Symbols : Boolean := False;
    --  GNAT, GNATPREP
    --  Set to True if symbols for preprocessing a source are to be listed
@@ -1106,6 +1118,10 @@ package Opt is
    No_Backup : Boolean := False;
    --  GNATNAME
    --  Do not create backup copies of project files. Set by switch --no-backup.
+
+   No_Component_Reordering : Boolean := False;
+   --  GNAT
+   --  Set True if pragma No_Component_Reordering with no parameter encountered
 
    No_Deletion : Boolean := False;
    --  GNATPREP
@@ -1299,6 +1315,13 @@ package Opt is
    --  GNAT
    --  Indicates if a project file is used or not. Set to In_Use by the first
    --  SFNP pragma.
+
+   Quantity_Of_Default_Size_Sec_Stacks : Int := -1;
+   --  GNATBIND
+   --  The number of default sized secondary stacks that the binder should
+   --  generate. Allows ZFP users to have the binder generate extra stacks if
+   --  needed to support multithreaded applications. A value of -1 indicates
+   --  that no size was set by the binder.
 
    Queuing_Policy : Character := ' ';
    --  GNAT, GNATBIND
@@ -2025,6 +2048,14 @@ package Opt is
    --  This switch is not set when the pragma appears ahead of a given
    --  unit, so it does not affect the compilation of other units.
 
+   No_Component_Reordering_Config : Boolean;
+   --  GNAT
+   --  This is the value of the configuration switch that is set by the
+   --  pragma No_Component_Reordering when it appears in the gnat.adc file.
+   --  This flag is used to set the initial value of No_Component_Reordering
+   --  at the start of each compilation unit, except that it is always set
+   --  False for predefined units.
+
    No_Exit_Message : Boolean := False;
    --  GNATMAKE, GPRBUILD
    --  Set with switch --no-exit-message. When True, if there are compilation
@@ -2089,8 +2120,7 @@ package Opt is
 
    procedure Save_Opt_Config_Switches (Save : out Config_Switches_Type);
    --  This procedure saves the current values of the switches which are
-   --  initialized from the above Config values, and then resets these switches
-   --  according to the Config value settings.
+   --  initialized from the above Config values.
 
    procedure Set_Opt_Config_Switches
      (Internal_Unit : Boolean;
@@ -2306,6 +2336,7 @@ private
       External_Name_Imp_Casing       : External_Casing_Type;
       Fast_Math                      : Boolean;
       Initialize_Scalars             : Boolean;
+      No_Component_Reordering        : Boolean;
       Normalize_Scalars              : Boolean;
       Optimize_Alignment             : Character;
       Optimize_Alignment_Local       : Boolean;

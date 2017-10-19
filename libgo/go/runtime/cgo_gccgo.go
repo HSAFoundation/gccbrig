@@ -6,7 +6,7 @@ package runtime
 
 import (
 	"runtime/internal/atomic"
-	_ "unsafe"
+	"unsafe"
 )
 
 // For historical reasons these functions are called as though they
@@ -41,6 +41,7 @@ func Cgocall() {
 	mp := getg().m
 	mp.ncgocall++
 	mp.ncgo++
+	mp.incgo = true
 	entersyscall(0)
 }
 
@@ -50,11 +51,12 @@ func CgocallDone() {
 	if gp == nil {
 		throw("no g in CgocallDone")
 	}
+	gp.m.incgo = false
 	gp.m.ncgo--
 
 	// If we are invoked because the C function called _cgo_panic,
 	// then _cgo_panic will already have exited syscall mode.
-	if gp.atomicstatus == _Gsyscall {
+	if readgstatus(gp)&^_Gscan == _Gsyscall {
 		exitsyscall(0)
 	}
 
@@ -68,15 +70,18 @@ func CgocallDone() {
 //     gofunction()
 //go:nosplit
 func CgocallBack() {
-	if getg() == nil || getg().m == nil {
+	gp := getg()
+	if gp == nil || gp.m == nil {
 		needm(0)
-		mp := getg().m
+		gp = getg()
+		mp := gp.m
 		mp.dropextram = true
 	}
 
 	exitsyscall(0)
+	gp.m.incgo = false
 
-	if getg().m.ncgo == 0 {
+	if gp.m.ncgo == 0 {
 		// The C call to Go came from a thread created by C.
 		// The C call to Go came from a thread not currently running
 		// any Go. In the case of -buildmode=c-archive or c-shared,
@@ -85,7 +90,7 @@ func CgocallBack() {
 		<-main_init_done
 	}
 
-	mp := getg().m
+	mp := gp.m
 	if mp.needextram || atomic.Load(&extraMWaiters) > 0 {
 		mp.needextram = false
 		newextram()
@@ -95,9 +100,35 @@ func CgocallBack() {
 // CgocallBackDone prepares to return to C/C++ code that has called
 // into Go code.
 func CgocallBackDone() {
+	// If we are the top level Go function called from C/C++, then
+	// we need to release the m. But don't release it if we are
+	// panicing; since this is the top level, we are going to
+	// crash the program, and we need the g and m to print the
+	// panic values.
+	//
+	// Dropping the m is going to clear g. This function is being
+	// called as a deferred function, so we will return to
+	// deferreturn which will want to clear the _defer field.
+	// As soon as we call dropm another thread may call needm and
+	// start using g, so we must not tamper with the _defer field
+	// after dropm. So clear _defer now.
+	gp := getg()
+	mp := gp.m
+	drop := false
+	if mp.dropextram && mp.ncgo == 0 && gp._panic == nil {
+		d := gp._defer
+		if d == nil || d.link != nil {
+			throw("unexpected g._defer in CgocallBackDone")
+		}
+		gp._defer = nil
+		freedefer(d)
+		drop = true
+	}
+
+	gp.m.incgo = true
 	entersyscall(0)
-	mp := getg().m
-	if mp.dropextram && mp.ncgo == 0 {
+
+	if drop {
 		mp.dropextram = false
 		dropm()
 	}
@@ -108,3 +139,8 @@ func _cgo_panic(p *byte) {
 	exitsyscall(0)
 	panic(gostringnocopy(p))
 }
+
+// cgo_yield exists in the gc toolchain to let TSAN deliver a signal.
+// gccgo does not need this.
+var cgo_yield = &_cgo_yield
+var _cgo_yield unsafe.Pointer

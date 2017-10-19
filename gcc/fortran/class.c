@@ -310,7 +310,6 @@ class_array_ref_detected (gfc_ref *ref, bool *full_array)
       else if (ref->next && ref->next->type == REF_ARRAY
 	    && !ref->next->next
 	    && ref->type == REF_COMPONENT
-	    && ref->next->type == REF_ARRAY
 	    && ref->next->u.ar.type != AR_ELEMENT)
 	{
 	  with_data = true;
@@ -2211,6 +2210,9 @@ gfc_find_derived_vtab (gfc_symbol *derived)
   gfc_symbol *copy = NULL, *src = NULL, *dst = NULL;
   gfc_gsymbol *gsym = NULL;
   gfc_symbol *dealloc = NULL, *arg = NULL;
+
+  if (derived->attr.pdt_template)
+    return NULL;
 
   /* Find the top-level namespace.  */
   for (ns = gfc_current_ns; ns; ns = ns->parent)

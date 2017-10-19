@@ -127,7 +127,7 @@ verify_ssaname_freelists (struct function *fun)
   if (!gimple_in_ssa_p (fun))
     return;
 
-  bitmap names_in_il = BITMAP_ALLOC (NULL);
+  auto_bitmap names_in_il;
 
   /* Walk the entire IL noting every SSA_NAME we see.  */
   basic_block bb;
@@ -165,7 +165,7 @@ verify_ssaname_freelists (struct function *fun)
 
   /* Now walk the free list noting what we find there and verifying
      there are no duplicates.  */
-  bitmap names_in_freelists = BITMAP_ALLOC (NULL);
+  auto_bitmap names_in_freelists;
   if (FREE_SSANAMES (fun))
     {
       for (unsigned int i = 0; i < FREE_SSANAMES (fun)->length (); i++)
@@ -221,7 +221,7 @@ verify_ssaname_freelists (struct function *fun)
 
   unsigned int i;
   bitmap_iterator bi;
-  bitmap all_names = BITMAP_ALLOC (NULL);
+  auto_bitmap all_names;
   bitmap_set_range (all_names, UNUSED_NAME_VERSION + 1, num_ssa_names - 1);
   bitmap_ior_into (names_in_il, names_in_freelists);
 
@@ -230,10 +230,6 @@ verify_ssaname_freelists (struct function *fun)
   EXECUTE_IF_AND_COMPL_IN_BITMAP(all_names, names_in_il,
 				 UNUSED_NAME_VERSION + 1, i, bi)
     gcc_assert (!ssa_name (i));
-
-  BITMAP_FREE (all_names);
-  BITMAP_FREE (names_in_freelists);
-  BITMAP_FREE (names_in_il);
 }
 
 /* Move all SSA_NAMEs from FREE_SSA_NAMES_QUEUE to FREE_SSA_NAMES.
@@ -324,11 +320,14 @@ make_ssa_name_fn (struct function *fn, tree var, gimple *stmt,
   return t;
 }
 
-/* Store range information RANGE_TYPE, MIN, and MAX to tree ssa_name NAME.  */
+/* Helper function for set_range_info.
+
+   Store range information RANGE_TYPE, MIN, and MAX to tree ssa_name
+   NAME.  */
 
 void
-set_range_info (tree name, enum value_range_type range_type,
-		const wide_int_ref &min, const wide_int_ref &max)
+set_range_info_raw (tree name, enum value_range_type range_type,
+		    const wide_int_ref &min, const wide_int_ref &max)
 {
   gcc_assert (!POINTER_TYPE_P (TREE_TYPE (name)));
   gcc_assert (range_type == VR_RANGE || range_type == VR_ANTI_RANGE);
@@ -364,6 +363,34 @@ set_range_info (tree name, enum value_range_type range_type,
     }
 }
 
+/* Store range information RANGE_TYPE, MIN, and MAX to tree ssa_name
+   NAME while making sure we don't store useless range info.  */
+
+void
+set_range_info (tree name, enum value_range_type range_type,
+		const wide_int_ref &min, const wide_int_ref &max)
+{
+  gcc_assert (!POINTER_TYPE_P (TREE_TYPE (name)));
+
+  /* A range of the entire domain is really no range at all.  */
+  tree type = TREE_TYPE (name);
+  if (min == wi::min_value (TYPE_PRECISION (type), TYPE_SIGN (type))
+      && max == wi::max_value (TYPE_PRECISION (type), TYPE_SIGN (type)))
+    {
+      range_info_def *ri = SSA_NAME_RANGE_INFO (name);
+      if (ri == NULL)
+	return;
+      if (ri->get_nonzero_bits () == -1)
+	{
+	  ggc_free (ri);
+	  SSA_NAME_RANGE_INFO (name) = NULL;
+	  return;
+	}
+    }
+
+  set_range_info_raw (name, range_type, min, max);
+}
+
 
 /* Gets range information MIN, MAX and returns enum value_range_type
    corresponding to tree ssa_name NAME.  enum value_range_type returned
@@ -378,7 +405,7 @@ get_range_info (const_tree name, wide_int *min, wide_int *max)
 
   /* Return VR_VARYING for SSA_NAMEs with NULL RANGE_INFO or SSA_NAMEs
      with integral types width > 2 * HOST_BITS_PER_WIDE_INT precision.  */
-  if (!ri || (GET_MODE_PRECISION (TYPE_MODE (TREE_TYPE (name)))
+  if (!ri || (GET_MODE_PRECISION (SCALAR_INT_TYPE_MODE (TREE_TYPE (name)))
 	      > 2 * HOST_BITS_PER_WIDE_INT))
     return VR_VARYING;
 
@@ -423,20 +450,29 @@ set_nonzero_bits (tree name, const wide_int_ref &mask)
 {
   gcc_assert (!POINTER_TYPE_P (TREE_TYPE (name)));
   if (SSA_NAME_RANGE_INFO (name) == NULL)
-    set_range_info (name, VR_RANGE,
-		    TYPE_MIN_VALUE (TREE_TYPE (name)),
-		    TYPE_MAX_VALUE (TREE_TYPE (name)));
+    {
+      if (mask == -1)
+	return;
+      set_range_info_raw (name, VR_RANGE,
+			  wi::to_wide (TYPE_MIN_VALUE (TREE_TYPE (name))),
+			  wi::to_wide (TYPE_MAX_VALUE (TREE_TYPE (name))));
+    }
   range_info_def *ri = SSA_NAME_RANGE_INFO (name);
   ri->set_nonzero_bits (mask);
 }
 
 /* Return a widest_int with potentially non-zero bits in SSA_NAME
-   NAME, or -1 if unknown.  */
+   NAME, the constant for INTEGER_CST, or -1 if unknown.  */
 
 wide_int
 get_nonzero_bits (const_tree name)
 {
-  unsigned int precision = TYPE_PRECISION (TREE_TYPE (name));
+  if (TREE_CODE (name) == INTEGER_CST)
+    return wi::to_wide (name);
+
+  /* Use element_precision instead of TYPE_PRECISION so complex and
+     vector types get a non-zero precision.  */
+  unsigned int precision = element_precision (TREE_TYPE (name));
   if (POINTER_TYPE_P (TREE_TYPE (name)))
     {
       struct ptr_info_def *pi = SSA_NAME_PTR_INFO (name);
