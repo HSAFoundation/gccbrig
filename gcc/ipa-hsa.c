@@ -42,6 +42,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "print-tree.h"
 #include "symbol-summary.h"
 #include "hsa-common.h"
+#include "attribs.h"
 
 namespace {
 
