@@ -33,14 +33,15 @@ along with GCC; see the file COPYING3.  If not see
 #include "dumpfile.h"
 #include "internal-fn.h"
 #include "gomp-constants.h"
+#include "gimple.h"
 
 /* Local functions, macros and variables.  */
 static const char *op_symbol (const_tree);
 static void pretty_print_string (pretty_printer *, const char*);
 static void newline_and_indent (pretty_printer *, int);
 static void maybe_init_pretty_print (FILE *);
-static void print_struct_decl (pretty_printer *, const_tree, int, int);
-static void do_niy (pretty_printer *, const_tree, int);
+static void print_struct_decl (pretty_printer *, const_tree, int, dump_flags_t);
+static void do_niy (pretty_printer *, const_tree, dump_flags_t);
 
 #define INDENT(SPACE) do { \
   int i; for (i = 0; i<SPACE; i++) pp_space (pp); } while (0)
@@ -52,7 +53,7 @@ static pretty_printer *tree_pp;
 /* Try to print something for an unknown tree code.  */
 
 static void
-do_niy (pretty_printer *pp, const_tree node, int flags)
+do_niy (pretty_printer *pp, const_tree node, dump_flags_t flags)
 {
   int i, len;
 
@@ -115,7 +116,7 @@ debug_tree_chain (tree t)
 
 /* Prints declaration DECL to the FILE with details specified by FLAGS.  */
 void
-print_generic_decl (FILE *file, tree decl, int flags)
+print_generic_decl (FILE *file, tree decl, dump_flags_t flags)
 {
   maybe_init_pretty_print (file);
   print_declaration (tree_pp, decl, 2, flags);
@@ -126,7 +127,7 @@ print_generic_decl (FILE *file, tree decl, int flags)
    to show in the dump.  See TDF_* in dumpfile.h.  */
 
 void
-print_generic_stmt (FILE *file, tree t, int flags)
+print_generic_stmt (FILE *file, tree t, dump_flags_t flags)
 {
   maybe_init_pretty_print (file);
   dump_generic_node (tree_pp, t, 0, flags, true);
@@ -138,7 +139,7 @@ print_generic_stmt (FILE *file, tree t, int flags)
    INDENT spaces.  */
 
 void
-print_generic_stmt_indented (FILE *file, tree t, int flags, int indent)
+print_generic_stmt_indented (FILE *file, tree t, dump_flags_t flags, int indent)
 {
   int i;
 
@@ -154,7 +155,7 @@ print_generic_stmt_indented (FILE *file, tree t, int flags, int indent)
    in the dump.  See TDF_* in dumpfile.h.  */
 
 void
-print_generic_expr (FILE *file, tree t, int flags)
+print_generic_expr (FILE *file, tree t, dump_flags_t flags)
 {
   maybe_init_pretty_print (file);
   dump_generic_node (tree_pp, t, 0, flags, false);
@@ -244,12 +245,14 @@ dump_fancy_name (pretty_printer *pp, tree name)
    in FLAGS.  */
 
 static void
-dump_decl_name (pretty_printer *pp, tree node, int flags)
+dump_decl_name (pretty_printer *pp, tree node, dump_flags_t flags)
 {
   if (DECL_NAME (node))
     {
-      if ((flags & TDF_ASMNAME) && DECL_ASSEMBLER_NAME_SET_P (node))
-	pp_tree_identifier (pp, DECL_ASSEMBLER_NAME (node));
+      if ((flags & TDF_ASMNAME)
+	  && HAS_DECL_ASSEMBLER_NAME_P (node)
+	  && DECL_ASSEMBLER_NAME_SET_P (node))
+	pp_tree_identifier (pp, DECL_ASSEMBLER_NAME_RAW (node));
       /* For DECL_NAMELESS names look for embedded uids in the
 	 names and sanitize them for TDF_NOUID.  */
       else if ((flags & TDF_NOUID) && DECL_NAMELESS (node))
@@ -290,7 +293,7 @@ dump_decl_name (pretty_printer *pp, tree node, int flags)
 /* Like the above, but used for pretty printing function calls.  */
 
 static void
-dump_function_name (pretty_printer *pp, tree node, int flags)
+dump_function_name (pretty_printer *pp, tree node, dump_flags_t flags)
 {
   if (CONVERT_EXPR_P (node))
     node = TREE_OPERAND (node, 0);
@@ -305,7 +308,7 @@ dump_function_name (pretty_printer *pp, tree node, int flags)
 
 static void
 dump_function_declaration (pretty_printer *pp, tree node,
-			   int spc, int flags)
+			   int spc, dump_flags_t flags)
 {
   bool wrote_arg = false;
   tree arg;
@@ -341,7 +344,7 @@ dump_function_declaration (pretty_printer *pp, tree node,
 /* Dump the domain associated with an array.  */
 
 static void
-dump_array_domain (pretty_printer *pp, tree domain, int spc, int flags)
+dump_array_domain (pretty_printer *pp, tree domain, int spc, dump_flags_t flags)
 {
   pp_left_bracket (pp);
   if (domain)
@@ -372,7 +375,7 @@ dump_array_domain (pretty_printer *pp, tree domain, int spc, int flags)
    dump_generic_node.  */
 
 static void
-dump_omp_clause (pretty_printer *pp, tree clause, int spc, int flags)
+dump_omp_clause (pretty_printer *pp, tree clause, int spc, dump_flags_t flags)
 {
   const char *name;
 
@@ -501,6 +504,9 @@ dump_omp_clause (pretty_printer *pp, tree clause, int spc, int flags)
 	  break;
 	case OMP_CLAUSE_DEFAULT_FIRSTPRIVATE:
 	  pp_string (pp, "firstprivate");
+	  break;
+	case OMP_CLAUSE_DEFAULT_PRESENT:
+	  pp_string (pp, "present");
 	  break;
 	default:
 	  gcc_unreachable ();
@@ -1051,7 +1057,7 @@ dump_omp_clause (pretty_printer *pp, tree clause, int spc, int flags)
    dump_generic_node.  */
 
 void
-dump_omp_clauses (pretty_printer *pp, tree clause, int spc, int flags)
+dump_omp_clauses (pretty_printer *pp, tree clause, int spc, dump_flags_t flags)
 {
   if (clause == NULL)
     return;
@@ -1092,7 +1098,7 @@ dump_location (pretty_printer *pp, location_t loc)
    dump_generic_node.  */
 
 static void
-dump_block_node (pretty_printer *pp, tree block, int spc, int flags)
+dump_block_node (pretty_printer *pp, tree block, int spc, dump_flags_t flags)
 {
   tree t;
 
@@ -1205,7 +1211,7 @@ dump_block_node (pretty_printer *pp, tree block, int spc, int flags)
    to be a statement and it is terminated by ';' if appropriate.  */
 
 int
-dump_generic_node (pretty_printer *pp, tree node, int spc, int flags,
+dump_generic_node (pretty_printer *pp, tree node, int spc, dump_flags_t flags,
 		   bool is_stmt)
 {
   tree type;
@@ -1706,7 +1712,7 @@ dump_generic_node (pretty_printer *pp, tree node, int spc, int flags,
 	pp_unsigned_wide_integer (pp, tree_to_uhwi (node));
       else
 	{
-	  wide_int val = node;
+	  wide_int val = wi::to_wide (node);
 
 	  if (wi::neg_p (val, TYPE_SIGN (TREE_TYPE (node))))
 	    {
@@ -1857,22 +1863,9 @@ dump_generic_node (pretty_printer *pp, tree node, int spc, int flags,
 	dump_decl_name (pp, node, flags);
       else if (TYPE_NAME (TREE_TYPE (node)) != node)
 	{
-	  if ((TREE_CODE (TREE_TYPE (node)) == RECORD_TYPE
-	       || TREE_CODE (TREE_TYPE (node)) == UNION_TYPE)
-	      && TYPE_METHODS (TREE_TYPE (node)))
-	    {
-	      /* The type is a c++ class: all structures have at least
-		 4 methods.  */
-	      pp_string (pp, "class ");
-	      dump_generic_node (pp, TREE_TYPE (node), spc, flags, false);
-	    }
-	  else
-	    {
-	      pp_string (pp,
-			 (TREE_CODE (TREE_TYPE (node)) == UNION_TYPE
+	  pp_string (pp, (TREE_CODE (TREE_TYPE (node)) == UNION_TYPE
 			  ? "union" : "struct "));
-	      dump_generic_node (pp, TREE_TYPE (node), spc, flags, false);
-	    }
+	  dump_generic_node (pp, TREE_TYPE (node), spc, flags, false);
 	}
       else
 	pp_string (pp, "<anon>");
@@ -2828,8 +2821,7 @@ dump_generic_node (pretty_printer *pp, tree node, int spc, int flags,
       dump_generic_node (pp, CHREC_LEFT (node), spc, flags, false);
       pp_string (pp, ", +, ");
       dump_generic_node (pp, CHREC_RIGHT (node), spc, flags, false);
-      pp_string (pp, "}_");
-      dump_generic_node (pp, CHREC_VAR (node), spc, flags, false);
+      pp_printf (pp, "}_%u", CHREC_VARIABLE (node));
       is_stmt = false;
       break;
 
@@ -3313,7 +3305,7 @@ dump_generic_node (pretty_printer *pp, tree node, int spc, int flags,
 /* Print the declaration of a variable.  */
 
 void
-print_declaration (pretty_printer *pp, tree t, int spc, int flags)
+print_declaration (pretty_printer *pp, tree t, int spc, dump_flags_t flags)
 {
   INDENT (spc);
 
@@ -3414,7 +3406,8 @@ print_declaration (pretty_printer *pp, tree t, int spc, int flags)
    FIXME: Still incomplete.  */
 
 static void
-print_struct_decl (pretty_printer *pp, const_tree node, int spc, int flags)
+print_struct_decl (pretty_printer *pp, const_tree node, int spc,
+		   dump_flags_t flags)
 {
   /* Print the name of the structure.  */
   if (TYPE_NAME (node))
@@ -3810,7 +3803,7 @@ op_symbol (const_tree op)
    the gimple_call_fn of a GIMPLE_CALL.  */
 
 void
-print_call_name (pretty_printer *pp, tree node, int flags)
+print_call_name (pretty_printer *pp, tree node, dump_flags_t flags)
 {
   tree op0 = node;
 
@@ -3979,18 +3972,17 @@ newline_and_indent (pretty_printer *pp, int spc)
   INDENT (spc);
 }
 
-/* Handle a %K format for TEXT.  Separate from default_tree_printer so
-   it can also be used in front ends.
-   %K: a statement, from which EXPR_LOCATION and TREE_BLOCK will be recorded.
-*/
+/* Handle the %K format for TEXT.  Separate from default_tree_printer
+   so it can also be used in front ends.
+   Argument is a statement from which EXPR_LOCATION and TREE_BLOCK will
+   be recorded.  */
 
 void
-percent_K_format (text_info *text)
+percent_K_format (text_info *text, tree t)
 {
-  tree t = va_arg (*text->args_ptr, tree), block;
   text->set_location (0, EXPR_LOCATION (t), true);
   gcc_assert (pp_ti_abstract_origin (text) != NULL);
-  block = TREE_BLOCK (t);
+  tree block = TREE_BLOCK (t);
   *pp_ti_abstract_origin (text) = NULL;
 
   if (in_lto_p)
@@ -4050,13 +4042,13 @@ pp_tree_identifier (pretty_printer *pp, tree id)
    function dump.  */
 
 void
-dump_function_header (FILE *dump_file, tree fdecl, int flags)
+dump_function_header (FILE *dump_file, tree fdecl, dump_flags_t flags)
 {
   const char *dname, *aname;
   struct cgraph_node *node = cgraph_node::get (fdecl);
   struct function *fun = DECL_STRUCT_FUNCTION (fdecl);
 
-  dname = lang_hooks.decl_printable_name (fdecl, 2);
+  dname = lang_hooks.decl_printable_name (fdecl, 1);
 
   if (DECL_ASSEMBLER_NAME_SET_P (fdecl))
     aname = (IDENTIFIER_POINTER

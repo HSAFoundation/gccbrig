@@ -304,6 +304,15 @@ go_langhook_post_options (const char **pfilename ATTRIBUTE_UNUSED)
       && targetm_common.supports_split_stack (false, &global_options))
     global_options.x_flag_split_stack = 1;
 
+  /* If stack splitting is turned on, and the user did not explicitly
+     request function partitioning, turn off partitioning, as it
+     confuses the linker when trying to handle partitioned split-stack
+     code that calls a non-split-stack function.  */
+  if (global_options.x_flag_split_stack
+      && global_options.x_flag_reorder_blocks_and_partition
+      && !global_options_set.x_flag_reorder_blocks_and_partition)
+    global_options.x_flag_reorder_blocks_and_partition = 0;
+
   /* Returning false means that the backend should be used.  */
   return false;
 }
@@ -373,12 +382,14 @@ go_langhook_type_for_mode (machine_mode mode, int unsignedp)
       return NULL_TREE;
     }
 
-  enum mode_class mc = GET_MODE_CLASS (mode);
-  if (mc == MODE_INT)
-    return go_langhook_type_for_size (GET_MODE_BITSIZE (mode), unsignedp);
-  else if (mc == MODE_FLOAT)
+  scalar_int_mode imode;
+  scalar_float_mode fmode;
+  complex_mode cmode;
+  if (is_int_mode (mode, &imode))
+    return go_langhook_type_for_size (GET_MODE_BITSIZE (imode), unsignedp);
+  else if (is_float_mode (mode, &fmode))
     {
-      switch (GET_MODE_BITSIZE (mode))
+      switch (GET_MODE_BITSIZE (fmode))
 	{
 	case 32:
 	  return float_type_node;
@@ -387,13 +398,13 @@ go_langhook_type_for_mode (machine_mode mode, int unsignedp)
 	default:
 	  // We have to check for long double in order to support
 	  // i386 excess precision.
-	  if (mode == TYPE_MODE(long_double_type_node))
+	  if (fmode == TYPE_MODE(long_double_type_node))
 	    return long_double_type_node;
 	}
     }
-  else if (mc == MODE_COMPLEX_FLOAT)
+  else if (is_complex_float_mode (mode, &cmode))
     {
-      switch (GET_MODE_BITSIZE (mode))
+      switch (GET_MODE_BITSIZE (cmode))
 	{
 	case 64:
 	  return complex_float_type_node;
@@ -402,7 +413,7 @@ go_langhook_type_for_mode (machine_mode mode, int unsignedp)
 	default:
 	  // We have to check for long double in order to support
 	  // i386 excess precision.
-	  if (mode == TYPE_MODE(complex_long_double_type_node))
+	  if (cmode == TYPE_MODE(complex_long_double_type_node))
 	    return complex_long_double_type_node;
 	}
     }

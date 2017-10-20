@@ -66,13 +66,13 @@
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
+
 _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
   // Forward declaration for the overloads of __distance.
   template <typename> struct _List_iterator;
   template <typename> struct _List_const_iterator;
 _GLIBCXX_END_NAMESPACE_CONTAINER
-
-_GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template<typename _InputIterator>
     inline _GLIBCXX14_CONSTEXPR
@@ -177,7 +177,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // concept requirements
       __glibcxx_function_requires(_RandomAccessIteratorConcept<
 				  _RandomAccessIterator>)
-      __i += __n;
+      if (__builtin_constant_p(__n) && __n == 1)
+	++__i;
+      else if (__builtin_constant_p(__n) && __n == -1)
+	--__i;
+      else
+	__i += __n;
     }
 
   /**

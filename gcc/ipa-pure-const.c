@@ -156,7 +156,8 @@ private:
 static bool
 function_always_visible_to_compiler_p (tree decl)
 {
-  return (!TREE_PUBLIC (decl) || DECL_DECLARED_INLINE_P (decl));
+  return (!TREE_PUBLIC (decl) || DECL_DECLARED_INLINE_P (decl)
+	  || DECL_COMDAT (decl));
 }
 
 /* Emit suggestion about attribute ATTRIB_NAME for DECL.  KNOWN_FINITE
@@ -230,6 +231,21 @@ warn_function_noreturn (tree decl)
     warned_about 
       = suggest_attribute (OPT_Wsuggest_attribute_noreturn, original_decl,
 			   true, warned_about, "noreturn");
+}
+
+void
+warn_function_cold (tree decl)
+{
+  tree original_decl = decl;
+
+  cgraph_node *node = cgraph_node::get (decl);
+  if (node->instrumentation_clone)
+    decl = node->instrumented_version->decl;
+
+  static hash_set<tree> *warned_about;
+  warned_about 
+    = suggest_attribute (OPT_Wsuggest_attribute_cold, original_decl,
+			 true, warned_about, "cold");
 }
 
 /* Return true if we have a function state for NODE.  */
@@ -739,7 +755,7 @@ check_stmt (gimple_stmt_iterator *gsip, funct_state local, bool ipa)
   if (dump_file)
     {
       fprintf (dump_file, "  scanning: ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
     }
 
   if (gimple_has_volatile_ops (stmt)
@@ -1130,9 +1146,7 @@ pure_const_read_summary (void)
 	      if (dump_file)
 		{
 		  int flags = flags_from_decl_or_type (node->decl);
-		  fprintf (dump_file, "Read info for %s/%i ",
-			   node->name (),
-			   node->order);
+		  fprintf (dump_file, "Read info for %s ", node->dump_name ());
 		  if (flags & ECF_CONST)
 		    fprintf (dump_file, " const");
 		  if (flags & ECF_PURE)
@@ -1269,9 +1283,8 @@ propagate_pure_const (void)
 
 	  funct_state w_l = get_function_state (w);
 	  if (dump_file && (dump_flags & TDF_DETAILS))
-	    fprintf (dump_file, "  Visiting %s/%i state:%s looping %i\n",
-		     w->name (),
-		     w->order,
+	    fprintf (dump_file, "  Visiting %s state:%s looping %i\n",
+		     w->dump_name (),
 		     pure_const_names[w_l->pure_const_state],
 		     w_l->looping);
 
@@ -1305,10 +1318,8 @@ propagate_pure_const (void)
 
 	      if (dump_file && (dump_flags & TDF_DETAILS))
 		{
-		  fprintf (dump_file,
-			   "    Call to %s/%i",
-			   e->callee->name (),
-			   e->callee->order);
+		  fprintf (dump_file, "    Call to %s",
+			   e->callee->dump_name ());
 		}
 	      if (avail > AVAIL_INTERPOSABLE)
 		{
@@ -1793,6 +1804,7 @@ pass_local_pure_const::execute (function *fun)
 
   node = cgraph_node::get (current_function_decl);
   skip = skip_function_for_local_pure_const (node);
+
   if (!warn_suggest_attribute_const
       && !warn_suggest_attribute_pure
       && skip)
@@ -2013,7 +2025,7 @@ pass_nothrow::execute (function *)
 	    if (dump_file)
 	      {
 		fprintf (dump_file, "Statement can throw: ");
-		print_gimple_stmt (dump_file, gsi_stmt (gsi), 0, 0);
+		print_gimple_stmt (dump_file, gsi_stmt (gsi), 0);
 	      }
 	    return 0;
 	  }

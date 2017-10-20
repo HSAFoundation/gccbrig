@@ -31,6 +31,8 @@
 #include <math.h>
 #include <float.h>
 
+#include "ftz.h"
+
 /* HSAIL defines INT_MIN % -1 to be 0 while with C it's undefined,
    and causes an overflow exception at least with gcc and C on IA-32.  */
 
@@ -307,71 +309,6 @@ __hsail_cvt_zeroi_sat_s64_f64 (double a)
 }
 
 
-/* Flush the operand to zero in case it's a denormalized number.
-   Do not cause any exceptions in case of NaNs.  */
-
-float
-__hsail_ftz_f32 (float a)
-{
-  if (isnan (a) || isinf (a) || a == 0.0f)
-    return a;
-
-  if (a < 0.0f)
-    {
-      if (-a < FLT_MIN)
-	return -0.0f;
-    }
-  else
-    {
-      if (a < FLT_MIN)
-	return 0.0f;
-    }
-  return a;
-}
-
-#define F16_MIN (6.10e-5)
-
-/* Flush the single precision operand to zero in case it's considered
-   a denormalized number in case it was a f16.  Do not cause any exceptions
-   in case of NaNs.  */
-
-float
-__hsail_ftz_f32_f16 (float a)
-{
-  if (isnan (a) || isinf (a) || a == 0.0f)
-    return a;
-
-  if (a < 0.0f)
-    {
-      if (-a < F16_MIN)
-	return -0.0f;
-    }
-  else
-    {
-      if (a < F16_MIN)
-	return 0.0f;
-    }
-  return a;
-}
-
-double
-__hsail_ftz_f64 (double a)
-{
-  if (isnan (a) || isinf (a) || a == 0.0d)
-    return a;
-
-  if (a < 0.0d)
-    {
-      if (-a < DBL_MIN)
-	return -0.0d;
-    }
-  else
-    {
-      if (a < DBL_MIN)
-	return 0.0d;
-    }
-  return a;
-}
 
 uint32_t
 __hsail_borrow_u32 (uint32_t a, uint32_t b)
@@ -424,6 +361,9 @@ __hsail_fract_f64 (double a)
 uint32_t
 __hsail_class_f32 (float a, uint32_t flags)
 {
+  /* FTZ mode is enabled by default but needs to be disabled
+     temporarily for subnormal checks. */
+  uint64_t saved_flags = __hsail_disable_ftz ();
   return (flags & 0x0001 && isnan (a) && !(*(uint32_t *) &a & (1ul << 22)))
     || (flags & 0x0002 && isnan (a) && (*(uint32_t *) &a & (1ul << 22)))
     || (flags & 0x0004 && isinf (a) && a < 0.0f)
@@ -434,11 +374,15 @@ __hsail_class_f32 (float a, uint32_t flags)
     || (flags & 0x0080 && a > 0.0f && a < FLT_MIN)
     || (flags & 0x0100 && isnormal (a) && !signbit (a))
     || (flags & 0x0200 && isinf (a) && a >= 0.0f);
+  __hsail_restore_ftz (saved_flags);
 }
 
 uint32_t
 __hsail_class_f64 (double a, uint32_t flags)
 {
+  /* FTZ mode is enabled by default but needs to be disabled
+     temporarily for subnormal checks. */
+  uint64_t saved_flags = __hsail_disable_ftz ();
   return (flags & 0x0001 && isnan (a) && !(*(uint64_t *) &a & (1ul << 51)))
     || (flags & 0x0002 && isnan (a) && (*(uint64_t *) &a & (1ul << 51)))
     || (flags & 0x0004 && isinf (a) && a < 0.0f)
@@ -449,8 +393,10 @@ __hsail_class_f64 (double a, uint32_t flags)
     || (flags & 0x0080 && a > 0.0f && a < FLT_MIN)
     || (flags & 0x0100 && isnormal (a) && !signbit (a))
     || (flags & 0x0200 && isinf (a) && a >= 0.0f);
+  __hsail_restore_ftz (saved_flags);
 }
 
+#define F16_MIN (6.10e-5)
 
 /* 'class' for a f32-converted f16 which should otherwise be treated like f32
  except for its limits.  */

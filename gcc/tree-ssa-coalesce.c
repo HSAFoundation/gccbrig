@@ -28,6 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "memmodel.h"
 #include "tm_p.h"
 #include "ssa.h"
+#include "tree-ssa.h"
 #include "tree-pretty-print.h"
 #include "diagnostic-core.h"
 #include "dumpfile.h"
@@ -1791,7 +1792,7 @@ coalesce_ssa_name (void)
   tree_live_info_p liveinfo;
   ssa_conflicts *graph;
   coalesce_list *cl;
-  bitmap used_in_copies = BITMAP_ALLOC (NULL);
+  auto_bitmap used_in_copies;
   var_map map;
   unsigned int i;
   tree a;
@@ -1847,8 +1848,6 @@ coalesce_ssa_name (void)
     compute_optimized_partition_bases (map, used_in_copies, cl);
   else
     compute_samebase_partition_bases (map);
-
-  BITMAP_FREE (used_in_copies);
 
   if (num_var_partitions (map) < 1)
     {
@@ -1925,7 +1924,7 @@ set_parm_default_def_partition (tree var, void *arg_)
 /* Allocate and return a bitmap that has a bit set for each partition
    that contains a default def for a parameter.  */
 
-extern bitmap
+bitmap
 get_parm_default_def_partitions (var_map map)
 {
   bitmap parm_default_def_parts = BITMAP_ALLOC (NULL);
@@ -1936,4 +1935,29 @@ get_parm_default_def_partitions (var_map map)
   for_all_parms (set_parm_default_def_partition, &arg);
 
   return parm_default_def_parts;
+}
+
+/* Allocate and return a bitmap that has a bit set for each partition
+   that contains an undefined value.  */
+
+bitmap
+get_undefined_value_partitions (var_map map)
+{
+  bitmap undefined_value_parts = BITMAP_ALLOC (NULL);
+
+  for (unsigned int i = 1; i < num_ssa_names; i++)
+    {
+      tree var = ssa_name (i);
+      if (var
+	  && !virtual_operand_p (var)
+	  && !has_zero_uses (var)
+	  && ssa_undefined_value_p (var))
+	{
+	  const int p = var_to_partition (map, var);
+	  if (p != NO_PARTITION)
+	    bitmap_set_bit (undefined_value_parts, p);
+	}
+    }
+
+  return undefined_value_parts;
 }

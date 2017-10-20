@@ -63,7 +63,7 @@
    of a size that is a power of 2.  For example it can try to emit a 40-bit
    store as a 32-bit store followed by an 8-bit store.
    We try to emit as wide stores as we can while respecting STRICT_ALIGNMENT or
-   SLOW_UNALIGNED_ACCESS rules.
+   TARGET_SLOW_UNALIGNED_ACCESS rules.
 
    Note on endianness and example:
    Consider 2 contiguous 16-bit stores followed by 2 contiguous 8-bit stores:
@@ -331,8 +331,8 @@ clear_bit_region (unsigned char *ptr, unsigned int start,
   else if (start == 0 && len > BITS_PER_UNIT)
     {
       unsigned int nbytes = len / BITS_PER_UNIT;
-      /* We could recurse on each byte but do the loop here to avoid
-	 recursing too deep.  */
+      /* We could recurse on each byte but we clear whole bytes, so a simple
+	 memset will do.  */
       memset (ptr, '\0', nbytes);
       /* Clear the remaining sub-byte region if there is one.  */
       if (len % BITS_PER_UNIT != 0)
@@ -354,11 +354,10 @@ encode_tree_to_bitpos (tree expr, unsigned char *ptr, int bitlen, int bitpos,
   tree tmp_int = expr;
   bool sub_byte_op_p = ((bitlen % BITS_PER_UNIT)
 			|| (bitpos % BITS_PER_UNIT)
-			|| mode_for_size (bitlen, MODE_INT, 0) == BLKmode);
+			|| !int_mode_for_size (bitlen, 0).exists ());
 
   if (!sub_byte_op_p)
-    return (native_encode_expr (tmp_int, ptr + first_byte, total_bytes, 0)
-	    != 0);
+    return native_encode_expr (tmp_int, ptr + first_byte, total_bytes) != 0;
 
   /* LITTLE-ENDIAN
      We are writing a non byte-sized quantity or at a position that is not
@@ -408,7 +407,7 @@ encode_tree_to_bitpos (tree expr, unsigned char *ptr, int bitlen, int bitpos,
   memset (tmpbuf, '\0', byte_size);
   /* The store detection code should only have allowed constants that are
      accepted by native_encode_expr.  */
-  if (native_encode_expr (expr, tmpbuf, byte_size - 1, 0) == 0)
+  if (native_encode_expr (expr, tmpbuf, byte_size - 1) == 0)
     gcc_unreachable ();
 
   /* The native_encode_expr machinery uses TYPE_MODE to determine how many
@@ -516,12 +515,14 @@ sort_by_bitpos (const void *x, const void *y)
   store_immediate_info *const *tmp = (store_immediate_info * const *) x;
   store_immediate_info *const *tmp2 = (store_immediate_info * const *) y;
 
-  if ((*tmp)->bitpos <= (*tmp2)->bitpos)
+  if ((*tmp)->bitpos < (*tmp2)->bitpos)
     return -1;
   else if ((*tmp)->bitpos > (*tmp2)->bitpos)
     return 1;
-
-  gcc_unreachable ();
+  else
+    /* If they are the same let's use the order which is guaranteed to
+       be different.  */
+    return (*tmp)->order - (*tmp2)->order;
 }
 
 /* Sorting function for store_immediate_info objects.
@@ -823,7 +824,7 @@ pass_store_merging::terminate_all_aliasing_chains (imm_store_chain_info
 		    {
 		      fprintf (dump_file,
 			       "stmt causes chain termination:\n");
-		      print_gimple_stmt (dump_file, stmt, 0, 0);
+		      print_gimple_stmt (dump_file, stmt, 0);
 		    }
 		  terminate_and_release_chain (*chain_info);
 		  ret = true;
@@ -906,7 +907,7 @@ imm_store_chain_info::coalesce_immediate_stores ()
 	  fprintf (dump_file, "Store %u:\nbitsize:" HOST_WIDE_INT_PRINT_DEC
 			      " bitpos:" HOST_WIDE_INT_PRINT_DEC " val:\n",
 		   i, info->bitsize, info->bitpos);
-	  print_generic_expr (dump_file, gimple_assign_rhs1 (info->stmt), 0);
+	  print_generic_expr (dump_file, gimple_assign_rhs1 (info->stmt));
 	  fprintf (dump_file, "\n------------\n");
 	}
 
@@ -1324,12 +1325,8 @@ lhs_valid_for_store_merging_p (tree lhs)
 static bool
 rhs_valid_for_store_merging_p (tree rhs)
 {
-  tree type = TREE_TYPE (rhs);
-  if (TREE_CODE_CLASS (TREE_CODE (rhs)) != tcc_constant
-      || !can_native_encode_type_p (type))
-    return false;
-
-  return true;
+  return native_encode_expr (rhs, NULL,
+			     GET_MODE_SIZE (TYPE_MODE (TREE_TYPE (rhs)))) != 0;
 }
 
 /* Entry point for the pass.  Go over each basic block recording chains of
@@ -1355,7 +1352,7 @@ pass_store_merging::execute (function *fun)
 	  if (is_gimple_debug (gsi_stmt (gsi)))
 	    continue;
 
-	  if (++num_statements > 2)
+	  if (++num_statements >= 2)
 	    break;
 	}
 
@@ -1467,7 +1464,7 @@ pass_store_merging::execute (function *fun)
 			{
 			  fprintf (dump_file,
 				   "Recording immediate store from stmt:\n");
-			  print_gimple_stmt (dump_file, stmt, 0, 0);
+			  print_gimple_stmt (dump_file, stmt, 0);
 			}
 		      (*chain_info)->m_store_info.safe_push (info);
 		      /* If we reach the limit of stores to merge in a chain
@@ -1498,9 +1495,9 @@ pass_store_merging::execute (function *fun)
 		    {
 		      fprintf (dump_file,
 			       "Starting new chain with statement:\n");
-		      print_gimple_stmt (dump_file, stmt, 0, 0);
+		      print_gimple_stmt (dump_file, stmt, 0);
 		      fprintf (dump_file, "The base object is:\n");
-		      print_generic_expr (dump_file, base_addr, 0);
+		      print_generic_expr (dump_file, base_addr);
 		      fprintf (dump_file, "\n");
 		    }
 		}

@@ -226,12 +226,12 @@ cp_dump_tree (void* dump_info, tree t)
   switch (code)
     {
     case IDENTIFIER_NODE:
-      if (IDENTIFIER_OPNAME_P (t))
+      if (IDENTIFIER_ANY_OP_P (t))
 	{
 	  dump_string_field (di, "note", "operator");
 	  return true;
 	}
-      else if (IDENTIFIER_TYPENAME_P (t))
+      else if (IDENTIFIER_CONV_OP_P (t))
 	{
 	  dump_child ("tynm", TREE_TYPE (t));
 	  return true;
@@ -364,8 +364,10 @@ cp_dump_tree (void* dump_info, tree t)
       break;
 
     case OVERLOAD:
-      dump_child ("crnt", OVL_CURRENT (t));
-      dump_child ("chan", OVL_CHAIN (t));
+      dump_child ("name", OVL_NAME (t));
+      if (!dump_flag (di, TDF_SLIM, t))
+	for (lkp_iterator iter (t); iter; ++iter)
+	  dump_child ("chld", *iter);
       break;
 
     case TRY_BLOCK:

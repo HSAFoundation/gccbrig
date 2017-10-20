@@ -248,7 +248,7 @@ tree_estimate_loop_size (struct loop *loop, edge exit, edge edge_to_cancel,
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "  size: %3i ", num);
-	      print_gimple_stmt (dump_file, gsi_stmt (gsi), 0, 0);
+	      print_gimple_stmt (dump_file, gsi_stmt (gsi), 0);
 	    }
 
 	  /* Look for reasons why we might optimize this stmt away. */
@@ -512,7 +512,7 @@ remove_exits_and_undefined_stmts (struct loop *loop, unsigned int npeeled)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Forced statement unreachable: ");
-	      print_gimple_stmt (dump_file, elt->stmt, 0, 0);
+	      print_gimple_stmt (dump_file, elt->stmt, 0);
 	    }
 	}
       /* If we know the exit will be taken after peeling, update.  */
@@ -525,10 +525,12 @@ remove_exits_and_undefined_stmts (struct loop *loop, unsigned int npeeled)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Forced exit to be taken: ");
-	      print_gimple_stmt (dump_file, elt->stmt, 0, 0);
+	      print_gimple_stmt (dump_file, elt->stmt, 0);
 	    }
 	  if (!loop_exit_edge_p (loop, exit_edge))
 	    exit_edge = EDGE_SUCC (bb, 1);
+	  exit_edge->probability = profile_probability::always ();
+	  exit_edge->count = exit_edge->src->count;
 	  gcc_checking_assert (loop_exit_edge_p (loop, exit_edge));
 	  gcond *cond_stmt = as_a <gcond *> (elt->stmt);
 	  if (exit_edge->flags & EDGE_TRUE_VALUE)
@@ -582,7 +584,7 @@ remove_redundant_iv_tests (struct loop *loop)
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "Removed pointless exit: ");
-	      print_gimple_stmt (dump_file, elt->stmt, 0, 0);
+	      print_gimple_stmt (dump_file, elt->stmt, 0);
 	    }
 	  gcond *cond_stmt = as_a <gcond *> (elt->stmt);
 	  if (exit_edge->flags & EDGE_TRUE_VALUE)
@@ -640,13 +642,13 @@ unloop_loops (bitmap loop_closed_ssa_invalidated,
 	 it in.  */
       stmt = gimple_build_call (builtin_decl_implicit (BUILT_IN_UNREACHABLE), 0);
       latch_edge = make_edge (latch, create_basic_block (NULL, NULL, latch), flags);
-      latch_edge->probability = 0;
-      latch_edge->count = 0;
+      latch_edge->probability = profile_probability::never ();
+      latch_edge->count = profile_count::zero ();
       latch_edge->flags |= flags;
       latch_edge->goto_locus = locus;
 
       add_bb_to_loop (latch_edge->dest, current_loops->tree_root);
-      latch_edge->dest->count = 0;
+      latch_edge->dest->count = profile_count::zero ();
       latch_edge->dest->frequency = 0;
       set_immediate_dominator (CDI_DOMINATORS, latch_edge->dest, latch_edge->src);
 
@@ -686,7 +688,7 @@ try_unroll_loop_completely (struct loop *loop,
   struct loop_size size;
   bool n_unroll_found = false;
   edge edge_to_cancel = NULL;
-  int report_flags = MSG_OPTIMIZED_LOCATIONS | TDF_RTL | TDF_DETAILS;
+  dump_flags_t report_flags = MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS;
 
   /* See if we proved number of iterations to be low constant.
 
@@ -853,8 +855,9 @@ try_unroll_loop_completely (struct loop *loop,
 		     loop->num);
 	  return false;
 	}
-      dump_printf_loc (report_flags, locus,
-                       "loop turned into non-loop; it never loops.\n");
+      if (!n_unroll)
+        dump_printf_loc (report_flags, locus,
+                         "loop turned into non-loop; it never loops.\n");
 
       initialize_original_copy_tables ();
       auto_sbitmap wont_exit (n_unroll + 1);
@@ -916,10 +919,10 @@ try_unroll_loop_completely (struct loop *loop,
           dump_printf_loc (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS, locus,
                            "loop with %d iterations completely unrolled",
 			   (int) (n_unroll + 1));
-          if (profile_info)
+          if (loop->header->count.initialized_p ())
             dump_printf (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS,
                          " (header execution count %d)",
-                         (int)loop->header->count);
+                         (int)loop->header->count.to_gcov_type ());
           dump_printf (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS, "\n");
         }
     }
@@ -1088,7 +1091,7 @@ try_peel_loop (struct loop *loop,
 	  loop->nb_iterations_likely_upper_bound = 0;
 	}
     }
-  gcov_type entry_count = 0;
+  profile_count entry_count = profile_count::zero ();
   int entry_freq = 0;
 
   edge e;
@@ -1096,16 +1099,18 @@ try_peel_loop (struct loop *loop,
   FOR_EACH_EDGE (e, ei, loop->header->preds)
     if (e->src != loop->latch)
       {
-	entry_count += e->src->count;
+	if (e->src->count.initialized_p ())
+	  entry_count = e->src->count + e->src->count;
 	entry_freq += e->src->frequency;
 	gcc_assert (!flow_bb_inside_loop_p (loop, e->src));
       }
-  int scale = 1;
-  if (loop->header->count)
-    scale = RDIV (entry_count * REG_BR_PROB_BASE, loop->header->count);
+  profile_probability p = profile_probability::very_unlikely ();
+  if (loop->header->count > 0)
+    p = entry_count.probability_in (loop->header->count);
   else if (loop->header->frequency)
-    scale = RDIV (entry_freq * REG_BR_PROB_BASE, loop->header->frequency);
-  scale_loop_profile (loop, scale, 0);
+    p = profile_probability::probability_in_gcov_type
+		 (entry_freq, loop->header->frequency);
+  scale_loop_profile (loop, p, 0);
   bitmap_set_bit (peeled_loops, loop->num);
   return true;
 }
@@ -1211,8 +1216,7 @@ canonicalize_induction_variables (void)
   bool irred_invalidated = false;
   bitmap loop_closed_ssa_invalidated = BITMAP_ALLOC (NULL);
 
-  free_numbers_of_iterations_estimates (cfun);
-  estimate_numbers_of_iterations ();
+  estimate_numbers_of_iterations (cfun);
 
   FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
     {
@@ -1229,6 +1233,7 @@ canonicalize_induction_variables (void)
 
   /* Clean up the information about numbers of iterations, since brute force
      evaluation could reveal new information.  */
+  free_numbers_of_iterations_estimates (cfun);
   scev_reset ();
 
   if (!bitmap_empty_p (loop_closed_ssa_invalidated))
@@ -1357,6 +1362,8 @@ tree_unroll_loops_completely (bool may_increase_size, bool unroll_outer)
   int iteration = 0;
   bool irred_invalidated = false;
 
+  estimate_numbers_of_iterations (cfun);
+
   do
     {
       changed = false;
@@ -1366,7 +1373,7 @@ tree_unroll_loops_completely (bool may_increase_size, bool unroll_outer)
 	loop_closed_ssa_invalidated = BITMAP_ALLOC (NULL);
 
       free_numbers_of_iterations_estimates (cfun);
-      estimate_numbers_of_iterations ();
+      estimate_numbers_of_iterations (cfun);
 
       changed = tree_unroll_loops_completely_1 (may_increase_size,
 						unroll_outer, father_bbs,
@@ -1584,7 +1591,6 @@ pass_complete_unrolli::execute (function *fun)
     {
       scev_initialize ();
       ret = tree_unroll_loops_completely (optimize >= 3, false);
-      free_numbers_of_iterations_estimates (fun);
       scev_finalize ();
     }
   loop_optimizer_finalize ();

@@ -74,7 +74,7 @@ static void *back_state;
 
 /* A lock to control creating back_state.  */
 
-static Lock back_state_lock;
+static uint32 back_state_lock;
 
 /* The program arguments.  */
 
@@ -85,7 +85,15 @@ extern Slice runtime_get_args(void);
 struct backtrace_state *
 __go_get_backtrace_state ()
 {
-  runtime_lock (&back_state_lock);
+  uint32 set;
+
+  /* We may not have a g here, so we can't use runtime_lock.  */
+  set = 0;
+  while (!__atomic_compare_exchange_n (&back_state_lock, &set, 1, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+    {
+      runtime_osyield ();
+      set = 0;
+    }
   if (back_state == NULL)
     {
       Slice args;
@@ -113,7 +121,7 @@ __go_get_backtrace_state ()
 
       back_state = backtrace_create_state (filename, 1, error_callback, NULL);
     }
-  runtime_unlock (&back_state_lock);
+  __atomic_store_n (&back_state_lock, 0, __ATOMIC_RELEASE);
   return back_state;
 }
 
@@ -151,7 +159,7 @@ syminfo_callback (void *data, uintptr_t pc __attribute__ ((unused)),
 /* Set *VAL to the value of the symbol for PC.  */
 
 static _Bool
-__go_symbol_value (uintptr_t pc, uintptr_t *val)
+__go_symbol_value (uintptr pc, uintptr *val)
 {
   *val = 0;
   backtrace_syminfo (__go_get_backtrace_state (), pc, syminfo_callback,

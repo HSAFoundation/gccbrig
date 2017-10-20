@@ -35,6 +35,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "lto-tree.h"
 #include "lto.h"
 #include "cilk.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 static tree handle_noreturn_attribute (tree *, tree, tree, int, bool *);
 static tree handle_leaf_attribute (tree *, tree, tree, int, bool *);
@@ -48,6 +50,8 @@ static tree handle_sentinel_attribute (tree *, tree, tree, int, bool *);
 static tree handle_type_generic_attribute (tree *, tree, tree, int, bool *);
 static tree handle_transaction_pure_attribute (tree *, tree, tree, int, bool *);
 static tree handle_returns_twice_attribute (tree *, tree, tree, int, bool *);
+static tree handle_patchable_function_entry_attribute (tree *, tree, tree,
+						       int, bool *);
 static tree ignore_attribute (tree *, tree, tree, int, bool *);
 
 static tree handle_format_attribute (tree *, tree, tree, int, bool *);
@@ -76,6 +80,9 @@ const struct attribute_spec lto_attribute_table[] =
 			      handle_nonnull_attribute, false },
   { "nothrow",                0, 0, true,  false, false,
 			      handle_nothrow_attribute, false },
+  { "patchable_function_entry", 1, 2, true, false, false,
+			      handle_patchable_function_entry_attribute,
+			      false },
   { "returns_twice",          0, 0, true,  false, false,
 			      handle_returns_twice_attribute, false },
   { "sentinel",               0, 1, false, true, true,
@@ -473,6 +480,13 @@ handle_returns_twice_attribute (tree *node, tree ARG_UNUSED (name),
   return NULL_TREE;
 }
 
+static tree
+handle_patchable_function_entry_attribute (tree *, tree, tree, int, bool *)
+{
+  /* Nothing to be done here.  */
+  return NULL_TREE;
+}
+
 /* Ignore the given attribute.  Used when this attribute may be usefully
    overridden by the target, but is not used generically.  */
 
@@ -840,11 +854,13 @@ lto_post_options (const char **pfilename ATTRIBUTE_UNUSED)
          flag_pie is 2.  */
       flag_pie = MAX (flag_pie, flag_pic);
       flag_pic = flag_pie;
+      flag_shlib = 0;
       break;
 
     case LTO_LINKER_OUTPUT_EXEC: /* Normal executable */
       flag_pic = 0;
       flag_pie = 0;
+      flag_shlib = 0;
       break;
 
     case LTO_LINKER_OUTPUT_UNKNOWN:
@@ -927,15 +943,15 @@ lto_type_for_mode (machine_mode mode, int unsigned_p)
   if (mode == TYPE_MODE (void_type_node))
     return void_type_node;
 
-  if (mode == TYPE_MODE (build_pointer_type (char_type_node)))
-    return (unsigned_p
-	    ? make_unsigned_type (GET_MODE_PRECISION (mode))
-	    : make_signed_type (GET_MODE_PRECISION (mode)));
-
-  if (mode == TYPE_MODE (build_pointer_type (integer_type_node)))
-    return (unsigned_p
-	    ? make_unsigned_type (GET_MODE_PRECISION (mode))
-	    : make_signed_type (GET_MODE_PRECISION (mode)));
+  if (mode == TYPE_MODE (build_pointer_type (char_type_node))
+      || mode == TYPE_MODE (build_pointer_type (integer_type_node)))
+    {
+      unsigned int precision
+	= GET_MODE_PRECISION (as_a <scalar_int_mode> (mode));
+      return (unsigned_p
+	      ? make_unsigned_type (precision)
+	      : make_signed_type (precision));
+    }
 
   if (COMPLEX_MODE_P (mode))
     {
@@ -1220,13 +1236,17 @@ lto_init (void)
   /* In the C++ front-end, fileptr_type_node is defined as a variant
      copy of ptr_type_node, rather than ptr_node itself.  The
      distinction should only be relevant to the front-end, so we
-     always use the C definition here in lto1.  */
-  gcc_assert (fileptr_type_node == ptr_type_node);
-  gcc_assert (TYPE_MAIN_VARIANT (fileptr_type_node) == ptr_type_node);
-  /* Likewise for const struct tm*.  */
-  gcc_assert (const_tm_ptr_type_node == const_ptr_type_node);
-  gcc_assert (TYPE_MAIN_VARIANT (const_tm_ptr_type_node)
-	      == const_ptr_type_node);
+     always use the C definition here in lto1.
+     Likewise for const struct tm*.  */
+  for (unsigned i = 0;
+       i < sizeof (builtin_structptr_types) / sizeof (builtin_structptr_type);
+       ++i)
+    {
+      gcc_assert (builtin_structptr_types[i].node
+		  == builtin_structptr_types[i].base);
+      gcc_assert (TYPE_MAIN_VARIANT (builtin_structptr_types[i].node)
+		  == builtin_structptr_types[i].base);
+    }
 
   lto_build_c_type_nodes ();
   gcc_assert (va_list_type_node);

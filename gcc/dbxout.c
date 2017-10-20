@@ -371,7 +371,9 @@ const struct gcc_debug_hooks dbx_debug_hooks =
   dbxout_early_global_decl,		 /* early_global_decl */
   dbxout_late_global_decl,		 /* late_global_decl */
   dbxout_type_decl,			 /* type_decl */
-  debug_nothing_tree_tree_tree_bool,	 /* imported_module_or_decl */
+  debug_nothing_tree_tree_tree_bool_bool,/* imported_module_or_decl */
+  debug_false_tree_charstarstar_uhwistar,/* die_ref_for_decl */
+  debug_nothing_tree_charstar_uhwi,      /* register_external_die */
   debug_nothing_tree,		         /* deferred_inline_function */
   debug_nothing_tree,		         /* outlining_inline_function */
   debug_nothing_rtx_code_label,	         /* label */
@@ -411,7 +413,9 @@ const struct gcc_debug_hooks xcoff_debug_hooks =
   dbxout_early_global_decl,		 /* early_global_decl */
   dbxout_late_global_decl,		 /* late_global_decl */
   dbxout_type_decl,			 /* type_decl */
-  debug_nothing_tree_tree_tree_bool,	 /* imported_module_or_decl */
+  debug_nothing_tree_tree_tree_bool_bool,/* imported_module_or_decl */
+  debug_false_tree_charstarstar_uhwistar,/* die_ref_for_decl */
+  debug_nothing_tree_charstar_uhwi,      /* register_external_die */
   debug_nothing_tree,		         /* deferred_inline_function */
   debug_nothing_tree,		         /* outlining_inline_function */
   debug_nothing_rtx_code_label,	         /* label */
@@ -710,7 +714,7 @@ stabstr_O (tree cst)
 
   /* If the value is zero, the base indicator will serve as the value
      all by itself.  */
-  if (wi::eq_p (cst, 0))
+  if (wi::to_wide (cst) == 0)
     return;
 
   /* GDB wants constants with no extra leading "1" bits, so
@@ -718,19 +722,19 @@ stabstr_O (tree cst)
      present.  */
   if (res_pres == 1)
     {
-      digit = wi::extract_uhwi (cst, prec - 1, 1);
+      digit = wi::extract_uhwi (wi::to_wide (cst), prec - 1, 1);
       stabstr_C ('0' + digit);
     }
   else if (res_pres == 2)
     {
-      digit = wi::extract_uhwi (cst, prec - 2, 2);
+      digit = wi::extract_uhwi (wi::to_wide (cst), prec - 2, 2);
       stabstr_C ('0' + digit);
     }
 
   prec -= res_pres;
   for (i = prec - 3; i >= 0; i = i - 3)
     {
-      digit = wi::extract_uhwi (cst, i, 3);
+      digit = wi::extract_uhwi (wi::to_wide (cst), i, 3);
       stabstr_C ('0' + digit);
     }
 }
@@ -916,7 +920,7 @@ dbxout_function_end (tree decl ATTRIBUTE_UNUSED)
 
   /* By convention, GCC will mark the end of a function with an N_FUN
      symbol and an empty string.  */
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     {
       dbxout_begin_empty_stabs (N_FUN);
       dbxout_stab_value_label_diff (crtl->subsections.hot_section_end_label,
@@ -952,8 +956,6 @@ get_lang_number (void)
     return N_SO_FORTRAN;
   else if (lang_GNU_Fortran ())
     return N_SO_FORTRAN90; /* CHECKME */
-  else if (strcmp (language_string, "GNU Pascal") == 0)
-    return N_SO_PASCAL;
   else if (strcmp (language_string, "GNU Objective-C") == 0)
     return N_SO_OBJC;
   else if (strcmp (language_string, "GNU Objective-C++") == 0)
@@ -1483,6 +1485,8 @@ dbxout_type_fields (tree type)
       /* Omit here local type decls until we know how to support them.  */
       if (TREE_CODE (tem) == TYPE_DECL
 	  || TREE_CODE (tem) == TEMPLATE_DECL
+	  /* Member functions emitted after fields.  */
+	  || TREE_CODE (tem) == FUNCTION_DECL
 	  /* Omit here the nameless fields that are used to skip bits.  */
 	  || DECL_IGNORED_P (tem)
 	  /* Omit fields whose position or size are variable or too large to
@@ -1588,54 +1592,37 @@ dbxout_type_method_1 (tree decl)
     }
 }
 
-/* Subroutine of `dbxout_type'.  Output debug info about the methods defined
-   in TYPE.  */
+/* Subroutine of `dbxout_type'.  Output debug info about the member
+   functions defined in TYPE.  */
 
 static void
 dbxout_type_methods (tree type)
 {
-  /* C++: put out the method names and their parameter lists */
-  tree methods = TYPE_METHODS (type);
-  tree fndecl;
-  tree last;
-
-  if (methods == NULL_TREE)
-    return;
-
-  if (TREE_CODE (methods) != TREE_VEC)
-    fndecl = methods;
-  else if (TREE_VEC_ELT (methods, 0) != NULL_TREE)
-    fndecl = TREE_VEC_ELT (methods, 0);
-  else
-    fndecl = TREE_VEC_ELT (methods, 1);
-
-  while (fndecl)
+  for (tree fndecl = TYPE_FIELDS (type); fndecl;)
     {
       int need_prefix = 1;
 
       /* Group together all the methods for the same operation.
 	 These differ in the types of the arguments.  */
-      for (last = NULL_TREE;
+      for (tree last = NULL_TREE;
 	   fndecl && (last == NULL_TREE || DECL_NAME (fndecl) == DECL_NAME (last));
 	   fndecl = DECL_CHAIN (fndecl))
 	/* Output the name of the field (after overloading), as
 	   well as the name of the field before overloading, along
 	   with its parameter list */
 	{
-	  /* Skip methods that aren't FUNCTION_DECLs.  (In C++, these
-	     include TEMPLATE_DECLs.)  The debugger doesn't know what
-	     to do with such entities anyhow.  */
+	  /* Skip non-functions.  */
 	  if (TREE_CODE (fndecl) != FUNCTION_DECL)
 	    continue;
-
-	  CONTIN;
-
-	  last = fndecl;
 
 	  /* Also ignore abstract methods; those are only interesting to
 	     the DWARF backends.  */
 	  if (DECL_IGNORED_P (fndecl) || DECL_ABSTRACT_P (fndecl))
 	    continue;
+
+	  CONTIN;
+
+	  last = fndecl;
 
 	  /* Redundantly output the plain name, since that's what gdb
 	     expects.  */
@@ -2211,10 +2198,8 @@ dbxout_type (tree type, int full)
 
       /* Write out the field declarations.  */
       dbxout_type_fields (type);
-      if (use_gnu_debug_info_extensions && TYPE_METHODS (type) != NULL_TREE)
-	{
-	  dbxout_type_methods (type);
-	}
+      if (use_gnu_debug_info_extensions)
+	dbxout_type_methods (type);
 
       stabstr_C (';');
 

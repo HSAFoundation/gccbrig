@@ -116,7 +116,7 @@ c_parser_parse_gimple_body (c_parser *parser)
      we have to go through lowering again.  */
   cfun->curr_properties = PROP_gimple_any;
 
-  dump_function (TDI_generic, current_function_decl);
+  dump_function (TDI_gimple, current_function_decl);
 }
 
 /* Parse a compound statement in gimple function body.
@@ -850,7 +850,7 @@ c_parser_gimple_postfix_expression (c_parser *parser)
 	    }
 	  else if (strcmp (IDENTIFIER_POINTER (id), "_Literal") == 0)
 	    {
-	      /* _Literal '(' type-name ')' number  */
+	      /* _Literal '(' type-name ')' [ '-' ] constant */
 	      c_parser_consume_token (parser);
 	      tree type = NULL_TREE;
 	      if (c_parser_require (parser, CPP_OPEN_PAREN, "expected %<(%>"))
@@ -862,14 +862,26 @@ c_parser_gimple_postfix_expression (c_parser *parser)
 		  c_parser_skip_until_found (parser, CPP_CLOSE_PAREN,
 					     "expected %<)%>");
 		}
+	      bool neg_p;
+	      if ((neg_p = c_parser_next_token_is (parser, CPP_MINUS)))
+		c_parser_consume_token (parser);
 	      tree val = c_parser_gimple_postfix_expression (parser).value;
 	      if (! type
 		  || ! val
 		  || val == error_mark_node
-		  || TREE_CODE (val) != INTEGER_CST)
+		  || ! CONSTANT_CLASS_P (val))
 		{
 		  c_parser_error (parser, "invalid _Literal");
 		  return expr;
+		}
+	      if (neg_p)
+		{
+		  val = const_unop (NEGATE_EXPR, TREE_TYPE (val), val);
+		  if (! val)
+		    {
+		      c_parser_error (parser, "invalid _Literal");
+		      return expr;
+		    }
 		}
 	      expr.value = fold_convert (type, val);
 	      return expr;
@@ -1335,9 +1347,14 @@ c_parser_gimple_if_stmt (c_parser *parser, gimple_seq *seq)
     {
       loc = c_parser_peek_token (parser)->location;
       c_parser_consume_token (parser);
+      if (! c_parser_next_token_is (parser, CPP_NAME))
+	{
+	  c_parser_error (parser, "expected label");
+	  return;
+	}
       label = c_parser_peek_token (parser)->value;
-      t_label = lookup_label_for_goto (loc, label);
       c_parser_consume_token (parser);
+      t_label = lookup_label_for_goto (loc, label);
       if (! c_parser_require (parser, CPP_SEMICOLON, "expected %<;%>"))
 	return;
     }
@@ -1359,6 +1376,11 @@ c_parser_gimple_if_stmt (c_parser *parser, gimple_seq *seq)
     {
       loc = c_parser_peek_token (parser)->location;
       c_parser_consume_token (parser);
+      if (! c_parser_next_token_is (parser, CPP_NAME))
+	{
+	  c_parser_error (parser, "expected label");
+	  return;
+	}
       label = c_parser_peek_token (parser)->value;
       f_label = lookup_label_for_goto (loc, label);
       c_parser_consume_token (parser);

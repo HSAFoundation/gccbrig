@@ -222,9 +222,9 @@ matmul_r4_avx (gfc_array_r4 * const restrict retarray,
       bxstride = GFC_DESCRIPTOR_STRIDE(b,0);
 
       /* bystride should never be used for 1-dimensional b.
-	 in case it is we want it to cause a segfault, rather than
-	 an incorrect result. */
-      bystride = 0xDEADBEEF;
+         The value is only used for calculation of the
+         memory by the buffer.  */
+      bystride = 256;
       ycount = 1;
     }
   else
@@ -307,6 +307,11 @@ matmul_r4_avx (gfc_array_r4 * const restrict retarray,
       b_offset = 1 + b_dim1;
       b -= b_offset;
 
+      /* Empty c first.  */
+      for (j=1; j<=n; j++)
+	for (i=1; i<=m; i++)
+	  c[i + j * c_dim1] = (GFC_REAL_4)0;
+
       /* Early exit if possible */
       if (m == 0 || n == 0 || k == 0)
 	return;
@@ -318,11 +323,6 @@ matmul_r4_avx (gfc_array_r4 * const restrict retarray,
 	t1_dim = 65536;
 
       t1 = malloc (t1_dim * sizeof(GFC_REAL_4));
-
-      /* Empty c first.  */
-      for (j=1; j<=n; j++)
-	for (i=1; i<=m; i++)
-	  c[i + j * c_dim1] = (GFC_REAL_4)0;
 
       /* Start turning the crank. */
       i1 = n;
@@ -774,9 +774,9 @@ matmul_r4_avx2 (gfc_array_r4 * const restrict retarray,
       bxstride = GFC_DESCRIPTOR_STRIDE(b,0);
 
       /* bystride should never be used for 1-dimensional b.
-	 in case it is we want it to cause a segfault, rather than
-	 an incorrect result. */
-      bystride = 0xDEADBEEF;
+         The value is only used for calculation of the
+         memory by the buffer.  */
+      bystride = 256;
       ycount = 1;
     }
   else
@@ -859,6 +859,11 @@ matmul_r4_avx2 (gfc_array_r4 * const restrict retarray,
       b_offset = 1 + b_dim1;
       b -= b_offset;
 
+      /* Empty c first.  */
+      for (j=1; j<=n; j++)
+	for (i=1; i<=m; i++)
+	  c[i + j * c_dim1] = (GFC_REAL_4)0;
+
       /* Early exit if possible */
       if (m == 0 || n == 0 || k == 0)
 	return;
@@ -870,11 +875,6 @@ matmul_r4_avx2 (gfc_array_r4 * const restrict retarray,
 	t1_dim = 65536;
 
       t1 = malloc (t1_dim * sizeof(GFC_REAL_4));
-
-      /* Empty c first.  */
-      for (j=1; j<=n; j++)
-	for (i=1; i<=m; i++)
-	  c[i + j * c_dim1] = (GFC_REAL_4)0;
 
       /* Start turning the crank. */
       i1 = n;
@@ -1326,9 +1326,9 @@ matmul_r4_avx512f (gfc_array_r4 * const restrict retarray,
       bxstride = GFC_DESCRIPTOR_STRIDE(b,0);
 
       /* bystride should never be used for 1-dimensional b.
-	 in case it is we want it to cause a segfault, rather than
-	 an incorrect result. */
-      bystride = 0xDEADBEEF;
+         The value is only used for calculation of the
+         memory by the buffer.  */
+      bystride = 256;
       ycount = 1;
     }
   else
@@ -1411,6 +1411,11 @@ matmul_r4_avx512f (gfc_array_r4 * const restrict retarray,
       b_offset = 1 + b_dim1;
       b -= b_offset;
 
+      /* Empty c first.  */
+      for (j=1; j<=n; j++)
+	for (i=1; i<=m; i++)
+	  c[i + j * c_dim1] = (GFC_REAL_4)0;
+
       /* Early exit if possible */
       if (m == 0 || n == 0 || k == 0)
 	return;
@@ -1422,11 +1427,6 @@ matmul_r4_avx512f (gfc_array_r4 * const restrict retarray,
 	t1_dim = 65536;
 
       t1 = malloc (t1_dim * sizeof(GFC_REAL_4));
-
-      /* Empty c first.  */
-      for (j=1; j<=n; j++)
-	for (i=1; i<=m; i++)
-	  c[i + j * c_dim1] = (GFC_REAL_4)0;
 
       /* Start turning the crank. */
       i1 = n;
@@ -1734,6 +1734,24 @@ matmul_r4_avx512f (gfc_array_r4 * const restrict retarray,
 
 #endif  /* HAVE_AVX512F */
 
+/* AMD-specifix funtions with AVX128 and FMA3/FMA4.  */
+
+#if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
+void
+matmul_r4_avx128_fma3 (gfc_array_r4 * const restrict retarray, 
+	gfc_array_r4 * const restrict a, gfc_array_r4 * const restrict b, int try_blas,
+	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma")));
+internal_proto(matmul_r4_avx128_fma3);
+#endif
+
+#if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
+void
+matmul_r4_avx128_fma4 (gfc_array_r4 * const restrict retarray, 
+	gfc_array_r4 * const restrict a, gfc_array_r4 * const restrict b, int try_blas,
+	int blas_limit, blas_call gemm) __attribute__((__target__("avx,fma4")));
+internal_proto(matmul_r4_avx128_fma4);
+#endif
+
 /* Function to fall back to if there is no special processor-specific version.  */
 static void
 matmul_r4_vanilla (gfc_array_r4 * const restrict retarray, 
@@ -1874,9 +1892,9 @@ matmul_r4_vanilla (gfc_array_r4 * const restrict retarray,
       bxstride = GFC_DESCRIPTOR_STRIDE(b,0);
 
       /* bystride should never be used for 1-dimensional b.
-	 in case it is we want it to cause a segfault, rather than
-	 an incorrect result. */
-      bystride = 0xDEADBEEF;
+         The value is only used for calculation of the
+         memory by the buffer.  */
+      bystride = 256;
       ycount = 1;
     }
   else
@@ -1959,6 +1977,11 @@ matmul_r4_vanilla (gfc_array_r4 * const restrict retarray,
       b_offset = 1 + b_dim1;
       b -= b_offset;
 
+      /* Empty c first.  */
+      for (j=1; j<=n; j++)
+	for (i=1; i<=m; i++)
+	  c[i + j * c_dim1] = (GFC_REAL_4)0;
+
       /* Early exit if possible */
       if (m == 0 || n == 0 || k == 0)
 	return;
@@ -1970,11 +1993,6 @@ matmul_r4_vanilla (gfc_array_r4 * const restrict retarray,
 	t1_dim = 65536;
 
       t1 = malloc (t1_dim * sizeof(GFC_REAL_4));
-
-      /* Empty c first.  */
-      for (j=1; j<=n; j++)
-	for (i=1; i<=m; i++)
-	  c[i + j * c_dim1] = (GFC_REAL_4)0;
 
       /* Start turning the crank. */
       i1 = n;
@@ -2332,6 +2350,26 @@ void matmul_r4 (gfc_array_r4 * const restrict retarray,
 	    }
 #endif  /* HAVE_AVX */
         }
+    else if (__cpu_model.__cpu_vendor == VENDOR_AMD)
+      {
+#if defined(HAVE_AVX) && defined(HAVE_FMA3) && defined(HAVE_AVX128)
+        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
+	    && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA)))
+	  {
+            matmul_fn = matmul_r4_avx128_fma3;
+	    goto store;
+	  }
+#endif
+#if defined(HAVE_AVX) && defined(HAVE_FMA4) && defined(HAVE_AVX128)
+        if ((__cpu_model.__cpu_features[0] & (1 << FEATURE_AVX))
+	     && (__cpu_model.__cpu_features[0] & (1 << FEATURE_FMA4)))
+	  {
+            matmul_fn = matmul_r4_avx128_fma4;
+	    goto store;
+	  }
+#endif
+
+      }
    store:
       __atomic_store_n (&matmul_p, matmul_fn, __ATOMIC_RELAXED);
    }
@@ -2480,9 +2518,9 @@ matmul_r4 (gfc_array_r4 * const restrict retarray,
       bxstride = GFC_DESCRIPTOR_STRIDE(b,0);
 
       /* bystride should never be used for 1-dimensional b.
-	 in case it is we want it to cause a segfault, rather than
-	 an incorrect result. */
-      bystride = 0xDEADBEEF;
+         The value is only used for calculation of the
+         memory by the buffer.  */
+      bystride = 256;
       ycount = 1;
     }
   else
@@ -2565,6 +2603,11 @@ matmul_r4 (gfc_array_r4 * const restrict retarray,
       b_offset = 1 + b_dim1;
       b -= b_offset;
 
+      /* Empty c first.  */
+      for (j=1; j<=n; j++)
+	for (i=1; i<=m; i++)
+	  c[i + j * c_dim1] = (GFC_REAL_4)0;
+
       /* Early exit if possible */
       if (m == 0 || n == 0 || k == 0)
 	return;
@@ -2576,11 +2619,6 @@ matmul_r4 (gfc_array_r4 * const restrict retarray,
 	t1_dim = 65536;
 
       t1 = malloc (t1_dim * sizeof(GFC_REAL_4));
-
-      /* Empty c first.  */
-      for (j=1; j<=n; j++)
-	for (i=1; i<=m; i++)
-	  c[i + j * c_dim1] = (GFC_REAL_4)0;
 
       /* Start turning the crank. */
       i1 = n;

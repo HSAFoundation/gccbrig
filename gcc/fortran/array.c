@@ -2201,9 +2201,16 @@ gfc_ref_dimen_size (gfc_array_ref *ar, int dimen, mpz_t *result, mpz_t *end)
   mpz_t upper, lower, stride;
   mpz_t diff;
   bool t;
+  gfc_expr *stride_expr = NULL;
 
-  if (dimen < 0 || ar == NULL || dimen > ar->dimen - 1)
+  if (dimen < 0 || ar == NULL)
     gfc_internal_error ("gfc_ref_dimen_size(): Bad dimension");
+
+  if (dimen > ar->dimen - 1)
+    {
+      gfc_error ("Bad array dimension at %L", &ar->c_where[dimen]);
+      return false;
+    }
 
   switch (ar->dimen_type[dimen])
     {
@@ -2225,12 +2232,16 @@ gfc_ref_dimen_size (gfc_array_ref *ar, int dimen, mpz_t *result, mpz_t *end)
 	mpz_set_ui (stride, 1);
       else
 	{
-	  if (ar->stride[dimen]->expr_type != EXPR_CONSTANT)
+	  stride_expr = gfc_copy_expr(ar->stride[dimen]); 
+	  if(!gfc_simplify_expr(stride_expr, 1))
+	    gfc_internal_error("Simplification error");
+	  if (stride_expr->expr_type != EXPR_CONSTANT)
 	    {
 	      mpz_clear (stride);
 	      return false;
 	    }
-	  mpz_set (stride, ar->stride[dimen]->value.integer);
+	  mpz_set (stride, stride_expr->value.integer);
+	  gfc_free_expr(stride_expr);
 	}
 
       /* Calculate the number of elements via gfc_dep_differce, but only if

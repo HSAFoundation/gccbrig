@@ -1,3 +1,5 @@
+/* { dg-add-options stack_size } */
+
 #ifdef STACK_SIZE
 #if STACK_SIZE < 8*100*100
 #define SKIP

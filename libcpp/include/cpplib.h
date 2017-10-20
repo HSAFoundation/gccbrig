@@ -171,7 +171,8 @@ enum cpp_ttype
 enum c_lang {CLK_GNUC89 = 0, CLK_GNUC99, CLK_GNUC11,
 	     CLK_STDC89, CLK_STDC94, CLK_STDC99, CLK_STDC11,
 	     CLK_GNUCXX, CLK_CXX98, CLK_GNUCXX11, CLK_CXX11,
-	     CLK_GNUCXX14, CLK_CXX14, CLK_GNUCXX1Z, CLK_CXX1Z, CLK_ASM};
+	     CLK_GNUCXX14, CLK_CXX14, CLK_GNUCXX17, CLK_CXX17,
+	     CLK_GNUCXX2A, CLK_CXX2A, CLK_ASM};
 
 /* Payload of a NUMBER, STRING, CHAR or COMMENT token.  */
 struct GTY(()) cpp_string {
@@ -609,6 +610,15 @@ struct cpp_callbacks
 
   /* Callback for providing suggestions for misspelled directives.  */
   const char *(*get_suggestion) (cpp_reader *, const char *, const char *const *);
+
+  /* Callback for when a comment is encountered, giving the location
+     of the opening slash, a pointer to the content (which is not
+     necessarily 0-terminated), and the length of the content.
+     The content contains the opening slash-star (or slash-slash),
+     and for C-style comments contains the closing star-slash.  For
+     C++-style comments it does not include the terminating newline.  */
+  void (*comment) (cpp_reader *, source_location, const unsigned char *,
+		   size_t);
 };
 
 #ifdef VMS

@@ -24,7 +24,10 @@ func TestCgoCrashHandler(t *testing.T) {
 }
 
 func TestCgoSignalDeadlock(t *testing.T) {
-	t.Parallel()
+	// Don't call t.Parallel, since too much work going on at the
+	// same time can cause the testprogcgo code to overrun its
+	// timeouts (issue #18598).
+
 	if testing.Short() && runtime.GOOS == "windows" {
 		t.Skip("Skipping in short mode") // takes up to 64 seconds
 	}
@@ -251,6 +254,9 @@ func TestCgoCrashTraceback(t *testing.T) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skipf("not yet supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
+	if runtime.Compiler == "gccgo" {
+		t.Skip("gccgo does not have SetCgoTraceback")
+	}
 	got := runTestProg(t, "testprogcgo", "CrashTraceback")
 	for i := 1; i <= 3; i++ {
 		if !strings.Contains(got, fmt.Sprintf("cgo symbolizer:%d", i)) {
@@ -261,6 +267,9 @@ func TestCgoCrashTraceback(t *testing.T) {
 
 func TestCgoTracebackContext(t *testing.T) {
 	t.Parallel()
+	if runtime.Compiler == "gccgo" {
+		t.Skip("gccgo does not have SetCgoTraceback")
+	}
 	got := runTestProg(t, "testprogcgo", "TracebackContext")
 	want := "OK\n"
 	if got != want {
@@ -273,6 +282,9 @@ func testCgoPprof(t *testing.T, buildArg, runArg string) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skipf("not yet supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
+	if runtime.Compiler == "gccgo" {
+		t.Skip("gccgo does not have SetCgoTraceback")
+	}
 	testenv.MustHaveGoRun(t)
 
 	exe, err := buildTestProg(t, "testprogcgo", buildArg)
@@ -282,33 +294,43 @@ func testCgoPprof(t *testing.T, buildArg, runArg string) {
 
 	got, err := testEnv(exec.Command(exe, runArg)).CombinedOutput()
 	if err != nil {
+		if testenv.Builder() == "linux-amd64-alpine" {
+			// See Issue 18243 and Issue 19938.
+			t.Skipf("Skipping failing test on Alpine (golang.org/issue/18243). Ignoring error: %v", err)
+		}
 		t.Fatal(err)
 	}
 	fn := strings.TrimSpace(string(got))
 	defer os.Remove(fn)
 
-	cmd := testEnv(exec.Command(testenv.GoToolPath(t), "tool", "pprof", "-top", "-nodecount=1", exe, fn))
-
-	found := false
-	for i, e := range cmd.Env {
-		if strings.HasPrefix(e, "PPROF_TMPDIR=") {
-			cmd.Env[i] = "PPROF_TMPDIR=" + os.TempDir()
-			found = true
-			break
+	for try := 0; try < 2; try++ {
+		cmd := testEnv(exec.Command(testenv.GoToolPath(t), "tool", "pprof", "-top", "-nodecount=1"))
+		// Check that pprof works both with and without explicit executable on command line.
+		if try == 0 {
+			cmd.Args = append(cmd.Args, exe, fn)
+		} else {
+			cmd.Args = append(cmd.Args, fn)
 		}
-	}
-	if !found {
-		cmd.Env = append(cmd.Env, "PPROF_TMPDIR="+os.TempDir())
-	}
 
-	top, err := cmd.CombinedOutput()
-	t.Logf("%s", top)
-	if err != nil {
-		t.Fatal(err)
-	}
+		found := false
+		for i, e := range cmd.Env {
+			if strings.HasPrefix(e, "PPROF_TMPDIR=") {
+				cmd.Env[i] = "PPROF_TMPDIR=" + os.TempDir()
+				found = true
+				break
+			}
+		}
+		if !found {
+			cmd.Env = append(cmd.Env, "PPROF_TMPDIR="+os.TempDir())
+		}
 
-	if !bytes.Contains(top, []byte("cpuHog")) {
-		t.Error("missing cpuHog in pprof output")
+		top, err := cmd.CombinedOutput()
+		t.Logf("%s:\n%s", cmd.Args, top)
+		if err != nil {
+			t.Error(err)
+		} else if !bytes.Contains(top, []byte("cpuHog")) {
+			t.Error("missing cpuHog in pprof output")
+		}
 	}
 }
 
@@ -331,6 +353,9 @@ func TestCgoPprofThreadNoTraceback(t *testing.T) {
 func TestRaceProf(t *testing.T) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skipf("not yet supported on %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	if runtime.Compiler == "gccgo" {
+		t.Skip("gccgo does not have SetCgoTraceback")
 	}
 
 	testenv.MustHaveGoRun(t)
@@ -383,5 +408,18 @@ func TestRaceSignal(t *testing.T) {
 	want := "OK\n"
 	if string(got) != want {
 		t.Errorf("expected %q got %s", want, got)
+	}
+}
+
+func TestCgoNumGoroutine(t *testing.T) {
+	switch runtime.GOOS {
+	case "windows", "plan9":
+		t.Skipf("skipping numgoroutine test on %s", runtime.GOOS)
+	}
+	t.Parallel()
+	got := runTestProg(t, "testprogcgo", "NumGoroutine")
+	want := "OK\n"
+	if got != want {
+		t.Errorf("expected %q got %v", want, got)
 	}
 }

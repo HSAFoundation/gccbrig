@@ -69,13 +69,13 @@ package body Debug is
    --  dC   Output debugging information on check suppression
    --  dD   Delete elaboration checks in inner level routines
    --  dE   Apply elaboration checks to predefined units
-   --  dF   Front end data layout enabled
+   --  dF   Perform the new SPARK checking rules for pointer aliasing
    --  dG   Generate all warnings including those normally suppressed
    --  dH   Hold (kill) call to gigi
    --  dI   Inhibit internal name numbering in gnatG listing
-   --  dJ
+   --  dJ   Prepend subprogram name in messages
    --  dK   Kill all error messages
-   --  dL   Output trace information on elaboration checking
+   --  dL   Ignore external calls from instances for elaboration
    --  dM   Assume all variables are modified (no current values)
    --  dN   No file name information in exception messages
    --  dO   Output immediate error messages
@@ -108,14 +108,14 @@ package body Debug is
    --  d.o  Conservative elaboration order for indirect calls
    --  d.p  Use original Ada 95 semantics for Bit_Order (disable AI95-0133)
    --  d.q  Suppress optimizations on imported 'in'
-   --  d.r  Enable OK_To_Reorder_Components in non-variant records
+   --  d.r  Disable reordering of components in record types
    --  d.s  Strict secondary stack management
    --  d.t  Disable static allocation of library level dispatch tables
    --  d.u  Enable Modify_Tree_For_C (update tree for c)
-   --  d.v  Enable OK_To_Reorder_Components in variant records
+   --  d.v  Enforce SPARK elaboration rules in SPARK code
    --  d.w  Do not check for infinite loops
    --  d.x  No exception handlers
-   --  d.y
+   --  d.y  Disable implicit pragma Elaborate_All on task bodies
    --  d.z  Restore previous support for frontend handling of Inline_Always
 
    --  d.A  Read/write Aspect_Specifications hash table to tree
@@ -163,7 +163,7 @@ package body Debug is
    --  d.6  Do not avoid declaring unreferenced types in C code
    --  d.7
    --  d.8
-   --  d.9
+   --  d.9  Enable build-in-place for nonlimited types
 
    --  Debug flags for binder (GNATBIND)
 
@@ -357,7 +357,7 @@ package body Debug is
    --       information for all internal type and object entities, as well
    --       as all user defined type and object entities including private
    --       and incomplete types. This debug switch also automatically sets
-   --       the equivalent of -gnatR3m.
+   --       the equivalent of -gnatRm.
 
    --  dB   Output debug encodings for types and variants. See Exp_Dbug for
    --       exact form of the generated output.
@@ -383,9 +383,10 @@ package body Debug is
    --  dE   Apply compile time elaboration checking for with relations between
    --       predefined units. Normally no checks are made.
 
-   --  dF   Front end data layout enabled. Normally front end data layout
-   --       is only enabled if the target parameter Backend_Layout is False.
-   --       This debugging switch enables it unconditionally.
+   --  dF   Perform the new SPARK checking rules for pointer aliasing. This is
+   --       only activated in GNATprove mode and on SPARK code. These rules are
+   --       not yet part of the official SPARK language, but are expected to be
+   --       included in a future version of SPARK.
 
    --  dG   Generate all warnings. Normally Errout suppresses warnings on
    --       units that are not part of the main extended source, and also
@@ -404,14 +405,18 @@ package body Debug is
    --       is used in the fixed bugs run to minimize system and version
    --       dependency in filed -gnatD or -gnatG output.
 
+   --  dJ   Prepend the name of the enclosing subprogram in compiler messages
+   --       (errors, warnings, style checks). This is useful in particular to
+   --       integrate compiler warnings in static analysis tools such as
+   --       CodePeer.
+
    --  dK   Kill all error messages. This debug flag suppresses the output
    --       of all error messages. It is used in regression tests where the
    --       error messages are target dependent and irrelevant.
 
-   --  dL   Output trace information on elaboration checking. This debug
-   --       switch causes output to be generated showing each call or
-   --       instantiation as it is checked, and the progress of the recursive
-   --       trace through elaboration calls at compile time.
+   --  dL   The compiler ignores calls in instances and invoke subprograms
+   --       which are external to the instance for the static elaboration
+   --       model. This switch is orthogonal to d.G.
 
    --  dM   Assume all variables have been modified, and ignore current value
    --       indications. This debug flag disconnects the tracking of constant
@@ -548,7 +553,7 @@ package body Debug is
 
    --  d.l  Use Ada 95 semantics for limited function returns. This may be
    --       used to work around the incompatibility introduced by AI-318-2.
-   --       It is useful only in -gnat05 mode.
+   --       It is useful only in Ada 2005 and later.
 
    --  d.m  When -gnatl is used, the normal output includes full listings of
    --       all files in the extended main source (body/spec/subunits). If this
@@ -574,8 +579,7 @@ package body Debug is
    --       optimizations. This option should not be used; the correct solution
    --       is to declare the parameter 'in out'.
 
-   --  d.r  Forces the flag OK_To_Reorder_Components to be set in all record
-   --       base types that have no discriminants.
+   --  d.r  Do not reorder components in record types.
 
    --  d.s  The compiler no longer attempts to optimize the calls to secondary
    --       stack management routines SS_Mark and SS_Release. As a result, each
@@ -596,8 +600,12 @@ package body Debug is
    --  d.u  Sets Modify_Tree_For_C mode in which tree is modified to make it
    --       easier to generate code using a C compiler.
 
-   --  d.v  Forces the flag OK_To_Reorder_Components to be set in all record
-   --       base types that have at least one discriminant (v = variant).
+   --  d.v  This flag enforces the elaboration rules defined in the SPARK
+   --       Reference Manual, chapter 7.7, to all SPARK code within a unit. As
+   --       a result, constructs which violate the rules in chapter 7.7 are no
+   --       longer accepted, even if the implementation is able to statically
+   --       ensure that accepting these constructs does not introduce the
+   --       possibility of failing an elaboration check.
 
    --  d.w  This flag turns off the scanning of loops to detect possible
    --       infinite loops.
@@ -606,6 +614,12 @@ package body Debug is
    --       handlers to be eliminated from the generated code. They are still
    --       fully compiled and analyzed, they just get eliminated from the
    --       code generation step.
+
+   --  d.y  Disable implicit pragma Elaborate_All on task bodies. When a task
+   --       body calls a procedure in the same package, and that procedure
+   --       calls a procedure in another package, the static elaboration
+   --       machinery adds an implicit Elaborate_All on the other package. This
+   --       switch disables the addition of the implicit pragma in such cases.
 
    --  d.z  Restore previous front-end support for Inline_Always. In default
    --       mode, for targets that use the GCC back end, Inline_Always is
@@ -656,7 +670,8 @@ package body Debug is
    --  d.G  Previously the compiler ignored calls via generic formal parameters
    --       when doing the analysis for the static elaboration model. This is
    --       now fixed, but we provide this debug flag to revert to the previous
-   --       situation of ignoring such calls to aid in transition.
+   --       situation of ignoring such calls to aid in transition. This switch
+   --       is orthogonal to dL.
 
    --  d.H  Sets ASIS_GNSA_Mode to True. This signals the front end to suppress
    --       the call to gigi in ASIS_Mode.
@@ -811,6 +826,9 @@ package body Debug is
    --  d.6  By default the C back-end avoids declaring types that are not
    --       referenced by the generated C code. This debug flag restores the
    --       output of all the types.
+
+   --  d.9  Enable build-in-place for function calls returning some nonlimited
+   --       types.
 
    ------------------------------------------
    -- Documentation for Binder Debug Flags --

@@ -33,6 +33,7 @@ extern void cp_common_init_ts (void);
 extern tree cp_unit_size_without_reusable_padding (tree);
 extern tree cp_get_global_decls ();
 extern tree cp_pushdecl (tree);
+extern void cp_register_dumps (gcc::dump_manager *);
 
 /* Lang hooks that are shared between C++ and ObjC++ are defined here.  Hooks
    specific to C++ or ObjC++ go in cp/cp-lang.c and objcp/objcp-lang.c,
@@ -56,6 +57,8 @@ extern tree cp_pushdecl (tree);
 #define LANG_HOOKS_INIT_OPTIONS c_common_init_options
 #undef LANG_HOOKS_INITIALIZE_DIAGNOSTICS
 #define LANG_HOOKS_INITIALIZE_DIAGNOSTICS cxx_initialize_diagnostics
+#undef LANG_HOOKS_REGISTER_DUMPS
+#define LANG_HOOKS_REGISTER_DUMPS cp_register_dumps
 #undef LANG_HOOKS_HANDLE_OPTION
 #define LANG_HOOKS_HANDLE_OPTION c_common_handle_option
 #undef LANG_HOOKS_HANDLE_FILENAME
@@ -96,6 +99,8 @@ extern tree cp_pushdecl (tree);
 #define LANG_HOOKS_BUILTIN_FUNCTION_EXT_SCOPE cxx_builtin_function_ext_scope
 #undef	LANG_HOOKS_TYPE_HASH_EQ
 #define LANG_HOOKS_TYPE_HASH_EQ	cxx_type_hash_eq
+#undef	LANG_HOOKS_COPY_LANG_QUALIFIERS
+#define LANG_HOOKS_COPY_LANG_QUALIFIERS	cxx_copy_lang_qualifiers
 #undef LANG_HOOKS_MISSING_NORETURN_OK_P
 #define LANG_HOOKS_MISSING_NORETURN_OK_P cp_missing_noreturn_ok_p
 #undef LANG_HOOKS_BLOCK_MAY_FALLTHRU

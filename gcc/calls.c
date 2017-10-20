@@ -52,6 +52,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssanames.h"
 #include "rtl-chkp.h"
 #include "intl.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 /* Like PREFERRED_STACK_BOUNDARY but in units of bytes, not bits.  */
 #define STACK_BYTES (PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT)
@@ -162,8 +164,6 @@ static void compute_argument_addresses (struct arg_data *, rtx, int);
 static rtx rtx_for_function_call (tree, tree);
 static void load_register_parameters (struct arg_data *, int, rtx *, int,
 				      int, int *);
-static rtx emit_library_call_value_1 (int, rtx, rtx, enum libcall_type,
-				      machine_mode, int, va_list);
 static int special_function_p (const_tree, int);
 static int check_sibcall_argument_overlap_1 (rtx);
 static int check_sibcall_argument_overlap (rtx_insn *, struct arg_data *, int);
@@ -821,6 +821,8 @@ flags_from_decl_or_type (const_tree exp)
 	flags |= ECF_NOVOPS;
       if (lookup_attribute ("leaf", DECL_ATTRIBUTES (exp)))
 	flags |= ECF_LEAF;
+      if (lookup_attribute ("cold", DECL_ATTRIBUTES (exp)))
+	flags |= ECF_COLD;
 
       if (TREE_NOTHROW (exp))
 	flags |= ECF_NOTHROW;
@@ -1043,12 +1045,15 @@ save_fixed_argument_area (int reg_parm_stack_space, rtx argblock, int *low_to_sa
 	*high_to_save = high;
 
 	num_to_save = high - low + 1;
-	save_mode = mode_for_size (num_to_save * BITS_PER_UNIT, MODE_INT, 1);
 
 	/* If we don't have the required alignment, must do this
 	   in BLKmode.  */
-	if ((low & (MIN (GET_MODE_SIZE (save_mode),
-			 BIGGEST_ALIGNMENT / UNITS_PER_WORD) - 1)))
+	scalar_int_mode imode;
+	if (int_mode_for_size (num_to_save * BITS_PER_UNIT, 1).exists (&imode)
+	    && (low & (MIN (GET_MODE_SIZE (imode),
+			    BIGGEST_ALIGNMENT / UNITS_PER_WORD) - 1)) == 0)
+	  save_mode = imode;
+	else
 	  save_mode = BLKmode;
 
 	if (ARGS_GROW_DOWNWARD)
@@ -1149,7 +1154,7 @@ store_unaligned_arguments_into_pseudos (struct arg_data *args, int num_actuals)
 #ifdef BLOCK_REG_PADDING
 	    && (BLOCK_REG_PADDING (args[i].mode,
 				   TREE_TYPE (args[i].tree_value), 1)
-		== downward)
+		== PAD_DOWNWARD)
 #else
 	    && BYTES_BIG_ENDIAN
 #endif
@@ -1220,32 +1225,37 @@ alloc_max_size (void)
 		  else if (!strcasecmp (end, "KiB") || strcmp (end, "KB"))
 		    unit = 1024;
 		  else if (!strcmp (end, "MB"))
-		    unit = 1000LU * 1000;
+		    unit = HOST_WIDE_INT_UC (1000) * 1000;
 		  else if (!strcasecmp (end, "MiB"))
-		    unit = 1024LU * 1024;
+		    unit = HOST_WIDE_INT_UC (1024) * 1024;
 		  else if (!strcasecmp (end, "GB"))
-		    unit = 1000LU * 1000 * 1000;
+		    unit = HOST_WIDE_INT_UC (1000) * 1000 * 1000;
 		  else if (!strcasecmp (end, "GiB"))
-		    unit = 1024LU * 1024 * 1024;
+		    unit = HOST_WIDE_INT_UC (1024) * 1024 * 1024;
 		  else if (!strcasecmp (end, "TB"))
-		    unit = 1000LU * 1000 * 1000 * 1000;
+		    unit = HOST_WIDE_INT_UC (1000) * 1000 * 1000 * 1000;
 		  else if (!strcasecmp (end, "TiB"))
-		    unit = 1024LU * 1024 * 1024 * 1024;
+		    unit = HOST_WIDE_INT_UC (1024) * 1024 * 1024 * 1024;
 		  else if (!strcasecmp (end, "PB"))
-		    unit = 1000LU * 1000 * 1000 * 1000 * 1000;
+		    unit = HOST_WIDE_INT_UC (1000) * 1000 * 1000 * 1000 * 1000;
 		  else if (!strcasecmp (end, "PiB"))
-		    unit = 1024LU * 1024 * 1024 * 1024 * 1024;
+		    unit = HOST_WIDE_INT_UC (1024) * 1024 * 1024 * 1024 * 1024;
 		  else if (!strcasecmp (end, "EB"))
-		    unit = 1000LU * 1000 * 1000 * 1000 * 1000 * 1000;
+		    unit = HOST_WIDE_INT_UC (1000) * 1000 * 1000 * 1000 * 1000
+			   * 1000;
 		  else if (!strcasecmp (end, "EiB"))
-		    unit = 1024LU * 1024 * 1024 * 1024 * 1024 * 1024;
+		    unit = HOST_WIDE_INT_UC (1024) * 1024 * 1024 * 1024 * 1024
+			   * 1024;
 		  else
 		    unit = 0;
 		}
 
 	      if (unit)
-		alloc_object_size_limit
-		  = build_int_cst (ssizetype, limit * unit);
+		{
+		  widest_int w = wi::mul (limit, unit);
+		  if (w < wi::to_widest (alloc_object_size_limit))
+		    alloc_object_size_limit = wide_int_to_tree (ssizetype, w);
+		}
 	    }
 	}
     }
@@ -1283,8 +1293,6 @@ get_size_range (tree exp, tree range[2])
 
   tree exptype = TREE_TYPE (exp);
   unsigned expprec = TYPE_PRECISION (exptype);
-  wide_int wzero = wi::zero (expprec);
-  wide_int wmaxval = wide_int (TYPE_MAX_VALUE (exptype));
 
   bool signed_p = !TYPE_UNSIGNED (exptype);
 
@@ -1292,7 +1300,7 @@ get_size_range (tree exp, tree range[2])
     {
       if (signed_p)
 	{
-	  if (wi::les_p (max, wzero))
+	  if (wi::les_p (max, 0))
 	    {
 	      /* EXP is not in a strictly negative range.  That means
 		 it must be in some (not necessarily strictly) positive
@@ -1300,24 +1308,24 @@ get_size_range (tree exp, tree range[2])
 		 conversions negative values end up converted to large
 		 positive values, and otherwise they are not valid sizes,
 		 the resulting range is in both cases [0, TYPE_MAX].  */
-	      min = wzero;
-	      max = wmaxval;
+	      min = wi::zero (expprec);
+	      max = wi::to_wide (TYPE_MAX_VALUE (exptype));
 	    }
-	  else if (wi::les_p (min - 1, wzero))
+	  else if (wi::les_p (min - 1, 0))
 	    {
 	      /* EXP is not in a negative-positive range.  That means EXP
 		 is either negative, or greater than max.  Since negative
 		 sizes are invalid make the range [MAX + 1, TYPE_MAX].  */
 	      min = max + 1;
-	      max = wmaxval;
+	      max = wi::to_wide (TYPE_MAX_VALUE (exptype));
 	    }
 	  else
 	    {
 	      max = min - 1;
-	      min = wzero;
+	      min = wi::zero (expprec);
 	    }
 	}
-      else if (wi::eq_p (wzero, min - 1))
+      else if (wi::eq_p (0, min - 1))
 	{
 	  /* EXP is unsigned and not in the range [1, MAX].  That means
 	     it's either zero or greater than MAX.  Even though 0 would
@@ -1325,12 +1333,12 @@ get_size_range (tree exp, tree range[2])
 	     [MAX, TYPE_MAX] so that when MAX is greater than the limit
 	     the whole range is diagnosed.  */
 	  min = max + 1;
-	  max = wmaxval;
+	  max = wi::to_wide (TYPE_MAX_VALUE (exptype));
 	}
       else
 	{
 	  max = min - 1;
-	  min = wzero;
+	  min = wi::zero (expprec);
 	}
     }
 
@@ -2186,11 +2194,7 @@ compute_argument_addresses (struct arg_data *args, rtx argblock, int num_actuals
 	  if (POINTER_BOUNDS_P (args[i].tree_value))
 	    continue;
 
-	  if (CONST_INT_P (offset))
-	    addr = plus_constant (Pmode, arg_reg, INTVAL (offset));
-	  else
-	    addr = gen_rtx_PLUS (Pmode, arg_reg, offset);
-
+	  addr = simplify_gen_binary (PLUS, Pmode, arg_reg, offset);
 	  addr = plus_constant (Pmode, addr, arg_offset);
 
 	  if (args[i].partial != 0)
@@ -2198,8 +2202,8 @@ compute_argument_addresses (struct arg_data *args, rtx argblock, int num_actuals
 	      /* Only part of the parameter is being passed on the stack.
 		 Generate a simple memory reference of the correct size.  */
 	      units_on_stack = args[i].locate.size.constant;
-	      partial_mode = mode_for_size (units_on_stack * BITS_PER_UNIT,
-					    MODE_INT, 1);
+	      unsigned int bits_on_stack = units_on_stack * BITS_PER_UNIT;
+	      partial_mode = int_mode_for_size (bits_on_stack, 1).else_blk ();
 	      args[i].stack = gen_rtx_MEM (partial_mode, addr);
 	      set_mem_size (args[i].stack, units_on_stack);
 	    }
@@ -2211,7 +2215,7 @@ compute_argument_addresses (struct arg_data *args, rtx argblock, int num_actuals
 	    }
 	  align = BITS_PER_UNIT;
 	  boundary = args[i].locate.boundary;
-	  if (args[i].locate.where_pad != downward)
+	  if (args[i].locate.where_pad != PAD_DOWNWARD)
 	    align = boundary;
 	  else if (CONST_INT_P (offset))
 	    {
@@ -2220,11 +2224,7 @@ compute_argument_addresses (struct arg_data *args, rtx argblock, int num_actuals
 	    }
 	  set_mem_align (args[i].stack, align);
 
-	  if (CONST_INT_P (slot_offset))
-	    addr = plus_constant (Pmode, arg_reg, INTVAL (slot_offset));
-	  else
-	    addr = gen_rtx_PLUS (Pmode, arg_reg, slot_offset);
-
+	  addr = simplify_gen_binary (PLUS, Pmode, arg_reg, slot_offset);
 	  addr = plus_constant (Pmode, addr, arg_offset);
 
 	  if (args[i].partial != 0)
@@ -2508,7 +2508,7 @@ load_register_parameters (struct arg_data *args, int num_actuals,
 		 upward on a BYTES_BIG_ENDIAN machine.  */
 	      if (size < UNITS_PER_WORD
 		  && (args[i].locate.where_pad
-		      == (BYTES_BIG_ENDIAN ? upward : downward)))
+		      == (BYTES_BIG_ENDIAN ? PAD_UPWARD : PAD_DOWNWARD)))
 		{
 		  rtx x;
 		  int shift = (UNITS_PER_WORD - size) * BITS_PER_UNIT;
@@ -2569,7 +2569,7 @@ load_register_parameters (struct arg_data *args, int num_actuals,
 	      /* Handle a BLKmode that needs shifting.  */
 	      if (nregs == 1 && size < UNITS_PER_WORD
 #ifdef BLOCK_REG_PADDING
-		  && args[i].locate.where_pad == downward
+		  && args[i].locate.where_pad == PAD_DOWNWARD
 #else
 		  && BYTES_BIG_ENDIAN
 #endif
@@ -3124,8 +3124,8 @@ expand_call (tree exp, rtx target, int ignore)
 	    && target
 	    && MEM_P (target)
 	    && !(MEM_ALIGN (target) < TYPE_ALIGN (rettype)
-		 && SLOW_UNALIGNED_ACCESS (TYPE_MODE (rettype),
-					   MEM_ALIGN (target))))
+		 && targetm.slow_unaligned_access (TYPE_MODE (rettype),
+						   MEM_ALIGN (target))))
 	  structure_value_addr = XEXP (target, 0);
 	else
 	  {
@@ -3344,8 +3344,7 @@ expand_call (tree exp, rtx target, int ignore)
 	      || ((caller_mode != caller_promoted_mode
 		   || callee_mode != callee_promoted_mode)
 		  && (caller_unsignedp != callee_unsignedp
-		      || GET_MODE_BITSIZE (caller_mode)
-			 < GET_MODE_BITSIZE (callee_mode)))))
+		      || partial_subreg_p (caller_mode, callee_mode)))))
 	{
 	  try_tail_call = 0;
 	  maybe_complain_about_tail_call (exp,
@@ -4118,7 +4117,6 @@ expand_call (tree exp, rtx target, int ignore)
 	{
 	  tree type = rettype;
 	  int unsignedp = TYPE_UNSIGNED (type);
-	  int offset = 0;
 	  machine_mode pmode;
 
 	  /* Ensure we promote as expected, and get the new unsignedness.  */
@@ -4126,18 +4124,8 @@ expand_call (tree exp, rtx target, int ignore)
 					 funtype, 1);
 	  gcc_assert (GET_MODE (target) == pmode);
 
-	  if ((WORDS_BIG_ENDIAN || BYTES_BIG_ENDIAN)
-	      && (GET_MODE_SIZE (GET_MODE (target))
-		  > GET_MODE_SIZE (TYPE_MODE (type))))
-	    {
-	      offset = GET_MODE_SIZE (GET_MODE (target))
-	        - GET_MODE_SIZE (TYPE_MODE (type));
-	      if (! BYTES_BIG_ENDIAN)
-	        offset = (offset / UNITS_PER_WORD) * UNITS_PER_WORD;
-	      else if (! WORDS_BIG_ENDIAN)
-	        offset %= UNITS_PER_WORD;
-	    }
-
+	  unsigned int offset = subreg_lowpart_offset (TYPE_MODE (type),
+						       GET_MODE (target));
 	  target = gen_rtx_SUBREG (TYPE_MODE (type), target, offset);
 	  SUBREG_PROMOTED_VAR_P (target) = 1;
 	  SUBREG_PROMOTED_SET (target, unsignedp);
@@ -4352,14 +4340,21 @@ split_complex_types (tree types)
   return types;
 }
 
-/* Output a library call to function FUN (a SYMBOL_REF rtx).
-   The RETVAL parameter specifies whether return value needs to be saved, other
-   parameters are documented in the emit_library_call function below.  */
+/* Output a library call to function ORGFUN (a SYMBOL_REF rtx)
+   for a value of mode OUTMODE,
+   with NARGS different arguments, passed as ARGS.
+   Store the return value if RETVAL is nonzero: store it in VALUE if
+   VALUE is nonnull, otherwise pick a convenient location.  In either
+   case return the location of the stored value.
 
-static rtx
+   FN_TYPE should be LCT_NORMAL for `normal' calls, LCT_CONST for
+   `const' calls, LCT_PURE for `pure' calls, or another LCT_ value for
+   other types of library calls.  */
+
+rtx
 emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
 			   enum libcall_type fn_type,
-			   machine_mode outmode, int nargs, va_list p)
+			   machine_mode outmode, int nargs, rtx_mode_t *args)
 {
   /* Total size in bytes of all the stack-parms scanned so far.  */
   struct args_size args_size;
@@ -4541,10 +4536,10 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
       count++;
     }
 
-  for (; count < nargs; count++)
+  for (unsigned int i = 0; count < nargs; i++, count++)
     {
-      rtx val = va_arg (p, rtx);
-      machine_mode mode = (machine_mode) va_arg (p, int);
+      rtx val = args[i].first;
+      machine_mode mode = args[i].second;
       int unsigned_p = 0;
 
       /* We cannot convert the arg value to the mode the library wants here;
@@ -4801,7 +4796,7 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
 		  unsigned int size
 		    = argvec[argnum].locate.size.constant * BITS_PER_UNIT;
 		  machine_mode save_mode
-		    = mode_for_size (size, MODE_INT, 1);
+		    = int_mode_for_size (size, 1).else_blk ();
 		  rtx adr
 		    = plus_constant (Pmode, argblock,
 				     argvec[argnum].locate.offset.constant);
@@ -4902,7 +4897,7 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
 	     upward on a BYTES_BIG_ENDIAN machine.  */
 	  if (size < UNITS_PER_WORD
 	      && (argvec[argnum].locate.where_pad
-		  == (BYTES_BIG_ENDIAN ? upward : downward)))
+		  == (BYTES_BIG_ENDIAN ? PAD_UPWARD : PAD_DOWNWARD)))
 	    {
 	      rtx x;
 	      int shift = (UNITS_PER_WORD - size) * BITS_PER_UNIT;
@@ -5116,51 +5111,6 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
 
 }
 
-/* Output a library call to function FUN (a SYMBOL_REF rtx)
-   (emitting the queue unless NO_QUEUE is nonzero),
-   for a value of mode OUTMODE,
-   with NARGS different arguments, passed as alternating rtx values
-   and machine_modes to convert them to.
-
-   FN_TYPE should be LCT_NORMAL for `normal' calls, LCT_CONST for
-   `const' calls, LCT_PURE for `pure' calls, or other LCT_ value for
-   other types of library calls.  */
-
-void
-emit_library_call (rtx orgfun, enum libcall_type fn_type,
-		   machine_mode outmode, int nargs, ...)
-{
-  va_list p;
-
-  va_start (p, nargs);
-  emit_library_call_value_1 (0, orgfun, NULL_RTX, fn_type, outmode, nargs, p);
-  va_end (p);
-}
-
-/* Like emit_library_call except that an extra argument, VALUE,
-   comes second and says where to store the result.
-   (If VALUE is zero, this function chooses a convenient way
-   to return the value.
-
-   This function returns an rtx for where the value is to be found.
-   If VALUE is nonzero, VALUE is returned.  */
-
-rtx
-emit_library_call_value (rtx orgfun, rtx value,
-			 enum libcall_type fn_type,
-			 machine_mode outmode, int nargs, ...)
-{
-  rtx result;
-  va_list p;
-
-  va_start (p, nargs);
-  result = emit_library_call_value_1 (1, orgfun, value, fn_type, outmode,
-				      nargs, p);
-  va_end (p);
-
-  return result;
-}
-
 
 /* Store pointer bounds argument ARG  into Bounds Table entry
    associated with PARM.  */
@@ -5299,7 +5249,8 @@ store_one_arg (struct arg_data *arg, rtx argblock, int flags,
 	    {
 	      /* We need to make a save area.  */
 	      unsigned int size = arg->locate.size.constant * BITS_PER_UNIT;
-	      machine_mode save_mode = mode_for_size (size, MODE_INT, 1);
+	      machine_mode save_mode
+		= int_mode_for_size (size, 1).else_blk ();
 	      rtx adr = memory_address (save_mode, XEXP (arg->stack_slot, 0));
 	      rtx stack_area = gen_rtx_MEM (save_mode, adr);
 
@@ -5425,14 +5376,16 @@ store_one_arg (struct arg_data *arg, rtx argblock, int flags,
 
       /* Compute how much space the argument should get:
 	 round up to a multiple of the alignment for arguments.  */
-      if (none != FUNCTION_ARG_PADDING (arg->mode, TREE_TYPE (pval)))
+      if (targetm.calls.function_arg_padding (arg->mode, TREE_TYPE (pval))
+	  != PAD_NONE)
 	used = (((size + PARM_BOUNDARY / BITS_PER_UNIT - 1)
 		 / (PARM_BOUNDARY / BITS_PER_UNIT))
 		* (PARM_BOUNDARY / BITS_PER_UNIT));
 
       /* Compute the alignment of the pushed argument.  */
       parm_align = arg->locate.boundary;
-      if (FUNCTION_ARG_PADDING (arg->mode, TREE_TYPE (pval)) == downward)
+      if (targetm.calls.function_arg_padding (arg->mode, TREE_TYPE (pval))
+	  == PAD_DOWNWARD)
 	{
 	  int pad = used - size;
 	  if (pad)
@@ -5491,7 +5444,8 @@ store_one_arg (struct arg_data *arg, rtx argblock, int flags,
 
       /* When an argument is padded down, the block is aligned to
 	 PARM_BOUNDARY, but the actual argument isn't.  */
-      if (FUNCTION_ARG_PADDING (arg->mode, TREE_TYPE (pval)) == downward)
+      if (targetm.calls.function_arg_padding (arg->mode, TREE_TYPE (pval))
+	  == PAD_DOWNWARD)
 	{
 	  if (arg->locate.size.var)
 	    parm_align = BITS_PER_UNIT;
@@ -5642,8 +5596,8 @@ must_pass_in_stack_var_size_or_pad (machine_mode mode, const_tree type)
      a register would put it into the wrong part of the register.  */
   if (mode == BLKmode
       && int_size_in_bytes (type) % (PARM_BOUNDARY / BITS_PER_UNIT)
-      && (FUNCTION_ARG_PADDING (mode, type)
-	  == (BYTES_BIG_ENDIAN ? upward : downward)))
+      && (targetm.calls.function_arg_padding (mode, type)
+	  == (BYTES_BIG_ENDIAN ? PAD_UPWARD : PAD_DOWNWARD)))
     return true;
 
   return false;

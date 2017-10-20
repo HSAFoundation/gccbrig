@@ -746,7 +746,7 @@ dump_use (FILE *file, struct iv_use *use)
 {
   fprintf (file, "  Use %d.%d:\n", use->group_id, use->id);
   fprintf (file, "    At stmt:\t");
-  print_gimple_stmt (file, use->stmt, 0, 0);
+  print_gimple_stmt (file, use->stmt, 0);
   fprintf (file, "    At pos:\t");
   if (use->op_p)
     print_generic_expr (file, *use->op_p, TDF_SLIM);
@@ -2160,8 +2160,8 @@ constant_multiple_of (tree top, tree bot, widest_int *mul)
       if (TREE_CODE (bot) != INTEGER_CST)
 	return false;
 
-      p0 = widest_int::from (top, SIGNED);
-      p1 = widest_int::from (bot, SIGNED);
+      p0 = widest_int::from (wi::to_wide (top), SIGNED);
+      p1 = widest_int::from (wi::to_wide (bot), SIGNED);
       if (p1 == 0)
 	return false;
       *mul = wi::sext (wi::divmod_trunc (p0, p1, SIGNED, &res), precision);
@@ -3960,7 +3960,7 @@ adjust_setup_cost (struct ivopts_data *data, unsigned cost,
    the cost in COST.  */
 
 static bool
-get_shiftadd_cost (tree expr, machine_mode mode, comp_cost cost0,
+get_shiftadd_cost (tree expr, scalar_int_mode mode, comp_cost cost0,
 		   comp_cost cost1, tree mult, bool speed, comp_cost *cost)
 {
   comp_cost res;
@@ -4011,6 +4011,7 @@ force_expr_to_var_cost (tree expr, bool speed)
   tree op0, op1;
   comp_cost cost0, cost1, cost;
   machine_mode mode;
+  scalar_int_mode int_mode;
 
   if (!costs_initialized)
     {
@@ -4133,8 +4134,9 @@ force_expr_to_var_cost (tree expr, bool speed)
 	    mult = op0;
 
 	  if (mult != NULL_TREE
+	      && is_a <scalar_int_mode> (mode, &int_mode)
 	      && cst_and_fits_in_hwi (TREE_OPERAND (mult, 1))
-	      && get_shiftadd_cost (expr, mode, cost0, cost1, mult,
+	      && get_shiftadd_cost (expr, int_mode, cost0, cost1, mult,
 				    speed, &sa_cost))
 	    return sa_cost;
 	}
@@ -5284,13 +5286,13 @@ set_autoinc_for_original_candidates (struct ivopts_data *data)
 static void
 relate_compare_use_with_all_cands (struct ivopts_data *data)
 {
-  unsigned i, max_id = data->vcands.length () - 1;
+  unsigned i, count = data->vcands.length ();
   for (i = 0; i < data->vgroups.length (); i++)
     {
       struct iv_group *group = data->vgroups[i];
 
       if (group->type == USE_COMPARE)
-	bitmap_set_range (group->related_cands, 0, max_id);
+	bitmap_set_range (group->related_cands, 0, count);
     }
 }
 
@@ -5531,17 +5533,46 @@ determine_iv_costs (struct ivopts_data *data)
     fprintf (dump_file, "\n");
 }
 
-/* Calculates cost for having N_REGS registers.  This number includes
-   induction variables, invariant variables and invariant expressions.  */
+/* Estimate register pressure for loop having N_INVS invariants and N_CANDS
+   induction variables.  Note N_INVS includes both invariant variables and
+   invariant expressions.  */
 
 static unsigned
-ivopts_global_cost_for_size (struct ivopts_data *data, unsigned n_regs)
+ivopts_estimate_reg_pressure (struct ivopts_data *data, unsigned n_invs,
+			      unsigned n_cands)
 {
-  unsigned cost = estimate_reg_pressure_cost (n_regs,
-					      data->regs_used, data->speed,
-					      data->body_includes_call);
-  /* Add n_regs to the cost, so that we prefer eliminating ivs if possible.  */
-  return n_regs + cost;
+  unsigned cost;
+  unsigned n_old = data->regs_used, n_new = n_invs + n_cands;
+  unsigned regs_needed = n_new + n_old, available_regs = target_avail_regs;
+  bool speed = data->speed;
+
+  /* If there is a call in the loop body, the call-clobbered registers
+     are not available for loop invariants.  */
+  if (data->body_includes_call)
+    available_regs = available_regs - target_clobbered_regs;
+
+  /* If we have enough registers.  */
+  if (regs_needed + target_res_regs < available_regs)
+    cost = n_new;
+  /* If close to running out of registers, try to preserve them.  */
+  else if (regs_needed <= available_regs)
+    cost = target_reg_cost [speed] * regs_needed;
+  /* If we run out of available registers but the number of candidates
+     does not, we penalize extra registers using target_spill_cost.  */
+  else if (n_cands <= available_regs)
+    cost = target_reg_cost [speed] * available_regs
+	   + target_spill_cost [speed] * (regs_needed - available_regs);
+  /* If the number of candidates runs out available registers, we penalize
+     extra candidate registers using target_spill_cost * 2.  Because it is
+     more expensive to spill induction variable than invariant.  */
+  else
+    cost = target_reg_cost [speed] * available_regs
+	   + target_spill_cost [speed] * (n_cands - available_regs) * 2
+	   + target_spill_cost [speed] * (regs_needed - n_cands);
+
+  /* Finally, add the number of candidates, so that we prefer eliminating
+     induction variables if possible.  */
+  return cost + n_cands;
 }
 
 /* For each size of the induction variable set determine the penalty.  */
@@ -5602,7 +5633,7 @@ determine_set_costs (struct ivopts_data *data)
       fprintf (dump_file, "  ivs\tcost\n");
       for (j = 0; j <= 2 * target_avail_regs; j++)
 	fprintf (dump_file, "  %d\t%d\n", j,
-		 ivopts_global_cost_for_size (data, j));
+		 ivopts_estimate_reg_pressure (data, 0, j));
       fprintf (dump_file, "\n");
     }
 }
@@ -5661,7 +5692,7 @@ iv_ca_recount_cost (struct ivopts_data *data, struct iv_ca *ivs)
   comp_cost cost = ivs->cand_use_cost;
 
   cost += ivs->cand_cost;
-  cost += ivopts_global_cost_for_size (data, ivs->n_invs + ivs->n_cands);
+  cost += ivopts_estimate_reg_pressure (data, ivs->n_invs, ivs->n_cands);
   ivs->cost = cost;
 }
 
@@ -6943,8 +6974,8 @@ adjust_iv_update_pos (struct iv_cand *cand, struct iv_use *use)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Reordering \n");
-      print_gimple_stmt (dump_file, iv_update, 0, 0);
-      print_gimple_stmt (dump_file, use->stmt, 0, 0);
+      print_gimple_stmt (dump_file, iv_update, 0);
+      print_gimple_stmt (dump_file, use->stmt, 0);
       fprintf (dump_file, "\n");
     }
 

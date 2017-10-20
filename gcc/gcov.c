@@ -132,6 +132,9 @@ struct block_location_info
 
 typedef struct block_info
 {
+  /* Constructor.  */
+  block_info ();
+
   /* Chain of exit and entry arcs.  */
   arc_t *succ;
   arc_t *pred;
@@ -172,6 +175,14 @@ typedef struct block_info
   struct block_info *chain;
 
 } block_t;
+
+block_info::block_info (): succ (NULL), pred (NULL), num_succ (0), num_pred (0),
+  id (0), count (0), count_valid (0), valid_chain (0), invalid_chain (0),
+  exceptional (0), is_call_site (0), is_call_return (0), is_nonlocal_return (0),
+  locations (), chain (NULL)
+{
+  cycle.arc = NULL;
+}
 
 /* Describes a single function. Contains an array of basic blocks.  */
 
@@ -528,13 +539,13 @@ unblock (const block_t *u, block_vector_t &blocked,
   unsigned index = it - blocked.begin ();
   blocked.erase (it);
 
-  for (block_vector_t::iterator it2 = block_lists[index].begin ();
-       it2 != block_lists[index].end (); it2++)
-    unblock (*it2, blocked, block_lists);
-  for (unsigned j = 0; j < block_lists[index].size (); j++)
-    unblock (u, blocked, block_lists);
+  block_vector_t to_unblock (block_lists[index]);
 
   block_lists.erase (block_lists.begin () + index);
+
+  for (block_vector_t::iterator it = to_unblock.begin ();
+       it != to_unblock.end (); it++)
+    unblock (*it, blocked, block_lists);
 }
 
 /* Find circuit going to block V, PATH is provisional seen cycle.

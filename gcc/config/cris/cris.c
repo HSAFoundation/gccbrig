@@ -25,6 +25,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "target.h"
 #include "rtl.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "cfghooks.h"
 #include "df.h"
 #include "memmodel.h"
@@ -161,6 +163,9 @@ static rtx cris_function_value(const_tree, const_tree, bool);
 static rtx cris_libcall_value (machine_mode, const_rtx);
 static bool cris_function_value_regno_p (const unsigned int);
 static void cris_file_end (void);
+static unsigned int cris_hard_regno_nregs (unsigned int, machine_mode);
+static bool cris_hard_regno_mode_ok (unsigned int, machine_mode);
+static HOST_WIDE_INT cris_constant_alignment (const_tree, HOST_WIDE_INT);
 
 /* This is the parsed result of the "-max-stack-stackframe=" option.  If
    it (still) is zero, then there was no such option given.  */
@@ -277,6 +282,14 @@ int cris_cpu_version = CRIS_DEFAULT_CPU_VERSION;
 #define TARGET_LIBCALL_VALUE cris_libcall_value
 #undef TARGET_FUNCTION_VALUE_REGNO_P
 #define TARGET_FUNCTION_VALUE_REGNO_P cris_function_value_regno_p
+
+#undef TARGET_HARD_REGNO_NREGS
+#define TARGET_HARD_REGNO_NREGS cris_hard_regno_nregs
+#undef TARGET_HARD_REGNO_MODE_OK
+#define TARGET_HARD_REGNO_MODE_OK cris_hard_regno_mode_ok
+
+#undef TARGET_CONSTANT_ALIGNMENT
+#define TARGET_CONSTANT_ALIGNMENT cris_constant_alignment
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -4290,6 +4303,48 @@ cris_trampoline_init (rtx m_tramp, tree fndecl, rtx chain_value)
      sake of a trampoline.  */
 }
 
+/* Implement TARGET_HARD_REGNO_NREGS.
+
+   The VOIDmode test is so we can omit mode on anonymous insns.  FIXME:
+   Still needed in 2.9x, at least for Axis-20000319.  */
+
+static unsigned int
+cris_hard_regno_nregs (unsigned int, machine_mode mode)
+{
+  if (mode == VOIDmode)
+    return 1;
+  return CEIL (GET_MODE_SIZE (mode), UNITS_PER_WORD);
+}
+
+/* Implement TARGET_HARD_REGNO_MODE_OK.
+
+   CRIS permits all registers to hold all modes.  Well, except for the
+   condition-code register.  And we can't hold larger-than-register size
+   modes in the last special register that can hold a full 32 bits.  */
+static bool
+cris_hard_regno_mode_ok (unsigned int regno, machine_mode mode)
+{
+  return ((mode == CCmode || regno != CRIS_CC0_REGNUM)
+	  && (GET_MODE_SIZE (mode) <= UNITS_PER_WORD
+	      || (regno != CRIS_MOF_REGNUM && regno != CRIS_ACR_REGNUM)));
+}
+
+/* Implement TARGET_CONSTANT_ALIGNMENT.  Note that this hook has the
+   effect of making gcc believe that ALL references to constant stuff
+   (in code segment, like strings) have this alignment.  That is a rather
+   rushed assumption.  Luckily we do not care about the "alignment"
+   operand to builtin memcpy (only place where it counts), so it doesn't
+   affect any bad spots.  */
+
+static HOST_WIDE_INT
+cris_constant_alignment (const_tree, HOST_WIDE_INT basic_align)
+{
+  if (!TARGET_CONST_ALIGN)
+    return basic_align;
+  if (TARGET_ALIGN_BY_32)
+    return MAX (basic_align, 32);
+  return MAX (basic_align, 16);
+}
 
 #if 0
 /* Various small functions to replace macros.  Only called from a

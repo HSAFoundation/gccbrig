@@ -12,14 +12,6 @@ import (
 	_ "unsafe" // for go:linkname
 )
 
-// For gccgo, use go:linkname to rename compiler-called functions to
-// themselves, so that the compiler will export them.
-// These are temporary for C runtime code to call.
-//go:linkname traceback runtime.traceback
-//go:linkname printtrace runtime.printtrace
-//go:linkname goroutineheader runtime.goroutineheader
-//go:linkname printcreatedby runtime.printcreatedby
-
 func printcreatedby(gp *g) {
 	// Show what created goroutine, except main goroutine (goid 1).
 	pc := gp.gopc
@@ -71,13 +63,18 @@ func traceback(skip int32) {
 	var locbuf [100]location
 	c := c_callers(skip+1, &locbuf[0], int32(len(locbuf)), false)
 	printtrace(locbuf[:c], getg())
+	printcreatedby(getg())
 }
 
 // printtrace prints a traceback from locbuf.
 func printtrace(locbuf []location, gp *g) {
 	for i := range locbuf {
 		if showframe(locbuf[i].function, gp) {
-			print(locbuf[i].function, "\n\t", locbuf[i].filename, ":", locbuf[i].lineno, "\n")
+			name := locbuf[i].function
+			if name == "runtime.gopanic" {
+				name = "panic"
+			}
+			print(name, "\n\t", locbuf[i].filename, ":", locbuf[i].lineno, "\n")
 		}
 	}
 }
@@ -94,7 +91,7 @@ func showframe(name string, gp *g) bool {
 	// We want to print those in the traceback.
 	// But unless GOTRACEBACK > 1 (checked below), still skip
 	// internal C functions and cgo-generated functions.
-	if !contains(name, ".") && !hasprefix(name, "__go_") && !hasprefix(name, "_cgo_") {
+	if name != "" && !contains(name, ".") && !hasprefix(name, "__go_") && !hasprefix(name, "_cgo_") {
 		return true
 	}
 

@@ -605,6 +605,7 @@ am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
 get_gcc_base_ver
+TARGET_CONFIG_INCLUDE_PATHS
 toolexeclibdir
 toolexecdir
 CXXCPP
@@ -10973,7 +10974,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 10976 "configure"
+#line 10977 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -11079,7 +11080,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 11082 "configure"
+#line 11083 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -14405,6 +14406,16 @@ cat >>confdefs.h <<_ACEOF
 #define SIZEOF_VOIDP $ac_cv_sizeof_voidp
 _ACEOF
 
+
+
+# Get target configury.
+. ${srcdir}/configure.tgt
+if test -n "$UNSUPPORTED"; then
+  as_fn_error "Configuration ${target} is unsupported." "$LINENO" 5
+fi
+
+# For including target specific headers for setting flush-to-zero.
+# See configure.tgt.
 
 
 # Determine what GCC version number to use in filesystem paths.

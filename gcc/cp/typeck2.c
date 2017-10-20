@@ -509,6 +509,7 @@ cxx_incomplete_type_diagnostic (location_t loc, const_tree value,
 	tree member = TREE_OPERAND (value, 1);
 	if (is_overloaded_fn (member))
 	  member = get_first_fn (member);
+
 	if (DECL_FUNCTION_MEMBER_P (member)
 	    && ! flag_ms_extensions)
 	  emit_diagnostic (diag_kind, loc, 0,
@@ -820,8 +821,7 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
 	  || (DECL_IN_AGGR_P (decl) && !DECL_VAR_DECLARED_INLINE_P (decl)))
 	{
 	  /* Diagnose a non-constant initializer for constexpr.  */
-	  if (processing_template_decl
-	      && !require_potential_constant_expression (value))
+	  if (!require_constant_expression (value))
 	    value = error_mark_node;
 	  else
 	    value = cxx_constant_value (value, decl);
@@ -954,7 +954,7 @@ check_narrowing (tree type, tree init, tsubst_flags_t complain)
 	{
 	  if (complain & tf_warning)
 	    warning_at (loc, OPT_Wnarrowing, "narrowing conversion of %qE "
-			"from %qT to %qT inside { } is ill-formed in C++11",
+			"from %qH to %qI inside { } is ill-formed in C++11",
 			init, ftype, type);
 	  ok = true;
 	}
@@ -965,7 +965,7 @@ check_narrowing (tree type, tree init, tsubst_flags_t complain)
 	      if ((!almost_ok || pedantic)
 		  && pedwarn (loc, OPT_Wnarrowing,
 			      "narrowing conversion of %qE "
-			      "from %qT to %qT inside { }",
+			      "from %qH to %qI inside { }",
 			      init, ftype, type)
 		  && almost_ok)
 		inform (loc, " the expression has a constant value but is not "
@@ -978,7 +978,7 @@ check_narrowing (tree type, tree init, tsubst_flags_t complain)
 	  int savederrorcount = errorcount;
 	  global_dc->pedantic_errors = 1;
 	  pedwarn (loc, OPT_Wnarrowing,
-		   "narrowing conversion of %qE from %qT to %qT "
+		   "narrowing conversion of %qE from %qH to %qI "
 		   "inside { }", init, ftype, type);
 	  if (errorcount == savederrorcount)
 	    ok = true;
@@ -1182,7 +1182,7 @@ digest_init_flags (tree type, tree init, int flags, tsubst_flags_t complain)
 
 /* Process the initializer INIT for an NSDMI DECL (a FIELD_DECL).  */
 tree
-digest_nsdmi_init (tree decl, tree init)
+digest_nsdmi_init (tree decl, tree init, tsubst_flags_t complain)
 {
   gcc_assert (TREE_CODE (decl) == FIELD_DECL);
 
@@ -1192,8 +1192,8 @@ digest_nsdmi_init (tree decl, tree init)
     flags = LOOKUP_NORMAL;
   if (BRACE_ENCLOSED_INITIALIZER_P (init)
       && CP_AGGREGATE_TYPE_P (type))
-    init = reshape_init (type, init, tf_warning_or_error);
-  init = digest_init_flags (type, init, flags, tf_warning_or_error);
+    init = reshape_init (type, init, complain);
+  init = digest_init_flags (type, init, flags, complain);
   if (TREE_CODE (init) == TARGET_EXPR)
     /* This represents the whole initialization.  */
     TARGET_EXPR_DIRECT_INIT_P (init) = true;
@@ -1364,7 +1364,7 @@ process_init_constructor_record (tree type, tree init,
   gcc_assert (TREE_CODE (type) == RECORD_TYPE);
   gcc_assert (!CLASSTYPE_VBASECLASSES (type));
   gcc_assert (!TYPE_BINFO (type)
-	      || cxx_dialect >= cxx1z
+	      || cxx_dialect >= cxx17
 	      || !BINFO_N_BASE_BINFOS (TYPE_BINFO (type)));
   gcc_assert (!TYPE_POLYMORPHIC_P (type));
 
@@ -1384,7 +1384,7 @@ process_init_constructor_record (tree type, tree init,
 
       if (TREE_CODE (field) != FIELD_DECL
 	  || (DECL_ARTIFICIAL (field)
-	      && !(cxx_dialect >= cxx1z && DECL_FIELD_IS_BASE (field))))
+	      && !(cxx_dialect >= cxx17 && DECL_FIELD_IS_BASE (field))))
 	continue;
 
       /* If this is a bitfield, first convert to the declared type.  */
@@ -1427,7 +1427,7 @@ process_init_constructor_record (tree type, tree init,
 	      goto restart;
 	    }
 	  /* C++14 aggregate NSDMI.  */
-	  next = get_nsdmi (field, /*ctor*/false);
+	  next = get_nsdmi (field, /*ctor*/false, complain);
 	}
       else if (type_build_ctor_call (TREE_TYPE (field)))
 	{
@@ -1525,7 +1525,8 @@ process_init_constructor_union (tree type, tree init,
 	    {
 	      CONSTRUCTOR_APPEND_ELT (CONSTRUCTOR_ELTS (init),
 				      field,
-				      get_nsdmi (field, /*in_ctor=*/false));
+				      get_nsdmi (field, /*in_ctor=*/false,
+						 complain));
 	      break;
 	    }
 	}
@@ -1907,9 +1908,10 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
     {
       /* 5.5/6: In a .* expression whose object expression is an rvalue, the
 	 program is ill-formed if the second operand is a pointer to member
-	 function with ref-qualifier &. In a .* expression whose object
-	 expression is an lvalue, the program is ill-formed if the second
-	 operand is a pointer to member function with ref-qualifier &&.  */
+	 function with ref-qualifier & (for C++2A: unless its cv-qualifier-seq
+	 is const). In a .* expression whose object expression is an lvalue,
+	 the program is ill-formed if the second operand is a pointer to member
+	 function with ref-qualifier &&.  */
       if (FUNCTION_REF_QUALIFIED (type))
 	{
 	  bool lval = lvalue_p (datum);
@@ -1920,7 +1922,12 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
 		       ptrmem_type);
 	      return error_mark_node;
 	    }
-	  else if (!lval && !FUNCTION_RVALUE_QUALIFIED (type))
+	  else if (!lval
+		   && !FUNCTION_RVALUE_QUALIFIED (type)
+		   && (cxx_dialect < cxx2a
+		       || ((type_memfn_quals (type)
+			    & (TYPE_QUAL_CONST | TYPE_QUAL_VOLATILE))
+			   != TYPE_QUAL_CONST)))
 	    {
 	      if (complain & tf_error)
 		error ("pointer-to-member-function type %qT requires an lvalue",

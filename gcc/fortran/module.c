@@ -84,7 +84,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Don't put any single quote (') in MOD_VERSION, if you want it to be
    recognized.  */
-#define MOD_VERSION "14"
+#define MOD_VERSION "15"
 
 
 /* Structure that describes a position within a module file.  */
@@ -1998,7 +1998,8 @@ enum ab_attribute
   AB_ARRAY_OUTER_DEPENDENCY, AB_MODULE_PROCEDURE, AB_OACC_DECLARE_CREATE,
   AB_OACC_DECLARE_COPYIN, AB_OACC_DECLARE_DEVICEPTR,
   AB_OACC_DECLARE_DEVICE_RESIDENT, AB_OACC_DECLARE_LINK,
-  AB_OMP_DECLARE_TARGET_LINK
+  AB_OMP_DECLARE_TARGET_LINK, AB_PDT_KIND, AB_PDT_LEN, AB_PDT_TYPE,
+  AB_PDT_TEMPLATE, AB_PDT_ARRAY, AB_PDT_STRING
 };
 
 static const mstring attr_bits[] =
@@ -2062,6 +2063,12 @@ static const mstring attr_bits[] =
     minit ("OACC_DECLARE_DEVICE_RESIDENT", AB_OACC_DECLARE_DEVICE_RESIDENT),
     minit ("OACC_DECLARE_LINK", AB_OACC_DECLARE_LINK),
     minit ("OMP_DECLARE_TARGET_LINK", AB_OMP_DECLARE_TARGET_LINK),
+    minit ("PDT_KIND", AB_PDT_KIND),
+    minit ("PDT_LEN", AB_PDT_LEN),
+    minit ("PDT_TYPE", AB_PDT_TYPE),
+    minit ("PDT_TEMPLATE", AB_PDT_TEMPLATE),
+    minit ("PDT_ARRAY", AB_PDT_ARRAY),
+    minit ("PDT_STRING", AB_PDT_STRING),
     minit (NULL, -1)
 };
 
@@ -2260,6 +2267,18 @@ mio_symbol_attribute (symbol_attribute *attr)
 	MIO_NAME (ab_attribute) (AB_OACC_DECLARE_LINK, attr_bits);
       if (attr->omp_declare_target_link)
 	MIO_NAME (ab_attribute) (AB_OMP_DECLARE_TARGET_LINK, attr_bits);
+      if (attr->pdt_kind)
+	MIO_NAME (ab_attribute) (AB_PDT_KIND, attr_bits);
+      if (attr->pdt_len)
+	MIO_NAME (ab_attribute) (AB_PDT_LEN, attr_bits);
+      if (attr->pdt_type)
+	MIO_NAME (ab_attribute) (AB_PDT_TYPE, attr_bits);
+      if (attr->pdt_template)
+	MIO_NAME (ab_attribute) (AB_PDT_TEMPLATE, attr_bits);
+      if (attr->pdt_array)
+	MIO_NAME (ab_attribute) (AB_PDT_ARRAY, attr_bits);
+      if (attr->pdt_string)
+	MIO_NAME (ab_attribute) (AB_PDT_STRING, attr_bits);
 
       mio_rparen ();
 
@@ -2452,6 +2471,24 @@ mio_symbol_attribute (symbol_attribute *attr)
 	      break;
 	    case AB_OACC_DECLARE_LINK:
 	      attr->oacc_declare_link = 1;
+	      break;
+	    case AB_PDT_KIND:
+	      attr->pdt_kind = 1;
+	      break;
+	    case AB_PDT_LEN:
+	      attr->pdt_len = 1;
+	      break;
+	    case AB_PDT_TYPE:
+	      attr->pdt_type = 1;
+	      break;
+	    case AB_PDT_TEMPLATE:
+	      attr->pdt_template = 1;
+	      break;
+	    case AB_PDT_ARRAY:
+	      attr->pdt_array = 1;
+	      break;
+	    case AB_PDT_STRING:
+	      attr->pdt_string = 1;
 	      break;
 	    }
 	}
@@ -2751,6 +2788,7 @@ mio_component_ref (gfc_component **cp)
 static void mio_namespace_ref (gfc_namespace **nsp);
 static void mio_formal_arglist (gfc_formal_arglist **formal);
 static void mio_typebound_proc (gfc_typebound_proc** proc);
+static void mio_actual_arglist (gfc_actual_arglist **ap, bool pdt);
 
 static void
 mio_component (gfc_component *c, int vtype)
@@ -2778,6 +2816,12 @@ mio_component (gfc_component *c, int vtype)
   mio_pool_string (&c->name);
   mio_typespec (&c->ts);
   mio_array_spec (&c->as);
+
+  /* PDT templates store the expression for the kind of a component here.  */
+  mio_expr (&c->kind_expr);
+
+  /* PDT types store the component specification list here. */
+  mio_actual_arglist (&c->param_list, true);
 
   mio_symbol_attribute (&c->attr);
   if (c->ts.type == BT_CLASS)
@@ -2834,17 +2878,19 @@ mio_component_list (gfc_component **cp, int vtype)
 
 
 static void
-mio_actual_arg (gfc_actual_arglist *a)
+mio_actual_arg (gfc_actual_arglist *a, bool pdt)
 {
   mio_lparen ();
   mio_pool_string (&a->name);
   mio_expr (&a->expr);
+  if (pdt)
+    mio_integer ((int *)&a->spec_type);
   mio_rparen ();
 }
 
 
 static void
-mio_actual_arglist (gfc_actual_arglist **ap)
+mio_actual_arglist (gfc_actual_arglist **ap, bool pdt)
 {
   gfc_actual_arglist *a, *tail;
 
@@ -2853,7 +2899,7 @@ mio_actual_arglist (gfc_actual_arglist **ap)
   if (iomode == IO_OUTPUT)
     {
       for (a = *ap; a; a = a->next)
-	mio_actual_arg (a);
+	mio_actual_arg (a, pdt);
 
     }
   else
@@ -2873,7 +2919,7 @@ mio_actual_arglist (gfc_actual_arglist **ap)
 	    tail->next = a;
 
 	  tail = a;
-	  mio_actual_arg (a);
+	  mio_actual_arg (a, pdt);
 	}
     }
 
@@ -3498,7 +3544,7 @@ mio_expr (gfc_expr **ep)
 
     case EXPR_FUNCTION:
       mio_symtree_ref (&e->symtree);
-      mio_actual_arglist (&e->value.function.actual);
+      mio_actual_arglist (&e->value.function.actual, false);
 
       if (iomode == IO_OUTPUT)
 	{
@@ -3619,6 +3665,9 @@ mio_expr (gfc_expr **ep)
       gcc_unreachable ();
       break;
     }
+
+  /* PDT types store the expression specification list here. */
+  mio_actual_arglist (&e->param_list, true);
 
   mio_rparen ();
 }
@@ -3998,7 +4047,24 @@ mio_full_f2k_derived (gfc_symbol *sym)
     {
       if (peek_atom () != ATOM_RPAREN)
 	{
+	  gfc_namespace *ns;
+
 	  sym->f2k_derived = gfc_get_namespace (NULL, 0);
+
+	  /* PDT templates make use of the mechanisms for formal args
+	     and so the parameter symbols are stored in the formal
+	     namespace.  Transfer the sym_root to f2k_derived and then
+	     free the formal namespace since it is uneeded.  */
+	  if (sym->attr.pdt_template && sym->formal && sym->formal->sym)
+	    {
+	      ns = sym->formal->sym->ns;
+	      sym->f2k_derived->sym_root = ns->sym_root;
+	      ns->sym_root = NULL;
+	      ns->refs++;
+	      gfc_free_namespace (ns);
+	      ns = NULL;
+	    }
+
 	  mio_f2k_derived (sym->f2k_derived);
 	}
       else
@@ -4146,7 +4212,7 @@ mio_omp_udr_expr (gfc_omp_udr *udr, gfc_symbol **sym1, gfc_symbol **sym2,
 	  int flag;
 	  mio_name (1, omp_declare_reduction_stmt);
 	  mio_symtree_ref (&ns->code->symtree);
-	  mio_actual_arglist (&ns->code->ext.actual);
+	  mio_actual_arglist (&ns->code->ext.actual, false);
 
 	  flag = ns->code->resolved_isym != NULL;
 	  mio_integer (&flag);
@@ -4188,7 +4254,7 @@ mio_omp_udr_expr (gfc_omp_udr *udr, gfc_symbol **sym1, gfc_symbol **sym2,
 	  int flag;
 	  ns->code = gfc_get_code (EXEC_CALL);
 	  mio_symtree_ref (&ns->code->symtree);
-	  mio_actual_arglist (&ns->code->ext.actual);
+	  mio_actual_arglist (&ns->code->ext.actual, false);
 
 	  mio_integer (&flag);
 	  if (flag)
@@ -4257,6 +4323,9 @@ mio_symbol (gfc_symbol *sym)
 
   /* Load/save the f2k_derived namespace of a derived-type symbol.  */
   mio_full_f2k_derived (sym);
+
+  /* PDT types store the symbol specification list here. */
+  mio_actual_arglist (&sym->param_list, true);
 
   mio_namelist (sym);
 
@@ -6684,7 +6753,7 @@ use_iso_fortran_env_module (void)
 				   "standard", symbol[i].name, &u->where))
 	        continue;
 
-	      if ((flag_default_integer || flag_default_real)
+	      if ((flag_default_integer || flag_default_real_8)
 		  && symbol[i].id == ISOFORTRANENV_NUMERIC_STORAGE_SIZE)
 		gfc_warning_now (0, "Use of the NUMERIC_STORAGE_SIZE named "
 				 "constant from intrinsic module "
@@ -6751,7 +6820,7 @@ use_iso_fortran_env_module (void)
 	  if ((gfc_option.allow_std & symbol[i].standard) == 0)
 	    continue;
 
-	  if ((flag_default_integer || flag_default_real)
+	  if ((flag_default_integer || flag_default_real_8)
 	      && symbol[i].id == ISOFORTRANENV_NUMERIC_STORAGE_SIZE)
 	    gfc_warning_now (0,
 			     "Use of the NUMERIC_STORAGE_SIZE named constant "
@@ -6976,7 +7045,7 @@ gfc_use_module (gfc_use_list *module)
   for (p = gfc_state_stack; p; p = p->previous)
     if ((p->state == COMP_MODULE || p->state == COMP_SUBMODULE)
 	 && strcmp (p->sym->name, module_name) == 0)
-      gfc_fatal_error ("Can't USE the same %smodule we're building!",
+      gfc_fatal_error ("Can't USE the same %smodule we're building",
 		       p->state == COMP_SUBMODULE ? "sub" : "");
 
   init_pi_tree ();

@@ -57,7 +57,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "builtins.h"
 #include "tree-chkp.h"
-
+#include "stringpool.h"
+#include "attribs.h"
 
 /* I'm not real happy about this, but we need to handle gimple and
    non-gimple trees.  */
@@ -553,9 +554,16 @@ remap_type_1 (tree type, copy_body_data *id)
   /* All variants of type share the same size, so use the already remaped data.  */
   if (TYPE_MAIN_VARIANT (new_tree) != new_tree)
     {
-      gcc_checking_assert (TYPE_SIZE (type) == TYPE_SIZE (TYPE_MAIN_VARIANT (type)));
-      gcc_checking_assert (TYPE_SIZE_UNIT (type) == TYPE_SIZE_UNIT (TYPE_MAIN_VARIANT (type)));
-
+      tree s = TYPE_SIZE (type);
+      tree mvs = TYPE_SIZE (TYPE_MAIN_VARIANT (type));
+      tree su = TYPE_SIZE_UNIT (type);
+      tree mvsu = TYPE_SIZE_UNIT (TYPE_MAIN_VARIANT (type));
+      gcc_checking_assert ((TREE_CODE (s) == PLACEHOLDER_EXPR
+			    && (TREE_CODE (mvs) == PLACEHOLDER_EXPR))
+			   || s == mvs);
+      gcc_checking_assert ((TREE_CODE (su) == PLACEHOLDER_EXPR
+			    && (TREE_CODE (mvsu) == PLACEHOLDER_EXPR))
+			   || su == mvsu);
       TYPE_SIZE (new_tree) = TYPE_SIZE (TYPE_MAIN_VARIANT (new_tree));
       TYPE_SIZE_UNIT (new_tree) = TYPE_SIZE_UNIT (TYPE_MAIN_VARIANT (new_tree));
     }
@@ -941,7 +949,7 @@ remap_gimple_op_r (tree *tp, int *walk_subtrees, void *data)
 	*walk_subtrees = 0;
 
       else if (TREE_CODE (*tp) == INTEGER_CST)
-	*tp = wide_int_to_tree (new_type, *tp);
+	*tp = wide_int_to_tree (new_type, wi::to_wide (*tp));
       else
 	{
 	  *tp = copy_node (*tp);
@@ -1125,7 +1133,7 @@ copy_tree_body_r (tree *tp, int *walk_subtrees, void *data)
 	*walk_subtrees = 0;
 
       else if (TREE_CODE (*tp) == INTEGER_CST)
-	*tp = wide_int_to_tree (new_type, *tp);
+	*tp = wide_int_to_tree (new_type, wi::to_wide (*tp));
       else
 	{
 	  *tp = copy_node (*tp);
@@ -1756,13 +1764,15 @@ remap_gimple_stmt (gimple *stmt, copy_body_data *id)
 
 static basic_block
 copy_bb (copy_body_data *id, basic_block bb, int frequency_scale,
-         gcov_type count_scale)
+         profile_count num, profile_count den)
 {
   gimple_stmt_iterator gsi, copy_gsi, seq_gsi;
   basic_block copy_basic_block;
   tree decl;
   gcov_type freq;
   basic_block prev;
+  bool scale = num.initialized_p ()
+	       && (den > 0 || num == profile_count::zero ());
 
   /* Search for previous copied basic block.  */
   prev = bb->prev_bb;
@@ -1772,7 +1782,8 @@ copy_bb (copy_body_data *id, basic_block bb, int frequency_scale,
   /* create_basic_block() will append every new block to
      basic_block_info automatically.  */
   copy_basic_block = create_basic_block (NULL, (basic_block) prev->aux);
-  copy_basic_block->count = apply_scale (bb->count, count_scale);
+  if (scale)
+    copy_basic_block->count = bb->count.apply_scale (num, den);
 
   /* We are going to rebuild frequencies from scratch.  These values
      have just small importance to drive canonicalize_loop_headers.  */
@@ -2006,7 +2017,9 @@ copy_bb (copy_body_data *id, basic_block bb, int frequency_scale,
 		      struct cgraph_edge *old_edge = edge;
 		      edge = edge->clone (id->dst_node, call_stmt,
 					  gimple_uid (stmt),
-					  REG_BR_PROB_BASE, CGRAPH_FREQ_BASE,
+					  profile_count::one (),
+					  profile_count::one (),
+					  CGRAPH_FREQ_BASE,
 					  true);
 		      /* We could also just rescale the frequency, but
 		         doing so would introduce roundoff errors and make
@@ -2025,7 +2038,9 @@ copy_bb (copy_body_data *id, basic_block bb, int frequency_scale,
 			  old_edge->speculative_call_info (direct, indirect, ref);
 			  indirect = indirect->clone (id->dst_node, call_stmt,
 						      gimple_uid (stmt),
-						      REG_BR_PROB_BASE, CGRAPH_FREQ_BASE,
+						      profile_count::one (),
+						      profile_count::one (),
+						      CGRAPH_FREQ_BASE,
 						      true);
 			  if (old_edge->frequency + indirect->frequency)
 			    {
@@ -2200,8 +2215,8 @@ update_ssa_across_abnormal_edges (basic_block bb, basic_block ret_bb,
    debug stmts are left after a statement that must end the basic block.  */
 
 static bool
-copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb,
-		   basic_block abnormal_goto_dest)
+copy_edges_for_bb (basic_block bb, profile_count num, profile_count den,
+		   basic_block ret_bb, basic_block abnormal_goto_dest)
 {
   basic_block new_bb = (basic_block) bb->aux;
   edge_iterator ei;
@@ -2209,6 +2224,8 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb,
   gimple_stmt_iterator si;
   int flags;
   bool need_debug_cleanup = false;
+  bool scale = num.initialized_p ()
+	       && (den > 0 || num == profile_count::zero ());
 
   /* Use the indices from the original blocks to create edges for the
      new ones.  */
@@ -2225,7 +2242,8 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb,
 	    && old_edge->dest->aux != EXIT_BLOCK_PTR_FOR_FN (cfun))
 	  flags |= EDGE_FALLTHRU;
 	new_edge = make_edge (new_bb, (basic_block) old_edge->dest->aux, flags);
-	new_edge->count = apply_scale (old_edge->count, count_scale);
+	if (scale)
+	  new_edge->count = old_edge->count.apply_scale (num, den);
 	new_edge->probability = old_edge->probability;
       }
 
@@ -2281,10 +2299,44 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb,
 	    }
 	}
 
+      bool update_probs = false;
+
       if (gimple_code (copy_stmt) == GIMPLE_EH_DISPATCH)
-	make_eh_dispatch_edges (as_a <geh_dispatch *> (copy_stmt));
+	{
+	  make_eh_dispatch_edges (as_a <geh_dispatch *> (copy_stmt));
+	  update_probs = true;
+	}
       else if (can_throw)
-	make_eh_edges (copy_stmt);
+	{
+	  make_eh_edges (copy_stmt);
+	  update_probs = true;
+	}
+
+      /* EH edges may not match old edges.  Copy as much as possible.  */
+      if (update_probs)
+	{
+          edge e;
+          edge_iterator ei;
+	  basic_block copy_stmt_bb = gimple_bb (copy_stmt);
+
+          FOR_EACH_EDGE (old_edge, ei, bb->succs)
+            if ((old_edge->flags & EDGE_EH)
+		&& (e = find_edge (copy_stmt_bb,
+				   (basic_block) old_edge->dest->aux))
+		&& (e->flags & EDGE_EH))
+	      {
+		e->probability = old_edge->probability;
+		e->count = old_edge->count;
+	      }
+	    
+          FOR_EACH_EDGE (e, ei, copy_stmt_bb->succs)
+	    if ((e->flags & EDGE_EH) && !e->probability.initialized_p ())
+	      {
+	        e->probability = profile_probability::never ();
+	        e->count = profile_count::zero ();
+	      }
+        }
+
 
       /* If the call we inline cannot make abnormal goto do not add
          additional abnormal edges but only retain those already present
@@ -2307,7 +2359,8 @@ copy_edges_for_bb (basic_block bb, gcov_type count_scale, basic_block ret_bb,
 		   && gimple_call_arg (copy_stmt, 0) == boolean_true_node)
 	    nonlocal_goto = false;
 	  else
-	    make_edge (copy_stmt_bb, abnormal_goto_dest, EDGE_ABNORMAL);
+	    make_single_succ_edge (copy_stmt_bb, abnormal_goto_dest,
+				   EDGE_ABNORMAL);
 	}
 
       if ((can_throw || nonlocal_goto)
@@ -2422,22 +2475,14 @@ remap_decl_1 (tree decl, void *data)
    the cfun to the function of new_fndecl (and current_function_decl too).  */
 
 static void
-initialize_cfun (tree new_fndecl, tree callee_fndecl, gcov_type count)
+initialize_cfun (tree new_fndecl, tree callee_fndecl, profile_count count)
 {
   struct function *src_cfun = DECL_STRUCT_FUNCTION (callee_fndecl);
-  gcov_type count_scale;
 
   if (!DECL_ARGUMENTS (new_fndecl))
     DECL_ARGUMENTS (new_fndecl) = DECL_ARGUMENTS (callee_fndecl);
   if (!DECL_RESULT (new_fndecl))
     DECL_RESULT (new_fndecl) = DECL_RESULT (callee_fndecl);
-
-  if (ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count)
-    count_scale
-        = GCOV_COMPUTE_SCALE (count,
-                              ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count);
-  else
-    count_scale = REG_BR_PROB_BASE;
 
   /* Register specific tree functions.  */
   gimple_register_cfg_hooks ();
@@ -2471,14 +2516,22 @@ initialize_cfun (tree new_fndecl, tree callee_fndecl, gcov_type count)
   init_empty_tree_cfg ();
 
   profile_status_for_fn (cfun) = profile_status_for_fn (src_cfun);
-  ENTRY_BLOCK_PTR_FOR_FN (cfun)->count =
-    (ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count * count_scale /
-     REG_BR_PROB_BASE);
+
+  /* FIXME: When all counts are known to be zero, scaling is also meaningful.
+   */
+  if (ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count.initialized_p ()
+      && count.initialized_p ()
+      && ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count.initialized_p ())
+    {
+      ENTRY_BLOCK_PTR_FOR_FN (cfun)->count =
+	ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count.apply_scale (count,
+				    ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count);
+      EXIT_BLOCK_PTR_FOR_FN (cfun)->count =
+	EXIT_BLOCK_PTR_FOR_FN (src_cfun)->count.apply_scale (count,
+				    ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count);
+    }
   ENTRY_BLOCK_PTR_FOR_FN (cfun)->frequency
     = ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->frequency;
-  EXIT_BLOCK_PTR_FOR_FN (cfun)->count =
-    (EXIT_BLOCK_PTR_FOR_FN (src_cfun)->count * count_scale /
-     REG_BR_PROB_BASE);
   EXIT_BLOCK_PTR_FOR_FN (cfun)->frequency =
     EXIT_BLOCK_PTR_FOR_FN (src_cfun)->frequency;
   if (src_cfun->eh)
@@ -2644,7 +2697,7 @@ redirect_all_calls (copy_body_data * id, basic_block bb)
    when this can happen for COMDATs.  */
 
 void
-freqs_to_counts (struct cgraph_node *node, gcov_type count)
+freqs_to_counts (struct cgraph_node *node, profile_count count)
 {
   basic_block bb;
   edge_iterator ei;
@@ -2653,10 +2706,9 @@ freqs_to_counts (struct cgraph_node *node, gcov_type count)
 
   FOR_ALL_BB_FN(bb, fn)
     {
-      bb->count = apply_scale (count,
-                               GCOV_COMPUTE_SCALE (bb->frequency, BB_FREQ_MAX));
+      bb->count = count.apply_scale (bb->frequency, BB_FREQ_MAX);
       FOR_EACH_EDGE (e, ei, bb->succs)
-        e->count = apply_probability (e->src->count, e->probability);
+        e->count = e->src->count.apply_probability (e->probability);
     }
 }
 
@@ -2664,7 +2716,7 @@ freqs_to_counts (struct cgraph_node *node, gcov_type count)
    another function.  Walks FN via CFG, returns new fndecl.  */
 
 static tree
-copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
+copy_cfg_body (copy_body_data * id, profile_count count, int frequency_scale,
 	       basic_block entry_block_map, basic_block exit_block_map,
 	       basic_block new_entry)
 {
@@ -2675,10 +2727,13 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
   basic_block bb;
   tree new_fndecl = NULL;
   bool need_debug_cleanup = false;
-  gcov_type count_scale;
   int last;
   int incoming_frequency = 0;
-  gcov_type incoming_count = 0;
+  profile_count incoming_count = profile_count::zero ();
+  profile_count num = count;
+  profile_count den = ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count;
+  bool scale = num.initialized_p ()
+	       && (den > 0 || num == profile_count::zero ());
 
   /* This can happen for COMDAT routines that end up with 0 counts
      despite being called (see the comments for handle_missing_profiles()
@@ -2686,24 +2741,18 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
      before inlining, using the guessed edge frequencies, so that we don't
      end up with a 0-count inline body which can confuse downstream
      optimizations such as function splitting.  */
-  if (!ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count && count)
+  if (!(ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count > 0) && count > 0)
     {
       /* Apply the larger of the call bb count and the total incoming
          call edge count to the callee.  */
-      gcov_type in_count = 0;
+      profile_count in_count = profile_count::zero ();
       struct cgraph_edge *in_edge;
       for (in_edge = id->src_node->callers; in_edge;
            in_edge = in_edge->next_caller)
-        in_count += in_edge->count;
+	if (in_edge->count.initialized_p ())
+          in_count += in_edge->count;
       freqs_to_counts (id->src_node, count > in_count ? count : in_count);
     }
-
-  if (ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count)
-    count_scale
-        = GCOV_COMPUTE_SCALE (count,
-                              ENTRY_BLOCK_PTR_FOR_FN (src_cfun)->count);
-  else
-    count_scale = REG_BR_PROB_BASE;
 
   /* Register specific tree functions.  */
   gimple_register_cfg_hooks ();
@@ -2724,7 +2773,10 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
 	    incoming_frequency += EDGE_FREQUENCY (e);
 	    incoming_count += e->count;
 	  }
-      incoming_count = apply_scale (incoming_count, count_scale);
+      if (scale)
+        incoming_count = incoming_count.apply_scale (num, den);
+      else
+	incoming_count = profile_count::uninitialized ();
       incoming_frequency
 	= apply_scale ((gcov_type)incoming_frequency, frequency_scale);
       ENTRY_BLOCK_PTR_FOR_FN (cfun)->count = incoming_count;
@@ -2751,7 +2803,7 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
   FOR_EACH_BB_FN (bb, cfun_to_copy)
     if (!id->blocks_to_copy || bitmap_bit_p (id->blocks_to_copy, bb->index))
       {
-	basic_block new_bb = copy_bb (id, bb, frequency_scale, count_scale);
+	basic_block new_bb = copy_bb (id, bb, frequency_scale, num, den);
 	bb->aux = new_bb;
 	new_bb->aux = bb;
 	new_bb->loop_father = entry_block_map->loop_father;
@@ -2774,13 +2826,13 @@ copy_cfg_body (copy_body_data * id, gcov_type count, int frequency_scale,
   FOR_ALL_BB_FN (bb, cfun_to_copy)
     if (!id->blocks_to_copy
 	|| (bb->index > 0 && bitmap_bit_p (id->blocks_to_copy, bb->index)))
-      need_debug_cleanup |= copy_edges_for_bb (bb, count_scale, exit_block_map,
+      need_debug_cleanup |= copy_edges_for_bb (bb, num, den, exit_block_map,
 					       abnormal_goto_dest);
 
   if (new_entry)
     {
       edge e = make_edge (entry_block_map, (basic_block)new_entry->aux, EDGE_FALLTHRU);
-      e->probability = REG_BR_PROB_BASE;
+      e->probability = profile_probability::always ();
       e->count = incoming_count;
     }
 
@@ -2979,7 +3031,7 @@ copy_tree_body (copy_body_data *id)
    another function.  */
 
 static tree
-copy_body (copy_body_data *id, gcov_type count, int frequency_scale,
+copy_body (copy_body_data *id, profile_count count, int frequency_scale,
 	   basic_block entry_block_map, basic_block exit_block_map,
 	   basic_block new_entry)
 {
@@ -3827,7 +3879,7 @@ estimate_move_cost (tree type, bool ARG_UNUSED (speed_p))
 
   if (TREE_CODE (type) == VECTOR_TYPE)
     {
-      machine_mode inner = TYPE_MODE (TREE_TYPE (type));
+      scalar_mode inner = SCALAR_TYPE_MODE (TREE_TYPE (type));
       machine_mode simd
 	= targetm.vectorize.preferred_simd_mode (inner);
       int simd_mode_size = GET_MODE_SIZE (simd);
@@ -4497,14 +4549,16 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
       cgraph_edge *edge;
       tree virtual_offset = NULL;
       int freq = cg_edge->frequency;
-      gcov_type count = cg_edge->count;
+      profile_count count = cg_edge->count;
       tree op;
       gimple_stmt_iterator iter = gsi_for_stmt (stmt);
 
       cg_edge->remove ();
       edge = id->src_node->callees->clone (id->dst_node, call_stmt,
 		   		           gimple_uid (stmt),
-				   	   REG_BR_PROB_BASE, CGRAPH_FREQ_BASE,
+				   	   profile_count::one (),
+					   profile_count::one (),
+					   CGRAPH_FREQ_BASE,
 				           true);
       edge->frequency = freq;
       edge->count = count;
@@ -4603,6 +4657,9 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
     vec_alloc (id->dst_simt_vars, 0);
   else
     id->dst_simt_vars = NULL;
+
+  if (profile_status_for_fn (id->src_cfun) == PROFILE_ABSENT)
+    profile_status_for_fn (dst_cfun) = PROFILE_ABSENT;
 
   /* If the src function contains an IFN_VA_ARG, then so will the dst
      function after inlining.  Likewise for IFN_GOMP_USE_SIMT.  */
@@ -4722,9 +4779,9 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Inlining ");
-      print_generic_expr (dump_file, id->src_fn, 0);
+      print_generic_expr (dump_file, id->src_fn);
       fprintf (dump_file, " to ");
-      print_generic_expr (dump_file, id->dst_fn, 0);
+      print_generic_expr (dump_file, id->dst_fn);
       fprintf (dump_file, " with frequency %i\n", cg_edge->frequency);
     }
 
@@ -4738,6 +4795,22 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
 	     bb, return_block, NULL);
 
   reset_debug_bindings (id, stmt_gsi);
+
+  if (flag_stack_reuse != SR_NONE)
+    for (tree p = DECL_ARGUMENTS (id->src_fn); p; p = DECL_CHAIN (p))
+      if (!TREE_THIS_VOLATILE (p))
+	{
+	  tree *varp = id->decl_map->get (p);
+	  if (varp && VAR_P (*varp) && !is_gimple_reg (*varp))
+	    {
+	      tree clobber = build_constructor (TREE_TYPE (*varp), NULL);
+	      gimple *clobber_stmt;
+	      TREE_THIS_VOLATILE (clobber) = 1;
+	      clobber_stmt = gimple_build_assign (*varp, clobber);
+	      gimple_set_location (clobber_stmt, gimple_location (stmt));
+	      gsi_insert_before (&stmt_gsi, clobber_stmt, GSI_SAME_STMT);
+	    }
+	}
 
   /* Reset the escaped solution.  */
   if (cfun->gimple_df)
@@ -4789,6 +4862,23 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
       stmt = gimple_build_assign (gimple_call_lhs (stmt), use_retvar);
       gsi_replace (&stmt_gsi, stmt, false);
       maybe_clean_or_replace_eh_stmt (old_stmt, stmt);
+      /* Append a clobber for id->retvar if easily possible.  */
+      if (flag_stack_reuse != SR_NONE
+	  && id->retvar
+	  && VAR_P (id->retvar)
+	  && id->retvar != return_slot
+	  && id->retvar != modify_dest
+	  && !TREE_THIS_VOLATILE (id->retvar)
+	  && !is_gimple_reg (id->retvar)
+	  && !stmt_ends_bb_p (stmt))
+	{
+	  tree clobber = build_constructor (TREE_TYPE (id->retvar), NULL);
+	  gimple *clobber_stmt;
+	  TREE_THIS_VOLATILE (clobber) = 1;
+	  clobber_stmt = gimple_build_assign (id->retvar, clobber);
+	  gimple_set_location (clobber_stmt, gimple_location (old_stmt));
+	  gsi_insert_after (&stmt_gsi, clobber_stmt, GSI_SAME_STMT);
+	}
 
       /* Copy bounds if we copy structure with bounds.  */
       if (chkp_function_instrumented_p (id->dst_fn)
@@ -4827,8 +4917,25 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
 	      SSA_NAME_DEF_STMT (name) = gimple_build_nop ();
 	    }
 	}
+      /* Replace with a clobber for id->retvar.  */
+      else if (flag_stack_reuse != SR_NONE
+	       && id->retvar
+	       && VAR_P (id->retvar)
+	       && id->retvar != return_slot
+	       && id->retvar != modify_dest
+	       && !TREE_THIS_VOLATILE (id->retvar)
+	       && !is_gimple_reg (id->retvar))
+	{
+	  tree clobber = build_constructor (TREE_TYPE (id->retvar), NULL);
+	  gimple *clobber_stmt;
+	  TREE_THIS_VOLATILE (clobber) = 1;
+	  clobber_stmt = gimple_build_assign (id->retvar, clobber);
+	  gimple_set_location (clobber_stmt, gimple_location (stmt));
+	  gsi_replace (&stmt_gsi, clobber_stmt, false);
+	  maybe_clean_or_replace_eh_stmt (stmt, clobber_stmt);
+	}
       else
-        gsi_remove (&stmt_gsi, true);
+	gsi_remove (&stmt_gsi, true);
     }
 
   /* Put returned bounds into the correct place if required.  */
@@ -4877,6 +4984,8 @@ expand_call_inline (basic_block bb, gimple *stmt, copy_body_data *id)
   cg_edge->callee->remove ();
 
   id->block = NULL_TREE;
+  id->retvar = NULL_TREE;
+  id->retbnd = NULL_TREE;
   successfully_inlined = true;
 
  egress:
@@ -5903,10 +6012,10 @@ tree_function_versioning (tree old_decl, tree new_decl,
 			  {
 			    fprintf (dump_file, "    const ");
 			    print_generic_expr (dump_file,
-						replace_info->new_tree, 0);
+						replace_info->new_tree);
 			    fprintf (dump_file,
 				     "  can't be converted to param ");
-			    print_generic_expr (dump_file, parm, 0);
+			    print_generic_expr (dump_file, parm);
 			    fprintf (dump_file, "\n");
 			  }
 			replace_info->old_tree = NULL;

@@ -1142,18 +1142,18 @@ tree_stl_vec
 brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 {
   /* Flush to zero.  */
-  bool ftz = false;
+  bool ftz_mod = false;
   const BrigBase *base = &brig_inst.base;
 
   if (base->kind == BRIG_KIND_INST_MOD)
     {
       const BrigInstMod *mod = (const BrigInstMod *) base;
-      ftz = mod->modifier & BRIG_ALU_FTZ;
+      ftz_mod = mod->modifier & BRIG_ALU_FTZ;
     }
   else if (base->kind == BRIG_KIND_INST_CMP)
     {
       const BrigInstCmp *cmp = (const BrigInstCmp *) base;
-      ftz = cmp->modifier & BRIG_ALU_FTZ;
+      ftz_mod = cmp->modifier & BRIG_ALU_FTZ;
     }
 
   bool is_vec_instr = hsa_type_packed_p (brig_inst.type);
@@ -1239,6 +1239,25 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
   tree half_storage_type = element_count > 1
 			     ? gccbrig_tree_type_for_hsa_type (brig_inst.type)
 			     : uint32_type_node;
+
+  /* If flush-to-zero mode is supported for the target only few cases
+     need slow flush-to-zero emulation code on the
+     operands. Otherwise, the code is emitted for all operands. */
+  bool needs_ftz = !target_supports_ftz_mode ();
+  if (ftz_mod)
+    {
+      tree_code opcode
+	= get_tree_code_for_hsa_opcode(brig_inst.opcode, brig_inst.type);
+      BrigType16_t brig_inner_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
+      if (opcode == CALL_EXPR
+	  && gccbrig_is_float_type (brig_inner_type)
+	  /* Needs ftz as the functions have code paths that do not
+	     cause subnormal operands to be flushed. */
+	  && (brig_inst.opcode == BRIG_OPCODE_MIN
+	      || brig_inst.opcode == BRIG_OPCODE_MAX
+	      || brig_inst.opcode == BRIG_OPCODE_FRACT))
+	needs_ftz |= true;
+    }
 
   const BrigData *operand_entries
     = m_parent.get_brig_data_entry (brig_inst.operands);
@@ -1361,7 +1380,8 @@ brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 				build_zero_cst (TREE_TYPE (operand)));
 	    }
 
-	  if (ftz)
+	  /* Half-to-float conversion is not affected by FTZ mode. */
+	  if (ftz_mod && (half_to_float || needs_ftz))
 	    operand = flush_to_zero (is_fp16_arith) (*this, operand);
 	}
       operands.push_back (operand);
@@ -1408,8 +1428,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
       input_type = TREE_TYPE (TREE_TYPE (func_decl));
     }
 
-  if (ftz && (VECTOR_FLOAT_TYPE_P (TREE_TYPE (inst_expr))
-	      || SCALAR_FLOAT_TYPE_P (TREE_TYPE (inst_expr)) || is_fp16))
+  if (ftz && is_fp16)
     {
       /* Ensure we don't duplicate the arithmetics to the arguments of the bit
 	 field reference operators.  */
@@ -1439,9 +1458,8 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 	  tree element_ref
 	    = build3 (BIT_FIELD_REF, element_type, input,
 		      TYPE_SIZE (element_type),
-		      build_int_cst (uint32_type_node,
-				     i * int_size_in_bytes (element_type)
-				     *  BITS_PER_UNIT));
+		      bitsize_int (i * int_size_in_bytes (element_type)
+				   *  BITS_PER_UNIT));
 
 	  last_assign
 	    = build_output_assignment (brig_inst, element, element_ref);
@@ -1504,7 +1522,7 @@ brig_code_entry_handler::unpack (tree value, tree_stl_vec &elements)
       tree element
 	= build3 (BIT_FIELD_REF, input_element_type, value,
 		  TYPE_SIZE (input_element_type),
-		  build_int_cst (unsigned_char_type_node, i * element_size));
+		  bitsize_int(i * element_size));
 
       element = add_temp_var ("scalar", element);
       elements.push_back (element);
@@ -1559,9 +1577,8 @@ tree_element_unary_visitor::operator () (brig_code_entry_handler &handler,
 	{
 	  tree element = build3 (BIT_FIELD_REF, input_element_type, operand,
 				 TYPE_SIZE (input_element_type),
-				 build_int_cst (unsigned_char_type_node,
-						i * element_size
-						* BITS_PER_UNIT));
+				 bitsize_int (i * element_size
+					      * BITS_PER_UNIT));
 
 	  tree output = visit_element (handler, element);
 	  output_element_type = TREE_TYPE (output);
@@ -1610,15 +1627,13 @@ tree_element_binary_visitor::operator () (brig_code_entry_handler &handler,
 
 	  tree element0 = build3 (BIT_FIELD_REF, input_element_type, operand0,
 				  TYPE_SIZE (input_element_type),
-				  build_int_cst (unsigned_char_type_node,
-						 i * element_size
-						 * BITS_PER_UNIT));
+				  bitsize_int (i * element_size
+					       * BITS_PER_UNIT));
 
 	  tree element1 = build3 (BIT_FIELD_REF, input_element_type, operand1,
 				  TYPE_SIZE (input_element_type),
-				  build_int_cst (unsigned_char_type_node,
-						 i * element_size
-						 * BITS_PER_UNIT));
+				  bitsize_int (i * element_size
+					       * BITS_PER_UNIT));
 
 	  tree output = visit_element (handler, element0, element1);
 	  output_element_type = TREE_TYPE (output);
@@ -1756,5 +1771,143 @@ brig_code_entry_handler::int_constant_value (tree node)
   if (TREE_CODE (n) == VIEW_CONVERT_EXPR)
     n = TREE_OPERAND (n, 0);
   return int_cst_value (n);
+}
+
+/* Returns the tree code that should be used to implement the given
+   HSA instruction opcode (BRIG_OPCODE) for the given type of instruction
+   (BRIG_TYPE).  In case the opcode cannot be mapped to a TREE node directly,
+   returns TREE_LIST (if it can be emulated with a simple chain of tree
+   nodes) or CALL_EXPR if the opcode should be implemented using a builtin
+   call.  */
+
+tree_code
+brig_code_entry_handler::get_tree_code_for_hsa_opcode
+  (BrigOpcode16_t brig_opcode, BrigType16_t brig_type) const
+{
+  BrigType16_t brig_inner_type = brig_type & BRIG_TYPE_BASE_MASK;
+  switch (brig_opcode)
+    {
+    case BRIG_OPCODE_NOP:
+      return NOP_EXPR;
+    case BRIG_OPCODE_ADD:
+      return PLUS_EXPR;
+    case BRIG_OPCODE_CMOV:
+      if (brig_inner_type == brig_type)
+	return COND_EXPR;
+      else
+	return VEC_COND_EXPR;
+    case BRIG_OPCODE_SUB:
+      return MINUS_EXPR;
+    case BRIG_OPCODE_MUL:
+    case BRIG_OPCODE_MUL24:
+      return MULT_EXPR;
+    case BRIG_OPCODE_MULHI:
+    case BRIG_OPCODE_MUL24HI:
+      return MULT_HIGHPART_EXPR;
+    case BRIG_OPCODE_DIV:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return RDIV_EXPR;
+      else
+	return TRUNC_DIV_EXPR;
+    case BRIG_OPCODE_NEG:
+      return NEGATE_EXPR;
+    case BRIG_OPCODE_MIN:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return CALL_EXPR;
+      else
+	return MIN_EXPR;
+    case BRIG_OPCODE_MAX:
+      if (gccbrig_is_float_type (brig_inner_type))
+	return CALL_EXPR;
+      else
+	return MAX_EXPR;
+    case BRIG_OPCODE_FMA:
+      return FMA_EXPR;
+    case BRIG_OPCODE_ABS:
+      return ABS_EXPR;
+    case BRIG_OPCODE_SHL:
+      return LSHIFT_EXPR;
+    case BRIG_OPCODE_SHR:
+      return RSHIFT_EXPR;
+    case BRIG_OPCODE_OR:
+      return BIT_IOR_EXPR;
+    case BRIG_OPCODE_XOR:
+      return BIT_XOR_EXPR;
+    case BRIG_OPCODE_AND:
+      return BIT_AND_EXPR;
+    case BRIG_OPCODE_NOT:
+      return BIT_NOT_EXPR;
+    case BRIG_OPCODE_RET:
+      return RETURN_EXPR;
+    case BRIG_OPCODE_MOV:
+    case BRIG_OPCODE_LDF:
+      return MODIFY_EXPR;
+    case BRIG_OPCODE_LD:
+    case BRIG_OPCODE_ST:
+      return MEM_REF;
+    case BRIG_OPCODE_BR:
+      return GOTO_EXPR;
+    case BRIG_OPCODE_REM:
+      if (brig_type == BRIG_TYPE_U64 || brig_type == BRIG_TYPE_U32)
+	return TRUNC_MOD_EXPR;
+      else
+	return CALL_EXPR;
+    case BRIG_OPCODE_NRCP:
+    case BRIG_OPCODE_NRSQRT:
+      /* Implement as 1/f (x).  gcc should pattern detect that and
+	 use a native instruction, if available, for it.  */
+      return TREE_LIST;
+    case BRIG_OPCODE_FLOOR:
+    case BRIG_OPCODE_CEIL:
+    case BRIG_OPCODE_SQRT:
+    case BRIG_OPCODE_NSQRT:
+    case BRIG_OPCODE_RINT:
+    case BRIG_OPCODE_TRUNC:
+    case BRIG_OPCODE_POPCOUNT:
+    case BRIG_OPCODE_COPYSIGN:
+    case BRIG_OPCODE_NCOS:
+    case BRIG_OPCODE_NSIN:
+    case BRIG_OPCODE_NLOG2:
+    case BRIG_OPCODE_NEXP2:
+    case BRIG_OPCODE_NFMA:
+      /* Class has type B1 regardless of the float type, thus
+	 the below builtin map search cannot find it.  */
+    case BRIG_OPCODE_CLASS:
+    case BRIG_OPCODE_WORKITEMABSID:
+      return CALL_EXPR;
+    default:
+
+      /* Some BRIG opcodes can use the same builtins for unsigned and
+	 signed types.  Force these cases to unsigned types.
+      */
+
+      if (brig_opcode == BRIG_OPCODE_BORROW
+	  || brig_opcode == BRIG_OPCODE_CARRY
+	  || brig_opcode == BRIG_OPCODE_LASTBIT
+	  || brig_opcode == BRIG_OPCODE_BITINSERT)
+	{
+	  if (brig_type == BRIG_TYPE_S32)
+	    brig_type = BRIG_TYPE_U32;
+	  else if (brig_type == BRIG_TYPE_S64)
+	    brig_type = BRIG_TYPE_U64;
+	}
+
+
+      builtin_map::const_iterator i
+	= s_custom_builtins.find (std::make_pair (brig_opcode, brig_type));
+      if (i != s_custom_builtins.end ())
+	return CALL_EXPR;
+      else if (s_custom_builtins.find
+	       (std::make_pair (brig_opcode, brig_inner_type))
+	       != s_custom_builtins.end ())
+	return CALL_EXPR;
+      if (brig_inner_type == BRIG_TYPE_F16
+	  && s_custom_builtins.find
+	  (std::make_pair (brig_opcode, BRIG_TYPE_F32))
+	  != s_custom_builtins.end ())
+	return CALL_EXPR;
+      break;
+    }
+  return TREE_LIST; /* Emulate using a chain of nodes.  */
 }
 

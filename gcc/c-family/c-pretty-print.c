@@ -24,6 +24,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "c-pretty-print.h"
 #include "diagnostic.h"
 #include "stor-layout.h"
+#include "stringpool.h"
 #include "attribs.h"
 #include "intl.h"
 #include "tree-pretty-print.h"
@@ -520,6 +521,11 @@ pp_c_parameter_type_list (c_pretty_printer *pp, tree t)
 	  else
 	    pp->abstract_declarator (TREE_VALUE (parms));
 	}
+      if (!first && !parms)
+	{
+	  pp_separate_with (pp, ',');
+	  pp_c_ws_string (pp, "...");
+	}
     }
   pp_c_right_paren (pp);
 }
@@ -910,9 +916,9 @@ pp_c_integer_constant (c_pretty_printer *pp, tree i)
     pp_unsigned_wide_integer (pp, tree_to_uhwi (i));
   else
     {
-      wide_int wi = i;
+      wide_int wi = wi::to_wide (i);
 
-      if (wi::lt_p (i, 0, TYPE_SIGN (TREE_TYPE (i))))
+      if (wi::lt_p (wi::to_wide (i), 0, TYPE_SIGN (TREE_TYPE (i))))
 	{
 	  pp_minus (pp);
 	  wi = -wi;

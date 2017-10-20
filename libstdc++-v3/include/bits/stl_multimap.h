@@ -63,6 +63,7 @@
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
   template <typename _Key, typename _Tp, typename _Compare, typename _Alloc>
@@ -525,12 +526,19 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  thus multiple pairs with the same key can be inserted.
        *
        *  Insertion requires logarithmic time.
+       *  @{
        */
       iterator
       insert(const value_type& __x)
       { return _M_t._M_insert_equal(__x); }
 
 #if __cplusplus >= 201103L
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2354. Unnecessary copying when inserting into maps with braced-init
+      iterator
+      insert(value_type&& __x)
+      { return _M_t._M_insert_equal(std::move(__x)); }
+
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
 						    _Pair&&>::value>::type>
@@ -538,6 +546,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	insert(_Pair&& __x)
 	{ return _M_t._M_insert_equal(std::forward<_Pair>(__x)); }
 #endif
+      // @}
 
       /**
        *  @brief Inserts a std::pair into the %multimap.
@@ -558,6 +567,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  https://gcc.gnu.org/onlinedocs/libstdc++/manual/associative.html#containers.associative.insert_hints
        *
        *  Insertion requires logarithmic time (if the hint is not taken).
+       * @{
        */
       iterator
 #if __cplusplus >= 201103L
@@ -568,6 +578,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       { return _M_t._M_insert_equal_(__position, __x); }
 
 #if __cplusplus >= 201103L
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2354. Unnecessary copying when inserting into maps with braced-init
+      iterator
+      insert(const_iterator __position, value_type&& __x)
+      { return _M_t._M_insert_equal_(__position, std::move(__x)); }
+
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
 						    _Pair&&>::value>::type>
@@ -576,6 +592,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	{ return _M_t._M_insert_equal_(__position,
 				       std::forward<_Pair>(__x)); }
 #endif
+      // @}
 
       /**
        *  @brief A template function that attempts to insert a range
@@ -1102,7 +1119,6 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 _GLIBCXX_END_NAMESPACE_CONTAINER
 
 #if __cplusplus > 201402L
-_GLIBCXX_BEGIN_NAMESPACE_VERSION
   // Allow std::multimap access to internals of compatible maps.
   template<typename _Key, typename _Val, typename _Cmp1, typename _Alloc,
 	   typename _Cmp2>
@@ -1121,9 +1137,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _S_get_tree(_GLIBCXX_STD_C::multimap<_Key, _Val, _Cmp2, _Alloc>& __map)
       { return __map._M_t; }
     };
-_GLIBCXX_END_NAMESPACE_VERSION
 #endif // C++17
 
+_GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
 #endif /* _STL_MULTIMAP_H */

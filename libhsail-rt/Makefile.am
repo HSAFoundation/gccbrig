@@ -57,10 +57,14 @@ WARN_CFLAGS = $(WARN_FLAGS) $(WERROR)
 # -I/-D flags to pass when compiling.
 AM_CPPFLAGS = -I$(srcdir)/rt -I$(srcdir)/include/internal
 
+TARGET_CONFIG_INCLUDE_PATHS = @TARGET_INCLUDES@
+TARGET_INCLUDES = $(addprefix -I$(srcdir)/../,$(TARGET_INCLUDE_PATHS))
+
 AM_CFLAGS = \
 	-I $(srcdir)/../include \
 	-I $(srcdir)/../libgcc \
-	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS)
+	-I $(MULTIBUILDTOP)../../gcc/include $(PTH_CFLAGS) \
+	$(TARGET_INCLUDES)
 
 toolexeclib_LTLIBRARIES = libhsail-rt.la
 
@@ -76,7 +80,8 @@ runtime_files = \
 	rt/sat_arithmetic.c \
 	rt/segment.c \
 	rt/workitems.c \
-	rt/fibers.c
+	rt/fibers.c \
+	rt/ftz.c
 
 libhsail_rt_la_SOURCES = $(runtime_files)
 libhsail_rt_la_LDFLAGS  = -rpath '$(libdir)'

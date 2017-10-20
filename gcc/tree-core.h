@@ -93,6 +93,9 @@ struct die_struct;
 /* Nonzero if this is an indirect call by descriptor.  */
 #define ECF_BY_DESCRIPTOR	  (1 << 14)
 
+/* Nonzero if this is a cold function.  */
+#define ECF_COLD		  (1 << 15)
+
 /* Call argument flags.  */
 /* Nonzero if the argument is not dereferenced recursively, thus only
    directly reachable memory is read or written.  */
@@ -357,7 +360,7 @@ enum omp_clause_code {
   /* OpenMP clause: ordered [(constant-integer-expression)].  */
   OMP_CLAUSE_ORDERED,
 
-  /* OpenMP clause: default.  */
+  /* OpenACC/OpenMP clause: default.  */
   OMP_CLAUSE_DEFAULT,
 
   /* OpenACC/OpenMP clause: collapse (constant-integer-expression).  */
@@ -499,6 +502,7 @@ enum omp_clause_default_kind {
   OMP_CLAUSE_DEFAULT_NONE,
   OMP_CLAUSE_DEFAULT_PRIVATE,
   OMP_CLAUSE_DEFAULT_FIRSTPRIVATE,
+  OMP_CLAUSE_DEFAULT_PRESENT,
   OMP_CLAUSE_DEFAULT_LAST
 };
 
@@ -623,6 +627,10 @@ enum tree_index {
   TI_BOOLEAN_TYPE,
   TI_FILEPTR_TYPE,
   TI_CONST_TM_PTR_TYPE,
+  TI_FENV_T_PTR_TYPE,
+  TI_CONST_FENV_T_PTR_TYPE,
+  TI_FEXCEPT_T_PTR_TYPE,
+  TI_CONST_FEXCEPT_T_PTR_TYPE,
   TI_POINTER_SIZED_TYPE,
 
   TI_POINTER_BOUNDS_TYPE,
@@ -967,8 +975,14 @@ struct GTY(()) tree_base {
     /* VEC length.  This field is only used with TREE_VEC.  */
     int length;
 
+    /* Number of elements.  This field is only used with VECTOR_CST.  */
+    unsigned int nelts;
+
     /* SSA version number.  This field is only used with SSA_NAME.  */
     unsigned int version;
+
+    /* CHREC_VARIABLE.  This field is only used with POLYNOMIAL_CHREC.  */
+    unsigned int chrec_var;
 
     /* Internal function code.  */
     enum internal_fn ifn;
@@ -1318,7 +1332,7 @@ struct GTY(()) tree_complex {
 
 struct GTY(()) tree_vector {
   struct tree_typed typed;
-  tree GTY ((length ("TYPE_VECTOR_SUBPARTS (TREE_TYPE ((tree)&%h))"))) elts[1];
+  tree GTY ((length ("VECTOR_CST_NELTS ((tree) &%h)"))) elts[1];
 };
 
 struct GTY(()) tree_identifier {
@@ -1515,8 +1529,9 @@ struct GTY(()) tree_type_common {
      so we need to store the value 32 (not 31, as we need the zero
      as well), hence six bits.  */
   unsigned align : 6;
+  unsigned warn_if_not_align : 6;
   unsigned typeless_storage : 1;
-  unsigned spare : 24;
+  unsigned spare : 18;
 
   alias_set_type alias_set;
   tree pointer_to;
@@ -1544,7 +1559,7 @@ struct GTY(()) tree_type_non_common {
   tree values;
   tree minval;
   tree maxval;
-  tree binfo;
+  tree lang_1;
 };
 
 struct GTY (()) tree_binfo {
@@ -1623,7 +1638,11 @@ struct GTY(()) tree_decl_common {
   /* DECL_ALIGN.  It should have the same size as TYPE_ALIGN.  */
   unsigned int align : 6;
 
-  /* 20 bits unused.  */
+  /* DECL_WARN_IF_NOT_ALIGN.  It should have the same size as
+     TYPE_WARN_IF_NOT_ALIGN.  */
+  unsigned int warn_if_not_align : 6;
+
+  /* 14 bits unused.  */
 
   /* UID for points-to sets, stable over copying from inlining.  */
   unsigned int pt_uid;
@@ -2039,7 +2058,7 @@ struct floatn_type_info {
                                 Global variables
 ---------------------------------------------------------------------------*/
 /* Matrix describing the structures contained in a given tree code.  */
-extern unsigned char tree_contains_struct[MAX_TREE_CODES][64];
+extern bool tree_contains_struct[MAX_TREE_CODES][64];
 
 /* Class of tree given its code.  */
 extern const enum tree_code_class tree_code_type[];

@@ -116,6 +116,102 @@ vuse_eq (ao_ref *, tree vuse1, unsigned int cnt, void *data)
   return NULL;
 }
 
+/* We looked for STMT in the hash table, but did not find it.
+
+   If STMT is an assignment from a binary operator, we may know something
+   about the operands relationship to each other which would allow
+   us to derive a constant value for the RHS of STMT.  */
+
+tree
+avail_exprs_stack::simplify_binary_operation (gimple *stmt,
+					      class expr_hash_elt element)
+{
+  if (is_gimple_assign (stmt))
+    {
+      struct hashable_expr *expr = element.expr ();
+      if (expr->kind == EXPR_BINARY)
+	{
+	  enum tree_code code = expr->ops.binary.op;
+
+	  switch (code)
+	    {
+	    /* For these cases, if we know the operands
+	       are equal, then we know the result.  */
+	    case MIN_EXPR:
+	    case MAX_EXPR:
+	    case BIT_IOR_EXPR:
+	    case BIT_AND_EXPR:
+	    case BIT_XOR_EXPR:
+	    case MINUS_EXPR:
+	    case TRUNC_DIV_EXPR:
+	    case CEIL_DIV_EXPR:
+	    case FLOOR_DIV_EXPR:
+	    case ROUND_DIV_EXPR:
+	    case EXACT_DIV_EXPR:
+	    case TRUNC_MOD_EXPR:
+	    case CEIL_MOD_EXPR:
+	    case FLOOR_MOD_EXPR:
+	    case ROUND_MOD_EXPR:
+	      {
+		/* Build a simple equality expr and query the hash table
+		   for it.  */
+		struct hashable_expr expr;
+		expr.type = boolean_type_node;
+		expr.kind = EXPR_BINARY;
+		expr.ops.binary.op = EQ_EXPR;
+		expr.ops.binary.opnd0 = gimple_assign_rhs1 (stmt);
+		expr.ops.binary.opnd1 = gimple_assign_rhs2 (stmt);
+		class expr_hash_elt element2 (&expr, NULL_TREE);
+		expr_hash_elt **slot
+		  = m_avail_exprs->find_slot (&element2, NO_INSERT);
+		tree result_type = TREE_TYPE (gimple_assign_lhs (stmt));
+
+		/* If the query was successful and returned a nonzero
+		   result, then we know that the operands of the binary
+		   expression are the same.  In many cases this allows
+		   us to compute a constant result of the expression
+		   at compile time, even if we do not know the exact
+		   values of the operands.  */
+		if (slot && *slot && integer_onep ((*slot)->lhs ()))
+		  {
+		    switch (code)
+		      {
+		      case MIN_EXPR:
+		      case MAX_EXPR:
+		      case BIT_IOR_EXPR:
+		      case BIT_AND_EXPR:
+			return gimple_assign_rhs1 (stmt);
+
+		      case BIT_XOR_EXPR:
+		      case MINUS_EXPR:
+		      case TRUNC_MOD_EXPR:
+		      case CEIL_MOD_EXPR:
+		      case FLOOR_MOD_EXPR:
+		      case ROUND_MOD_EXPR:
+			return build_zero_cst (result_type);
+
+		      case TRUNC_DIV_EXPR:
+		      case CEIL_DIV_EXPR:
+		      case FLOOR_DIV_EXPR:
+		      case ROUND_DIV_EXPR:
+		      case EXACT_DIV_EXPR:
+			return build_one_cst (result_type);
+
+		      default:
+			gcc_unreachable ();
+		      }
+		  }
+		break;
+	      }
+
+	      default:
+		break;
+	    }
+	}
+    }
+  return NULL_TREE;
+}
+
 /* Search for an existing instance of STMT in the AVAIL_EXPRS_STACK table.
    If found, return its LHS. Otherwise insert STMT in the table and
    return NULL_TREE.
@@ -160,11 +256,26 @@ avail_exprs_stack::lookup_avail_expr (gimple *stmt, bool insert, bool tbaa_p)
     }
   else if (*slot == NULL)
     {
+      /* If we did not find the expression in the hash table, we may still
+	 be able to produce a result for some expressions.  */
+      tree retval = avail_exprs_stack::simplify_binary_operation (stmt,
+								  element);
+
+      /* We have, in effect, allocated *SLOT for ELEMENT at this point.
+	 We must initialize *SLOT to a real entry, even if we found a
+	 way to prove ELEMENT was a constant after not finding ELEMENT
+	 in the hash table.
+
+	 An uninitialized or empty slot is an indication no prior objects
+	 entered into the hash table had a hash collection with ELEMENT.
+
+	 If we fail to do so and had such entries in the table, they
+	 would become unreachable.  */
       class expr_hash_elt *element2 = new expr_hash_elt (element);
       *slot = element2;
 
       record_expr (element2, NULL, '2');
-      return NULL_TREE;
+      return retval;
     }
 
   /* If we found a redundant memory operation do an alias walk to
@@ -215,7 +326,7 @@ avail_exprs_stack::lookup_avail_expr (gimple *stmt, bool insert, bool tbaa_p)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "FIND: ");
-      print_generic_expr (dump_file, lhs, 0);
+      print_generic_expr (dump_file, lhs);
       fprintf (dump_file, "\n");
     }
 
@@ -502,6 +613,15 @@ hashable_expr_equal_p (const struct hashable_expr *expr0,
 			       expr1->ops.ternary.opnd2, 0))
 	return false;
 
+      /* BIT_INSERT_EXPR has an implict operand as the type precision
+         of op1.  Need to check to make sure they are the same.  */
+      if (expr0->ops.ternary.op == BIT_INSERT_EXPR
+	  && TREE_CODE (expr0->ops.ternary.opnd1) == INTEGER_CST
+          && TREE_CODE (expr1->ops.ternary.opnd1) == INTEGER_CST
+          && TYPE_PRECISION (TREE_TYPE (expr0->ops.ternary.opnd1))
+              != TYPE_PRECISION (TREE_TYPE (expr1->ops.ternary.opnd1)))
+        return false;
+
       if (operand_equal_p (expr0->ops.ternary.opnd0,
 			   expr1->ops.ternary.opnd0, 0)
 	  && operand_equal_p (expr0->ops.ternary.opnd1,
@@ -737,36 +857,36 @@ expr_hash_elt::print (FILE *stream)
 
   if (m_lhs)
     {
-      print_generic_expr (stream, m_lhs, 0);
+      print_generic_expr (stream, m_lhs);
       fprintf (stream, " = ");
     }
 
   switch (m_expr.kind)
     {
       case EXPR_SINGLE:
-        print_generic_expr (stream, m_expr.ops.single.rhs, 0);
-        break;
+	print_generic_expr (stream, m_expr.ops.single.rhs);
+	break;
 
       case EXPR_UNARY:
 	fprintf (stream, "%s ", get_tree_code_name (m_expr.ops.unary.op));
-        print_generic_expr (stream, m_expr.ops.unary.opnd, 0);
-        break;
+	print_generic_expr (stream, m_expr.ops.unary.opnd);
+	break;
 
       case EXPR_BINARY:
-        print_generic_expr (stream, m_expr.ops.binary.opnd0, 0);
+	print_generic_expr (stream, m_expr.ops.binary.opnd0);
 	fprintf (stream, " %s ", get_tree_code_name (m_expr.ops.binary.op));
-        print_generic_expr (stream, m_expr.ops.binary.opnd1, 0);
-        break;
+	print_generic_expr (stream, m_expr.ops.binary.opnd1);
+	break;
 
       case EXPR_TERNARY:
 	fprintf (stream, " %s <", get_tree_code_name (m_expr.ops.ternary.op));
-        print_generic_expr (stream, m_expr.ops.ternary.opnd0, 0);
+	print_generic_expr (stream, m_expr.ops.ternary.opnd0);
 	fputs (", ", stream);
-        print_generic_expr (stream, m_expr.ops.ternary.opnd1, 0);
+	print_generic_expr (stream, m_expr.ops.ternary.opnd1);
 	fputs (", ", stream);
-        print_generic_expr (stream, m_expr.ops.ternary.opnd2, 0);
+	print_generic_expr (stream, m_expr.ops.ternary.opnd2);
 	fputs (">", stream);
-        break;
+	break;
 
       case EXPR_CALL:
         {
@@ -779,11 +899,11 @@ expr_hash_elt::print (FILE *stream)
             fputs (internal_fn_name (gimple_call_internal_fn (fn_from)),
                    stream);
           else
-            print_generic_expr (stream, gimple_call_fn (fn_from), 0);
+	    print_generic_expr (stream, gimple_call_fn (fn_from));
           fprintf (stream, " (");
           for (i = 0; i < nargs; i++)
             {
-              print_generic_expr (stream, m_expr.ops.call.args[i], 0);
+	      print_generic_expr (stream, m_expr.ops.call.args[i]);
               if (i + 1 < nargs)
                 fprintf (stream, ", ");
             }
@@ -799,7 +919,7 @@ expr_hash_elt::print (FILE *stream)
           fprintf (stream, "PHI <");
           for (i = 0; i < nargs; i++)
             {
-              print_generic_expr (stream, m_expr.ops.phi.args[i], 0);
+	      print_generic_expr (stream, m_expr.ops.phi.args[i]);
               if (i + 1 < nargs)
                 fprintf (stream, ", ");
             }
@@ -811,7 +931,7 @@ expr_hash_elt::print (FILE *stream)
   if (m_vop)
     {
       fprintf (stream, " with ");
-      print_generic_expr (stream, m_vop, 0);
+      print_generic_expr (stream, m_vop);
     }
 
   fprintf (stream, "\n");
@@ -838,9 +958,9 @@ const_and_copies::pop_to_marker (void)
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "<<<< COPY ");
-	  print_generic_expr (dump_file, dest, 0);
+	  print_generic_expr (dump_file, dest);
 	  fprintf (dump_file, " = ");
-	  print_generic_expr (dump_file, SSA_NAME_VALUE (dest), 0);
+	  print_generic_expr (dump_file, SSA_NAME_VALUE (dest));
 	  fprintf (dump_file, "\n");
 	}
 
@@ -859,9 +979,9 @@ const_and_copies::record_const_or_copy_raw (tree x, tree y, tree prev_x)
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "0>>> COPY ");
-      print_generic_expr (dump_file, x, 0);
+      print_generic_expr (dump_file, x);
       fprintf (dump_file, " = ");
-      print_generic_expr (dump_file, y, 0);
+      print_generic_expr (dump_file, y);
       fprintf (dump_file, "\n");
     }
 

@@ -34,6 +34,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-chkp.h"
 #include "tree-inline.h"
 #include "ipa-chkp.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 /*  Pointer Bounds Checker has two IPA passes to support code instrumentation.
 
@@ -715,7 +717,7 @@ chkp_produce_thunks (bool early)
 	  node->thunk.thunk_p = true;
 	  node->thunk.add_pointer_bounds_args = true;
 	  node->create_edge (node->instrumented_version, NULL,
-			     0, CGRAPH_FREQ_BASE);
+			     node->count, CGRAPH_FREQ_BASE);
 	  node->create_reference (node->instrumented_version,
 			       IPA_REF_CHKP, NULL);
 	  /* Thunk shouldn't be a cdtor.  */

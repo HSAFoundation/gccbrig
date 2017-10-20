@@ -1225,10 +1225,9 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	      && ref->u.c.component->attr.dimension)
 	    {
 	      tree arr_desc_token_offset;
-	      /* Get the token from the descriptor.  */
-	      arr_desc_token_offset = gfc_advance_chain (
-		    TYPE_FIELDS (TREE_TYPE (ref->u.c.component->backend_decl)),
-		    4 /* CAF_TOKEN_FIELD  */);
+	      /* Get the token field from the descriptor.  */
+	      arr_desc_token_offset = TREE_OPERAND (
+		    gfc_conv_descriptor_token (ref->u.c.component->backend_decl), 1);
 	      arr_desc_token_offset
 		  = compute_component_offset (arr_desc_token_offset,
 					      TREE_TYPE (tmp));
@@ -2236,8 +2235,9 @@ trans_this_image (gfc_se * se, gfc_expr *expr)
 
       if (INTEGER_CST_P (dim_arg))
 	{
-	  if (wi::ltu_p (dim_arg, 1)
-	      || wi::gtu_p (dim_arg, GFC_TYPE_ARRAY_CORANK (TREE_TYPE (desc))))
+	  if (wi::ltu_p (wi::to_wide (dim_arg), 1)
+	      || wi::gtu_p (wi::to_wide (dim_arg),
+			    GFC_TYPE_ARRAY_CORANK (TREE_TYPE (desc))))
 	    gfc_error ("%<dim%> argument of %s intrinsic at %L is not a valid "
 		       "dimension index", expr->value.function.isym->name,
 		       &expr->where);
@@ -2658,8 +2658,9 @@ gfc_conv_intrinsic_bound (gfc_se * se, gfc_expr * expr, int upper)
   if (INTEGER_CST_P (bound))
     {
       if (((!as || as->type != AS_ASSUMED_RANK)
-	   && wi::geu_p (bound, GFC_TYPE_ARRAY_RANK (TREE_TYPE (desc))))
-	  || wi::gtu_p (bound, GFC_MAX_DIMENSIONS))
+	   && wi::geu_p (wi::to_wide (bound),
+			 GFC_TYPE_ARRAY_RANK (TREE_TYPE (desc))))
+	  || wi::gtu_p (wi::to_wide (bound), GFC_MAX_DIMENSIONS))
 	gfc_error ("%<dim%> argument of %s intrinsic at %L is not a valid "
 		   "dimension index", upper ? "UBOUND" : "LBOUND",
 		   &expr->where);
@@ -2854,8 +2855,9 @@ conv_intrinsic_cobound (gfc_se * se, gfc_expr * expr)
 
       if (INTEGER_CST_P (bound))
 	{
-	  if (wi::ltu_p (bound, 1)
-	      || wi::gtu_p (bound, GFC_TYPE_ARRAY_CORANK (TREE_TYPE (desc))))
+	  if (wi::ltu_p (wi::to_wide (bound), 1)
+	      || wi::gtu_p (wi::to_wide (bound),
+			    GFC_TYPE_ARRAY_CORANK (TREE_TYPE (desc))))
 	    gfc_error ("%<dim%> argument of %s intrinsic at %L is not a valid "
 		       "dimension index", expr->value.function.isym->name,
 		       &expr->where);
@@ -8128,6 +8130,11 @@ conv_isocbinding_subroutine (gfc_code *code)
   gfc_conv_expr_descriptor (&fptrse, arg->next->expr);
   gfc_add_block_to_block (&block, &fptrse.pre);
   desc = fptrse.expr;
+
+  /* Set the span field.  */
+  tmp = TYPE_SIZE_UNIT (gfc_get_element_type (TREE_TYPE (desc)));
+  tmp = fold_convert (gfc_array_index_type, tmp);
+  gfc_conv_descriptor_span_set (&block, desc, tmp);
 
   /* Set data value, dtype, and offset.  */
   tmp = GFC_TYPE_ARRAY_DATAPTR_TYPE (TREE_TYPE (desc));

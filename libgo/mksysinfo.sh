@@ -34,6 +34,7 @@ grep -v '^// ' gen-sysinfo.go | \
   grep -v '^type _timespec ' | \
   grep -v '^type _timestruc_t ' | \
   grep -v '^type _epoll_' | \
+  grep -v '^type _*locale[_ ]' | \
   grep -v 'in6_addr' | \
   grep -v 'sockaddr_in6' | \
   sed -e 's/\([^a-zA-Z0-9_]\)_timeval\([^a-zA-Z0-9_]\)/\1Timeval\2/g' \
@@ -46,6 +47,10 @@ grep -v '^// ' gen-sysinfo.go | \
 # a field of type _in6_addr, but other types depend on _arpcom, so we need to
 # put it back.
 grep '^type _arpcom ' gen-sysinfo.go | \
+  sed -e 's/_in6_addr/[16]byte/' >> ${OUT}
+
+# Same on Solaris for _mld_hdr_t.
+grep '^type _mld_hdr_t ' gen-sysinfo.go | \
   sed -e 's/_in6_addr/[16]byte/' >> ${OUT}
 
 # The errno constants.  These get type Errno.
@@ -310,16 +315,11 @@ upcase_fields () {
 # _user_regs_struct.
 regs=`grep '^type _user_regs_struct struct' gen-sysinfo.go || true`
 if test "$regs" = ""; then
-  # s390
-  regs=`grep '^type __user_regs_struct struct' gen-sysinfo.go || true`
-  if test "$regs" != ""; then
-    # Substructures of __user_regs_struct on s390
-    upcase_fields "__user_psw_struct" "PtracePsw" >> ${OUT} || true
-    upcase_fields "__user_fpregs_struct" "PtraceFpregs" >> ${OUT} || true
-    upcase_fields "__user_per_struct" "PtracePer" >> ${OUT} || true
-  fi
+  # mips*
+  regs=`grep '^type _pt_regs struct' gen-sysinfo.go || true`
 fi
 if test "$regs" != ""; then
+  regs=`echo $regs | sed -e 's/type _pt_regs struct//'`
   regs=`echo $regs |
     sed -e 's/type __*user_regs_struct struct //' -e 's/[{}]//g'`
   regs=`echo $regs | sed -e s'/^ *//'`
@@ -467,6 +467,7 @@ fi | sed -e 's/type _stat64/type Stat_t/' \
          -e 's/st_ctim/Ctim/' \
          -e 's/\([^a-zA-Z0-9_]\)_timeval\([^a-zA-Z0-9_]\)/\1Timeval\2/g' \
          -e 's/\([^a-zA-Z0-9_]\)_timespec_t\([^a-zA-Z0-9_]\)/\1Timespec\2/g' \
+         -e 's/\([^a-zA-Z0-9_]\)_st_timespec_t\([^a-zA-Z0-9_]\)/\1Timespec\2/g' \
          -e 's/\([^a-zA-Z0-9_]\)_timespec\([^a-zA-Z0-9_]\)/\1Timespec\2/g' \
          -e 's/\([^a-zA-Z0-9_]\)_timestruc_t\([^a-zA-Z0-9_]\)/\1Timestruc\2/g' \
          -e 's/Godump_[0-9] struct { \([^;]*;\) };/\1/g' \
@@ -485,6 +486,7 @@ fi | sed -e 's/type _dirent64/type Dirent/' \
          -e 's/d_name/Name/' \
          -e 's/]int8/]byte/' \
          -e 's/d_ino/Ino/' \
+         -e 's/d_namlen/Namlen/' \
          -e 's/d_off/Off/' \
          -e 's/d_reclen/Reclen/' \
          -e 's/d_type/Type/' \

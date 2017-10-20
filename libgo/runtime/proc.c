@@ -179,7 +179,7 @@ fixcontext(ucontext_t* c)
 // So we make the field larger in runtime2.go and pick an appropriate
 // offset within the field here.
 static ucontext_t*
-ucontext_arg(uintptr* go_ucontext)
+ucontext_arg(uintptr_t* go_ucontext)
 {
 	uintptr_t p = (uintptr_t)go_ucontext;
 	size_t align = __alignof__(ucontext_t);
@@ -316,7 +316,7 @@ runtime_mcall(FuncVal *fv)
 #else
 		// We have to point to an address on the stack that is
 		// below the saved registers.
-		gp->gcnextsp = &afterregs;
+		gp->gcnextsp = (uintptr)(&afterregs);
 #endif
 		gp->fromgogo = false;
 		getcontext(ucontext_arg(&gp->context[0]));
@@ -370,12 +370,13 @@ extern G* allocg(void)
   __asm__ (GOSYM_PREFIX "runtime.allocg");
 
 Sched*	runtime_sched;
-int32	runtime_ncpu;
 
 bool	runtime_isarchive;
 
 extern void kickoff(void)
   __asm__(GOSYM_PREFIX "runtime.kickoff");
+extern void minit(void)
+  __asm__(GOSYM_PREFIX "runtime.minit");
 extern void mstart1(void)
   __asm__(GOSYM_PREFIX "runtime.mstart1");
 extern void stopm(void)
@@ -477,6 +478,10 @@ runtime_mstart(void *arg)
 	gp->entry = nil;
 	gp->param = nil;
 
+	// We have to call minit before we call getcontext,
+	// because getcontext will copy the signal mask.
+	minit();
+
 	initcontext();
 
 	// Record top of stack for use by mcall.
@@ -489,7 +494,7 @@ runtime_mstart(void *arg)
 	// Setting gcstacksize to 0 is a marker meaning that gcinitialsp
 	// is the top of the stack, not the bottom.
 	gp->gcstacksize = 0;
-	gp->gcnextsp = &arg;
+	gp->gcnextsp = (uintptr)(&arg);
 #endif
 
 	// Save the currently active context.  This will return
@@ -558,9 +563,9 @@ setGContext()
 	__splitstack_block_signals(&val, nil);
 #else
 	gp->gcinitialsp = &val;
-	gp->gcstack = nil;
+	gp->gcstack = 0;
 	gp->gcstacksize = 0;
-	gp->gcnextsp = &val;
+	gp->gcnextsp = (uintptr)(&val);
 #endif
 	getcontext(ucontext_arg(&gp->context[0]));
 
@@ -628,16 +633,17 @@ doentersyscall(uintptr pc, uintptr sp)
 #ifdef USING_SPLIT_STACK
 	{
 	  size_t gcstacksize;
-	  g->gcstack = __splitstack_find(nil, nil, &gcstacksize,
-					 &g->gcnextsegment, &g->gcnextsp,
-					 &g->gcinitialsp);
+	  g->gcstack = (uintptr)(__splitstack_find(nil, nil, &gcstacksize,
+						   (void**)(&g->gcnextsegment),
+						   (void**)(&g->gcnextsp),
+						   &g->gcinitialsp));
 	  g->gcstacksize = (uintptr)gcstacksize;
 	}
 #else
 	{
 		void *v;
 
-		g->gcnextsp = (byte *) &v;
+		g->gcnextsp = (uintptr)(&v);
 	}
 #endif
 
@@ -667,16 +673,17 @@ doentersyscallblock(uintptr pc, uintptr sp)
 #ifdef USING_SPLIT_STACK
 	{
 	  size_t gcstacksize;
-	  g->gcstack = __splitstack_find(nil, nil, &gcstacksize,
-					 &g->gcnextsegment, &g->gcnextsp,
-					 &g->gcinitialsp);
+	  g->gcstack = (uintptr)(__splitstack_find(nil, nil, &gcstacksize,
+						   (void**)(&g->gcnextsegment),
+						   (void**)(&g->gcnextsp),
+						   &g->gcinitialsp));
 	  g->gcstacksize = (uintptr)gcstacksize;
 	}
 #else
 	{
 		void *v;
 
-		g->gcnextsp = (byte *) &v;
+		g->gcnextsp = (uintptr)(&v);
 	}
 #endif
 
@@ -765,7 +772,7 @@ resetNewG(G *newg, void **sp, uintptr *spsize)
   *spsize = newg->gcstacksize;
   if(*spsize == 0)
     runtime_throw("bad spsize in resetNewG");
-  newg->gcnextsp = *sp;
+  newg->gcnextsp = (uintptr)(*sp);
 #endif
 }
 
