@@ -253,7 +253,7 @@ public:
   char m_reg_class;
   /* If allocated, the number of the HW register (within its HSA register
      class).  */
-  char m_hard_num;
+  short m_hard_num;
 
 private:
   /* Make the default constructor inaccessible.  */
