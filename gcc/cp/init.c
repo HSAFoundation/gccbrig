@@ -30,6 +30,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimplify.h"
 #include "c-family/c-ubsan.h"
 #include "intl.h"
+#include "stringpool.h"
+#include "attribs.h"
+#include "asan.h"
 
 static bool begin_init_stmts (tree *, tree *);
 static tree finish_init_stmts (bool, tree, tree);
@@ -45,6 +48,8 @@ static void expand_cleanup_for_base (tree, tree);
 static tree dfs_initialize_vtbl_ptrs (tree, void *);
 static tree build_field_list (tree, tree, int *);
 static int diagnose_uninitialized_cst_or_ref_member_1 (tree, tree, bool, bool);
+
+static GTY(()) tree fn;
 
 /* We are about to generate some complex initialization code.
    Conceptually, it is all a single expression.  However, we may want
@@ -530,14 +535,90 @@ perform_target_ctor (tree init)
 
 /* Return the non-static data initializer for FIELD_DECL MEMBER.  */
 
+static GTY(()) hash_map<tree, tree> *nsdmi_inst;
+
 tree
-get_nsdmi (tree member, bool in_ctor)
+get_nsdmi (tree member, bool in_ctor, tsubst_flags_t complain)
 {
   tree init;
   tree save_ccp = current_class_ptr;
   tree save_ccr = current_class_ref;
   
-  if (!in_ctor)
+  if (DECL_LANG_SPECIFIC (member) && DECL_TEMPLATE_INFO (member))
+    {
+      init = DECL_INITIAL (DECL_TI_TEMPLATE (member));
+      location_t expr_loc
+	= EXPR_LOC_OR_LOC (init, DECL_SOURCE_LOCATION (member));
+      tree *slot;
+      if (TREE_CODE (init) == DEFAULT_ARG)
+	/* Unparsed.  */;
+      else if (nsdmi_inst && (slot = nsdmi_inst->get (member)))
+	init = *slot;
+      /* Check recursive instantiation.  */
+      else if (DECL_INSTANTIATING_NSDMI_P (member))
+	{
+	  if (complain & tf_error)
+	    error_at (expr_loc, "recursive instantiation of default member "
+		      "initializer for %qD", member);
+	  init = error_mark_node;
+	}
+      else
+	{
+	  int un = cp_unevaluated_operand;
+	  cp_unevaluated_operand = 0;
+
+	  location_t sloc = input_location;
+	  input_location = expr_loc;
+
+	  DECL_INSTANTIATING_NSDMI_P (member) = 1;
+
+	  inject_this_parameter (DECL_CONTEXT (member), TYPE_UNQUALIFIED);
+
+	  start_lambda_scope (member);
+
+	  /* Do deferred instantiation of the NSDMI.  */
+	  init = (tsubst_copy_and_build
+		  (init, DECL_TI_ARGS (member),
+		   complain, member, /*function_p=*/false,
+		   /*integral_constant_expression_p=*/false));
+	  init = digest_nsdmi_init (member, init, complain);
+
+	  finish_lambda_scope ();
+
+	  DECL_INSTANTIATING_NSDMI_P (member) = 0;
+
+	  if (init != error_mark_node)
+	    {
+	      if (!nsdmi_inst)
+		nsdmi_inst = hash_map<tree,tree>::create_ggc (37);
+	      nsdmi_inst->put (member, init);
+	    }
+
+	  input_location = sloc;
+	  cp_unevaluated_operand = un;
+	}
+    }
+  else
+    init = DECL_INITIAL (member);
+
+  if (init && TREE_CODE (init) == DEFAULT_ARG)
+    {
+      if (complain & tf_error)
+	{
+	  error ("default member initializer for %qD required before the end "
+		 "of its enclosing class", member);
+	  inform (location_of (init), "defined here");
+	  DECL_INITIAL (member) = error_mark_node;
+	}
+      init = error_mark_node;
+    }
+
+  if (in_ctor)
+    {
+      current_class_ptr = save_ccp;
+      current_class_ref = save_ccr;
+    }
+  else
     {
       /* Use a PLACEHOLDER_EXPR when we don't have a 'this' parameter to
 	 refer to; constexpr evaluation knows what to do with it.  */
@@ -545,54 +626,16 @@ get_nsdmi (tree member, bool in_ctor)
       current_class_ptr = build_address (current_class_ref);
     }
 
-  if (DECL_LANG_SPECIFIC (member) && DECL_TEMPLATE_INFO (member))
-    {
-      init = DECL_INITIAL (DECL_TI_TEMPLATE (member));
-      if (TREE_CODE (init) == DEFAULT_ARG)
-	goto unparsed;
+  /* Strip redundant TARGET_EXPR so we don't need to remap it, and
+     so the aggregate init code below will see a CONSTRUCTOR.  */
+  bool simple_target = (init && SIMPLE_TARGET_EXPR_P (init));
+  if (simple_target)
+    init = TARGET_EXPR_INITIAL (init);
+  init = break_out_target_exprs (init);
+  if (simple_target && TREE_CODE (init) != CONSTRUCTOR)
+    /* Now put it back so C++17 copy elision works.  */
+    init = get_target_expr (init);
 
-      /* Check recursive instantiation.  */
-      if (DECL_INSTANTIATING_NSDMI_P (member))
-	{
-	  error ("recursive instantiation of non-static data member "
-		 "initializer for %qD", member);
-	  init = error_mark_node;
-	}
-      else
-	{
-	  DECL_INSTANTIATING_NSDMI_P (member) = 1;
-	  
-	  /* Do deferred instantiation of the NSDMI.  */
-	  init = (tsubst_copy_and_build
-		  (init, DECL_TI_ARGS (member),
-		   tf_warning_or_error, member, /*function_p=*/false,
-		   /*integral_constant_expression_p=*/false));
-	  init = digest_nsdmi_init (member, init);
-	  
-	  DECL_INSTANTIATING_NSDMI_P (member) = 0;
-	}
-    }
-  else
-    {
-      init = DECL_INITIAL (member);
-      if (init && TREE_CODE (init) == DEFAULT_ARG)
-	{
-	unparsed:
-	  error ("constructor required before non-static data member "
-		 "for %qD has been parsed", member);
-	  DECL_INITIAL (member) = error_mark_node;
-	  init = error_mark_node;
-	}
-      /* Strip redundant TARGET_EXPR so we don't need to remap it, and
-	 so the aggregate init code below will see a CONSTRUCTOR.  */
-      bool simple_target = (init && SIMPLE_TARGET_EXPR_P (init));
-      if (simple_target)
-	init = TARGET_EXPR_INITIAL (init);
-      init = break_out_target_exprs (init);
-      if (simple_target && TREE_CODE (init) != CONSTRUCTOR)
-	/* Now put it back so C++17 copy elision works.  */
-	init = get_target_expr (init);
-    }
   current_class_ptr = save_ccp;
   current_class_ref = save_ccr;
   return init;
@@ -639,7 +682,7 @@ perform_member_init (tree member, tree init)
   /* Use the non-static data member initializer if there was no
      mem-initializer for this field.  */
   if (init == NULL_TREE)
-    init = get_nsdmi (member, /*ctor*/true);
+    init = get_nsdmi (member, /*ctor*/true, tf_warning_or_error);
 
   if (init == error_mark_node)
     return;
@@ -1715,7 +1758,6 @@ expand_default_init (tree binfo, tree true_exp, tree exp, tree init, int flags,
                      tsubst_flags_t complain)
 {
   tree type = TREE_TYPE (exp);
-  tree ctor_name;
 
   /* It fails because there may not be a constructor which takes
      its own type as the first (or only parameter), but which does
@@ -1843,10 +1885,9 @@ expand_default_init (tree binfo, tree true_exp, tree exp, tree init, int flags,
     }
    else
     {
-      if (true_exp == exp)
-	ctor_name = complete_ctor_identifier;
-      else
-	ctor_name = base_ctor_identifier;
+      tree ctor_name = (true_exp == exp
+			? complete_ctor_identifier : base_ctor_identifier);
+
       rval = build_special_member_call (exp, ctor_name, &parms, binfo, flags,
 					complain);
     }
@@ -2063,7 +2104,7 @@ build_offset_ref (tree type, tree member, bool address_p,
       if (TREE_CODE (t) != TEMPLATE_ID_EXPR && !really_overloaded_fn (t))
 	{
 	  /* Get rid of a potential OVERLOAD around it.  */
-	  t = OVL_CURRENT (t);
+	  t = OVL_FIRST (t);
 
 	  /* Unique functions are handled easily.  */
 
@@ -2402,12 +2443,11 @@ diagnose_uninitialized_cst_or_ref_member (tree type, bool using_new, bool compla
 tree
 throw_bad_array_new_length (void)
 {
-  static tree fn;
   if (!fn)
     {
       tree name = get_identifier ("__cxa_throw_bad_array_new_length");
 
-      fn = IDENTIFIER_GLOBAL_VALUE (name);
+      fn = get_global_binding (name);
       if (!fn)
 	fn = push_throw_library_fn
 	  (name, build_function_type_list (sizetype, NULL_TREE));
@@ -3910,8 +3950,8 @@ finish_length_check (tree atype, tree iterator, tree obase, unsigned n)
 	}
       /* Don't check an array new when -fno-exceptions.  */
     }
-  else if (flag_sanitize & SANITIZE_BOUNDS
-	   && do_ubsan_in_current_function ())
+  else if (sanitize_flags_p (SANITIZE_BOUNDS)
+	   && current_function_decl != NULL_TREE)
     {
       /* Make sure the last element of the initializer is in bounds. */
       finish_expr_stmt
@@ -4581,8 +4621,7 @@ build_delete (tree otype, tree addr, special_function_kind auto_delete,
 	           && MAYBE_CLASS_TYPE_P (type) && !CLASSTYPE_FINAL (type)
 		   && TYPE_POLYMORPHIC_P (type))
 	    {
-	      tree dtor;
-	      dtor = CLASSTYPE_DESTRUCTORS (type);
+	      tree dtor = CLASSTYPE_DESTRUCTOR (type);
 	      if (!dtor || !DECL_VINDEX (dtor))
 		{
 		  if (CLASSTYPE_PURE_VIRTUALS (type))
@@ -4672,7 +4711,7 @@ build_delete (tree otype, tree addr, special_function_kind auto_delete,
       /* If the destructor is non-virtual, there is no deleting
 	 variant.  Instead, we must explicitly call the appropriate
 	 `operator delete' here.  */
-      else if (!DECL_VIRTUAL_P (CLASSTYPE_DESTRUCTORS (type))
+      else if (!DECL_VIRTUAL_P (CLASSTYPE_DESTRUCTOR (type))
 	       && auto_delete == sfk_deleting_destructor)
 	{
 	  /* We will use ADDR multiple times so we must save it.  */
@@ -4911,3 +4950,5 @@ build_vec_delete (tree base, tree maxindex,
 
   return rval;
 }
+
+#include "gt-cp-init.h"

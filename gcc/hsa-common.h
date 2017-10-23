@@ -28,6 +28,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "hash-table.h"
 #include "basic-block.h"
 #include "symbol-summary.h"
+#include "bitmap.h"
+
 
 /* Return true if the compiler should produce HSAIL.  */
 
@@ -156,6 +158,9 @@ public:
   /* Convert an operand to a destination type DTYPE and attach insns
      to HBB if needed.  */
   hsa_op_with_type *get_in_type (BrigType16_t dtype, hsa_bb *hbb);
+  /* If this operand has integer type smaller than 32 bits, extend it to 32
+     bits, adding instructions to HBB if needed.  */
+  hsa_op_with_type *extend_int_to_32bit (hsa_bb *hbb);
 
 protected:
   hsa_op_with_type (BrigKind16_t k, BrigType16_t t);
@@ -248,7 +253,7 @@ public:
   char m_reg_class;
   /* If allocated, the number of the HW register (within its HSA register
      class).  */
-  char m_hard_num;
+  short m_hard_num;
 
 private:
   /* Make the default constructor inaccessible.  */
@@ -1077,7 +1082,6 @@ class hsa_bb
 public:
   hsa_bb (basic_block cfg_bb);
   hsa_bb (basic_block cfg_bb, int idx);
-  ~hsa_bb ();
 
   /* Append an instruction INSN into the basic block.  */
   void append_insn (hsa_insn_basic *insn);
@@ -1099,7 +1103,7 @@ public:
   /* Just a number to construct names from.  */
   int m_index;
 
-  bitmap m_liveout, m_livein;
+  auto_bitmap m_liveout, m_livein;
 private:
   /* Make the default constructor inaccessible.  */
   hsa_bb ();

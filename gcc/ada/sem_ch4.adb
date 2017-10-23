@@ -283,7 +283,7 @@ package body Sem_Ch4 is
    --  Called when P is the prefix of an implicit dereference, denoting an
    --  object E. The function returns the designated type of the prefix, taking
    --  into account that the designated type of an anonymous access type may be
-   --  a limited view, when the non-limited view is visible.
+   --  a limited view, when the nonlimited view is visible.
    --
    --  If in semantics only mode (-gnatc or generic), the function also records
    --  that the prefix is a reference to E, if any. Normally, such a reference
@@ -755,7 +755,7 @@ package body Sem_Ch4 is
                           ("\constraint with discriminant values required", N);
                      end if;
 
-                  --  Limited Ada 2005 and general non-limited case
+                  --  Limited Ada 2005 and general nonlimited case
 
                   else
                      Error_Msg_N
@@ -1469,18 +1469,26 @@ package body Sem_Ch4 is
          --  can also happen when the function declaration appears before the
          --  full view of the type (which is legal in Ada 2012) and the call
          --  appears in a different unit, in which case the incomplete view
-         --  must be replaced with the full view to prevent subsequent type
-         --  errors.
+         --  must be replaced with the full view (or the nonlimited view)
+         --  to prevent subsequent type errors. Note that the usual install/
+         --  removal of limited_with clauses is not sufficient to handle this
+         --  case, because the limited view may have been captured in another
+         --  compilation unit that defines the current function.
 
-         if Is_Incomplete_Type (Etype (N))
-           and then Present (Full_View (Etype (N)))
-         then
-            if Is_Entity_Name (Nam) then
-               Set_Etype (Nam, Full_View (Etype (N)));
-               Set_Etype (Entity (Nam), Full_View (Etype (N)));
+         if Is_Incomplete_Type (Etype (N)) then
+            if Present (Full_View (Etype (N))) then
+               if Is_Entity_Name (Nam) then
+                  Set_Etype (Nam, Full_View (Etype (N)));
+                  Set_Etype (Entity (Nam), Full_View (Etype (N)));
+               end if;
+
+               Set_Etype (N, Full_View (Etype (N)));
+
+            elsif From_Limited_With (Etype (N))
+              and then Present (Non_Limited_View (Etype (N)))
+            then
+               Set_Etype (N, Non_Limited_View (Etype (N)));
             end if;
-
-            Set_Etype (N, Full_View (Etype (N)));
          end if;
       end if;
    end Analyze_Call;
@@ -2927,6 +2935,14 @@ package body Sem_Ch4 is
                   --  for all of them.
 
                   Set_Etype (Alt, It.Typ);
+
+                  --  If the alternative is an enumeration literal, use the one
+                  --  for this interpretation.
+
+                  if Is_Entity_Name (Alt) then
+                     Set_Entity (Alt, It.Nam);
+                  end if;
+
                   Get_Next_Interp (Index, It);
 
                   if No (It.Typ) then
@@ -3914,6 +3930,21 @@ package body Sem_Ch4 is
       Set_Etype (N, Any_Type);
       Find_Type (Mark);
       T := Entity (Mark);
+
+      if Nkind_In (Enclosing_Declaration (N), N_Formal_Type_Declaration,
+                                              N_Full_Type_Declaration,
+                                              N_Incomplete_Type_Declaration,
+                                              N_Protected_Type_Declaration,
+                                              N_Private_Extension_Declaration,
+                                              N_Private_Type_Declaration,
+                                              N_Subtype_Declaration,
+                                              N_Task_Type_Declaration)
+        and then T = Defining_Identifier (Enclosing_Declaration (N))
+      then
+         Error_Msg_N ("current instance not allowed", Mark);
+         T := Any_Type;
+      end if;
+
       Set_Etype (N, T);
 
       if T = Any_Type then
@@ -4566,7 +4597,7 @@ package body Sem_Ch4 is
       --  in what follows, either to retrieve a component of to find
       --  a primitive operation. If the prefix is an explicit dereference,
       --  set the type of the prefix to reflect this transformation.
-      --  If the non-limited view is itself an incomplete type, get the
+      --  If the nonlimited view is itself an incomplete type, get the
       --  full view if available.
 
       if From_Limited_With (Prefix_Type)
@@ -6268,13 +6299,18 @@ package body Sem_Ch4 is
 
       procedure Try_One_Interp (T1 : Entity_Id) is
       begin
-
          --  If the operator is an expanded name, then the type of the operand
          --  must be defined in the corresponding scope. If the type is
-         --  universal, the context will impose the correct type.
+         --  universal, the context will impose the correct type. Note that we
+         --  also avoid returning if we are currently within a generic instance
+         --  due to the fact that the generic package declaration has already
+         --  been successfully analyzed and Defined_In_Scope expects the base
+         --  type to be defined within the instance which will never be the
+         --  case.
 
          if Present (Scop)
            and then not Defined_In_Scope (T1, Scop)
+           and then not In_Instance
            and then T1 /= Universal_Integer
            and then T1 /= Universal_Real
            and then T1 /= Any_String
@@ -6295,7 +6331,6 @@ package body Sem_Ch4 is
                else
                   T_F := It.Typ;
                end if;
-
             else
                Found := True;
                T_F   := T1;
@@ -6304,7 +6339,6 @@ package body Sem_Ch4 is
 
             Set_Etype (L, T_F);
             Find_Non_Universal_Interpretations (N, R, Op_Id, T1);
-
          end if;
       end Try_One_Interp;
 
@@ -6443,9 +6477,17 @@ package body Sem_Ch4 is
       --------------------
 
       procedure Try_One_Interp (T1 : Entity_Id) is
-         Bas : constant Entity_Id := Base_Type (T1);
+         Bas : Entity_Id;
 
       begin
+         --  Perform a sanity check in case of previous errors
+
+         if No (T1) then
+            return;
+         end if;
+
+         Bas := Base_Type (T1);
+
          --  If the operator is an expanded name, then the type of the operand
          --  must be defined in the corresponding scope. If the type is
          --  universal, the context will impose the correct type. An anonymous
@@ -6456,7 +6498,15 @@ package body Sem_Ch4 is
          --  is declared in Standard, and preference rules apply to it.
 
          if Present (Scop) then
+
+            --  Note that we avoid returning if we are currently within a
+            --  generic instance due to the fact that the generic package
+            --  declaration has already been successfully analyzed and
+            --  Defined_In_Scope expects the base type to be defined within
+            --  the instance which will never be the case.
+
             if Defined_In_Scope (T1, Scop)
+              or else In_Instance
               or else T1 = Universal_Integer
               or else T1 = Universal_Real
               or else T1 = Any_Access
@@ -8510,14 +8560,21 @@ package body Sem_Ch4 is
                  ("expect variable in call to&", Prefix (N), Entity (Subprog));
             end if;
 
-         --  Conversely, if the formal is an access parameter and the object
-         --  is not, replace the actual with a 'Access reference. Its analysis
-         --  will check that the object is aliased.
+         --  Conversely, if the formal is an access parameter and the object is
+         --  not an access type or a reference type (i.e. a type with the
+         --  Implicit_Dereference aspect specified), replace the actual with a
+         --  'Access reference. Its analysis will check that the object is
+         --  aliased.
 
          elsif Is_Access_Type (Formal_Type)
            and then not Is_Access_Type (Etype (Obj))
+           and then
+             (not Has_Implicit_Dereference (Etype (Obj))
+               or else
+                 not Is_Access_Type (Designated_Type (Etype
+                       (Get_Reference_Discriminant (Etype (Obj))))))
          then
-            --  A special case: A.all'access is illegal if A is an access to a
+            --  A special case: A.all'Access is illegal if A is an access to a
             --  constant and the context requires an access to a variable.
 
             if not Is_Access_Constant (Formal_Type) then
@@ -8803,7 +8860,7 @@ package body Sem_Ch4 is
             while Present (Hom) loop
                if Ekind_In (Hom, E_Procedure, E_Function)
                  and then (not Is_Hidden (Hom) or else In_Instance)
-                 and then Scope (Hom) = Scope (Anc_Type)
+                 and then Scope (Hom) = Scope (Base_Type (Anc_Type))
                  and then Present (First_Formal (Hom))
                  and then
                    (Base_Type (Etype (First_Formal (Hom))) = Cls_Type
@@ -8864,8 +8921,13 @@ package body Sem_Ch4 is
                         Success    => Success,
                         Skip_First => True);
 
+                     --  The same operation may be encountered on two homonym
+                     --  traversals, before and after looking at interfaces.
+                     --  Check for this case before reporting a real ambiguity.
+
                      if Present (Valid_Candidate (Success, Call_Node, Hom))
                        and then Nkind (Call_Node) /= N_Function_Call
+                       and then Hom /= Matching_Op
                      then
                         Error_Msg_NE ("ambiguous call to&", N, Hom);
                         Report_Ambiguity (Matching_Op);
@@ -8996,7 +9058,7 @@ package body Sem_Ch4 is
 
          --  The type may have be obtained through a limited_with clause,
          --  in which case the primitive operations are available on its
-         --  non-limited view. If still incomplete, retrieve full view.
+         --  nonlimited view. If still incomplete, retrieve full view.
 
          if Ekind (Obj_Type) = E_Incomplete_Type
            and then From_Limited_With (Obj_Type)

@@ -137,6 +137,15 @@ isolate_path (basic_block bb, basic_block duplicate,
   gimple_stmt_iterator si, si2;
   edge_iterator ei;
   edge e2;
+  bool impossible = true;
+
+  for (si = gsi_start_bb (bb); gsi_stmt (si) != stmt; gsi_next (&si))
+    if (stmt_can_terminate_bb_p (gsi_stmt (si)))
+      {
+	impossible = false;
+	break;
+      }
+  force_edge_cold (e, impossible);
 
   /* First duplicate BB if we have not done so already and remove all
      the duplicate's outgoing edges as duplicate is going to unconditionally
@@ -145,6 +154,8 @@ isolate_path (basic_block bb, basic_block duplicate,
   if (!duplicate)
     {
       duplicate = duplicate_block (bb, NULL, NULL);
+      bb->frequency = 0;
+      bb->count = profile_count::zero ();
       if (!ret_zero)
 	for (ei = ei_start (duplicate->succs); (e2 = ei_safe_edge (ei)); )
 	  remove_edge (e2);
@@ -153,8 +164,13 @@ isolate_path (basic_block bb, basic_block duplicate,
   /* Complete the isolation step by redirecting E to reach DUPLICATE.  */
   e2 = redirect_edge_and_branch (e, duplicate);
   if (e2)
-    flush_pending_stmts (e2);
+    {
+      flush_pending_stmts (e2);
 
+      /* Update profile only when redirection is really processed.  */
+      bb->frequency += EDGE_FREQUENCY (e);
+      bb->count += e->count;
+    }
 
   /* There may be more than one statement in DUPLICATE which exhibits
      undefined behavior.  Ultimately we want the first such statement in
@@ -429,6 +445,8 @@ find_implicit_erroneous_behavior (void)
 	      if (!integer_zerop (op))
 		continue;
 
+	      location_t phi_arg_loc = gimple_phi_arg_location (phi, i);
+
 	      /* We've got a NULL PHI argument.  Now see if the
  	         PHI's result is dereferenced within BB.  */
 	      FOR_EACH_IMM_USE_STMT (use_stmt, iter, lhs)
@@ -441,7 +459,7 @@ find_implicit_erroneous_behavior (void)
 
 		  location_t loc = gimple_location (use_stmt)
 		    ? gimple_location (use_stmt)
-		    : gimple_phi_arg_location (phi, i);
+		    : phi_arg_loc;
 
 		  if (stmt_uses_name_in_undefined_way (use_stmt, lhs, loc))
 		    {

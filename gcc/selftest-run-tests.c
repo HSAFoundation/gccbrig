@@ -56,6 +56,7 @@ selftest::run_tests ()
 
   /* Low-level data structures.  */
   bitmap_c_tests ();
+  sbitmap_c_tests ();
   et_forest_c_tests ();
   hash_map_tests_c_tests ();
   hash_set_tests_c_tests ();
@@ -92,6 +93,7 @@ selftest::run_tests ()
     targetm.run_target_selftests ();
 
   store_merging_c_tests ();
+  predict_c_tests ();
 
   /* Run any lang-specific selftests.  */
   lang_hooks.run_lang_selftests ();

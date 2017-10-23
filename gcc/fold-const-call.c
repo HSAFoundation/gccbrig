@@ -60,7 +60,8 @@ host_size_t_cst_p (tree t, size_t *size_out)
 {
   if (types_compatible_p (size_type_node, TREE_TYPE (t))
       && integer_cst_p (t)
-      && wi::min_precision (t, UNSIGNED) <= sizeof (size_t) * CHAR_BIT)
+      && (wi::min_precision (wi::to_wide (t), UNSIGNED)
+	  <= sizeof (size_t) * CHAR_BIT))
     {
       *size_out = tree_to_uhwi (t);
       return true;
@@ -697,7 +698,7 @@ fold_const_call_ss (real_value *result, combined_fn fn,
 	      && do_mpfr_arg1 (result, mpfr_y1, arg, format));
 
     CASE_CFN_FLOOR:
-      if (!REAL_VALUE_ISNAN (*arg) || !flag_errno_math)
+      if ((!REAL_VALUE_ISNAN (*arg) || !flag_errno_math) && !flag_ftz_math)
 	{
 	  real_floor (result, format, arg);
 	  return true;
@@ -705,7 +706,7 @@ fold_const_call_ss (real_value *result, combined_fn fn,
       return false;
 
     CASE_CFN_CEIL:
-      if (!REAL_VALUE_ISNAN (*arg) || !flag_errno_math)
+      if ((!REAL_VALUE_ISNAN (*arg) || !flag_errno_math) && !flag_ftz_math)
 	{
 	  real_ceil (result, format, arg);
 	  return true;
@@ -844,7 +845,8 @@ fold_const_call_ss (wide_int *result, combined_fn fn, const wide_int_ref &arg,
 	int tmp;
 	if (wi::ne_p (arg, 0))
 	  tmp = wi::clz (arg);
-	else if (! CLZ_DEFINED_VALUE_AT_ZERO (TYPE_MODE (arg_type), tmp))
+	else if (!CLZ_DEFINED_VALUE_AT_ZERO (SCALAR_INT_TYPE_MODE (arg_type),
+					     tmp))
 	  tmp = TYPE_PRECISION (arg_type);
 	*result = wi::shwi (tmp, precision);
 	return true;
@@ -855,7 +857,8 @@ fold_const_call_ss (wide_int *result, combined_fn fn, const wide_int_ref &arg,
 	int tmp;
 	if (wi::ne_p (arg, 0))
 	  tmp = wi::ctz (arg);
-	else if (! CTZ_DEFINED_VALUE_AT_ZERO (TYPE_MODE (arg_type), tmp))
+	else if (!CTZ_DEFINED_VALUE_AT_ZERO (SCALAR_INT_TYPE_MODE (arg_type),
+					     tmp))
 	  tmp = TYPE_PRECISION (arg_type);
 	*result = wi::shwi (tmp, precision);
 	return true;
@@ -1039,8 +1042,8 @@ fold_const_call_1 (combined_fn fn, tree type, tree arg)
       if (SCALAR_INT_MODE_P (mode))
 	{
 	  wide_int result;
-	  if (fold_const_call_ss (&result, fn, arg, TYPE_PRECISION (type),
-				  TREE_TYPE (arg)))
+	  if (fold_const_call_ss (&result, fn, wi::to_wide (arg),
+				  TYPE_PRECISION (type), TREE_TYPE (arg)))
 	    return wide_int_to_tree (type, result);
 	}
       return NULL_TREE;
@@ -1320,7 +1323,8 @@ fold_const_call_1 (combined_fn fn, tree type, tree arg0, tree arg1)
 	  /* real, int -> real.  */
 	  REAL_VALUE_TYPE result;
 	  if (fold_const_call_sss (&result, fn, TREE_REAL_CST_PTR (arg0),
-				   arg1, REAL_MODE_FORMAT (mode)))
+				   wi::to_wide (arg1),
+				   REAL_MODE_FORMAT (mode)))
 	    return build_real (type, result);
 	}
       return NULL_TREE;
@@ -1334,7 +1338,7 @@ fold_const_call_1 (combined_fn fn, tree type, tree arg0, tree arg1)
 	{
 	  /* int, real -> real.  */
 	  REAL_VALUE_TYPE result;
-	  if (fold_const_call_sss (&result, fn, arg0,
+	  if (fold_const_call_sss (&result, fn, wi::to_wide (arg0),
 				   TREE_REAL_CST_PTR (arg1),
 				   REAL_MODE_FORMAT (mode)))
 	    return build_real (type, result);

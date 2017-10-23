@@ -35,6 +35,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "hash-set.h"
 #include "rtl.h"
 #include "tree-pass.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 /* ----- Type related -----  */
 
@@ -335,9 +337,8 @@ gimple_decl_printable_name (tree decl, int verbosity)
   if (!DECL_NAME (decl))
     return NULL;
 
-  if (DECL_ASSEMBLER_NAME_SET_P (decl))
+  if (HAS_DECL_ASSEMBLER_NAME_P (decl) && DECL_ASSEMBLER_NAME_SET_P (decl))
     {
-      const char *str, *mangled_str;
       int dmgl_opts = DMGL_NO_OPTS;
 
       if (verbosity >= 2)
@@ -350,9 +351,10 @@ gimple_decl_printable_name (tree decl, int verbosity)
 	    dmgl_opts |= DMGL_PARAMS;
 	}
 
-      mangled_str = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
-      str = cplus_demangle_v3 (mangled_str, dmgl_opts);
-      return (str) ? str : mangled_str;
+      const char *mangled_str
+	= IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME_RAW (decl));
+      const char *str = cplus_demangle_v3 (mangled_str, dmgl_opts);
+      return str ? str : mangled_str;
     }
 
   return IDENTIFIER_POINTER (DECL_NAME (decl));
@@ -388,14 +390,14 @@ copy_var_decl (tree var, tree name, tree type)
 /* Strip off a legitimate source ending from the input string NAME of
    length LEN.  Rather than having to know the names used by all of
    our front ends, we strip off an ending of a period followed by
-   up to five characters.  (Java uses ".class".)  */
+   up to four characters.  (like ".cpp".)  */
 
 static inline void
 remove_suffix (char *name, int len)
 {
   int i;
 
-  for (i = 2;  i < 8 && len > i;  i++)
+  for (i = 2;  i < 7 && len > i;  i++)
     {
       if (name[len - i] == '.')
 	{

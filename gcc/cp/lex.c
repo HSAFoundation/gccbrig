@@ -89,6 +89,37 @@ operator_name_info_t assignment_operator_name_info[(int) MAX_TREE_CODES];
 #include "operators.def"
 #undef DEF_OPERATOR
 
+/* Get the name of the kind of identifier T.  */
+
+const char *
+get_identifier_kind_name (tree id)
+{
+  /* Keep in sync with cp_id_kind enumeration.  */
+  static const char *const names[cik_max] = {
+    "normal", "keyword", "constructor", "destructor",
+    "assign-op", "op-assign-op", "simple-op", "conv-op", };
+
+  unsigned kind = 0;
+  kind |= IDENTIFIER_KIND_BIT_2 (id) << 2;
+  kind |= IDENTIFIER_KIND_BIT_1 (id) << 1;
+  kind |= IDENTIFIER_KIND_BIT_0 (id) << 0;
+
+  return names[kind];
+}
+
+/* Set the identifier kind, which we expect to currently be zero.  */
+
+void
+set_identifier_kind (tree id, cp_identifier_kind kind)
+{
+  gcc_checking_assert (!IDENTIFIER_KIND_BIT_2 (id)
+		       & !IDENTIFIER_KIND_BIT_1 (id)
+		       & !IDENTIFIER_KIND_BIT_0 (id));
+  IDENTIFIER_KIND_BIT_2 (id) |= (kind >> 2) & 1;
+  IDENTIFIER_KIND_BIT_1 (id) |= (kind >> 1) & 1;
+  IDENTIFIER_KIND_BIT_0 (id) |= (kind >> 0) & 1;
+}
+
 static void
 init_operators (void)
 {
@@ -96,22 +127,26 @@ init_operators (void)
   char buffer[256];
   struct operator_name_info_t *oni;
 
-#define DEF_OPERATOR(NAME, CODE, MANGLING, ARITY, ASSN_P)		    \
-  sprintf (buffer, ISALPHA (NAME[0]) ? "operator %s" : "operator%s", NAME); \
-  identifier = get_identifier (buffer);					    \
-  IDENTIFIER_OPNAME_P (identifier) = 1;					    \
-									    \
-  oni = (ASSN_P								    \
-	 ? &assignment_operator_name_info[(int) CODE]			    \
-	 : &operator_name_info[(int) CODE]);				    \
-  oni->identifier = identifier;						    \
-  oni->name = NAME;							    \
-  oni->mangled_name = MANGLING;						    \
+#define DEF_OPERATOR(NAME, CODE, MANGLING, ARITY, KIND)			\
+  sprintf (buffer, "operator%s%s", !NAME[0]				\
+	   || NAME[0] == '_' || ISALPHA (NAME[0]) ? " " : "", NAME);	\
+  identifier = get_identifier (buffer);					\
+									\
+  if (KIND != cik_simple_op || !IDENTIFIER_ANY_OP_P (identifier))	\
+    set_identifier_kind (identifier, KIND);				\
+  									\
+  oni = (KIND == cik_assign_op						\
+	 ? &assignment_operator_name_info[(int) CODE]			\
+	 : &operator_name_info[(int) CODE]);				\
+  oni->identifier = identifier;						\
+  oni->name = NAME;							\
+  oni->mangled_name = MANGLING;						\
   oni->arity = ARITY;
 
 #include "operators.def"
 #undef DEF_OPERATOR
 
+  operator_name_info[(int) TYPE_EXPR] = operator_name_info[(int) CAST_EXPR];
   operator_name_info[(int) ERROR_MARK].identifier
     = get_identifier ("<invalid operator>");
 
@@ -123,6 +158,7 @@ init_operators (void)
 
   operator_name_info [(int) INIT_EXPR].name
     = operator_name_info [(int) MODIFY_EXPR].name;
+
   operator_name_info [(int) EXACT_DIV_EXPR].name = "(ceiling /)";
   operator_name_info [(int) CEIL_DIV_EXPR].name = "(ceiling /)";
   operator_name_info [(int) FLOOR_DIV_EXPR].name = "(floor /)";
@@ -130,26 +166,20 @@ init_operators (void)
   operator_name_info [(int) CEIL_MOD_EXPR].name = "(ceiling %)";
   operator_name_info [(int) FLOOR_MOD_EXPR].name = "(floor %)";
   operator_name_info [(int) ROUND_MOD_EXPR].name = "(round %)";
+
   operator_name_info [(int) ABS_EXPR].name = "abs";
   operator_name_info [(int) TRUTH_AND_EXPR].name = "strict &&";
   operator_name_info [(int) TRUTH_OR_EXPR].name = "strict ||";
   operator_name_info [(int) RANGE_EXPR].name = "...";
   operator_name_info [(int) UNARY_PLUS_EXPR].name = "+";
 
-  assignment_operator_name_info [(int) EXACT_DIV_EXPR].name
-    = "(exact /=)";
-  assignment_operator_name_info [(int) CEIL_DIV_EXPR].name
-    = "(ceiling /=)";
-  assignment_operator_name_info [(int) FLOOR_DIV_EXPR].name
-    = "(floor /=)";
-  assignment_operator_name_info [(int) ROUND_DIV_EXPR].name
-    = "(round /=)";
-  assignment_operator_name_info [(int) CEIL_MOD_EXPR].name
-    = "(ceiling %=)";
-  assignment_operator_name_info [(int) FLOOR_MOD_EXPR].name
-    = "(floor %=)";
-  assignment_operator_name_info [(int) ROUND_MOD_EXPR].name
-    = "(round %=)";
+  assignment_operator_name_info [(int) EXACT_DIV_EXPR].name = "(exact /=)";
+  assignment_operator_name_info [(int) CEIL_DIV_EXPR].name = "(ceiling /=)";
+  assignment_operator_name_info [(int) FLOOR_DIV_EXPR].name = "(floor /=)";
+  assignment_operator_name_info [(int) ROUND_DIV_EXPR].name = "(round /=)";
+  assignment_operator_name_info [(int) CEIL_MOD_EXPR].name = "(ceiling %=)";
+  assignment_operator_name_info [(int) FLOOR_MOD_EXPR].name = "(floor %=)";
+  assignment_operator_name_info [(int) ROUND_MOD_EXPR].name = "(round %=)";
 }
 
 /* Initialize the reserved words.  */
@@ -184,7 +214,7 @@ init_reswords (void)
       C_SET_RID_CODE (id, c_common_reswords[i].rid);
       ridpointers [(int) c_common_reswords[i].rid] = id;
       if (! (c_common_reswords[i].disable & mask))
-	C_IS_RESERVED_WORD (id) = 1;
+	set_identifier_kind (id, cik_keyword);
     }
 
   for (i = 0; i < NUM_INT_N_ENTS; i++)
@@ -193,7 +223,7 @@ init_reswords (void)
       sprintf (name, "__int%d", int_n_data[i].bitsize);
       id = get_identifier (name);
       C_SET_RID_CODE (id, RID_FIRST_INT_N + i);
-      C_IS_RESERVED_WORD (id) = 1;
+      set_identifier_kind (id, cik_keyword);
     }
 }
 
@@ -431,7 +461,7 @@ unqualified_name_lookup_error (tree name, location_t loc)
   if (loc == UNKNOWN_LOCATION)
     loc = EXPR_LOC_OR_LOC (name, input_location);
 
-  if (IDENTIFIER_OPNAME_P (name))
+  if (IDENTIFIER_ANY_OP_P (name))
     {
       if (name != cp_operator_id (ERROR_MARK))
 	error_at (loc, "%qD not defined", name);
@@ -501,6 +531,72 @@ unqualified_fn_lookup_error (cp_expr name_expr)
   return unqualified_name_lookup_error (name, loc);
 }
 
+
+/* Hasher for the conversion operator name hash table.  */
+struct conv_type_hasher : ggc_ptr_hash<tree_node>
+{
+  /* Hash NODE, an identifier node in the table.  TYPE_UID is
+     suitable, as we're not concerned about matching canonicalness
+     here.  */
+  static hashval_t hash (tree node)
+  {
+    return (hashval_t) TYPE_UID (TREE_TYPE (node));
+  }
+
+  /* Compare NODE, an identifier node in the table, against TYPE, an
+     incoming TYPE being looked up.  */
+  static bool equal (tree node, tree type)
+  {
+    return TREE_TYPE (node) == type;
+  }
+};
+
+/* This hash table maps TYPEs to the IDENTIFIER for a conversion
+   operator to TYPE.  The nodes are IDENTIFIERs whose TREE_TYPE is the
+   TYPE.  */
+
+static GTY (()) hash_table<conv_type_hasher> *conv_type_names;
+
+/* Return an identifier for a conversion operator to TYPE.  We can get
+   from the returned identifier to the type.  We store TYPE, which is
+   not necessarily the canonical type,  which allows us to report the
+   form the user used in error messages.  All these identifiers are
+   not in the identifier hash table, and have the same string name.
+   These IDENTIFIERS are not in the identifier hash table, and all
+   have the same IDENTIFIER_STRING.  */
+
+tree
+make_conv_op_name (tree type)
+{
+  if (type == error_mark_node)
+    return error_mark_node;
+
+  if (conv_type_names == NULL)
+    conv_type_names = hash_table<conv_type_hasher>::create_ggc (31);
+
+  tree *slot = conv_type_names->find_slot_with_hash
+    (type, (hashval_t) TYPE_UID (type), INSERT);
+  tree identifier = *slot;
+  if (!identifier)
+    {
+      /* Create a raw IDENTIFIER outside of the identifier hash
+	 table.  */
+      identifier = copy_node (conv_op_identifier);
+
+      /* Just in case something managed to bind.  */
+      IDENTIFIER_BINDING (identifier) = NULL;
+      IDENTIFIER_LABEL_VALUE (identifier) = NULL_TREE;
+
+      /* Hang TYPE off the identifier so it can be found easily later
+	 when performing conversions.  */
+      TREE_TYPE (identifier) = type;
+
+      *slot = identifier;
+    }
+
+  return identifier;
+}
+
 /* Wrapper around build_lang_decl_loc(). Should gradually move to
    build_lang_decl_loc() and then rename build_lang_decl_loc() back to
    build_lang_decl().  */
@@ -525,35 +621,52 @@ build_lang_decl_loc (location_t loc, enum tree_code code, tree name, tree type)
   return t;
 }
 
-/* Add DECL_LANG_SPECIFIC info to T.  Called from build_lang_decl
-   and pushdecl (for functions generated by the back end).  */
+/* Maybe add a raw lang_decl to T, a decl.  Return true if it needed
+   one.  */
 
-void
-retrofit_lang_decl (tree t)
+static bool
+maybe_add_lang_decl_raw (tree t, bool decomp_p)
 {
-  struct lang_decl *ld;
   size_t size;
-  int sel;
+  lang_decl_selector sel;
 
-  if (DECL_LANG_SPECIFIC (t))
-    return;
-
-  if (TREE_CODE (t) == FUNCTION_DECL)
-    sel = 1, size = sizeof (struct lang_decl_fn);
+  if (decomp_p)
+    sel = lds_decomp, size = sizeof (struct lang_decl_decomp);
+  else if (TREE_CODE (t) == FUNCTION_DECL)
+    sel = lds_fn, size = sizeof (struct lang_decl_fn);
   else if (TREE_CODE (t) == NAMESPACE_DECL)
-    sel = 2, size = sizeof (struct lang_decl_ns);
+    sel = lds_ns, size = sizeof (struct lang_decl_ns);
   else if (TREE_CODE (t) == PARM_DECL)
-    sel = 3, size = sizeof (struct lang_decl_parm);
+    sel = lds_parm, size = sizeof (struct lang_decl_parm);
   else if (LANG_DECL_HAS_MIN (t))
-    sel = 0, size = sizeof (struct lang_decl_min);
+    sel = lds_min, size = sizeof (struct lang_decl_min);
   else
-    gcc_unreachable ();
+    return false;
 
-  ld = (struct lang_decl *) ggc_internal_cleared_alloc (size);
+  struct lang_decl *ld
+    = (struct lang_decl *) ggc_internal_cleared_alloc (size);
 
   ld->u.base.selector = sel;
-
   DECL_LANG_SPECIFIC (t) = ld;
+
+  if (sel == lds_ns)
+    /* Who'd create a namespace, only to put nothing in it?  */
+    ld->u.ns.bindings = hash_table<named_decl_hash>::create_ggc (499);
+
+  if (GATHER_STATISTICS)
+    {
+      tree_node_counts[(int)lang_decl] += 1;
+      tree_node_sizes[(int)lang_decl] += size;
+    }
+  return true;
+}
+
+/* T has just had a decl_lang_specific added.  Initialize its
+   linkage.  */
+
+static void
+set_decl_linkage (tree t)
+{
   if (current_lang_name == lang_name_cplusplus
       || decl_linkage (t) == lk_none)
     SET_DECL_LANGUAGE (t, lang_cplusplus);
@@ -561,35 +674,79 @@ retrofit_lang_decl (tree t)
     SET_DECL_LANGUAGE (t, lang_c);
   else
     gcc_unreachable ();
+}
 
-  if (GATHER_STATISTICS)
+/* T is a VAR_DECL node that needs to be a decomposition of BASE.  */
+
+void
+fit_decomposition_lang_decl (tree t, tree base)
+{
+  if (struct lang_decl *orig_ld = DECL_LANG_SPECIFIC (t))
     {
-      tree_node_counts[(int)lang_decl] += 1;
-      tree_node_sizes[(int)lang_decl] += size;
+      if (orig_ld->u.base.selector == lds_min)
+	{
+	  maybe_add_lang_decl_raw (t, true);
+	  memcpy (DECL_LANG_SPECIFIC (t), orig_ld,
+		  sizeof (struct lang_decl_min));
+	  /* Reset selector, which will have been bashed by the
+	     memcpy.  */
+	  DECL_LANG_SPECIFIC (t)->u.base.selector = lds_decomp;
+	}
+      else
+	gcc_checking_assert (orig_ld->u.base.selector == lds_decomp);
     }
+  else
+    {
+      maybe_add_lang_decl_raw (t, true);
+      set_decl_linkage (t);
+    }
+
+  DECL_DECOMP_BASE (t) = base;
+}
+
+/* Add DECL_LANG_SPECIFIC info to T, if it needs one.  Generally
+   every C++ decl needs one, but C builtins etc do not.   */
+
+void
+retrofit_lang_decl (tree t)
+{
+  if (DECL_LANG_SPECIFIC (t))
+    return;
+
+  if (maybe_add_lang_decl_raw (t, false))
+    set_decl_linkage (t);
 }
 
 void
 cxx_dup_lang_specific_decl (tree node)
 {
   int size;
-  struct lang_decl *ld;
 
   if (! DECL_LANG_SPECIFIC (node))
     return;
 
-  if (TREE_CODE (node) == FUNCTION_DECL)
-    size = sizeof (struct lang_decl_fn);
-  else if (TREE_CODE (node) == NAMESPACE_DECL)
-    size = sizeof (struct lang_decl_ns);
-  else if (TREE_CODE (node) == PARM_DECL)
-    size = sizeof (struct lang_decl_parm);
-  else if (LANG_DECL_HAS_MIN (node))
-    size = sizeof (struct lang_decl_min);
-  else
-    gcc_unreachable ();
+  switch (DECL_LANG_SPECIFIC (node)->u.base.selector)
+    {
+    case lds_min:
+      size = sizeof (struct lang_decl_min);
+      break;
+    case lds_fn:
+      size = sizeof (struct lang_decl_fn);
+      break;
+    case lds_ns:
+      size = sizeof (struct lang_decl_ns);
+      break;
+    case lds_parm:
+      size = sizeof (struct lang_decl_parm);
+      break;
+    case lds_decomp:
+      size = sizeof (struct lang_decl_decomp);
+      break;
+    default:
+      gcc_unreachable ();
+    }
 
-  ld = (struct lang_decl *) ggc_internal_alloc (size);
+  struct lang_decl *ld = (struct lang_decl *) ggc_internal_alloc (size);
   memcpy (ld, DECL_LANG_SPECIFIC (node), size);
   DECL_LANG_SPECIFIC (node) = ld;
 
@@ -607,7 +764,7 @@ copy_decl (tree decl MEM_STAT_DECL)
 {
   tree copy;
 
-  copy = copy_node_stat (decl PASS_MEM_STAT);
+  copy = copy_node (decl PASS_MEM_STAT);
   cxx_dup_lang_specific_decl (copy);
   return copy;
 }
@@ -617,24 +774,19 @@ copy_decl (tree decl MEM_STAT_DECL)
 static void
 copy_lang_type (tree node)
 {
-  int size;
-  struct lang_type *lt;
-
   if (! TYPE_LANG_SPECIFIC (node))
     return;
 
-  if (TYPE_LANG_SPECIFIC (node)->u.h.is_lang_type_class)
-    size = sizeof (struct lang_type);
-  else
-    size = sizeof (struct lang_type_ptrmem);
-  lt = (struct lang_type *) ggc_internal_alloc (size);
-  memcpy (lt, TYPE_LANG_SPECIFIC (node), size);
+  struct lang_type *lt
+    = (struct lang_type *) ggc_internal_alloc (sizeof (struct lang_type));
+
+  memcpy (lt, TYPE_LANG_SPECIFIC (node), (sizeof (struct lang_type)));
   TYPE_LANG_SPECIFIC (node) = lt;
 
   if (GATHER_STATISTICS)
     {
       tree_node_counts[(int)lang_type] += 1;
-      tree_node_sizes[(int)lang_type] += size;
+      tree_node_sizes[(int)lang_type] += sizeof (struct lang_type);
     }
 }
 
@@ -645,9 +797,30 @@ copy_type (tree type MEM_STAT_DECL)
 {
   tree copy;
 
-  copy = copy_node_stat (type PASS_MEM_STAT);
+  copy = copy_node (type PASS_MEM_STAT);
   copy_lang_type (copy);
   return copy;
+}
+
+/* Add a raw lang_type to T, a type, should it need one.  */
+
+static bool
+maybe_add_lang_type_raw (tree t)
+{
+  if (!RECORD_OR_UNION_CODE_P (TREE_CODE (t)))
+    return false;
+  
+  TYPE_LANG_SPECIFIC (t)
+    = (struct lang_type *) (ggc_internal_cleared_alloc
+			    (sizeof (struct lang_type)));
+
+  if (GATHER_STATISTICS)
+    {
+      tree_node_counts[(int)lang_type] += 1;
+      tree_node_sizes[(int)lang_type] += sizeof (struct lang_type);
+    }
+
+  return true;
 }
 
 tree
@@ -655,28 +828,10 @@ cxx_make_type (enum tree_code code)
 {
   tree t = make_node (code);
 
-  /* Create lang_type structure.  */
-  if (RECORD_OR_UNION_CODE_P (code)
-      || code == BOUND_TEMPLATE_TEMPLATE_PARM)
+  if (maybe_add_lang_type_raw (t))
     {
-      struct lang_type *pi
-          = (struct lang_type *) ggc_internal_cleared_alloc
-	  (sizeof (struct lang_type));
-
-      TYPE_LANG_SPECIFIC (t) = pi;
-      pi->u.c.h.is_lang_type_class = 1;
-
-      if (GATHER_STATISTICS)
-	{
-	  tree_node_counts[(int)lang_type] += 1;
-	  tree_node_sizes[(int)lang_type] += sizeof (struct lang_type);
-	}
-    }
-
-  /* Set up some flags that give proper default behavior.  */
-  if (RECORD_OR_UNION_CODE_P (code))
-    {
-      struct c_fileinfo *finfo = \
+      /* Set up some flags that give proper default behavior.  */
+      struct c_fileinfo *finfo =
 	get_fileinfo (LOCATION_FILE (input_location));
       SET_CLASSTYPE_INTERFACE_UNKNOWN_X (t, finfo->interface_unknown);
       CLASSTYPE_INTERFACE_ONLY (t) = finfo->interface_only;
@@ -707,3 +862,5 @@ in_main_input_context (void)
   else
     return filename_cmp (main_input_filename, LOCATION_FILE (input_location)) == 0;
 }
+
+#include "gt-cp-lex.h"

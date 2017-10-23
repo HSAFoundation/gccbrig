@@ -38,6 +38,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa.h"
 #include "ipa-utils.h"
 #include "cfgloop.h"
+#include "stringpool.h"
+#include "attribs.h"
 
 static void verify_live_on_entry (tree_live_info_p);
 
@@ -613,7 +615,7 @@ clear_unused_block_pointer (void)
    indentation level and FLAGS is as in print_generic_expr.  */
 
 static void
-dump_scope_block (FILE *file, int indent, tree scope, int flags)
+dump_scope_block (FILE *file, int indent, tree scope, dump_flags_t flags)
 {
   tree var, t;
   unsigned int i;
@@ -661,7 +663,7 @@ dump_scope_block (FILE *file, int indent, tree scope, int flags)
    is as in print_generic_expr.  */
 
 DEBUG_FUNCTION void
-debug_scope_block (tree scope, int flags)
+debug_scope_block (tree scope, dump_flags_t flags)
 {
   dump_scope_block (stderr, 0, scope, flags);
 }
@@ -671,7 +673,7 @@ debug_scope_block (tree scope, int flags)
    FLAGS is as in print_generic_expr.  */
 
 void
-dump_scope_blocks (FILE *file, int flags)
+dump_scope_blocks (FILE *file, dump_flags_t flags)
 {
   dump_scope_block (file, 0, DECL_INITIAL (current_function_decl), flags);
 }
@@ -681,7 +683,7 @@ dump_scope_blocks (FILE *file, int flags)
    FLAGS is as in print_generic_expr.  */
 
 DEBUG_FUNCTION void
-debug_scope_blocks (int flags)
+debug_scope_blocks (dump_flags_t flags)
 {
   dump_scope_blocks (stderr, flags);
 }

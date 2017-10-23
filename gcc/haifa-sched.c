@@ -225,7 +225,7 @@ struct common_sched_info_def *common_sched_info;
 #define FEEDS_BACKTRACK_INSN(INSN) (HID (INSN)->feeds_backtrack_insn)
 #define SHADOW_P(INSN) (HID (INSN)->shadow_p)
 #define MUST_RECOMPUTE_SPEC_P(INSN) (HID (INSN)->must_recompute_spec)
-/* Cached cost of the instruction.  Use insn_cost to get cost of the
+/* Cached cost of the instruction.  Use insn_sched_cost to get cost of the
    insn.  -1 here means that the field is not initialized.  */
 #define INSN_COST(INSN)	(HID (INSN)->cost)
 
@@ -1383,7 +1383,7 @@ static rtx_insn *nonscheduled_insns_begin;
    This is the number of cycles between instruction issue and
    instruction results.  */
 int
-insn_cost (rtx_insn *insn)
+insn_sched_cost (rtx_insn *insn)
 {
   int cost;
 
@@ -1470,7 +1470,7 @@ dep_cost_1 (dep_t link, dw_t dw)
     {
       enum reg_note dep_type = DEP_TYPE (link);
 
-      cost = insn_cost (insn);
+      cost = insn_sched_cost (insn);
 
       if (INSN_CODE (insn) >= 0)
 	{
@@ -1608,11 +1608,11 @@ priority (rtx_insn *insn)
 	  INSN_FUSION_PRIORITY (insn) = this_fusion_priority;
 	}
       else if (dep_list_size (insn, SD_LIST_FORW) == 0)
-	/* ??? We should set INSN_PRIORITY to insn_cost when and insn has
-	   some forward deps but all of them are ignored by
+	/* ??? We should set INSN_PRIORITY to insn_sched_cost when and insn
+	   has some forward deps but all of them are ignored by
 	   contributes_to_priority hook.  At the moment we set priority of
 	   such insn to 0.  */
-	this_priority = insn_cost (insn);
+	this_priority = insn_sched_cost (insn);
       else
 	{
 	  rtx_insn *prev_first, *twin;
@@ -1683,7 +1683,7 @@ priority (rtx_insn *insn)
 	{
 	  gcc_assert (this_priority == -1);
 
-	  this_priority = insn_cost (insn);
+	  this_priority = insn_sched_cost (insn);
 	}
 
       INSN_PRIORITY (insn) = this_priority;
@@ -3084,7 +3084,8 @@ ready_sort_real (struct ready_list *ready)
   if (n_ready_real == 2)
     swap_sort (first, n_ready_real);
   else if (n_ready_real > 2)
-    qsort (first, n_ready_real, sizeof (rtx), rank_for_schedule);
+    /* HACK: Disable qsort checking for now (PR82396).  */
+    (qsort) (first, n_ready_real, sizeof (rtx), rank_for_schedule);
 
   if (sched_verbose >= 4)
     {
@@ -4843,14 +4844,12 @@ estimate_insn_tick (bitmap processed, rtx_insn *insn, int budget)
 static int
 estimate_shadow_tick (struct delay_pair *p)
 {
-  bitmap_head processed;
+  auto_bitmap processed;
   int t;
   bool cutoff;
-  bitmap_initialize (&processed, 0);
 
-  cutoff = !estimate_insn_tick (&processed, p->i2,
+  cutoff = !estimate_insn_tick (processed, p->i2,
 				max_insn_queue_index + pair_delay (p));
-  bitmap_clear (&processed);
   if (cutoff)
     return max_insn_queue_index;
   t = INSN_TICK_ESTIMATE (p->i2) - (clock_var + pair_delay (p) + 1);
@@ -5709,7 +5708,8 @@ autopref_rank_data (autopref_multipass_data_t data1,
 static int
 autopref_rank_for_schedule (const rtx_insn *insn1, const rtx_insn *insn2)
 {
-  for (int write = 0; write < 2; ++write)
+  int r = 0;
+  for (int write = 0; write < 2 && !r; ++write)
     {
       autopref_multipass_data_t data1
 	= &INSN_AUTOPREF_MULTIPASS_DATA (insn1)[write];
@@ -5718,21 +5718,20 @@ autopref_rank_for_schedule (const rtx_insn *insn1, const rtx_insn *insn2)
 
       if (data1->status == AUTOPREF_MULTIPASS_DATA_UNINITIALIZED)
 	autopref_multipass_init (insn1, write);
-      if (data1->status == AUTOPREF_MULTIPASS_DATA_IRRELEVANT)
-	continue;
 
       if (data2->status == AUTOPREF_MULTIPASS_DATA_UNINITIALIZED)
 	autopref_multipass_init (insn2, write);
-      if (data2->status == AUTOPREF_MULTIPASS_DATA_IRRELEVANT)
-	continue;
 
-      if (!rtx_equal_p (data1->base, data2->base))
-	continue;
+      int irrel1 = data1->status == AUTOPREF_MULTIPASS_DATA_IRRELEVANT;
+      int irrel2 = data2->status == AUTOPREF_MULTIPASS_DATA_IRRELEVANT;
 
-      return autopref_rank_data (data1, data2);
+      if (!irrel1 && !irrel2)
+	r = autopref_rank_data (data1, data2);
+      else
+	r = irrel2 - irrel1;
     }
 
-  return 0;
+  return r;
 }
 
 /* True if header of debug dump was printed.  */
@@ -6304,7 +6303,7 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
 {
   int i, pass;
   bool sched_group_found = false;
-  int min_cost_group = 1;
+  int min_cost_group = 0;
 
   if (sched_fusion)
     return;
@@ -6320,8 +6319,8 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
     }
 
   /* Make two passes if there's a SCHED_GROUP_P insn; make sure to handle
-     such an insn first and note its cost, then schedule all other insns
-     for one cycle later.  */
+     such an insn first and note its cost.  If at least one SCHED_GROUP_P insn
+     gets queued, then all other insns get queued for one cycle later.  */
   for (pass = sched_group_found ? 0 : 1; pass < 2; )
     {
       int n = ready.n_ready;
@@ -6334,7 +6333,8 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
 	  if (DEBUG_INSN_P (insn))
 	    continue;
 
-	  if (sched_group_found && !SCHED_GROUP_P (insn))
+	  if (sched_group_found && !SCHED_GROUP_P (insn)
+	      && ((pass == 0) || (min_cost_group >= 1)))
 	    {
 	      if (pass == 0)
 		continue;
@@ -7515,14 +7515,12 @@ static void
 fix_inter_tick (rtx_insn *head, rtx_insn *tail)
 {
   /* Set of instructions with corrected INSN_TICK.  */
-  bitmap_head processed;
+  auto_bitmap processed;
   /* ??? It is doubtful if we should assume that cycle advance happens on
      basic block boundaries.  Basically insns that are unconditionally ready
      on the start of the block are more preferable then those which have
      a one cycle dependency over insn from the previous block.  */
   int next_clock = clock_var + 1;
-
-  bitmap_initialize (&processed, 0);
 
   /* Iterates over scheduled instructions and fix their INSN_TICKs and
      INSN_TICKs of dependent instructions, so that INSN_TICKs are consistent
@@ -7539,7 +7537,7 @@ fix_inter_tick (rtx_insn *head, rtx_insn *tail)
 	  gcc_assert (tick >= MIN_TICK);
 
 	  /* Fix INSN_TICK of instruction from just scheduled block.  */
-	  if (bitmap_set_bit (&processed, INSN_LUID (head)))
+	  if (bitmap_set_bit (processed, INSN_LUID (head)))
 	    {
 	      tick -= next_clock;
 
@@ -7563,7 +7561,7 @@ fix_inter_tick (rtx_insn *head, rtx_insn *tail)
 		  /* If NEXT has its INSN_TICK calculated, fix it.
 		     If not - it will be properly calculated from
 		     scratch later in fix_tick_ready.  */
-		  && bitmap_set_bit (&processed, INSN_LUID (next)))
+		  && bitmap_set_bit (processed, INSN_LUID (next)))
 		{
 		  tick -= next_clock;
 
@@ -7580,7 +7578,6 @@ fix_inter_tick (rtx_insn *head, rtx_insn *tail)
 	    }
 	}
     }
-  bitmap_clear (&processed);
 }
 
 /* Check if NEXT is ready to be added to the ready or queue list.
@@ -8307,7 +8304,19 @@ sched_create_recovery_edges (basic_block first_bb, basic_block rec,
   else
     edge_flags = 0;
 
-  make_edge (first_bb, rec, edge_flags);
+  edge e2 = single_succ_edge (first_bb);
+  edge e = make_edge (first_bb, rec, edge_flags);
+
+  /* TODO: The actual probability can be determined and is computed as
+     'todo_spec' variable in create_check_block_twin and
+     in sel-sched.c `check_ds' in create_speculation_check.  */
+  e->probability = profile_probability::very_unlikely ();
+  e->count = first_bb->count.apply_probability (e->probability);
+  rec->count = e->count;
+  rec->frequency = EDGE_FREQUENCY (e);
+  e2->probability = e->probability.invert ();
+  e2->count = first_bb->count - e2->count;
+
   rtx_code_label *label = block_label (second_bb);
   rtx_jump_insn *jump = emit_jump_insn_after (targetm.gen_jump (label),
 					      BB_END (rec));
@@ -8318,8 +8327,7 @@ sched_create_recovery_edges (basic_block first_bb, basic_block rec,
     /* Partition type is the same, if it is "unpartitioned".  */
     {
       /* Rewritten from cfgrtl.c.  */
-      if (flag_reorder_blocks_and_partition
-	  && targetm_common.have_named_sections)
+      if (crtl->has_bb_partition && targetm_common.have_named_sections)
 	{
 	  /* We don't need the same note for the check because
 	     any_condjump_p (check) == true.  */
@@ -8617,9 +8625,7 @@ fix_recovery_deps (basic_block rec)
 {
   rtx_insn *note, *insn, *jump;
   auto_vec<rtx_insn *, 10> ready_list;
-  bitmap_head in_ready;
-
-  bitmap_initialize (&in_ready, 0);
+  auto_bitmap in_ready;
 
   /* NOTE - a basic block note.  */
   note = NEXT_INSN (BB_HEAD (rec));
@@ -8642,7 +8648,7 @@ fix_recovery_deps (basic_block rec)
 	    {
 	      sd_delete_dep (sd_it);
 
-	      if (bitmap_set_bit (&in_ready, INSN_LUID (consumer)))
+	      if (bitmap_set_bit (in_ready, INSN_LUID (consumer)))
 		ready_list.safe_push (consumer);
 	    }
 	  else
@@ -8656,8 +8662,6 @@ fix_recovery_deps (basic_block rec)
       insn = PREV_INSN (insn);
     }
   while (insn != note);
-
-  bitmap_clear (&in_ready);
 
   /* Try to add instructions to the ready or queue list.  */
   unsigned int i;

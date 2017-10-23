@@ -150,7 +150,7 @@ phiprop_insert_phi (basic_block bb, gphi *phi, gimple *use_stmt,
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "Inserting PHI for result of load ");
-      print_gimple_stmt (dump_file, use_stmt, 0, 0);
+      print_gimple_stmt (dump_file, use_stmt, 0);
     }
 
   /* Add PHI arguments for each edge inserting loads of the
@@ -177,10 +177,10 @@ phiprop_insert_phi (basic_block bb, gphi *phi, gimple *use_stmt,
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "  for edge defining ");
-	      print_generic_expr (dump_file, PHI_ARG_DEF_FROM_EDGE (phi, e), 0);
+	      print_generic_expr (dump_file, PHI_ARG_DEF_FROM_EDGE (phi, e));
 	      fprintf (dump_file, " reusing PHI result ");
 	      print_generic_expr (dump_file,
-				  phivn[SSA_NAME_VERSION (old_arg)].value, 0);
+				  phivn[SSA_NAME_VERSION (old_arg)].value);
 	      fprintf (dump_file, "\n");
 	    }
 	  /* Reuse a formerly created dereference.  */
@@ -210,9 +210,9 @@ phiprop_insert_phi (basic_block bb, gphi *phi, gimple *use_stmt,
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "  for edge defining ");
-	      print_generic_expr (dump_file, PHI_ARG_DEF_FROM_EDGE (phi, e), 0);
+	      print_generic_expr (dump_file, PHI_ARG_DEF_FROM_EDGE (phi, e));
 	      fprintf (dump_file, " inserting load ");
-	      print_gimple_stmt (dump_file, tmp, 0, 0);
+	      print_gimple_stmt (dump_file, tmp, 0);
 	    }
 	}
 
@@ -225,7 +225,7 @@ phiprop_insert_phi (basic_block bb, gphi *phi, gimple *use_stmt,
       update_stmt (new_phi);
 
       if (dump_file && (dump_flags & TDF_DETAILS))
-	print_gimple_stmt (dump_file, new_phi, 0, 0);
+	print_gimple_stmt (dump_file, new_phi, 0);
     }
 
   return res;
@@ -327,7 +327,7 @@ propagate_with_phi (basic_block bb, gphi *phi, struct phiprop_d *phivn,
       if (!dominated_by_p (CDI_POST_DOMINATORS,
 			   bb, gimple_bb (use_stmt)))
 	continue;
-         
+
       /* Check whether this is a load of *ptr.  */
       if (!(is_gimple_assign (use_stmt)
 	    && gimple_assign_rhs_code (use_stmt) == MEM_REF
@@ -356,6 +356,9 @@ propagate_with_phi (basic_block bb, gphi *phi, struct phiprop_d *phivn,
          insert aggregate copies on the edges instead.  */
       if (!is_gimple_reg_type (TREE_TYPE (TREE_TYPE (ptr))))
 	{
+	  if (!gimple_vdef (use_stmt))
+	    goto next;
+
 	  /* As we replicate the lhs on each incoming edge all
 	     used SSA names have to be available there.  */
 	  if (! for_each_index (gimple_assign_lhs_ptr (use_stmt),
@@ -363,6 +366,28 @@ propagate_with_phi (basic_block bb, gphi *phi, struct phiprop_d *phivn,
 				get_immediate_dominator (CDI_DOMINATORS,
 							 gimple_bb (phi))))
 	    goto next;
+
+	  gimple *vuse_stmt;
+	  imm_use_iterator vui;
+	  use_operand_p vuse_p;
+	  /* In order to move the aggregate copies earlier, make sure
+	     there are no statements that could read from memory
+	     aliasing the lhs in between the start of bb and use_stmt.
+	     As we require use_stmt to have a VDEF above, loads after
+	     use_stmt will use a different virtual SSA_NAME.  */
+	  FOR_EACH_IMM_USE_FAST (vuse_p, vui, vuse)
+	    {
+	      vuse_stmt = USE_STMT (vuse_p);
+	      if (vuse_stmt == use_stmt)
+		continue;
+	      if (!dominated_by_p (CDI_DOMINATORS,
+				   gimple_bb (vuse_stmt), bb))
+		continue;
+	      if (ref_maybe_used_by_stmt_p (vuse_stmt,
+					    gimple_assign_lhs (use_stmt)))
+		goto next;
+	    }
+
 	  phiprop_insert_phi (bb, phi, use_stmt, phivn, n);
 
 	  /* Remove old stmt.  The phi is taken care of by DCE.  */

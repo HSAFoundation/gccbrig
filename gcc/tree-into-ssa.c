@@ -38,6 +38,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa.h"
 #include "domwalk.h"
 #include "statistics.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "asan.h"
 
 #define PERCENT(x,y) ((float)(x) * 100.0 / (float)(y))
@@ -1224,6 +1226,8 @@ get_reaching_def (tree var)
   if (currdef == NULL_TREE)
     {
       tree sym = DECL_P (var) ? var : SSA_NAME_VAR (var);
+      if (! sym)
+	sym = create_tmp_reg (TREE_TYPE (var));
       currdef = get_or_create_ssa_default_def (cfun, sym);
     }
 
@@ -1608,10 +1612,10 @@ dump_defs_stack (FILE *file, int n)
 	}
 
       fprintf (file, "    Previous CURRDEF (");
-      print_generic_expr (file, var, 0);
+      print_generic_expr (file, var);
       fprintf (file, ") = ");
       if (name)
-	print_generic_expr (file, name, 0);
+	print_generic_expr (file, name);
       else
 	fprintf (file, "<NIL>");
       fprintf (file, "\n");
@@ -1647,10 +1651,10 @@ dump_currdefs (FILE *file)
     {
       common_info *info = get_common_info (var);
       fprintf (file, "CURRDEF (");
-      print_generic_expr (file, var, 0);
+      print_generic_expr (file, var);
       fprintf (file, ") = ");
       if (info->current_def)
-	print_generic_expr (file, info->current_def, 0);
+	print_generic_expr (file, info->current_def);
       else
 	fprintf (file, "<NIL>");
       fprintf (file, "\n");
@@ -2784,13 +2788,13 @@ dump_names_replaced_by (FILE *file, tree name)
   bitmap old_set;
   bitmap_iterator bi;
 
-  print_generic_expr (file, name, 0);
+  print_generic_expr (file, name);
   fprintf (file, " -> { ");
 
   old_set = names_replaced_by (name);
   EXECUTE_IF_SET_IN_BITMAP (old_set, 0, i, bi)
     {
-      print_generic_expr (file, ssa_name (i), 0);
+      print_generic_expr (file, ssa_name (i));
       fprintf (file, " ");
     }
 
@@ -2842,7 +2846,7 @@ dump_update_ssa (FILE *file)
       fprintf (file, "\nSSA names to release after updating the SSA web\n\n");
       EXECUTE_IF_SET_IN_BITMAP (names_to_release, 0, i, bi)
 	{
-	  print_generic_expr (file, ssa_name (i), 0);
+	  print_generic_expr (file, ssa_name (i));
 	  fprintf (file, " ");
 	}
       fprintf (file, "\n");
@@ -3287,7 +3291,7 @@ update_ssa (unsigned update_flags)
 		      error ("statement uses released SSA name:");
 		      debug_gimple_stmt (stmt);
 		      fprintf (stderr, "The use of ");
-		      print_generic_expr (stderr, use, 0);
+		      print_generic_expr (stderr, use);
 		      fprintf (stderr," should have been replaced\n");
 		      err = true;
 		    }

@@ -1609,10 +1609,10 @@ match_actual_arg (gfc_expr **result)
 }
 
 
-/* Match a keyword argument.  */
+/* Match a keyword argument or type parameter spec list..  */
 
 static match
-match_keyword_arg (gfc_actual_arglist *actual, gfc_actual_arglist *base)
+match_keyword_arg (gfc_actual_arglist *actual, gfc_actual_arglist *base, bool pdt)
 {
   char name[GFC_MAX_SYMBOL_LEN + 1];
   gfc_actual_arglist *a;
@@ -1630,12 +1630,28 @@ match_keyword_arg (gfc_actual_arglist *actual, gfc_actual_arglist *base)
       goto cleanup;
     }
 
+  if (pdt)
+    {
+      if (gfc_match_char ('*') == MATCH_YES)
+	{
+	  actual->spec_type = SPEC_ASSUMED;
+	  goto add_name;
+	}
+      else if (gfc_match_char (':') == MATCH_YES)
+	{
+	  actual->spec_type = SPEC_DEFERRED;
+	  goto add_name;
+	}
+      else
+	actual->spec_type = SPEC_EXPLICIT;
+    }
+
   m = match_actual_arg (&actual->expr);
   if (m != MATCH_YES)
     goto cleanup;
 
   /* Make sure this name has not appeared yet.  */
-
+add_name:
   if (name[0] != '\0')
     {
       for (a = base; a; a = a->next)
@@ -1737,10 +1753,15 @@ cleanup:
    list is assumed to allow keyword arguments because we don't know if
    the symbol associated with the procedure has an implicit interface
    or not.  We make sure keywords are unique. If sub_flag is set,
-   we're matching the argument list of a subroutine.  */
+   we're matching the argument list of a subroutine.
+
+   NOTE: An alternative use for this function is to match type parameter
+   spec lists, which are so similar to actual argument lists that the
+   machinery can be reused. This use is flagged by the optional argument
+   'pdt'.  */
 
 match
-gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp)
+gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp, bool pdt)
 {
   gfc_actual_arglist *head, *tail;
   int seen_keyword;
@@ -1758,6 +1779,7 @@ gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp)
 
   if (gfc_match_char (')') == MATCH_YES)
     return MATCH_YES;
+
   head = NULL;
 
   matching_actual_arglist++;
@@ -1772,7 +1794,7 @@ gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp)
 	  tail = tail->next;
 	}
 
-      if (sub_flag && gfc_match_char ('*') == MATCH_YES)
+      if (sub_flag && !pdt && gfc_match_char ('*') == MATCH_YES)
 	{
 	  m = gfc_match_st_label (&label);
 	  if (m == MATCH_NO)
@@ -1788,11 +1810,36 @@ gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp)
 	  goto next;
 	}
 
+      if (pdt && !seen_keyword)
+	{
+	  if (gfc_match_char (':') == MATCH_YES)
+	    {
+	      tail->spec_type = SPEC_DEFERRED;
+	      goto next;
+	    }
+	  else if (gfc_match_char ('*') == MATCH_YES)
+	    {
+	      tail->spec_type = SPEC_ASSUMED;
+	      goto next;
+	    }
+	  else
+	    tail->spec_type = SPEC_EXPLICIT;
+
+	  m = match_keyword_arg (tail, head, pdt);
+	  if (m == MATCH_YES)
+	    {
+	      seen_keyword = 1;
+	      goto next;
+	    }
+	  if (m == MATCH_ERROR)
+	    goto cleanup;
+	}
+
       /* After the first keyword argument is seen, the following
 	 arguments must also have keywords.  */
       if (seen_keyword)
 	{
-	  m = match_keyword_arg (tail, head);
+	  m = match_keyword_arg (tail, head, pdt);
 
 	  if (m == MATCH_ERROR)
 	    goto cleanup;
@@ -1813,7 +1860,7 @@ gfc_match_actual_arglist (int sub_flag, gfc_actual_arglist **argp)
 	  /* See if we have the first keyword argument.  */
 	  if (m == MATCH_NO)
 	    {
-	      m = match_keyword_arg (tail, head);
+	      m = match_keyword_arg (tail, head, false);
 	      if (m == MATCH_YES)
 		seen_keyword = 1;
 	      if (m == MATCH_ERROR)
@@ -1890,6 +1937,7 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
   gfc_ref *substring, *tail, *tmp;
   gfc_component *component;
   gfc_symbol *sym = primary->symtree->n.sym;
+  gfc_expr *tgt_expr = NULL;
   match m;
   bool unknown;
   char sep;
@@ -1918,6 +1966,9 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
 	}
     }
 
+  if (sym->assoc && sym->assoc->target)
+    tgt_expr = sym->assoc->target;
+
   /* For associate names, we may not yet know whether they are arrays or not.
      If the selector expression is unambiguously an array; eg. a full array
      or an array section, then the associate name must be an array and we can
@@ -1929,25 +1980,42 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
       && sym->ts.type != BT_CLASS
       && !sym->attr.dimension)
     {
-      if ((!sym->assoc->dangling
-	   && sym->assoc->target
-	   && sym->assoc->target->ref
-	   && sym->assoc->target->ref->type == REF_ARRAY
-	   && (sym->assoc->target->ref->u.ar.type == AR_FULL
-	       || sym->assoc->target->ref->u.ar.type == AR_SECTION))
-	  ||
-	   (!(sym->assoc->dangling || sym->ts.type == BT_CHARACTER)
-	    && sym->assoc->st
-	   && sym->assoc->st->n.sym
-	    && sym->assoc->st->n.sym->attr.dimension == 0))
+      gfc_ref *ref = NULL;
+
+      if (!sym->assoc->dangling && tgt_expr)
 	{
-    sym->attr.dimension = 1;
-	  if (sym->as == NULL && sym->assoc
+	   if (tgt_expr->expr_type == EXPR_VARIABLE)
+	     gfc_resolve_expr (tgt_expr);
+
+	   ref = tgt_expr->ref;
+	   for (; ref; ref = ref->next)
+	      if (ref->type == REF_ARRAY
+		  && (ref->u.ar.type == AR_FULL
+		      || ref->u.ar.type == AR_SECTION))
+		break;
+	}
+
+      if (ref || (!(sym->assoc->dangling || sym->ts.type == BT_CHARACTER)
+		  && sym->assoc->st
+		  && sym->assoc->st->n.sym
+		  && sym->assoc->st->n.sym->attr.dimension == 0))
+	{
+	  sym->attr.dimension = 1;
+	  if (sym->as == NULL
 	      && sym->assoc->st
 	      && sym->assoc->st->n.sym
 	      && sym->assoc->st->n.sym->as)
 	    sym->as = gfc_copy_array_spec (sym->assoc->st->n.sym->as);
 	}
+    }
+  else if (sym->ts.type == BT_CLASS
+	   && tgt_expr
+	   && tgt_expr->expr_type == EXPR_VARIABLE
+	   && sym->ts.u.derived != tgt_expr->ts.u.derived)
+    {
+      gfc_resolve_expr (tgt_expr);
+      if (tgt_expr->rank)
+	sym->ts.u.derived = tgt_expr->ts.u.derived;
     }
 
   if ((equiv_flag && gfc_peek_ascii_char () == '(')
@@ -2008,10 +2076,31 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
       && gfc_get_default_type (sym->name, sym->ns)->type == BT_DERIVED)
     gfc_set_default_type (sym, 0, sym->ns);
 
+  /* See if there is a usable typespec in the "no IMPLICIT type" error.  */
   if (sym->ts.type == BT_UNKNOWN && m == MATCH_YES)
     {
-      gfc_error ("Symbol %qs at %C has no IMPLICIT type", sym->name);
-      return MATCH_ERROR;
+      bool permissible;
+
+      /* These target expressions can ge resolved at any time.  */
+      permissible = tgt_expr && tgt_expr->symtree && tgt_expr->symtree->n.sym
+		    && (tgt_expr->symtree->n.sym->attr.use_assoc
+			|| tgt_expr->symtree->n.sym->attr.host_assoc
+			|| tgt_expr->symtree->n.sym->attr.if_source
+								== IFSRC_DECL);
+      permissible = permissible
+		    || (tgt_expr && tgt_expr->expr_type == EXPR_OP);
+
+      if (permissible)
+	{
+	  gfc_resolve_expr (tgt_expr);
+	  sym->ts = tgt_expr->ts;
+	}
+
+      if (sym->ts.type == BT_UNKNOWN)
+	{
+	  gfc_error ("Symbol %qs at %C has no IMPLICIT type", sym->name);
+	  return MATCH_ERROR;
+	}
     }
   else if ((sym->ts.type != BT_DERIVED && sym->ts.type != BT_CLASS)
            && m == MATCH_YES)
@@ -2677,7 +2766,7 @@ build_actual_constructor (gfc_structure_ctor_component **comp_head,
 	  else if (!comp->attr.artificial)
 	    {
 	      gfc_error ("No initializer for component %qs given in the"
-			 " structure constructor at %C!", comp->name);
+			 " structure constructor at %C", comp->name);
 	      return false;
 	    }
 	}
@@ -2760,13 +2849,13 @@ gfc_convert_to_structure_constructor (gfc_expr *e, gfc_symbol *sym, gfc_expr **c
 	    {
 	      if (last_name)
 		gfc_error ("Component initializer without name after component"
-			   " named %s at %L!", last_name,
+			   " named %s at %L", last_name,
 			   actual->expr ? &actual->expr->where
 					: &gfc_current_locus);
 	      else
 		gfc_error ("Too many components in structure constructor at "
-			   "%L!", actual->expr ? &actual->expr->where
-					       : &gfc_current_locus);
+			   "%L", actual->expr ? &actual->expr->where
+					      : &gfc_current_locus);
 	      goto cleanup;
 	    }
 
@@ -2802,7 +2891,7 @@ gfc_convert_to_structure_constructor (gfc_expr *e, gfc_symbol *sym, gfc_expr **c
 	  if (!strcmp (comp_iter->name, comp_tail->name))
 	    {
 	      gfc_error ("Component %qs is initialized twice in the structure"
-			 " constructor at %L!", comp_tail->name,
+			 " constructor at %L", comp_tail->name,
 			 comp_tail->val ? &comp_tail->where
 					: &gfc_current_locus);
 	      goto cleanup;
@@ -2814,7 +2903,7 @@ gfc_convert_to_structure_constructor (gfc_expr *e, gfc_symbol *sym, gfc_expr **c
 	  && gfc_is_coindexed (comp_tail->val))
      	{
 	  gfc_error ("Coindexed expression to pointer component %qs in "
-		     "structure constructor at %L!", comp_tail->name,
+		     "structure constructor at %L", comp_tail->name,
 		     &comp_tail->where);
 	  goto cleanup;
 	}
@@ -2948,7 +3037,7 @@ gfc_match_structure_constructor (gfc_symbol *sym, gfc_expr **result)
      expression here.  */
   if (gfc_in_match_data ())
     gfc_reduce_init_expr (e);
- 
+
   *result = e;
   return MATCH_YES;
 }
@@ -3662,7 +3751,7 @@ match_variable (gfc_expr **result, int equiv_flag, int host_flag)
 	implicit_ns = gfc_current_ns;
       else
 	implicit_ns = sym->ns;
-	
+
       old_loc = gfc_current_locus;
       if (gfc_match_member_sep (sym) == MATCH_YES
 	  && sym->ts.type == BT_UNKNOWN

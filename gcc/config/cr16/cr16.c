@@ -25,6 +25,8 @@
 #include "target.h"
 #include "rtl.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "df.h"
 #include "memmodel.h"
 #include "tm_p.h"
@@ -198,6 +200,9 @@ static void cr16_print_operand_address (FILE *, machine_mode, rtx);
 #undef TARGET_MEMORY_MOVE_COST
 #define TARGET_MEMORY_MOVE_COST 	cr16_memory_move_cost
 
+#undef TARGET_CONSTANT_ALIGNMENT
+#define TARGET_CONSTANT_ALIGNMENT	constant_alignment_word_strings
+
 /* Table of machine attributes.  */
 static const struct attribute_spec cr16_attribute_table[] = {
   /* ISRs have special prologue and epilogue requirements.  */
@@ -217,6 +222,13 @@ static const struct attribute_spec cr16_attribute_table[] = {
 #define TARGET_ASM_UNALIGNED_SI_OP 	TARGET_ASM_ALIGNED_SI_OP
 #undef TARGET_ASM_UNALIGNED_DI_OP
 #define TARGET_ASM_UNALIGNED_DI_OP 	TARGET_ASM_ALIGNED_DI_OP
+
+#undef TARGET_HARD_REGNO_NREGS
+#define TARGET_HARD_REGNO_NREGS		cr16_hard_regno_nregs
+#undef TARGET_HARD_REGNO_MODE_OK
+#define TARGET_HARD_REGNO_MODE_OK	cr16_hard_regno_mode_ok
+#undef TARGET_MODES_TIEABLE_P
+#define TARGET_MODES_TIEABLE_P		cr16_modes_tieable_p
 
 /* Target hook implementations.  */
 
@@ -461,28 +473,48 @@ cr16_regno_reg_class (int regno)
   return NO_REGS;
 }
 
-/* Return 1 if hard register REGNO can hold a value of machine-mode MODE.  */
-int
-cr16_hard_regno_mode_ok (int regno, machine_mode mode)
+/* Implement TARGET_HARD_REGNO_NREGS.  */
+
+static unsigned int
+cr16_hard_regno_nregs (unsigned int regno, machine_mode mode)
+{
+  if (regno >= CR16_FIRST_DWORD_REGISTER)
+    return CEIL (GET_MODE_SIZE (mode), CR16_UNITS_PER_DWORD);
+  return CEIL (GET_MODE_SIZE (mode), UNITS_PER_WORD);
+}
+
+/* Implement TARGET_HARD_REGNO_MODE_OK.  On the CR16 architecture, all
+   registers can hold all modes, except that double precision floats
+   (and double ints) must fall on even-register boundaries.  */
+
+static bool
+cr16_hard_regno_mode_ok (unsigned int regno, machine_mode mode)
 {
   if ((GET_MODE_SIZE (mode) >= 4) && (regno == 11))
-    return 0;
+    return false;
  
   if (mode == DImode || mode == DFmode)
     {
       if ((regno > 8) || (regno & 1))
-	return 0;
-      return 1;
+	return false;
+      return true;
     }
 
   if ((TARGET_INT32)
        && ((regno >= 12) && (GET_MODE_SIZE (mode) < 4 )))
-     return 0;
+     return false;
 
   /* CC can only hold CCmode values.  */
   if (GET_MODE_CLASS (mode) == MODE_CC)
-    return 0;
-  return 1;
+    return false;
+  return true;
+}
+
+/* Implement TARGET_MODES_TIEABLE_P.  */
+static bool
+cr16_modes_tieable_p (machine_mode mode1, machine_mode mode2)
+{
+  return GET_MODE_CLASS (mode1) == GET_MODE_CLASS (mode2);
 }
 
 /* Returns register number for function return value.*/
@@ -1354,7 +1386,7 @@ cr16_memory_move_cost (machine_mode mode,
 {
   /* One LD or ST takes twice the time of a simple reg-reg move.  */
   if (reg_classes_intersect_p (rclass, GENERAL_REGS))
-    return (4 * HARD_REGNO_NREGS (0, mode));
+    return (4 * cr16_hard_regno_nregs (0, mode));
   else
     return (100);
 }
@@ -2090,7 +2122,7 @@ notice_update_cc (rtx exp)
   return;
 }
 
-static machine_mode
+static scalar_int_mode
 cr16_unwind_word_mode (void)
 {
   return SImode;

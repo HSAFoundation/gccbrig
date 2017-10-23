@@ -26,6 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "vec.h"
 #include "tree.h"
 #include "dominance.h"
+#include "basic-block.h"
 #include "cfg.h"
 #include "cfganal.h"
 #include "function.h"
@@ -41,7 +42,7 @@ along with GCC; see the file COPYING3.  If not see
 /* Process a PHI node PHI of basic block BB as a part of naive out-f-ssa.  */
 
 static void
-naive_process_phi (hsa_insn_phi *phi)
+naive_process_phi (hsa_insn_phi *phi, const vec<edge> &predecessors)
 {
   unsigned count = phi->operand_count ();
   for (unsigned i = 0; i < count; i++)
@@ -54,7 +55,7 @@ naive_process_phi (hsa_insn_phi *phi)
       if (!op)
 	break;
 
-      e = EDGE_PRED (phi->m_bb, i);
+      e = predecessors[i];
       if (single_succ_p (e->src))
 	hbb = hsa_bb_for_bb (e->src);
       else
@@ -88,10 +89,18 @@ naive_outof_ssa (void)
     hsa_bb *hbb = hsa_bb_for_bb (bb);
     hsa_insn_phi *phi;
 
+    /* naive_process_phi can call split_edge on an incoming edge which order if
+       the incoming edges to the basic block and thus make it inconsistent with
+       the ordering of PHI arguments, so we collect them in advance.  */
+    auto_vec<edge, 8> predecessors;
+    unsigned pred_count = EDGE_COUNT (bb->preds);
+    for (unsigned i = 0; i < pred_count; i++)
+      predecessors.safe_push (EDGE_PRED (bb, i));
+
     for (phi = hbb->m_first_phi;
 	 phi;
 	 phi = phi->m_next ? as_a <hsa_insn_phi *> (phi->m_next) : NULL)
-      naive_process_phi (phi);
+      naive_process_phi (phi, predecessors);
 
     /* Zap PHI nodes, they will be deallocated when everything else will.  */
     hbb->m_first_phi = NULL;
@@ -184,7 +193,7 @@ struct m_reg_class_desc
 {
   unsigned next_avail, max_num;
   unsigned used_num, max_used;
-  uint64_t used[2];
+  uint64_t used[16];
   char cl_char;
 };
 
@@ -223,12 +232,12 @@ rewrite_code_bb (basic_block bb, struct m_reg_class_desc *classes)
 	      *regaddr = tmp;
 
 	      tmp->m_reg_class = classes[cl].cl_char;
-	      tmp->m_hard_num = (char) (classes[cl].max_num + i);
+	      tmp->m_hard_num = (short) (classes[cl].max_num + i);
 	      if (tmp2)
 		{
 		  gcc_assert (cl == 0);
 		  tmp2->m_reg_class = classes[1].cl_char;
-		  tmp2->m_hard_num = (char) (classes[1].max_num + i);
+		  tmp2->m_hard_num = (short) (classes[1].max_num + i);
 		}
 	    }
 	}
@@ -264,8 +273,15 @@ try_alloc_reg (struct m_reg_class_desc *classes, hsa_op_reg *reg)
 {
   int cl = m_reg_class_for_type (reg->m_type);
   int ret = -1;
-  if (classes[1].used_num + classes[2].used_num * 2 + classes[3].used_num * 4
-      >= 128 - 5)
+  /* HSAIL has separate register pool for C registers. Leave some regs
+     for spilling.  */
+  if (cl == 0 && classes[0].used_num >= 128 - 5)
+    return -1;
+  /* FIXME: If this check succeeds it may trigger an assert in
+     spill_at_interval due to empty active list. Now, this will not
+     occur because max_nums are selected to avoid the issue. */
+  if (cl != 0 && classes[1].used_num + classes[2].used_num * 2 +
+      classes[3].used_num * 4 >= 2048 - 5)
     return -1;
   if (classes[cl].used_num < classes[cl].max_num)
     {
@@ -274,8 +290,11 @@ try_alloc_reg (struct m_reg_class_desc *classes, hsa_op_reg *reg)
       if (classes[cl].used_num > classes[cl].max_used)
 	classes[cl].max_used = classes[cl].used_num;
       for (i = 0; i < classes[cl].used_num; i++)
-	if (! (classes[cl].used[i / 64] & (((uint64_t)1) << (i & 63))))
-	  break;
+	{
+	  gcc_assert (i / 64 < 1024);
+	  if (! (classes[cl].used[i / 64] & (((uint64_t)1) << (i & 63))))
+	    break;
+	}
       ret = i;
       classes[cl].used[i / 64] |= (((uint64_t)1) << (i & 63));
       reg->m_reg_class = classes[cl].cl_char;
@@ -676,18 +695,18 @@ regalloc (void)
     return;
 
   memset (classes, 0, sizeof (classes));
-  classes[0].next_avail = 0;
-  classes[0].max_num = 7;
+
   classes[0].cl_char = 'c';
   classes[1].cl_char = 's';
   classes[2].cl_char = 'd';
   classes[3].cl_char = 'q';
 
-  for (int i = 1; i < 4; i++)
-    {
-      classes[i].next_avail = 0;
-      classes[i].max_num = 20;
-    }
+  classes[0].max_num = 128;
+  /* Limit max_num so maximum hard reg numbers are limited to s_max +
+     2*d_max + 4*q_max < 2048.  */
+  classes[1].max_num = 600;
+  classes[2].max_num = 300;
+  classes[3].max_num = 150;
 
   linear_scan_regalloc (classes);
 

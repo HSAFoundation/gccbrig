@@ -42,6 +42,10 @@ check_intel_cpu_model (unsigned int family, unsigned int model,
 	      /* Knights Landing.  */
 	      assert (__builtin_cpu_is ("knl"));
 	      break;
+	    case 0x85:
+	      /* Knights Mill */
+	      assert (__builtin_cpu_is ("knm"));
+	      break;
 	    case 0x1a:
 	    case 0x1e:
 	    case 0x1f:
@@ -88,6 +92,9 @@ check_intel_cpu_model (unsigned int family, unsigned int model,
 	    case 0x4e:
 	    case 0x5e:
 	      /* Skylake.  */
+	    case 0x8e:
+	    case 0x9e:
+	      /* Kaby Lake.  */
 	      assert (__builtin_cpu_is ("corei7"));
 	      assert (__builtin_cpu_is ("skylake"));
 	      break;

@@ -226,6 +226,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "memmodel.h"
 #include "tm_p.h"
 #include "optabs.h"
+#include "regs.h"
 #include "emit-rtl.h"
 #include "recog.h"
 #include "cfgrtl.h"
@@ -427,7 +428,8 @@ transform_ifelse (ext_cand *cand, rtx_insn *def_insn)
   srcreg2 = XEXP (SET_SRC (set_insn), 2);
   /* If the conditional move already has the right or wider mode,
      there is nothing to do.  */
-  if (GET_MODE_SIZE (GET_MODE (dstreg)) >= GET_MODE_SIZE (cand->mode))
+  if (GET_MODE_UNIT_SIZE (GET_MODE (dstreg))
+      >= GET_MODE_UNIT_SIZE (cand->mode))
     return true;
 
   map_srcreg = gen_rtx_REG (cand->mode, REGNO (srcreg));
@@ -717,8 +719,8 @@ merge_def_and_ext (ext_cand *cand, rtx_insn *def_insn, ext_state *state)
 	      && state->modified[INSN_UID (def_insn)].mode
 		 == ext_src_mode)))
     {
-      if (GET_MODE_SIZE (GET_MODE (SET_DEST (*sub_rtx)))
-	  >= GET_MODE_SIZE (cand->mode))
+      if (GET_MODE_UNIT_SIZE (GET_MODE (SET_DEST (*sub_rtx)))
+	  >= GET_MODE_UNIT_SIZE (cand->mode))
 	return true;
       /* If def_insn is already scheduled to be deleted, don't attempt
 	 to modify it.  */
@@ -819,12 +821,11 @@ combine_reaching_defs (ext_cand *cand, const_rtx set_pat, ext_state *state)
 
       /* Ensure we can use the src_reg in dst_mode (needed for
 	 the (set (reg1) (reg2)) insn mentioned above).  */
-      if (!HARD_REGNO_MODE_OK (REGNO (src_reg), dst_mode))
+      if (!targetm.hard_regno_mode_ok (REGNO (src_reg), dst_mode))
 	return false;
 
       /* Ensure the number of hard registers of the copy match.  */
-      if (HARD_REGNO_NREGS (REGNO (src_reg), dst_mode)
-	  != HARD_REGNO_NREGS (REGNO (src_reg), GET_MODE (src_reg)))
+      if (hard_regno_nregs (REGNO (src_reg), dst_mode) != REG_NREGS (src_reg))
 	return false;
 
       /* There's only one reaching def.  */
@@ -869,7 +870,8 @@ combine_reaching_defs (ext_cand *cand, const_rtx set_pat, ext_state *state)
 	    return false;
 
 	  for (df_link *use = uses; use; use = use->next)
-	    if (GET_MODE_PRECISION (GET_MODE (*DF_REF_LOC (use->ref))) > prec)
+	    if (paradoxical_subreg_p (GET_MODE (*DF_REF_LOC (use->ref)),
+				      GET_MODE (SET_DEST (*dest_sub_rtx))))
 	      return false;
 	}
 
@@ -925,7 +927,8 @@ combine_reaching_defs (ext_cand *cand, const_rtx set_pat, ext_state *state)
 	  || (set = single_set (cand->insn)) == NULL_RTX)
 	return false;
       mode = GET_MODE (SET_DEST (set));
-      gcc_assert (GET_MODE_SIZE (mode) >= GET_MODE_SIZE (cand->mode));
+      gcc_assert (GET_MODE_UNIT_SIZE (mode)
+		  >= GET_MODE_UNIT_SIZE (cand->mode));
       cand->mode = mode;
     }
 
@@ -1135,8 +1138,7 @@ add_removable_extension (const_rtx expr, rtx_insn *insn,
 
 	 We allow this when the registers are different because the
 	 code in combine_reaching_defs will handle that case correctly.  */
-      if ((HARD_REGNO_NREGS (REGNO (dest), mode)
-	   != HARD_REGNO_NREGS (REGNO (reg), GET_MODE (reg)))
+      if (hard_regno_nregs (REGNO (dest), mode) != REG_NREGS (reg)
 	  && reg_overlap_mentioned_p (dest, reg))
 	return;
 

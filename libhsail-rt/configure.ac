@@ -145,6 +145,16 @@ AC_CONFIG_HEADER(target-config.h)
 AC_CHECK_SIZEOF([int])
 AC_CHECK_SIZEOF([void*])
 
+# Get target configury.
+. ${srcdir}/configure.tgt
+if test -n "$UNSUPPORTED"; then
+  AC_MSG_ERROR([Configuration ${target} is unsupported.])
+fi
+
+# For including target specific headers for setting flush-to-zero.
+# See configure.tgt.
+AC_SUBST(TARGET_CONFIG_INCLUDE_PATHS)
+
 # Determine what GCC version number to use in filesystem paths.
 GCC_BASE_VER
 

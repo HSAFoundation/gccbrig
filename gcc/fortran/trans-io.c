@@ -1613,6 +1613,10 @@ nml_get_addr_expr (gfc_symbol * sym, gfc_component * c,
     tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (tmp),
 			   base_addr, tmp, NULL_TREE);
 
+  if (GFC_CLASS_TYPE_P (TREE_TYPE (tmp))
+      && GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (gfc_class_data_get (tmp))))
+    tmp = gfc_class_data_get (tmp);
+
   if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (tmp)))
     tmp = gfc_conv_array_data (tmp);
   else
@@ -1670,8 +1674,12 @@ transfer_namelist_element (stmtblock_t * block, const char * var_name,
 
   /* Build ts, as and data address using symbol or component.  */
 
-  ts = (sym) ? &sym->ts : &c->ts;
-  as = (sym) ? sym->as : c->as;
+  ts = sym ? &sym->ts : &c->ts;
+
+  if (ts->type != BT_CLASS)
+    as = sym ? sym->as : c->as;
+  else
+    as = sym ? CLASS_DATA (sym)->as : CLASS_DATA (c)->as;
 
   addr_expr = nml_get_addr_expr (sym, c, base_addr);
 
@@ -1680,9 +1688,12 @@ transfer_namelist_element (stmtblock_t * block, const char * var_name,
 
   if (rank)
     {
-      decl = (sym) ? sym->backend_decl : c->backend_decl;
+      decl = sym ? sym->backend_decl : c->backend_decl;
       if (sym && sym->attr.dummy)
         decl = build_fold_indirect_ref_loc (input_location, decl);
+
+      if (ts->type == BT_CLASS)
+	decl = gfc_class_data_get (decl);
       dt =  TREE_TYPE (decl);
       dtype = gfc_get_dtype (dt);
     }
@@ -1756,7 +1767,7 @@ transfer_namelist_element (stmtblock_t * block, const char * var_name,
   else
     tmp = build_int_cst (gfc_charlen_type_node, 0);
 
-  if (dtio_proc == NULL_TREE)
+  if (dtio_proc == null_pointer_node)
     tmp = build_call_expr_loc (input_location,
 			   iocall[IOCALL_SET_NML_VAL], 6,
 			   dt_parm_addr, addr_expr, string,
@@ -2203,18 +2214,24 @@ get_dtio_proc (gfc_typespec * ts, gfc_code * code, gfc_symbol **dtio_sub)
   bool formatted = false;
   gfc_dt *dt = code->ext.dt;
 
-  if (dt && dt->format_expr)
+  if (dt)
     {
-      char *fmt;
-      fmt = gfc_widechar_to_char (dt->format_expr->value.character.string,
-				  -1);
-      if (strtok (fmt, "DT") != NULL)
+      char *fmt = NULL;
+
+      if (dt->format_label == &format_asterisk)
+	{
+	  /* List directed io must call the formatted DTIO procedure.  */
+	  formatted = true;
+	}
+      else if (dt->format_expr)
+	fmt = gfc_widechar_to_char (dt->format_expr->value.character.string,
+				      -1);
+      else if (dt->format_label)
+	fmt = gfc_widechar_to_char (dt->format_label->format->value.character.string,
+				      -1);
+      if (fmt && strtok (fmt, "DT") != NULL)
 	formatted = true;
-    }
-  else if (dt && dt->format_label == &format_asterisk)
-    {
-      /* List directed io must call the formatted DTIO procedure.  */
-      formatted = true;
+
     }
 
   if (ts->type == BT_CLASS)
@@ -2552,6 +2569,12 @@ gfc_trans_transfer (gfc_code * code)
 	  gcc_assert (ref && ref->type == REF_ARRAY);
 	}
 
+      if (expr->ts.type != BT_CLASS
+	 && expr->expr_type == EXPR_VARIABLE
+	 && gfc_expr_attr (expr).pointer)
+	goto scalarize;
+
+
       if (!(gfc_bt_struct (expr->ts.type)
 	      || expr->ts.type == BT_CLASS)
 	    && ref && ref->next == NULL
@@ -2586,6 +2609,7 @@ gfc_trans_transfer (gfc_code * code)
 	  goto finish_block_label;
 	}
 
+scalarize:
       /* Initialize the scalarizer.  */
       ss = gfc_walk_expr (expr);
       gfc_init_loopinfo (&loop);
@@ -2601,7 +2625,9 @@ gfc_trans_transfer (gfc_code * code)
 
       gfc_copy_loopinfo_to_se (&se, &loop);
       se.ss = ss;
+
       gfc_conv_expr_reference (&se, expr);
+
       if (expr->ts.type == BT_CLASS)
 	vptr = gfc_get_vptr_from_expr (ss->info->data.array.descriptor);
       else

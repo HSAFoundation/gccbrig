@@ -42,6 +42,7 @@ along with GCC; see the file COPYING3.	If not see
 #include "cfganal.h"
 #include "sparseset.h"
 #include "lra-int.h"
+#include "target.h"
 
 /* Program points are enumerated by numbers from range
    0..LRA_LIVE_MAX_POINT-1.  There are approximately two times more
@@ -313,9 +314,7 @@ mark_regno_live (int regno, machine_mode mode, int point)
 
   if (regno < FIRST_PSEUDO_REGISTER)
     {
-      for (last = regno + hard_regno_nregs[regno][mode];
-	   regno < last;
-	   regno++)
+      for (last = end_hard_regno (mode, regno); regno < last; regno++)
 	make_hard_regno_born (regno, false);
     }
   else
@@ -342,9 +341,7 @@ mark_regno_dead (int regno, machine_mode mode, int point)
 
   if (regno < FIRST_PSEUDO_REGISTER)
     {
-      for (last = regno + hard_regno_nregs[regno][mode];
-	   regno < last;
-	   regno++)
+      for (last = end_hard_regno (mode, regno); regno < last; regno++)
 	make_hard_regno_dead (regno);
     }
   else
@@ -575,7 +572,8 @@ check_pseudos_live_through_calls (int regno,
 		    last_call_used_reg_set);
 
   for (hr = 0; hr < FIRST_PSEUDO_REGISTER; hr++)
-    if (HARD_REGNO_CALL_PART_CLOBBERED (hr, PSEUDO_REGNO_MODE (regno)))
+    if (targetm.hard_regno_call_part_clobbered (hr,
+						PSEUDO_REGNO_MODE (regno)))
       SET_HARD_REG_BIT (lra_reg_info[regno].conflict_hard_regs, hr);
   lra_reg_info[regno].call_p = true;
   if (! sparseset_bit_p (pseudos_live_through_setjumps, regno))
@@ -717,9 +715,9 @@ process_bb_lives (basic_block bb, int &curr_point, bool dead_insn_p)
       for (reg = curr_id->regs; reg != NULL; reg = reg->next)
 	{
 	  int i, regno = reg->regno;
-	  
-	  if (GET_MODE_SIZE (reg->biggest_mode)
-	      > GET_MODE_SIZE (lra_reg_info[regno].biggest_mode))
+
+	  if (partial_subreg_p (lra_reg_info[regno].biggest_mode,
+				reg->biggest_mode))
 	    lra_reg_info[regno].biggest_mode = reg->biggest_mode;
 	  if (regno < FIRST_PSEUDO_REGISTER)
 	    {
@@ -728,9 +726,9 @@ process_bb_lives (basic_block bb, int &curr_point, bool dead_insn_p)
 		 but implicitly it can be used in natural mode as a
 		 part of multi-register group.  Process this case
 		 here.  */
-	      for (i = 1; i < hard_regno_nregs[regno][reg->biggest_mode]; i++)
-		if (GET_MODE_SIZE (GET_MODE (regno_reg_rtx[regno + i]))
-		    > GET_MODE_SIZE (lra_reg_info[regno + i].biggest_mode))
+	      for (i = 1; i < hard_regno_nregs (regno, reg->biggest_mode); i++)
+		if (partial_subreg_p (lra_reg_info[regno + i].biggest_mode,
+				      GET_MODE (regno_reg_rtx[regno + i])))
 		  lra_reg_info[regno + i].biggest_mode
 		    = GET_MODE (regno_reg_rtx[regno + i]);
 	    }
@@ -1287,11 +1285,11 @@ lra_create_live_ranges_1 (bool all_p, bool dead_insn_p)
   point_freq_vec.truncate (0);
   point_freq_vec.reserve_exact (new_length);
   lra_point_freq = point_freq_vec.address ();
-  int *post_order_rev_cfg = XNEWVEC (int, last_basic_block_for_fn (cfun));
-  int n_blocks_inverted = inverted_post_order_compute (post_order_rev_cfg);
-  lra_assert (n_blocks_inverted == n_basic_blocks_for_fn (cfun));
+  auto_vec<int, 20> post_order_rev_cfg;
+  inverted_post_order_compute (&post_order_rev_cfg);
+  lra_assert (post_order_rev_cfg.length () == (unsigned) n_basic_blocks_for_fn (cfun));
   bb_live_change_p = false;
-  for (i = n_blocks_inverted - 1; i >= 0; --i)
+  for (i = post_order_rev_cfg.length () - 1; i >= 0; --i)
     {
       bb = BASIC_BLOCK_FOR_FN (cfun, post_order_rev_cfg[i]);
       if (bb == EXIT_BLOCK_PTR_FOR_FN (cfun) || bb
@@ -1338,7 +1336,6 @@ lra_create_live_ranges_1 (bool all_p, bool dead_insn_p)
 	    }
 	}
     }
-  free (post_order_rev_cfg);
   lra_live_max_point = curr_point;
   if (lra_dump_file != NULL)
     print_live_ranges (lra_dump_file);

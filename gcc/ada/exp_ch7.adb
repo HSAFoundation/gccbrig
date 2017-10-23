@@ -1955,7 +1955,7 @@ package body Exp_Ch7 is
                Insert_After (Finalizer_Insert_Nod, Fin_Body);
             end if;
 
-            Analyze (Fin_Body);
+            Analyze (Fin_Body, Suppress => All_Checks);
          end if;
       end Create_Finalizer;
 
@@ -2098,15 +2098,6 @@ package body Exp_Ch7 is
                --  because they will not appear in the final tree.
 
                elsif Is_Ignored_Ghost_Entity (Obj_Id) then
-                  null;
-
-               --  The expansion of iterator loops generates an object
-               --  declaration where the Ekind is explicitly set to loop
-               --  parameter. This is to ensure that the loop parameter behaves
-               --  as a constant from user code point of view. Such object are
-               --  never controlled and do not require finalization.
-
-               elsif Ekind (Obj_Id) = E_Loop_Parameter then
                   null;
 
                --  The object is of the form:
@@ -2614,8 +2605,8 @@ package body Exp_Ch7 is
             --  procedures of types Init_Typ or Obj_Typ.
 
             function Next_Suitable_Statement (Stmt : Node_Id) return Node_Id;
-            --  Given a statement which is part of a list, return the next
-            --  statement while skipping over dynamic elab checks.
+            --  Obtain the next statement which follows list member Stmt while
+            --  ignoring artifacts related to access-before-elaboration checks.
 
             -----------------------------
             -- Find_Last_Init_In_Block --
@@ -2734,16 +2725,22 @@ package body Exp_Ch7 is
             -----------------------------
 
             function Next_Suitable_Statement (Stmt : Node_Id) return Node_Id is
-               Result : Node_Id := Next (Stmt);
+               Result : Node_Id;
 
             begin
-               --  Skip over access-before-elaboration checks
+               --  Skip call markers and Program_Error raises installed by the
+               --  ABE mechanism.
 
-               if Dynamic_Elaboration_Checks
-                 and then Nkind (Result) = N_Raise_Program_Error
-               then
+               Result := Next (Stmt);
+               while Present (Result) loop
+                  if not Nkind_In (Result, N_Call_Marker,
+                                           N_Raise_Program_Error)
+                  then
+                     exit;
+                  end if;
+
                   Result := Next (Result);
-               end if;
+               end loop;
 
                return Result;
             end Next_Suitable_Statement;
@@ -2772,9 +2769,30 @@ package body Exp_Ch7 is
 
             Stmt := Next_Suitable_Statement (Decl);
 
-            --  Nothing to do for an object with suppressed initialization
+            --  For an object with suppressed initialization, we check whether
+            --  there is in fact no initialization expression. If there is not,
+            --  then this is an object declaration that has been turned into a
+            --  different object declaration that calls the build-in-place
+            --  function in a 'Reference attribute, as in "F(...)'Reference".
+            --  We search for that later object declaration, so that the
+            --  Inc_Decl will be inserted after the call. Otherwise, if the
+            --  call raises an exception, we will finalize the (uninitialized)
+            --  object, which is wrong.
 
             if No_Initialization (Decl) then
+               if No (Expression (Last_Init)) then
+                  loop
+                     Last_Init := Next (Last_Init);
+                     exit when No (Last_Init);
+                     exit when Nkind (Last_Init) = N_Object_Declaration
+                       and then Nkind (Expression (Last_Init)) = N_Reference
+                       and then Nkind (Prefix (Expression (Last_Init))) =
+                                  N_Function_Call
+                       and then Is_Expanded_Build_In_Place_Call
+                                  (Prefix (Expression (Last_Init)));
+                  end loop;
+               end if;
+
                return;
 
             --  In all other cases the initialization calls follow the related
@@ -2964,7 +2982,7 @@ package body Exp_Ch7 is
 
          if No (Finalizer_Insert_Nod) then
 
-            --  Insertion after an abort deffered block
+            --  Insertion after an abort deferred block
 
             if Present (Body_Ins) then
                Finalizer_Insert_Nod := Body_Ins;
@@ -4045,7 +4063,7 @@ package body Exp_Ch7 is
 
    --  This procedure is called each time a transient block has to be inserted
    --  that is to say for each call to a function with unconstrained or tagged
-   --  result. It creates a new scope on the stack scope in order to enclose
+   --  result. It creates a new scope on the scope stack in order to enclose
    --  all transient variables generated.
 
    procedure Establish_Transient_Scope (N : Node_Id; Sec_Stack : Boolean) is
@@ -4451,7 +4469,7 @@ package body Exp_Ch7 is
       --  This is done only for non-generic packages
 
       if Ekind (Spec_Id) = E_Package then
-         Push_Scope (Corresponding_Spec (N));
+         Push_Scope (Spec_Id);
 
          --  Build dispatch tables of library level tagged types
 
@@ -4463,18 +4481,15 @@ package body Exp_Ch7 is
 
          Build_Task_Activation_Call (N);
 
-         --  When the package is subject to pragma Initial_Condition, the
-         --  assertion expression must be verified at the end of the body
-         --  statements.
+         --  Verify the run-time semantics of pragma Initial_Condition at the
+         --  end of the body statements.
 
-         if Present (Get_Pragma (Spec_Id, Pragma_Initial_Condition)) then
-            Expand_Pragma_Initial_Condition (N);
-         end if;
+         Expand_Pragma_Initial_Condition (Spec_Id, N);
 
          Pop_Scope;
       end if;
 
-      Set_Elaboration_Flag (N, Corresponding_Spec (N));
+      Set_Elaboration_Flag (N, Spec_Id);
       Set_In_Package_Body (Spec_Id, False);
 
       --  Set to encode entity names in package body before gigi is called
@@ -4589,14 +4604,10 @@ package body Exp_Ch7 is
             Build_Task_Activation_Call (N);
          end if;
 
-         --  When the package is subject to pragma Initial_Condition and lacks
-         --  a body, the assertion expression must be verified at the end of
-         --  the visible declarations. Otherwise the check is performed at the
-         --  end of the body statements (see Expand_N_Package_Body).
+         --  Verify the run-time semantics of pragma Initial_Condition at the
+         --  end of the private declarations when the package lacks a body.
 
-         if Present (Get_Pragma (Id, Pragma_Initial_Condition)) then
-            Expand_Pragma_Initial_Condition (N);
-         end if;
+         Expand_Pragma_Initial_Condition (Id, N);
 
          Pop_Scope;
       end if;
@@ -5285,7 +5296,14 @@ package body Exp_Ch7 is
    --  Start of processing for Insert_Actions_In_Scope_Around
 
    begin
-      if No (Act_Before) and then No (Act_After) and then No (Act_Cleanup) then
+      --  Nothing to do if the scope does not manage the secondary stack or
+      --  does not contain meaninful actions for insertion.
+
+      if not Manage_SS
+        and then No (Act_Before)
+        and then No (Act_After)
+        and then No (Act_Cleanup)
+      then
          return;
       end if;
 

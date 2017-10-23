@@ -20,6 +20,10 @@
 #include "system.h"
 #include "diagnostic-color.h"
 
+#ifdef __MINGW32__
+#  include <windows.h>
+#endif
+
 /* Select Graphic Rendition (SGR, "\33[...m") strings.  */
 /* Also Erase in Line (EL) to Right ("\33[K") by default.  */
 /*    Why have EL to Right after SGR?
@@ -174,6 +178,7 @@ static struct color_cap color_dict[] =
   { "diff-hunk", SGR_SEQ (COLOR_FG_CYAN), 9, false },
   { "diff-delete", SGR_SEQ (COLOR_FG_RED), 11, false },
   { "diff-insert", SGR_SEQ (COLOR_FG_GREEN), 11, false },
+  { "type-diff", SGR_SEQ (COLOR_BOLD COLOR_SEPARATOR COLOR_FG_GREEN), 9, false },
   { NULL, NULL, 0, false }
 };
 
@@ -204,8 +209,9 @@ colorize_stop (bool show_color)
 /* Parse GCC_COLORS.  The default would look like:
    GCC_COLORS='error=01;31:warning=01;35:note=01;36:\
    range1=32:range2=34:locus=01:quote=01:\
-   fixit-insert=32:fixit-delete=31'\
-   diff-filename=01:diff-hunk=32:diff-delete=31:diff-insert=32'
+   fixit-insert=32:fixit-delete=31:'\
+   diff-filename=01:diff-hunk=32:diff-delete=31:diff-insert=32:\
+   type-diff=01;32'
    No character escaping is needed or supported.  */
 static bool
 parse_gcc_colors (void)
@@ -273,22 +279,27 @@ parse_gcc_colors (void)
       return true;
 }
 
-#if defined(_WIN32)
-bool
-colorize_init (diagnostic_color_rule_t)
-{
-  return false;
-}
-#else
-
 /* Return true if we should use color when in auto mode, false otherwise. */
 static bool
 should_colorize (void)
 {
+#ifdef __MINGW32__
+  /* For consistency reasons, one should check the handle returned by
+     _get_osfhandle(_fileno(stderr)) because the function
+     pp_write_text_to_stream() in pretty-print.c calls fputs() on
+     that stream.  However, the code below for non-Windows doesn't seem
+     to care about it either...  */
+  HANDLE h;
+  DWORD m;
+
+  h = GetStdHandle (STD_ERROR_HANDLE);
+  return (h != INVALID_HANDLE_VALUE) && (h != NULL)
+	  && GetConsoleMode (h, &m);
+#else
   char const *t = getenv ("TERM");
   return t && strcmp (t, "dumb") != 0 && isatty (STDERR_FILENO);
+#endif
 }
-
 
 bool
 colorize_init (diagnostic_color_rule_t rule)
@@ -308,4 +319,3 @@ colorize_init (diagnostic_color_rule_t rule)
       gcc_unreachable ();
     }
 }
-#endif

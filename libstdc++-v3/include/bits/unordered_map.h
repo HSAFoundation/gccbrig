@@ -32,6 +32,7 @@
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
+_GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
   /// Base types for unordered_map.
@@ -578,6 +579,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       insert(const value_type& __x)
       { return _M_h.insert(__x); }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2354. Unnecessary copying when inserting into maps with braced-init
+      std::pair<iterator, bool>
+      insert(value_type&& __x)
+      { return _M_h.insert(std::move(__x)); }
+
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
 						    _Pair&&>::value>::type>
@@ -611,6 +618,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       insert(const_iterator __hint, const value_type& __x)
       { return _M_h.insert(__hint, __x); }
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2354. Unnecessary copying when inserting into maps with braced-init
+      iterator
+      insert(const_iterator __hint, value_type&& __x)
+      { return _M_h.insert(__hint, std::move(__x)); }
 
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
@@ -1467,6 +1480,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       insert(const value_type& __x)
       { return _M_h.insert(__x); }
 
+      iterator
+      insert(value_type&& __x)
+      { return _M_h.insert(std::move(__x)); }
+
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
 						    _Pair&&>::value>::type>
@@ -1498,6 +1515,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       iterator
       insert(const_iterator __hint, const value_type& __x)
       { return _M_h.insert(__hint, __x); }
+
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2354. Unnecessary copying when inserting into maps with braced-init
+      iterator
+      insert(const_iterator __hint, value_type&& __x)
+      { return _M_h.insert(__hint, std::move(__x)); }
 
       template<typename _Pair, typename = typename
 	       std::enable_if<std::is_constructible<value_type,
@@ -1911,7 +1934,6 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 _GLIBCXX_END_NAMESPACE_CONTAINER
 
 #if __cplusplus > 201402L
-_GLIBCXX_BEGIN_NAMESPACE_VERSION
   // Allow std::unordered_map access to internals of compatible maps.
   template<typename _Key, typename _Val, typename _Hash1, typename _Eq1,
 	   typename _Alloc, typename _Hash2, typename _Eq2>
@@ -1959,9 +1981,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       _S_get_table(unordered_multimap<_Key, _Val, _Hash2, _Eq2, _Alloc>& __map)
       { return __map._M_h; }
     };
-_GLIBCXX_END_NAMESPACE_VERSION
 #endif // C++17
 
+_GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
 
 #endif /* _UNORDERED_MAP_H */

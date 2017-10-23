@@ -86,7 +86,7 @@ static void rtl_delete_block (basic_block);
 static basic_block rtl_redirect_edge_and_branch_force (edge, basic_block);
 static edge rtl_redirect_edge_and_branch (edge, basic_block);
 static basic_block rtl_split_block (basic_block, void *);
-static void rtl_dump_bb (FILE *, basic_block, int, int);
+static void rtl_dump_bb (FILE *, basic_block, int, dump_flags_t);
 static int rtl_verify_flow_info_1 (void);
 static void rtl_make_forwarder_block (edge);
 
@@ -1155,7 +1155,7 @@ try_redirect_by_replacing_jump (edge e, basic_block target, bool in_cfglayout)
   else
     e->flags = 0;
 
-  e->probability = REG_BR_PROB_BASE;
+  e->probability = profile_probability::always ();
   e->count = src->count;
 
   if (e->dest != target)
@@ -1504,15 +1504,10 @@ force_nonfallthru_and_redirect (edge e, basic_block target, rtx jump_label)
 	{
 	  int prob = XINT (note, 0);
 
-	  b->probability = prob;
-          /* Update this to use GCOV_COMPUTE_SCALE.  */
-	  b->count = e->count * prob / REG_BR_PROB_BASE;
+	  b->probability = profile_probability::from_reg_br_prob_note (prob);
+	  b->count = e->count.apply_probability (b->probability);
 	  e->probability -= e->probability;
 	  e->count -= b->count;
-	  if (e->probability < 0)
-	    e->probability = 0;
-	  if (e->count < 0)
-	    e->count = 0;
 	}
     }
 
@@ -1620,8 +1615,8 @@ force_nonfallthru_and_redirect (edge e, basic_block target, rtx jump_label)
   if (EDGE_COUNT (e->src->succs) >= 2 || abnormal_edge_flags || asm_goto_edge)
     {
       rtx_insn *new_head;
-      gcov_type count = e->count;
-      int probability = e->probability;
+      profile_count count = e->count;
+      profile_probability probability = e->probability;
       /* Create the new structures.  */
 
       /* If the old block ended with a tablejump, skip its table
@@ -1649,7 +1644,7 @@ force_nonfallthru_and_redirect (edge e, basic_block target, rtx jump_label)
 
       /* Redirect old edge.  */
       redirect_edge_pred (e, jump_block);
-      e->probability = REG_BR_PROB_BASE;
+      e->probability = profile_probability::always ();
 
       /* If e->src was previously region crossing, it no longer is
          and the reg crossing note should be removed.  */
@@ -1659,14 +1654,14 @@ force_nonfallthru_and_redirect (edge e, basic_block target, rtx jump_label)
 	 add also edge from asm goto bb to target.  */
       if (asm_goto_edge)
 	{
-	  new_edge->probability /= 2;
-	  new_edge->count /= 2;
-	  jump_block->count /= 2;
+	  new_edge->probability = new_edge->probability.apply_scale (1, 2);
+	  new_edge->count = new_edge->count.apply_scale (1, 2);
+	  jump_block->count = jump_block->count.apply_scale (1, 2);
 	  jump_block->frequency /= 2;
-	  new_edge = make_edge (new_edge->src, target,
-				e->flags & ~EDGE_FALLTHRU);
-	  new_edge->probability = probability - probability / 2;
-	  new_edge->count = count - count / 2;
+	  edge new_edge2 = make_edge (new_edge->src, target,
+				      e->flags & ~EDGE_FALLTHRU);
+	  new_edge2->probability = probability - new_edge->probability;
+	  new_edge2->count = count - new_edge->count;
 	}
 
       new_bb = jump_block;
@@ -2112,10 +2107,8 @@ commit_edge_insertions (void)
    documented in dumpfile.h.  */
 
 static void
-rtl_dump_bb (FILE *outf, basic_block bb, int indent, int flags)
+rtl_dump_bb (FILE *outf, basic_block bb, int indent, dump_flags_t flags)
 {
-  rtx_insn *insn;
-  rtx_insn *last;
   char *s_indent;
 
   s_indent = (char *) alloca ((size_t) indent + 1);
@@ -2129,18 +2122,22 @@ rtl_dump_bb (FILE *outf, basic_block bb, int indent, int flags)
     }
 
   if (bb->index != ENTRY_BLOCK && bb->index != EXIT_BLOCK)
-    for (insn = BB_HEAD (bb), last = NEXT_INSN (BB_END (bb)); insn != last;
-	 insn = NEXT_INSN (insn))
-      {
-	if (flags & TDF_DETAILS)
-	  df_dump_insn_top (insn, outf);
-	if (! (flags & TDF_SLIM))
-	  print_rtl_single (outf, insn);
-	else
-	  dump_insn_slim (outf, insn);
-	if (flags & TDF_DETAILS)
-	  df_dump_insn_bottom (insn, outf);
-      }
+    {
+      rtx_insn *last = BB_END (bb);
+      if (last)
+	last = NEXT_INSN (last);
+      for (rtx_insn *insn = BB_HEAD (bb); insn != last; insn = NEXT_INSN (insn))
+	{
+	  if (flags & TDF_DETAILS)
+	    df_dump_insn_top (insn, outf);
+	  if (! (flags & TDF_SLIM))
+	    print_rtl_single (outf, insn);
+	  else
+	    dump_insn_slim (outf, insn);
+	  if (flags & TDF_DETAILS)
+	    df_dump_insn_bottom (insn, outf);
+	}
+    }
 
   if (df && (flags & TDF_DETAILS))
     {
@@ -2155,7 +2152,7 @@ rtl_dump_bb (FILE *outf, basic_block bb, int indent, int flags)
    in dumpfile.h.  */
 
 void
-print_rtl_with_bb (FILE *outf, const rtx_insn *rtx_first, int flags)
+print_rtl_with_bb (FILE *outf, const rtx_insn *rtx_first, dump_flags_t flags)
 {
   const rtx_insn *tmp_rtx;
   if (rtx_first == 0)
@@ -2207,7 +2204,7 @@ print_rtl_with_bb (FILE *outf, const rtx_insn *rtx_first, int flags)
 	      bb = start[INSN_UID (tmp_rtx)];
 	      if (bb != NULL)
 		{
-		  dump_bb_info (outf, bb, 0, dump_flags | TDF_COMMENT, true, false);
+		  dump_bb_info (outf, bb, 0, dump_flags, true, false);
 		  if (df && (flags & TDF_DETAILS))
 		    df_dump_top (bb, outf);
 		}
@@ -2234,7 +2231,7 @@ print_rtl_with_bb (FILE *outf, const rtx_insn *rtx_first, int flags)
 	      bb = end[INSN_UID (tmp_rtx)];
 	      if (bb != NULL)
 		{
-		  dump_bb_info (outf, bb, 0, dump_flags | TDF_COMMENT, false, true);
+		  dump_bb_info (outf, bb, 0, dump_flags, false, true);
 		  if (df && (flags & TDF_DETAILS))
 		    df_dump_bottom (bb, outf);
 		  putc ('\n', outf);
@@ -2254,12 +2251,13 @@ void
 update_br_prob_note (basic_block bb)
 {
   rtx note;
-  if (!JUMP_P (BB_END (bb)))
+  if (!JUMP_P (BB_END (bb)) || !BRANCH_EDGE (bb)->probability.initialized_p ())
     return;
   note = find_reg_note (BB_END (bb), REG_BR_PROB, NULL_RTX);
-  if (!note || XINT (note, 0) == BRANCH_EDGE (bb)->probability)
+  if (!note
+      || XINT (note, 0) == BRANCH_EDGE (bb)->probability.to_reg_br_prob_note ())
     return;
-  XINT (note, 0) = BRANCH_EDGE (bb)->probability;
+  XINT (note, 0) = BRANCH_EDGE (bb)->probability.to_reg_br_prob_note ();
 }
 
 /* Get the last insn associated with block BB (that includes barriers and
@@ -2286,6 +2284,29 @@ get_last_bb_insn (basic_block bb)
   return end;
 }
 
+/* Add all BBs reachable from entry via hot paths into the SET.  */
+
+void
+find_bbs_reachable_by_hot_paths (hash_set<basic_block> *set)
+{
+  auto_vec<basic_block, 64> worklist;
+
+  set->add (ENTRY_BLOCK_PTR_FOR_FN (cfun));
+  worklist.safe_push (ENTRY_BLOCK_PTR_FOR_FN (cfun));
+
+  while (worklist.length () > 0)
+    {
+      basic_block bb = worklist.pop ();
+      edge_iterator ei;
+      edge e;
+
+      FOR_EACH_EDGE (e, ei, bb->succs)
+	if (BB_PARTITION (e->dest) != BB_COLD_PARTITION
+	    && !set->add (e->dest))
+	  worklist.safe_push (e->dest);
+    }
+}
+
 /* Sanity check partition hotness to ensure that basic blocks in
    the cold partition don't dominate basic blocks in the hot partition.
    If FLAG_ONLY is true, report violations as errors. Otherwise
@@ -2299,49 +2320,25 @@ find_partition_fixes (bool flag_only)
   basic_block bb;
   vec<basic_block> bbs_in_cold_partition = vNULL;
   vec<basic_block> bbs_to_fix = vNULL;
+  hash_set<basic_block> set;
 
   /* Callers check this.  */
   gcc_checking_assert (crtl->has_bb_partition);
 
+  find_bbs_reachable_by_hot_paths (&set);
+
   FOR_EACH_BB_FN (bb, cfun)
-    if ((BB_PARTITION (bb) == BB_COLD_PARTITION))
-      bbs_in_cold_partition.safe_push (bb);
-
-  if (bbs_in_cold_partition.is_empty ())
-    return vNULL;
-
-  bool dom_calculated_here = !dom_info_available_p (CDI_DOMINATORS);
-
-  if (dom_calculated_here)
-    calculate_dominance_info (CDI_DOMINATORS);
-
-  while (! bbs_in_cold_partition.is_empty  ())
-    {
-      bb = bbs_in_cold_partition.pop ();
-      /* Any blocks dominated by a block in the cold section
-         must also be cold.  */
-      basic_block son;
-      for (son = first_dom_son (CDI_DOMINATORS, bb);
-           son;
-           son = next_dom_son (CDI_DOMINATORS, son))
-        {
-          /* If son is not yet cold, then mark it cold here and
-             enqueue it for further processing.  */
-          if ((BB_PARTITION (son) != BB_COLD_PARTITION))
-            {
-              if (flag_only)
-                error ("non-cold basic block %d dominated "
-                       "by a block in the cold partition (%d)", son->index, bb->index);
-              else
-                BB_SET_PARTITION (son, BB_COLD_PARTITION);
-              bbs_to_fix.safe_push (son);
-              bbs_in_cold_partition.safe_push (son);
-            }
-        }
-    }
-
-  if (dom_calculated_here)
-    free_dominance_info (CDI_DOMINATORS);
+    if (!set.contains (bb)
+	&& BB_PARTITION (bb) != BB_COLD_PARTITION)
+      {
+	if (flag_only)
+	  error ("non-cold basic block %d reachable only "
+		 "by paths crossing the cold partition", bb->index);
+	else
+	  BB_SET_PARTITION (bb, BB_COLD_PARTITION);
+	bbs_to_fix.safe_push (bb);
+	bbs_in_cold_partition.safe_push (bb);
+      }
 
   return bbs_to_fix;
 }
@@ -2450,11 +2447,22 @@ rtl_verify_edges (void)
 	  && EDGE_COUNT (bb->succs) >= 2
 	  && any_condjump_p (BB_END (bb)))
 	{
-	  if (XINT (note, 0) != BRANCH_EDGE (bb)->probability
-	      && profile_status_for_fn (cfun) != PROFILE_ABSENT)
+	  if (!BRANCH_EDGE (bb)->probability.initialized_p ())
+	    {
+	      if (profile_status_for_fn (cfun) != PROFILE_ABSENT)
+		{
+		  error ("verify_flow_info: "
+			 "REG_BR_PROB is set but cfg probability is not");
+		  err = 1;
+		}
+	    }
+	  else if (XINT (note, 0)
+	           != BRANCH_EDGE (bb)->probability.to_reg_br_prob_note ()
+	           && profile_status_for_fn (cfun) != PROFILE_ABSENT)
 	    {
 	      error ("verify_flow_info: REG_BR_PROB does not match cfg %i %i",
-		     XINT (note, 0), BRANCH_EDGE (bb)->probability);
+		     XINT (note, 0),
+		     BRANCH_EDGE (bb)->probability.to_reg_br_prob_note ());
 	      err = 1;
 	    }
 	}
@@ -2527,7 +2535,7 @@ rtl_verify_edges (void)
 	    && JUMP_P (BB_END (bb))
 	    && CROSSING_JUMP_P (BB_END (bb)))
           {
-            print_rtl_with_bb (stderr, get_insns (), TDF_RTL | TDF_BLOCKS | TDF_DETAILS);
+	    print_rtl_with_bb (stderr, get_insns (), TDF_BLOCKS | TDF_DETAILS);
             error ("Region crossing jump across same section in bb %i",
                    bb->index);
             err = 1;
@@ -3146,7 +3154,7 @@ purge_dead_edges (basic_block bb)
       /* Redistribute probabilities.  */
       if (single_succ_p (bb))
 	{
-	  single_succ_edge (bb)->probability = REG_BR_PROB_BASE;
+	  single_succ_edge (bb)->probability = profile_probability::always ();
 	  single_succ_edge (bb)->count = bb->count;
 	}
       else
@@ -3157,11 +3165,11 @@ purge_dead_edges (basic_block bb)
 
 	  b = BRANCH_EDGE (bb);
 	  f = FALLTHRU_EDGE (bb);
-	  b->probability = XINT (note, 0);
-	  f->probability = REG_BR_PROB_BASE - b->probability;
-          /* Update these to use GCOV_COMPUTE_SCALE.  */
-	  b->count = bb->count * b->probability / REG_BR_PROB_BASE;
-	  f->count = bb->count * f->probability / REG_BR_PROB_BASE;
+	  b->probability = profile_probability::from_reg_br_prob_note
+					 (XINT (note, 0));
+	  f->probability = b->probability.invert ();
+	  b->count = bb->count.apply_probability (b->probability);
+	  f->count = bb->count.apply_probability (f->probability);
 	}
 
       return purged;
@@ -3212,7 +3220,7 @@ purge_dead_edges (basic_block bb)
 
   gcc_assert (single_succ_p (bb));
 
-  single_succ_edge (bb)->probability = REG_BR_PROB_BASE;
+  single_succ_edge (bb)->probability = profile_probability::always ();
   single_succ_edge (bb)->count = bb->count;
 
   if (dump_file)
@@ -3785,7 +3793,8 @@ fixup_reorder_chain (void)
 		  rtx note = find_reg_note (bb_end_jump, REG_BR_PROB, 0);
 
 		  if (note
-		      && XINT (note, 0) < REG_BR_PROB_BASE / 2
+		      && profile_probability::from_reg_br_prob_note
+				 (XINT (note, 0)) < profile_probability::even ()
 		      && invert_jump (bb_end_jump,
 				      (e_fall->dest
 				       == EXIT_BLOCK_PTR_FOR_FN (cfun)
@@ -4242,7 +4251,7 @@ cfg_layout_duplicate_bb (basic_block bb)
    FLAGS is a set of additional flags to pass to cleanup_cfg().  */
 
 void
-cfg_layout_initialize (unsigned int flags)
+cfg_layout_initialize (int flags)
 {
   rtx_insn_list *x;
   basic_block bb;
@@ -4253,8 +4262,7 @@ cfg_layout_initialize (unsigned int flags)
      layout required moving a block from the hot to the cold
      section. This would create an illegal partitioning unless some
      manual fixup was performed.  */
-  gcc_assert (!(crtl->bb_reorder_complete
-		&& flag_reorder_blocks_and_partition));
+  gcc_assert (!crtl->bb_reorder_complete || !crtl->has_bb_partition);
 
   initialize_original_copy_tables ();
 
@@ -4896,7 +4904,9 @@ rtl_flow_call_edges_add (sbitmap blocks)
 		    blocks_split++;
 		}
 
-	      make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), EDGE_FAKE);
+	      edge ne = make_edge (bb, EXIT_BLOCK_PTR_FOR_FN (cfun), EDGE_FAKE);
+	      ne->probability = profile_probability::guessed_never ();
+	      ne->count = profile_count::guessed_zero ();
 	    }
 
 	  if (insn == BB_HEAD (bb))
@@ -4936,7 +4946,8 @@ rtl_lv_add_condition_to_bb (basic_block first_head ,
   start_sequence ();
   op0 = force_operand (op0, NULL_RTX);
   op1 = force_operand (op1, NULL_RTX);
-  do_compare_rtx_and_jump (op0, op1, comp, 0, mode, NULL_RTX, NULL, label, -1);
+  do_compare_rtx_and_jump (op0, op1, comp, 0, mode, NULL_RTX, NULL, label,
+			   profile_probability::uninitialized ());
   jump = get_last_insn ();
   JUMP_LABEL (jump) = label;
   LABEL_NUSES (label)++;
@@ -5028,14 +5039,13 @@ rtl_account_profile_record (basic_block bb, int after_pass,
   FOR_BB_INSNS (bb, insn)
     if (INSN_P (insn))
       {
-	record->size[after_pass]
-	  += insn_rtx_cost (PATTERN (insn), false);
-	if (profile_status_for_fn (cfun) == PROFILE_READ)
+	record->size[after_pass] += insn_cost (insn, false);
+	if (bb->count.initialized_p ())
 	  record->time[after_pass]
-	    += insn_rtx_cost (PATTERN (insn), true) * bb->count;
+	    += insn_cost (insn, true) * bb->count.to_gcov_type ();
 	else if (profile_status_for_fn (cfun) == PROFILE_GUESSED)
 	  record->time[after_pass]
-	    += insn_rtx_cost (PATTERN (insn), true) * bb->frequency;
+	    += insn_cost (insn, true) * bb->frequency;
       }
 }
 

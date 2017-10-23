@@ -34,7 +34,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "symbol-summary.h"
 #include "tree-vrp.h"
 #include "ipa-prop.h"
-#include "ipa-inline.h"
+#include "ipa-fnsummary.h"
 
 /* Debugging function for postorder and inorder code. NOTE is a string
    that is printed before the nodes are printed.  ORDER is an array of
@@ -402,15 +402,19 @@ ipa_merge_profiles (struct cgraph_node *dst,
   if (src->profile_id && !dst->profile_id)
     dst->profile_id = src->profile_id;
 
-  if (!dst->count)
+  /* FIXME when we merge in unknown profile, we ought to set counts as
+     unsafe.  */
+  if (!src->count.initialized_p ())
     return;
   if (symtab->dump_file)
     {
-      fprintf (symtab->dump_file, "Merging profiles of %s/%i to %s/%i\n",
-	       xstrdup_for_dump (src->name ()), src->order,
-	       xstrdup_for_dump (dst->name ()), dst->order);
+      fprintf (symtab->dump_file, "Merging profiles of %s to %s\n",
+	       src->dump_name (), dst->dump_name ());
     }
-  dst->count += src->count;
+  if (dst->count.initialized_p ())
+    dst->count += src->count;
+  else
+    dst->count = src->count;
 
   /* This is ugly.  We need to get both function bodies into memory.
      If declaration is merged, we need to duplicate it to be able
@@ -520,12 +524,20 @@ ipa_merge_profiles (struct cgraph_node *dst,
 	  unsigned int i;
 
 	  dstbb = BASIC_BLOCK_FOR_FN (dstcfun, srcbb->index);
-	  dstbb->count += srcbb->count;
+	  if (dstbb->count.initialized_p ())
+	    dstbb->count += srcbb->count;
+	  else
+	    dstbb->count = srcbb->count;
 	  for (i = 0; i < EDGE_COUNT (srcbb->succs); i++)
 	    {
 	      edge srce = EDGE_SUCC (srcbb, i);
 	      edge dste = EDGE_SUCC (dstbb, i);
-	      dste->count += srce->count;
+	      if (dstbb->count.initialized_p ())
+	        dste->count += srce->count;
+	      else
+		dste->count = srce->count;
+	      if (dstbb->count > 0 && dste->count.initialized_p ())
+		dste->probability = dste->count.probability_in (dstbb->count);
 	    }
 	}
       push_cfun (dstcfun);
@@ -544,7 +556,7 @@ ipa_merge_profiles (struct cgraph_node *dst,
       for (e = dst->indirect_calls, e2 = src->indirect_calls; e;
 	   e2 = (e2 ? e2->next_callee : NULL), e = e->next_callee)
 	{
-	  gcov_type count = gimple_bb (e->call_stmt)->count;
+	  profile_count count = gimple_bb (e->call_stmt)->count;
 	  int freq = compute_call_stmt_bb_frequency
 			(dst->decl,
 			 gimple_bb (e->call_stmt));
@@ -562,7 +574,8 @@ ipa_merge_profiles (struct cgraph_node *dst,
 	      gcc_assert (e == indirect);
 	      if (e2 && e2->speculative)
 	        e2->speculative_call_info (direct2, indirect2, ref);
-	      if (indirect->count || direct->count)
+	      if (indirect->count > profile_count::zero ()
+		  || direct->count > profile_count::zero ())
 		{
 		  /* We should mismatch earlier if there is no matching
 		     indirect edge.  */
@@ -595,8 +608,9 @@ ipa_merge_profiles (struct cgraph_node *dst,
 			   indirect->count += indirect2->count;
 			}
 		    }
-		  int  prob = RDIV (direct->count * REG_BR_PROB_BASE ,
-				    direct->count + indirect->count);
+		  int  prob = direct->count.probability_in (direct->count
+							    + indirect->count).
+			      to_reg_br_prob_base ();
 		  direct->frequency = RDIV (freq * prob, REG_BR_PROB_BASE);
 		  indirect->frequency = RDIV (freq * (REG_BR_PROB_BASE - prob),
 					      REG_BR_PROB_BASE);
@@ -614,7 +628,8 @@ ipa_merge_profiles (struct cgraph_node *dst,
 	      e2->speculative_call_info (direct, indirect, ref);
 	      e->count = count;
 	      e->frequency = freq;
-	      int prob = RDIV (direct->count * REG_BR_PROB_BASE, e->count);
+	      int prob = direct->count.probability_in (e->count)
+			 .to_reg_br_prob_base ();
 	      e->make_speculative (direct->callee, direct->count,
 				   RDIV (freq * prob, REG_BR_PROB_BASE));
 	    }
@@ -626,7 +641,7 @@ ipa_merge_profiles (struct cgraph_node *dst,
 	}
       if (!preserve_body)
         src->release_body ();
-      inline_update_overall_summary (dst);
+      ipa_update_overall_fn_summary (dst);
     }
   /* TODO: if there is no match, we can scale up.  */
   src->decl = oldsrcdecl;

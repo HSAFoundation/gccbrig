@@ -273,6 +273,11 @@ warn_uninitialized_vars (bool warn_possibly_uninitialized)
 	      && gimple_has_location (stmt))
 	    {
 	      tree rhs = gimple_assign_rhs1 (stmt);
+	      tree lhs = gimple_assign_lhs (stmt);
+	      bool has_bit_insert = false;
+	      use_operand_p luse_p;
+	      imm_use_iterator liter;
+
 	      if (TREE_NO_WARNING (rhs))
 		continue;
 
@@ -298,6 +303,26 @@ warn_uninitialized_vars (bool warn_possibly_uninitialized)
 			  && TREE_CODE (DECL_SIZE (base)) == INTEGER_CST
 			  && compare_tree_int (DECL_SIZE (base),
 					       ref.offset) <= 0)))
+		continue;
+
+	      /* Do not warn if the access is then used for a BIT_INSERT_EXPR. */
+	      if (TREE_CODE (lhs) == SSA_NAME)
+	        FOR_EACH_IMM_USE_FAST (luse_p, liter, lhs)
+		  {
+		    gimple *use_stmt = USE_STMT (luse_p);
+                    /* BIT_INSERT_EXPR first operand should not be considered
+		       a use for the purpose of uninit warnings.  */
+		    if (gassign *ass = dyn_cast <gassign *> (use_stmt))
+		      {
+			if (gimple_assign_rhs_code (ass) == BIT_INSERT_EXPR
+			    && luse_p->use == gimple_assign_rhs1_ptr (ass))
+			  {
+			    has_bit_insert = true;
+			    break;
+			  }
+		      }
+		  }
+	      if (has_bit_insert)
 		continue;
 
 	      /* Limit the walking to a constant number of stmts after
@@ -808,7 +833,7 @@ collect_phi_def_edges (gphi *phi, basic_block cd_root,
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "\n[CHECK] Found def edge %d in ", (int) i);
-	      print_gimple_stmt (dump_file, phi, 0, 0);
+	      print_gimple_stmt (dump_file, phi, 0);
 	    }
 	  edges->safe_push (opnd_edge);
 	}
@@ -826,7 +851,7 @@ collect_phi_def_edges (gphi *phi, basic_block cd_root,
 		{
 		  fprintf (dump_file, "\n[CHECK] Found def edge %d in ",
 			   (int) i);
-		  print_gimple_stmt (dump_file, phi, 0, 0);
+		  print_gimple_stmt (dump_file, phi, 0);
 		}
 	      edges->safe_push (opnd_edge);
 	    }
@@ -899,7 +924,7 @@ dump_predicates (gimple *usestmt, pred_chain_union preds, const char *msg)
   size_t i, j;
   pred_chain one_pred_chain = vNULL;
   fprintf (dump_file, "%s", msg);
-  print_gimple_stmt (dump_file, usestmt, 0, 0);
+  print_gimple_stmt (dump_file, usestmt, 0);
   fprintf (dump_file, "is guarded by :\n\n");
   size_t num_preds = preds.length ();
   /* Do some dumping here:  */
@@ -915,9 +940,9 @@ dump_predicates (gimple *usestmt, pred_chain_union preds, const char *msg)
 	  pred_info one_pred = one_pred_chain[j];
 	  if (one_pred.invert)
 	    fprintf (dump_file, " (.NOT.) ");
-	  print_generic_expr (dump_file, one_pred.pred_lhs, 0);
+	  print_generic_expr (dump_file, one_pred.pred_lhs);
 	  fprintf (dump_file, " %s ", op_symbol_code (one_pred.cond_code));
-	  print_generic_expr (dump_file, one_pred.pred_rhs, 0);
+	  print_generic_expr (dump_file, one_pred.pred_rhs);
 	  if (j < np - 1)
 	    fprintf (dump_file, " (.AND.) ");
 	  else
@@ -1449,8 +1474,8 @@ is_pred_expr_subset_of (pred_info expr1, pred_info expr2)
     code2 = invert_tree_comparison (code2, false);
 
   if ((code1 == EQ_EXPR || code1 == BIT_AND_EXPR) && code2 == BIT_AND_EXPR)
-    return wi::eq_p (expr1.pred_rhs,
-		     wi::bit_and (expr1.pred_rhs, expr2.pred_rhs));
+    return (wi::to_wide (expr1.pred_rhs)
+	    == (wi::to_wide (expr1.pred_rhs) & wi::to_wide (expr2.pred_rhs)));
 
   if (code1 != code2 && code2 != NE_EXPR)
     return false;
@@ -2472,7 +2497,7 @@ find_uninit_use (gphi *phi, unsigned uninit_opnds,
       if (dump_file && (dump_flags & TDF_DETAILS))
 	{
 	  fprintf (dump_file, "[CHECK]: Found unguarded use: ");
-	  print_gimple_stmt (dump_file, use_stmt, 0, 0);
+	  print_gimple_stmt (dump_file, use_stmt, 0);
 	}
       /* Found one real use, return.  */
       if (gimple_code (use_stmt) != GIMPLE_PHI)
@@ -2488,7 +2513,7 @@ find_uninit_use (gphi *phi, unsigned uninit_opnds,
 	  if (dump_file && (dump_flags & TDF_DETAILS))
 	    {
 	      fprintf (dump_file, "[WORKLIST]: Update worklist with phi: ");
-	      print_gimple_stmt (dump_file, use_stmt, 0, 0);
+	      print_gimple_stmt (dump_file, use_stmt, 0);
 	    }
 
 	  worklist->safe_push (as_a<gphi *> (use_stmt));
@@ -2530,7 +2555,7 @@ warn_uninitialized_phi (gphi *phi, vec<gphi *> *worklist,
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "[CHECK]: examining phi: ");
-      print_gimple_stmt (dump_file, phi, 0, 0);
+      print_gimple_stmt (dump_file, phi, 0);
     }
 
   /* Now check if we have any use of the value without proper guard.  */
@@ -2632,7 +2657,7 @@ pass_late_warn_uninitialized::execute (function *fun)
 		if (dump_file && (dump_flags & TDF_DETAILS))
 		  {
 		    fprintf (dump_file, "[WORKLIST]: add to initial list: ");
-		    print_gimple_stmt (dump_file, phi, 0, 0);
+		    print_gimple_stmt (dump_file, phi, 0);
 		  }
 		break;
 	      }

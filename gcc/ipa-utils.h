@@ -169,9 +169,6 @@ possible_polymorphic_call_target_p (struct cgraph_edge *e,
 inline bool
 polymorphic_type_binfo_p (const_tree binfo)
 {
-  /* See if BINFO's type has an virtual table associtated with it.
-     Check is defensive because of Java FE produces BINFOs
-     without BINFO_TYPE set.   */
   return (BINFO_TYPE (binfo) && TYPE_BINFO (BINFO_TYPE (binfo))
 	  && BINFO_VTABLE (TYPE_BINFO (BINFO_TYPE (binfo))));
 }
@@ -220,11 +217,11 @@ type_in_anonymous_namespace_p (const_tree t)
     {
       /* C++ FE uses magic <anon> as assembler names of anonymous types.
  	 verify that this match with type_in_anonymous_namespace_p.  */
-      gcc_checking_assert (!in_lto_p || !DECL_ASSEMBLER_NAME_SET_P (t)
-			   || !strcmp
-				 ("<anon>",
-				  IDENTIFIER_POINTER
-				     (DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
+      gcc_checking_assert (!in_lto_p
+			   || !DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t))
+			   || !strcmp ("<anon>",
+				       IDENTIFIER_POINTER
+				       (DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
       return true;
     }
   return false;
@@ -248,14 +245,13 @@ odr_type_p (const_tree t)
   if (type_in_anonymous_namespace_p (t))
     return true;
 
-  if (TYPE_NAME (t) && TREE_CODE (TYPE_NAME (t)) == TYPE_DECL
-      && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
+  if (TYPE_NAME (t) && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (t)))
     {
       /* C++ FE uses magic <anon> as assembler names of anonymous types.
  	 verify that this match with type_in_anonymous_namespace_p.  */
       gcc_checking_assert (strcmp ("<anon>",
-				      IDENTIFIER_POINTER
-					(DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
+				   IDENTIFIER_POINTER
+				   (DECL_ASSEMBLER_NAME (TYPE_NAME (t)))));
       return true;
     }
   return false;

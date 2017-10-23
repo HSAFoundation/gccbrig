@@ -143,8 +143,8 @@ static void coverage_obj_finish (vec<constructor_elt, va_gc> *);
 tree
 get_gcov_type (void)
 {
-  machine_mode mode
-    = smallest_mode_for_size (LONG_LONG_TYPE_SIZE > 32 ? 64 : 32, MODE_INT);
+  scalar_int_mode mode
+    = smallest_int_mode_for_size (LONG_LONG_TYPE_SIZE > 32 ? 64 : 32);
   return lang_hooks.types.type_for_mode (mode, false);
 }
 
@@ -153,7 +153,7 @@ get_gcov_type (void)
 static tree
 get_gcov_unsigned_t (void)
 {
-  machine_mode mode = smallest_mode_for_size (32, MODE_INT);
+  scalar_int_mode mode = smallest_int_mode_for_size (32);
   return lang_hooks.types.type_for_mode (mode, true);
 }
 
@@ -663,7 +663,7 @@ coverage_begin_function (unsigned lineno_checksum, unsigned cfg_checksum)
   gcov_write_unsigned (cfg_checksum);
   gcov_write_string (IDENTIFIER_POINTER
 		     (DECL_ASSEMBLER_NAME (current_function_decl)));
-  gcov_write_string (xloc.file);
+  gcov_write_filename (xloc.file);
   gcov_write_unsigned (xloc.line);
   gcov_write_length (offset);
 

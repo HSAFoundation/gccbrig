@@ -42,3 +42,18 @@ gccbrig_get_target_wavesize ()
 {
   return 1;
 }
+
+/* Returns true if the target supports flush-to-zero (FTZ) mode. */
+
+bool
+target_supports_ftz_mode ()
+{
+  /* These are reflected from libhsail-rt. see __hsail_enable_ftz () in
+     libhsail-rt/rt/ftz.c if a target is supported. */
+#if defined(__x86_64_) || defined(__SSE__)
+  return true;
+#else
+  return false;
+#endif
+}
+

@@ -49,6 +49,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "gomp-constants.h"
 #include "gimple-pretty-print.h"
 #include "intl.h"
+#include "stringpool.h"
+#include "attribs.h"
+#include "cfgloop.h"
 
 /* Describe the OpenACC looping structure of a function.  The entire
    function is held in a 'NULL' loop.  */
@@ -368,6 +371,30 @@ oacc_xform_loop (gcall *call)
       break;
 
     case IFN_GOACC_LOOP_OFFSET:
+      /* Enable vectorization on non-SIMT targets.  */
+      if (!targetm.simt.vf
+	  && outer_mask == GOMP_DIM_MASK (GOMP_DIM_VECTOR)
+	  /* If not -fno-tree-loop-vectorize, hint that we want to vectorize
+	     the loop.  */
+	  && (flag_tree_loop_vectorize
+	      || !global_options_set.x_flag_tree_loop_vectorize))
+	{
+	  basic_block bb = gsi_bb (gsi);
+	  struct loop *parent = bb->loop_father;
+	  struct loop *body = parent->inner;
+
+	  parent->force_vectorize = true;
+	  parent->safelen = INT_MAX;
+
+	  /* "Chunking loops" may have inner loops.  */
+	  if (parent->inner)
+	    {
+	      body->force_vectorize = true;
+	      body->safelen = INT_MAX;
+	    }
+
+	  cfun->has_force_vectorize_loops = true;
+	}
       if (striding)
 	{
 	  r = oacc_thread_numbers (true, mask, &seq);
@@ -788,7 +815,7 @@ dump_oacc_loop_part (FILE *file, gcall *from, int depth,
 	  if (k == kind && stmt != from)
 	    break;
 	}
-      print_gimple_stmt (file, stmt, depth * 2 + 2, 0);
+      print_gimple_stmt (file, stmt, depth * 2 + 2);
 
       gsi_next (&gsi);
       while (gsi_end_p (gsi))
@@ -808,7 +835,7 @@ dump_oacc_loop (FILE *file, oacc_loop *loop, int depth)
 	   LOCATION_FILE (loop->loc), LOCATION_LINE (loop->loc));
 
   if (loop->marker)
-    print_gimple_stmt (file, loop->marker, depth * 2, 0);
+    print_gimple_stmt (file, loop->marker, depth * 2);
 
   if (loop->routine)
     fprintf (file, "%*sRoutine %s:%u:%s\n",
@@ -1450,6 +1477,15 @@ execute_oacc_device_lower ()
   bool is_oacc_kernels_parallelized
     = (lookup_attribute ("oacc kernels parallelized",
 			 DECL_ATTRIBUTES (current_function_decl)) != NULL);
+
+  /* Unparallelized OpenACC kernels constructs must get launched as 1 x 1 x 1
+     kernels, so remove the parallelism dimensions function attributes
+     potentially set earlier on.  */
+  if (is_oacc_kernels && !is_oacc_kernels_parallelized)
+    {
+      oacc_set_fn_attrib (current_function_decl, NULL, NULL);
+      attrs = oacc_get_fn_attrib (current_function_decl);
+    }
 
   /* Discover, partition and process the loops.  */
   oacc_loop *loops = oacc_loop_discovery ();

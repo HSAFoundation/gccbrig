@@ -40,6 +40,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-ssa-loop-ivopts.h"
 #include "tree-eh.h"
 #include "tsan.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "asan.h"
 #include "builtins.h"
 #include "target.h"
@@ -896,9 +898,7 @@ public:
   opt_pass * clone () { return new pass_tsan (m_ctxt); }
   virtual bool gate (function *)
 {
-  return ((flag_sanitize & SANITIZE_THREAD) != 0
-	  && !lookup_attribute ("no_sanitize_thread",
-                                DECL_ATTRIBUTES (current_function_decl)));
+  return sanitize_flags_p (SANITIZE_THREAD);
 }
 
   virtual unsigned int execute (function *) { return tsan_pass (); }
@@ -938,9 +938,7 @@ public:
   /* opt_pass methods: */
   virtual bool gate (function *)
     {
-      return ((flag_sanitize & SANITIZE_THREAD) != 0 && !optimize
-	      && !lookup_attribute ("no_sanitize_thread",
-				    DECL_ATTRIBUTES (current_function_decl)));
+      return (sanitize_flags_p (SANITIZE_THREAD) && !optimize);
     }
 
   virtual unsigned int execute (function *) { return tsan_pass (); }

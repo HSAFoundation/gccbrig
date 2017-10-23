@@ -63,6 +63,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "hosthooks.h"
 #include "opts.h"
 #include "opts-diagnostic.h"
+#include "stringpool.h"
+#include "attribs.h"
 #include "asan.h"
 #include "tsan.h"
 #include "plugin.h"
@@ -79,6 +81,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "omp-offload.h"
 #include "hsa-common.h"
 #include "edit-context.h"
+#include "tree-pass.h"
+#include "dumpfile.h"
 
 #if defined(DBX_DEBUGGING_INFO) || defined(XCOFF_DEBUGGING_INFO)
 #include "dbxout.h"
@@ -235,7 +239,7 @@ announce_function (tree decl)
     }
 }
 
-/* Initialize local_tick with a random number or -1 if
+/* Initialize local_tick with the time of day, or -1 if
    flag_random_seed is set.  */
 
 static void
@@ -243,19 +247,6 @@ init_local_tick (void)
 {
   if (!flag_random_seed)
     {
-      /* Try urandom first. Time of day is too likely to collide. 
-	 In case of any error we just use the local tick. */
-
-      int fd = open ("/dev/urandom", O_RDONLY);
-      if (fd >= 0)
-        {
-          if (read (fd, &random_seed, sizeof (random_seed))
-              != sizeof (random_seed))
-            random_seed = 0;
-          close (fd);
-        }
-
-      /* Now get the tick anyways  */
 #ifdef HAVE_GETTIMEOFDAY
       {
 	struct timeval tv;
@@ -276,34 +267,33 @@ init_local_tick (void)
     local_tick = -1;
 }
 
-/* Set up a default flag_random_seed and local_tick, unless the user
-   already specified one.  Must be called after init_local_tick.  */
-
-static void
-init_random_seed (void)
-{
-  if (!random_seed)
-    random_seed = local_tick ^ getpid ();  /* Old racey fallback method */
-}
-
 /* Obtain the random_seed.  Unless NOINIT, initialize it if
    it's not provided in the command line.  */
 
 HOST_WIDE_INT
 get_random_seed (bool noinit)
 {
-  if (!flag_random_seed && !noinit)
-    init_random_seed ();
+  if (!random_seed && !noinit)
+    {
+      int fd = open ("/dev/urandom", O_RDONLY);
+      if (fd >= 0)
+        {
+          if (read (fd, &random_seed, sizeof (random_seed))
+              != sizeof (random_seed))
+            random_seed = 0;
+          close (fd);
+        }
+      if (!random_seed)
+	random_seed = local_tick ^ getpid ();
+    }
   return random_seed;
 }
 
-/* Modify the random_seed string to VAL.  Return its previous
-   value.  */
+/* Set flag_random_seed to VAL, and if non-null, reinitialize random_seed.  */
 
-const char *
+void
 set_random_seed (const char *val)
 {
-  const char *old = flag_random_seed;
   flag_random_seed = val;
   if (flag_random_seed)
     {
@@ -314,7 +304,6 @@ set_random_seed (const char *val)
       if (!(endp > flag_random_seed && *endp == 0))
         random_seed = crc32_string (0, flag_random_seed);
     }
-  return old;
 }
 
 /* Handler for fatal signals, such as SIGSEGV.  These are transformed
@@ -814,11 +803,6 @@ print_switch_values (print_switch_fn_type print_fn)
   int pos = 0;
   size_t j;
 
-  /* Fill in the -frandom-seed option, if the user didn't pass it, so
-     that it can be printed below.  This helps reproducibility.  */
-  if (!flag_random_seed)
-    init_random_seed ();
-
   /* Print the options as passed.  */
   pos = print_single_switch (print_fn, pos,
 			     SWITCH_TYPE_DESCRIPTIVE, _("options passed: "));
@@ -1063,6 +1047,26 @@ open_auxiliary_file (const char *ext)
   return file;
 }
 
+/* Alternative diagnostics callback for reentered ICE reporting.  */
+
+static void
+internal_error_reentered (diagnostic_context *, const char *, va_list *)
+{
+  /* Flush the dump file if emergency_dump_function itself caused an ICE.  */
+  if (dump_file)
+    fflush (dump_file);
+}
+
+/* Auxiliary callback for the diagnostics code.  */
+
+static void
+internal_error_function (diagnostic_context *, const char *, va_list *)
+{
+  global_dc->internal_error = internal_error_reentered;
+  warn_if_plugins ();
+  emergency_dump_function ();
+}
+
 /* Initialization of the front end environment, before command line
    options are parsed.  Signal handlers, internationalization etc.
    ARGV0 is main's argv[0].  */
@@ -1101,7 +1105,7 @@ general_init (const char *argv0, bool init_signals)
     = global_options_init.x_flag_diagnostics_show_option;
   global_dc->show_column
     = global_options_init.x_flag_show_column;
-  global_dc->internal_error = plugins_internal_error_function;
+  global_dc->internal_error = internal_error_function;
   global_dc->option_enabled = option_enabled;
   global_dc->option_state = &global_options;
   global_dc->option_name = option_name;
@@ -1154,9 +1158,17 @@ general_init (const char *argv0, bool init_signals)
      processing.  */
   init_ggc_heuristics ();
 
-  /* Create the singleton holder for global state.
-     Doing so also creates the pass manager and with it the passes.  */
+  /* Create the singleton holder for global state.  This creates the
+     dump manager.  */
   g = new gcc::context ();
+
+  /* Allow languages and middle-end to register their dumps before the
+     optimization passes.  */
+  g->get_dumps ()->register_dumps ();
+
+  /* Create the passes.  */
+  g->set_passes (new gcc::pass_manager (g));
+
   symtab = new (ggc_cleared_alloc <symbol_table> ()) symbol_table ();
 
   statistics_early_init ();
@@ -1573,6 +1585,26 @@ process_options (void)
       flag_associative_math = 0;
     }
 
+  /* -fstack-clash-protection is not currently supported on targets
+     where the stack grows up.  */
+  if (flag_stack_clash_protection && !STACK_GROWS_DOWNWARD)
+    {
+      warning_at (UNKNOWN_LOCATION, 0,
+		  "%<-fstack-clash-protection%> is not supported on targets "
+		  "where the stack grows from lower to higher addresses");
+      flag_stack_clash_protection = 0;
+    }
+
+  /* We can not support -fstack-check= and -fstack-clash-protection at
+     the same time.  */
+  if (flag_stack_check != NO_STACK_CHECK && flag_stack_clash_protection)
+    {
+      warning_at (UNKNOWN_LOCATION, 0,
+		  "%<-fstack-check=%> and %<-fstack-clash_protection%> are "
+		  "mutually exclusive.  Disabling %<-fstack-check=%>");
+      flag_stack_check = NO_STACK_CHECK;
+    }
+
   /* With -fcx-limited-range, we do cheap and quick complex arithmetic.  */
   if (flag_cx_limited_range)
     flag_complex_method = 0;
@@ -1612,8 +1644,10 @@ process_options (void)
     }
 
  /* Do not use IPA optimizations for register allocation if profiler is active
+    or patchable function entries are inserted for run-time instrumentation
     or port does not emit prologue and epilogue as RTL.  */
-  if (profile_flag || !targetm.have_prologue () || !targetm.have_epilogue ())
+  if (profile_flag || function_entry_patch_area_size
+      || !targetm.have_prologue () || !targetm.have_epilogue ())
     flag_ipa_ra = 0;
 
   /* Enable -Werror=coverage-mismatch when -Werror and -Wno-error
@@ -2115,7 +2149,8 @@ toplev::main (int argc, char **argv)
      enough to default flags appropriately.  */
   decode_options (&global_options, &global_options_set,
 		  save_decoded_options, save_decoded_options_count,
-		  UNKNOWN_LOCATION, global_dc);
+		  UNKNOWN_LOCATION, global_dc,
+		  targetm.target_option.override);
 
   handle_common_deferred_options ();
 
@@ -2151,7 +2186,7 @@ toplev::main (int argc, char **argv)
     {
       gcc_assert (global_dc->edit_context_ptr);
 
-      pretty_printer (pp);
+      pretty_printer pp;
       pp_show_color (&pp) = pp_show_color (global_dc->printer);
       global_dc->edit_context_ptr->print_diff (&pp, true);
       pp_flush (&pp);

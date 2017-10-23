@@ -267,7 +267,8 @@ ipa_polymorphic_call_context::restrict_to_inner_class (tree otr_type,
 	{
 	  for (fld = TYPE_FIELDS (type); fld; fld = DECL_CHAIN (fld))
 	    {
-	      if (TREE_CODE (fld) != FIELD_DECL)
+	      if (TREE_CODE (fld) != FIELD_DECL
+		  || TREE_TYPE (fld) == error_mark_node)
 		continue;
 
 	      pos = int_bit_position (fld);
@@ -920,9 +921,13 @@ ipa_polymorphic_call_context::ipa_polymorphic_call_context (tree fndecl,
 		 and MEM_REF is meaningless, but we can look futher.  */
 	      if (TREE_CODE (base) == MEM_REF)
 		{
+		  offset_int o = mem_ref_offset (base) * BITS_PER_UNIT;
+		  o += offset;
+		  o += offset2;
+		  if (!wi::fits_shwi_p (o))
+		    break;
 		  base_pointer = TREE_OPERAND (base, 0);
-		  offset
-		    += offset2 + mem_ref_offset (base).to_short_addr () * BITS_PER_UNIT;
+		  offset = o.to_shwi ();
 		  outer_type = NULL;
 		}
 	      /* We found base object.  In this case the outer_type
@@ -960,10 +965,16 @@ ipa_polymorphic_call_context::ipa_polymorphic_call_context (tree fndecl,
 	    break;
 	}
       else if (TREE_CODE (base_pointer) == POINTER_PLUS_EXPR
-	       && tree_fits_uhwi_p (TREE_OPERAND (base_pointer, 1)))
+	       && TREE_CODE (TREE_OPERAND (base_pointer, 1)) == INTEGER_CST)
 	{
-	  offset += tree_to_shwi (TREE_OPERAND (base_pointer, 1))
-		    * BITS_PER_UNIT;
+	  offset_int o
+	    = offset_int::from (wi::to_wide (TREE_OPERAND (base_pointer, 1)),
+				SIGNED);
+	  o *= BITS_PER_UNIT;
+	  o += offset;
+	  if (!wi::fits_shwi_p (o))
+	    break;
+	  offset = o.to_shwi ();
 	  base_pointer = TREE_OPERAND (base_pointer, 0);
 	}
       else
@@ -1398,7 +1409,7 @@ check_stmt_for_type_change (ao_ref *ao ATTRIBUTE_UNUSED, tree vdef, void *data)
 	if (dump_file)
 	  {
 	    fprintf (dump_file, "  Checking constructor call: ");
-	    print_gimple_stmt (dump_file, stmt, 0, 0);
+	    print_gimple_stmt (dump_file, stmt, 0);
 	  }
 
 	/* See if THIS parameter seems like instance pointer.  */
@@ -1460,7 +1471,7 @@ check_stmt_for_type_change (ao_ref *ao ATTRIBUTE_UNUSED, tree vdef, void *data)
      if (dump_file)
 	{
           fprintf (dump_file, "  Function call may change dynamic type:");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	  print_gimple_stmt (dump_file, stmt, 0);
 	}
      tci->speculative++;
      return csftc_abort_walking_p (tci->speculative);
@@ -1473,7 +1484,7 @@ check_stmt_for_type_change (ao_ref *ao ATTRIBUTE_UNUSED, tree vdef, void *data)
       if (dump_file)
 	{
 	  fprintf (dump_file, "  Checking vtbl store: ");
-	  print_gimple_stmt (dump_file, stmt, 0, 0);
+	  print_gimple_stmt (dump_file, stmt, 0);
 	}
 
       type = extr_type_from_vtbl_ptr_store (stmt, tci, &offset);
@@ -1653,9 +1664,9 @@ ipa_polymorphic_call_context::get_dynamic_type (tree instance,
   if (dump_file)
     {
       fprintf (dump_file, "Determining dynamic type for call: ");
-      print_gimple_stmt (dump_file, call, 0, 0);
+      print_gimple_stmt (dump_file, call, 0);
       fprintf (dump_file, "  Starting walk at: ");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
+      print_gimple_stmt (dump_file, stmt, 0);
       fprintf (dump_file, "  instance pointer: ");
       print_generic_expr (dump_file, otr_object, TDF_SLIM);
       fprintf (dump_file, "  Outer instance pointer: ");

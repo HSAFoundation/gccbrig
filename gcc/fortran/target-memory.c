@@ -39,14 +39,14 @@ along with GCC; see the file COPYING3.  If not see
 static size_t
 size_integer (int kind)
 {
-  return GET_MODE_SIZE (TYPE_MODE (gfc_get_int_type (kind)));;
+  return GET_MODE_SIZE (SCALAR_INT_TYPE_MODE (gfc_get_int_type (kind)));
 }
 
 
 static size_t
 size_float (int kind)
 {
-  return GET_MODE_SIZE (TYPE_MODE (gfc_get_real_type (kind)));;
+  return GET_MODE_SIZE (SCALAR_FLOAT_TYPE_MODE (gfc_get_real_type (kind)));
 }
 
 
@@ -60,7 +60,7 @@ size_complex (int kind)
 static size_t
 size_logical (int kind)
 {
-  return GET_MODE_SIZE (TYPE_MODE (gfc_get_logical_type (kind)));;
+  return GET_MODE_SIZE (SCALAR_INT_TYPE_MODE (gfc_get_logical_type (kind)));
 }
 
 
@@ -429,7 +429,7 @@ gfc_interpret_logical (int kind, unsigned char *buffer, size_t buffer_size,
 {
   tree t = native_interpret_expr (gfc_get_logical_type (kind), buffer,
 				  buffer_size);
-  *logical = wi::eq_p (t, 0) ? 0 : 1;
+  *logical = wi::to_wide (t) == 0 ? 0 : 1;
   return size_logical (kind);
 }
 

@@ -1130,6 +1130,90 @@ resolve_contained_functions (gfc_namespace *ns)
 }
 
 
+
+/* A Parameterized Derived Type constructor must contain values for
+   the PDT KIND parameters or they must have a default initializer.
+   Go through the constructor picking out the KIND expressions,
+   storing them in 'param_list' and then call gfc_get_pdt_instance
+   to obtain the PDT instance.  */
+
+static gfc_actual_arglist *param_list, *param_tail, *param;
+
+static bool
+get_pdt_spec_expr (gfc_component *c, gfc_expr *expr)
+{
+  param = gfc_get_actual_arglist ();
+  if (!param_list)
+    param_list = param_tail = param;
+  else
+    {
+      param_tail->next = param;
+      param_tail = param_tail->next;
+    }
+
+  param_tail->name = c->name;
+  if (expr)
+    param_tail->expr = gfc_copy_expr (expr);
+  else if (c->initializer)
+    param_tail->expr = gfc_copy_expr (c->initializer);
+  else
+    {
+      param_tail->spec_type = SPEC_ASSUMED;
+      if (c->attr.pdt_kind)
+	{
+	  gfc_error ("The KIND parameter %qs in the PDT constructor "
+		     "at %C has no value", param->name);
+	  return false;
+	}
+    }
+
+  return true;
+}
+
+static bool
+get_pdt_constructor (gfc_expr *expr, gfc_constructor **constr,
+		     gfc_symbol *derived)
+{
+  gfc_constructor *cons;
+  gfc_component *comp;
+  bool t = true;
+
+  if (expr && expr->expr_type == EXPR_STRUCTURE)
+    cons = gfc_constructor_first (expr->value.constructor);
+  else if (constr)
+    cons = *constr;
+  gcc_assert (cons);
+
+  comp = derived->components;
+
+  for (; comp && cons; comp = comp->next, cons = gfc_constructor_next (cons))
+    {
+      if (cons->expr
+	  && cons->expr->expr_type == EXPR_STRUCTURE
+	  && comp->ts.type == BT_DERIVED)
+	{
+	  t = get_pdt_constructor (cons->expr, NULL, comp->ts.u.derived);
+	  if (!t)
+	    return t;
+	}
+      else if (comp->ts.type == BT_DERIVED)
+	{
+	  t = get_pdt_constructor (NULL, &cons, comp->ts.u.derived);
+	  if (!t)
+	    return t;
+	}
+     else if ((comp->attr.pdt_kind || comp->attr.pdt_len)
+	       && derived->attr.pdt_template)
+	{
+	  t = get_pdt_spec_expr (comp, cons->expr);
+	  if (!t)
+	    return t;
+	}
+    }
+  return t;
+}
+
+
 static bool resolve_fl_derived0 (gfc_symbol *sym);
 static bool resolve_fl_struct (gfc_symbol *sym);
 
@@ -1154,6 +1238,25 @@ resolve_structure_cons (gfc_expr *expr, int init)
         resolve_fl_derived0 (expr->ts.u.derived);
       else
         resolve_fl_struct (expr->ts.u.derived);
+
+      /* If this is a Parameterized Derived Type template, find the
+	 instance corresponding to the PDT kind parameters.  */
+      if (expr->ts.u.derived->attr.pdt_template)
+	{
+	  param_list = NULL;
+	  t = get_pdt_constructor (expr, NULL, expr->ts.u.derived);
+	  if (!t)
+	    return t;
+	  gfc_get_pdt_instance (param_list, &expr->ts.u.derived, NULL);
+
+	  expr->param_list = gfc_copy_actual_arglist (param_list);
+
+	  if (param_list)
+	    gfc_free_actual_arglist (param_list);
+
+	  if (!expr->ts.u.derived->attr.pdt_type)
+	    return false;
+	}
     }
 
   cons = gfc_constructor_first (expr->value.constructor);
@@ -8294,11 +8397,23 @@ resolve_assoc_var (gfc_symbol* sym, bool resolve_target)
 	sym->attr.subref_array_pointer = 1;
     }
 
+  if (target->expr_type == EXPR_NULL)
+    {
+      gfc_error ("Selector at %L cannot be NULL()", &target->where);
+      return;
+    }
+  else if (target->ts.type == BT_UNKNOWN)
+    {
+      gfc_error ("Selector at %L has no type", &target->where);
+      return;
+    }
+
   /* Get type if this was not already set.  Note that it can be
      some other type than the target in case this is a SELECT TYPE
      selector!  So we must not update when the type is already there.  */
   if (sym->ts.type == BT_UNKNOWN)
     sym->ts = target->ts;
+
   gcc_assert (sym->ts.type != BT_UNKNOWN);
 
   /* See if this is a valid association-to-variable.  */
@@ -8416,7 +8531,7 @@ resolve_assoc_var (gfc_symbol* sym, bool resolve_target)
       if (!sym->ts.u.cl)
 	sym->ts.u.cl = target->ts.u.cl;
 
-      if (!sym->ts.u.cl->length)
+      if (!sym->ts.u.cl->length && !sym->ts.deferred)
 	sym->ts.u.cl->length
 	  = gfc_get_int_expr (gfc_default_integer_kind,
 			      NULL, target->value.character.length);
@@ -9082,6 +9197,9 @@ resolve_transfer (gfc_code *code)
 		 "an assumed-size array", &code->loc);
       return;
     }
+
+  if (async_io_dt && exp->expr_type == EXPR_VARIABLE)
+    exp->symtree->n.sym->attr.asynchronous = 1;
 }
 
 
@@ -9098,7 +9216,7 @@ find_reachable_labels (gfc_code *block)
   if (!block)
     return;
 
-  cs_base->reachable_labels = bitmap_obstack_alloc (&labels_obstack);
+  cs_base->reachable_labels = bitmap_alloc (&labels_obstack);
 
   /* Collect labels in this block.  We don't keep those corresponding
      to END {IF|SELECT}, these are checked in resolve_branch by going
@@ -11005,11 +11123,8 @@ start:
 
 	    /* Assigning a class object always is a regular assign.  */
 	    if (code->expr2->ts.type == BT_CLASS
+		&& code->expr1->ts.type == BT_CLASS
 		&& !CLASS_DATA (code->expr2)->attr.dimension
-		&& !(UNLIMITED_POLY (code->expr2)
-		     && code->expr1->ts.type == BT_DERIVED
-		     && (code->expr1->ts.u.derived->attr.sequence
-			 || code->expr1->ts.u.derived->attr.is_bind_c))
 		&& !(gfc_expr_attr (code->expr1).proc_pointer
 		     && code->expr2->expr_type == EXPR_VARIABLE
 		     && code->expr2->symtree->n.sym->attr.flavor
@@ -11824,6 +11939,7 @@ deferred_requirements (gfc_symbol *sym)
   if (sym->ts.deferred
       && !(sym->attr.pointer
 	   || sym->attr.allocatable
+	   || sym->attr.associate_var
 	   || sym->attr.omp_udr_artificial_var))
     {
       gfc_error ("Entity %qs at %L has a deferred type parameter and "
@@ -13547,7 +13663,9 @@ resolve_component (gfc_component *c, gfc_symbol *sym)
     }
 
   /* Add the hidden deferred length field.  */
-  if (c->ts.type == BT_CHARACTER && c->ts.deferred && !c->attr.function
+  if (c->ts.type == BT_CHARACTER
+      && (c->ts.deferred || c->attr.pdt_string)
+      && !c->attr.function
       && !sym->attr.is_class)
     {
       char name[GFC_MAX_SYMBOL_LEN+9];
@@ -13647,6 +13765,7 @@ resolve_component (gfc_component *c, gfc_symbol *sym)
     return false;
 
   if (c->initializer && !sym->attr.vtype
+      && !c->attr.pdt_kind && !c->attr.pdt_len
       && !gfc_check_assign_symbol (sym, c, c->initializer))
     return false;
 
@@ -13832,6 +13951,8 @@ resolve_fl_derived (gfc_symbol *sym)
 	  gfc_symbol *vtab = gfc_find_derived_vtab (data->ts.u.derived);
 	  gcc_assert (vtab);
 	  vptr->ts.u.derived = vtab->ts.u.derived;
+	  if (!resolve_fl_derived0 (vptr->ts.u.derived))
+	    return false;
 	}
     }
 
@@ -13962,6 +14083,11 @@ resolve_fl_namelist (gfc_symbol *sym)
 	}
     }
 
+  if (async_io_dt)
+    {
+      for (nl = sym->namelist; nl; nl = nl->next)
+	nl->sym->attr.asynchronous = 1;
+    }
   return true;
 }
 
@@ -14015,6 +14141,57 @@ resolve_fl_parameter (gfc_symbol *sym)
     }
 
   return true;
+}
+
+
+/* Called by resolve_symbol to chack PDTs.  */
+
+static void
+resolve_pdt (gfc_symbol* sym)
+{
+  gfc_symbol *derived = NULL;
+  gfc_actual_arglist *param;
+  gfc_component *c;
+  bool const_len_exprs = true;
+  bool assumed_len_exprs = false;
+
+  if (sym->ts.type == BT_DERIVED)
+    derived = sym->ts.u.derived;
+  else if (sym->ts.type == BT_CLASS)
+    derived = CLASS_DATA (sym)->ts.u.derived;
+  else
+    gcc_unreachable ();
+
+  gcc_assert (derived->attr.pdt_type);
+
+  for (param = sym->param_list; param; param = param->next)
+    {
+      c = gfc_find_component (derived, param->name, false, true, NULL);
+      gcc_assert (c);
+      if (c->attr.pdt_kind)
+	continue;
+
+      if (param->expr && !gfc_is_constant_expr (param->expr)
+	  && c->attr.pdt_len)
+	const_len_exprs = false;
+      else if (param->spec_type == SPEC_ASSUMED)
+	assumed_len_exprs = true;
+    }
+
+  if (!const_len_exprs
+      && (sym->ns->proc_name->attr.is_main_program
+	  || sym->ns->proc_name->attr.flavor == FL_MODULE
+	  || sym->attr.save != SAVE_NONE))
+    gfc_error ("The AUTOMATIC object %qs at %L must not have the "
+	       "SAVE attribute or be a variable declared in the "
+	       "main program, a module or a submodule(F08/C513)",
+	       sym->name, &sym->declared_at);
+
+  if (assumed_len_exprs && !(sym->attr.dummy
+      || sym->attr.select_type_temporary || sym->attr.associate_var))
+    gfc_error ("The object %qs at %L with ASSUMED type parameters "
+	       "must be a dummy or a SELECT TYPE selector(F08/4.2)",
+	       sym->name, &sym->declared_at);
 }
 
 
@@ -14395,17 +14572,18 @@ resolve_symbol (gfc_symbol *sym)
 	}
     }
 
-  /* If the symbol is marked as bind(c), verify it's type and kind.  Do not
-     do this for something that was implicitly typed because that is handled
-     in gfc_set_default_type.  Handle dummy arguments and procedure
-     definitions separately.  Also, anything that is use associated is not
-     handled here but instead is handled in the module it is declared in.
-     Finally, derived type definitions are allowed to be BIND(C) since that
-     only implies that they're interoperable, and they are checked fully for
-     interoperability when a variable is declared of that type.  */
-  if (sym->attr.is_bind_c && sym->attr.implicit_type == 0 &&
-      sym->attr.use_assoc == 0 && sym->attr.dummy == 0 &&
-      sym->attr.flavor != FL_PROCEDURE && sym->attr.flavor != FL_DERIVED)
+  /* If the symbol is marked as bind(c), that it is declared at module level
+     scope and verify its type and kind.  Do not do the latter for symbols
+     that are implicitly typed because that is handled in
+     gfc_set_default_type.  Handle dummy arguments and procedure definitions
+     separately.  Also, anything that is use associated is not handled here
+     but instead is handled in the module it is declared in.  Finally, derived
+     type definitions are allowed to be BIND(C) since that only implies that
+     they're interoperable, and they are checked fully for interoperability
+     when a variable is declared of that type.  */
+  if (sym->attr.is_bind_c && sym->attr.use_assoc == 0
+      && sym->attr.dummy == 0 && sym->attr.flavor != FL_PROCEDURE
+      && sym->attr.flavor != FL_DERIVED)
     {
       bool t = true;
 
@@ -14419,11 +14597,11 @@ resolve_symbol (gfc_symbol *sym)
 		     "module level scope", sym->name, &(sym->declared_at));
 	  t = false;
 	}
-      else if (sym->common_head != NULL)
+      else if (sym->common_head != NULL && sym->attr.implicit_type == 0)
         {
           t = verify_com_block_vars_c_interop (sym->common_head);
         }
-      else
+      else if (sym->attr.implicit_type == 0)
 	{
 	  /* If type() declaration, we need to verify that the components
 	     of the given type are all C interoperable, etc.  */
@@ -14523,7 +14701,7 @@ resolve_symbol (gfc_symbol *sym)
       && !sym->attr.codimension && !sym->ts.u.derived->attr.coarray_comp)
     {
       gfc_error ("Variable %s at %L of type EVENT_TYPE or with subcomponent of "
-		 "type LOCK_TYPE must be a coarray", sym->name,
+		 "type EVENT_TYPE must be a coarray", sym->name,
 		 &sym->declared_at);
       return;
     }
@@ -14604,6 +14782,7 @@ resolve_symbol (gfc_symbol *sym)
   if (class_attr.codimension
       && !(class_attr.allocatable || sym->attr.dummy || sym->attr.save
 	   || sym->attr.select_type_temporary
+	   || sym->attr.associate_var
 	   || (sym->ns->save_all && !sym->attr.automatic)
 	   || sym->ns->proc_name->attr.flavor == FL_MODULE
 	   || sym->ns->proc_name->attr.is_main_program
@@ -14788,7 +14967,12 @@ resolve_symbol (gfc_symbol *sym)
 
       if ((!a->save && !a->dummy && !a->pointer
 	   && !a->in_common && !a->use_assoc
-	   && !a->result && !a->function)
+	   && a->referenced
+	   && !((a->function || a->result)
+		&& (!a->dimension
+		    || sym->ts.u.derived->attr.alloc_comp
+		    || sym->ts.u.derived->attr.pointer_comp))
+	   && !(a->function && sym != sym->result))
 	  || (a->dummy && a->intent == INTENT_OUT && !a->pointer))
 	apply_default_init (sym);
       else if (a->function && sym->result && a->access != ACCESS_PRIVATE
@@ -14810,6 +14994,9 @@ resolve_symbol (gfc_symbol *sym)
       || (sym->attr.flavor == FL_PROCEDURE && sym->attr.function))
     if (!resolve_typespec_used (&sym->ts, &sym->declared_at, sym->name))
       return;
+
+  if (sym->param_list)
+    resolve_pdt (sym);
 }
 
 
