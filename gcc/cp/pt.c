@@ -1895,7 +1895,6 @@ reregister_specialization (tree spec, tree tinfo, tree new_spec)
 void
 register_local_specialization (tree spec, tree tmpl)
 {
-  gcc_assert (tmpl != spec);
   local_specializations->put (tmpl, spec);
 }
 
@@ -9493,16 +9492,6 @@ in_template_function (void)
 	 && any_dependent_template_arguments_p (DECL_TI_ARGS (fn)));
   --processing_template_decl;
   return ret;
-}
-
-/* Returns true iff we are currently within a template other than a
-   default-capturing generic lambda, so we don't need to worry about semantic
-   processing.  */
-
-bool
-processing_nonlambda_template (void)
-{
-  return processing_template_decl && !need_generic_capture ();
 }
 
 /* Returns true if T depends on any template parameter with level LEVEL.  */

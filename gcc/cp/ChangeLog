@@ -65,34 +65,6 @@
 
 2017-10-10  Jason Merrill  <jason@redhat.com>
 
-	More delayed lambda capture fixes.
-	* call.c (add_function_candidate): Use build_address.
-	(build_op_call_1): Call mark_lvalue_use early.
-	(build_over_call): Handle error from build_this.
-	* constexpr.c (cxx_bind_parameters_in_call): Use build_address.
-	(cxx_eval_increment_expression): Don't use rvalue().
-	* cvt.c (convert_to_void): Use mark_discarded_use.
-	* expr.c (mark_use): Handle PARM_DECL, NON_DEPENDENT_EXPR.  Fix
-	reference handling.  Don't copy the expression.
-	(mark_discarded_use): New.
-	* lambda.c (insert_capture_proxy): Add some sanity checking.
-	(maybe_add_lambda_conv_op): Set cp_unevaluated_operand.
-	* pt.c (register_local_specialization): Add sanity check.
-	* semantics.c (process_outer_var_ref): Fix check for existing proxy.
-	* typeck.c (cp_build_addr_expr_1): Handle error from
-	mark_lvalue_use.
-	(cp_build_modify_expr): Call mark_lvalue_use_nonread, handle error
-	from rvalue.
-
-	Handle generic lambda capture in dependent expressions.
-	* lambda.c (need_generic_capture, dependent_capture_r)
-	(do_dependent_capture): New.
-	* pt.c (processing_nonlambda_template): Use need_generic_capture.
-	* semantics.c (maybe_cleanup_point_expr)
-	(maybe_cleanup_point_expr_void, finish_goto_stmt)
-	(maybe_convert_cond): Call do_dependent_capture.
-	* typeck.c (build_static_cast): Remove dependent capture handling.
-
 	* typeck.c (condition_conversion): Assert !processing_template_decl.
 	* semantics.c (finish_omp_clauses): Don't
 	fold_build_cleanup_point_expr if processing_template_decl.
@@ -295,19 +267,6 @@
 	* Make-lang.in (check-c++-all): Test also c++2a.
 
 2017-09-28  Jason Merrill  <jason@redhat.com>
-
-	PR c++/56973, DR 696 - capture constant variables only as needed.
-	* expr.c (mark_use): Split out from mark_rvalue_use and
-	mark_lvalue_use.  Handle lambda capture of constant variables.
-	(mark_lvalue_use_nonread): New.
-	* semantics.c (process_outer_var_ref): Don't capture a constant
-	variable until forced.
-	* pt.c (processing_nonlambda_template): New.
-	* call.c (build_this): Check it.
-	* decl2.c (grok_array_decl): Call mark_rvalue_use and
-	mark_lvalue_use_nonread.
-	* init.c (constant_value_1): Don't call mark_rvalue_use.
-	* typeck.c (build_static_cast): Handle lambda capture.
 
 	Use local_specializations to find capture proxies.
 	* cp-tree.h (DECL_CAPTURED_VARIABLE): New.

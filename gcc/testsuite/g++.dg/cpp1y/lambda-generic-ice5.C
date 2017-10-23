@@ -12,7 +12,7 @@ using Void = void;
 
 template<typename F,typename A>
 auto
-bar(F f, A a) -> decltype( ( f(a) , 0 ) ) // { dg-message "" }
+bar(F f, A a) -> decltype( ( f(a) , 0 ) ) // { dg-error "no match" }
 { return {}; }
 
 

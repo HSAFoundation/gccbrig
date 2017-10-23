@@ -5654,9 +5654,6 @@ cp_build_addr_expr_1 (tree arg, bool strict_lvalue, tsubst_flags_t complain)
     return error_mark_node;
 
   arg = mark_lvalue_use (arg);
-  if (error_operand_p (arg))
-    return error_mark_node;
-
   argtype = lvalue_type (arg);
 
   gcc_assert (!(identifier_p (arg) && IDENTIFIER_ANY_OP_P (arg)));
@@ -7048,21 +7045,17 @@ build_static_cast_1 (tree type, tree expr, bool c_cast_p,
 /* Return an expression representing static_cast<TYPE>(EXPR).  */
 
 tree
-build_static_cast (tree type, tree oexpr, tsubst_flags_t complain)
+build_static_cast (tree type, tree expr, tsubst_flags_t complain)
 {
-  tree expr = oexpr;
   tree result;
   bool valid_p;
 
   if (type == error_mark_node || expr == error_mark_node)
     return error_mark_node;
 
-  bool dependent = (dependent_type_p (type)
-		    || type_dependent_expression_p (expr));
-  if (dependent)
+  if (processing_template_decl)
     {
-    tmpl:
-      expr = build_min (STATIC_CAST_EXPR, type, oexpr);
+      expr = build_min (STATIC_CAST_EXPR, type, expr);
       /* We don't know if it will or will not have side effects.  */
       TREE_SIDE_EFFECTS (expr) = 1;
       return convert_from_reference (expr);
@@ -7084,8 +7077,6 @@ build_static_cast (tree type, tree oexpr, tsubst_flags_t complain)
 	  maybe_warn_about_useless_cast (type, expr, complain);
 	  maybe_warn_about_cast_ignoring_quals (type, complain);
 	}
-      if (processing_template_decl)
-	goto tmpl;
       return result;
     }
 
@@ -7701,8 +7692,6 @@ tree
 cp_build_modify_expr (location_t loc, tree lhs, enum tree_code modifycode,
 		      tree rhs, tsubst_flags_t complain)
 {
-  lhs = mark_lvalue_use_nonread (lhs);
-
   tree result = NULL_TREE;
   tree newrhs = rhs;
   tree lhstype = TREE_TYPE (lhs);
@@ -7925,8 +7914,6 @@ cp_build_modify_expr (location_t loc, tree lhs, enum tree_code modifycode,
 	     operator. -- end note ]  */
 	  lhs = cp_stabilize_reference (lhs);
 	  rhs = rvalue (rhs);
-	  if (rhs == error_mark_node)
-	    return error_mark_node;
 	  rhs = stabilize_expr (rhs, &init);
 	  newrhs = cp_build_binary_op (loc, modifycode, lhs, rhs, complain);
 	  if (newrhs == error_mark_node)
@@ -9112,7 +9099,7 @@ check_return_expr (tree retval, bool *no_warning)
     dependent:
       /* We should not have changed the return value.  */
       gcc_assert (retval == saved_retval);
-      return do_dependent_capture (retval, /*force*/true);
+      return retval;
     }
 
   /* The fabled Named Return Value optimization, as per [class.copy]/15:
