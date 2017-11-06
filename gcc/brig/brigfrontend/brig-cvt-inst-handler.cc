@@ -222,13 +222,9 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 	{
 	  tree casted_input = build_reinterpret_cast (src_type, input);
 
-	  /* Perform the int to float conversion.  */
+	  /* Perform the float to int conversion.  */
 	  conversion_result = convert_to_integer (dest_type, casted_input);
 	}
-      /* The converted result is finally extended to the target register
-	 width, using the same sign as the destination.  */
-      conversion_result
-	= convert_to_integer (TREE_TYPE (output), conversion_result);
     }
   else
     {
@@ -239,21 +235,26 @@ brig_cvt_inst_handler::generate (const BrigBase *base)
 
   size_t dst_reg_size = int_size_in_bytes (TREE_TYPE (output));
 
-  tree assign = NULL_TREE;
   /* The output register can be of different type&size than the
-     conversion output size.  Cast it to the register variable type.  */
-  if (dst_reg_size > conv_dst_size)
+     conversion output size. Only need to handle signed integers, rest
+     is handled by reinterpret_cast.  */
+  tree casted_output = conversion_result;
+  if (dst_reg_size > conv_dst_size &&
+      INTEGRAL_TYPE_P (TREE_TYPE (casted_output)))
     {
-      tree casted_output
-	= build1 (CONVERT_EXPR, TREE_TYPE (output), conversion_result);
-      assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
+      gcc_assert (!VECTOR_TYPE_P (casted_output));
+
+      bool unsignedp = TYPE_UNSIGNED (TREE_TYPE (casted_output));
+      tree resized_int_type
+        = build_nonstandard_integer_type (dst_reg_size * BITS_PER_UNIT,
+					  unsignedp);
+      casted_output = build1 (CONVERT_EXPR, resized_int_type, casted_output);
     }
-  else
-    {
-      tree casted_output
-	= build_reinterpret_cast (TREE_TYPE (output), conversion_result);
-      assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
-    }
+
+  casted_output
+    = build_reinterpret_cast (TREE_TYPE (output), casted_output);
+  tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_output);
+
   m_parent.m_cf->append_statement (assign);
 
   return base->byteCount;
