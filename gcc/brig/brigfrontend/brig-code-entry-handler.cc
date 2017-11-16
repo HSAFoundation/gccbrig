@@ -137,7 +137,7 @@ brig_code_entry_handler::build_tree_operand (const BrigInstBase &brig_inst,
 	       correct size here so we don't need a separate unpack/pack for it.
 	       fp16-fp32 conversion is done in build_operands ().  */
 	    if (is_input && TREE_TYPE (element) != operand_type)
-	      element = build_reinterpret_cast (operand_type, element);
+	      element = build_resize_convert_view (operand_type, element);
 
 	    CONSTRUCTOR_APPEND_ELT (constructor_vals, NULL_TREE, element);
 	    ++operand_ptr;
@@ -361,7 +361,7 @@ brig_code_entry_handler::build_address_operand
 		 to the array object.  */
 
 	      if (POINTER_TYPE_P (TREE_TYPE (arg_var_decl)))
-		symbol_base = build_reinterpret_cast (ptype, arg_var_decl);
+		symbol_base = build_resize_convert_view (ptype, arg_var_decl);
 	      else
 		{
 		  /* In case we are referring to an array (the argument in
@@ -988,8 +988,8 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
   call_operands.resize (4, NULL_TREE);
   operand_types.resize (4, NULL_TREE);
   for (size_t i = 0; i < operand_count; ++i)
-    call_operands.at (i) = build_reinterpret_cast (operand_types.at (i),
-						   call_operands.at (i));
+    call_operands.at (i) = build_resize_convert_view (operand_types.at (i),
+						      call_operands.at (i));
 
   tree fnptr = build_fold_addr_expr (built_in);
   return build_call_array (TREE_TYPE (TREE_TYPE (built_in)), fnptr,
@@ -1138,18 +1138,23 @@ brig_code_entry_handler::build_h2f_conversion (tree source)
 tree_stl_vec
 brig_code_entry_handler::build_operands (const BrigInstBase &brig_inst)
 {
-  return build_or_analyze_operands (brig_inst, /* analyze = */ false);
+  return build_or_analyze_operands (brig_inst, false);
 }
 
 void
 brig_code_entry_handler::analyze_operands (const BrigInstBase &brig_inst)
 {
-  build_or_analyze_operands (brig_inst, /* analyze = */ true);
+  build_or_analyze_operands (brig_inst, true);
 }
 
 /* Implements both the build_operands () and analyze_operands () call
-   so changes goes in tandem. Performs build_operands () when ANALYZE
-   is false. Otherwise, analyze operands and return empty list.  */
+   so changes go in tandem.  Performs build_operands () when ANALYZE
+   is false.  Otherwise, only analyze operands and return empty
+   list.
+
+   If analyzing record each HSA register operand with the
+   corresponding resolved operand tree type to
+   brig_to_generic::m_fn_regs_use_index.  */
 
 tree_stl_vec
 brig_code_entry_handler::
@@ -1362,17 +1367,17 @@ build_or_analyze_operands (const BrigInstBase &brig_inst, bool analyze)
 	{
 	  if (half_to_float)
 	    operand = build_h2f_conversion
-	      (build_reinterpret_cast (half_storage_type, operand));
+	      (build_resize_convert_view (half_storage_type, operand));
 	  else if (TREE_CODE (operand) != LABEL_DECL
 		   && TREE_CODE (operand) != TREE_VEC
 		   && operand_data->kind != BRIG_KIND_OPERAND_ADDRESS
 		   && operand_data->kind != BRIG_KIND_OPERAND_OPERAND_LIST)
 	    {
-	      operand = build_reinterpret_cast (operand_type, operand);
+	      operand = build_resize_convert_view (operand_type, operand);
 	    }
 	  else if (brig_inst.opcode == BRIG_OPCODE_SHUFFLE)
 	    /* Force the operand type to be treated as the raw type.  */
-	    operand = build_reinterpret_cast (operand_type, operand);
+	    operand = build_resize_convert_view (operand_type, operand);
 
 	  if (brig_inst.opcode == BRIG_OPCODE_CMOV && i == 1)
 	    {
@@ -1446,7 +1451,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
     {
       inst_expr = add_temp_var ("before_f2h", inst_expr);
       tree f2h_output = build_f2h_conversion (inst_expr);
-      tree conv = build_reinterpret_cast (output_type, f2h_output);
+      tree conv = build_resize_convert_view (output_type, f2h_output);
       tree assign = build2 (MODIFY_EXPR, output_type, output, conv);
       m_parent.m_cf->append_statement (assign);
       return assign;
@@ -1490,7 +1495,7 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 					      unsigned_p);
 	  input = convert_to_integer (resized_type, input);
 	}
-      input = build_reinterpret_cast (output_type, input);
+      input = build_resize_convert_view (output_type, input);
       tree assign = build2 (MODIFY_EXPR, output_type, output, input);
       m_parent.m_cf->append_statement (assign);
       return assign;
@@ -1696,7 +1701,7 @@ float_to_half::visit_element (brig_code_entry_handler &caller, tree operand)
 {
   tree built_in = builtin_decl_explicit (BUILT_IN_HSAIL_F32_TO_F16);
 
-  tree casted_operand = build_reinterpret_cast (uint32_type_node, operand);
+  tree casted_operand = build_resize_convert_view (uint32_type_node, operand);
 
   tree call = call_builtin (built_in, 1, uint16_type_node, uint32_type_node,
 			    casted_operand);
@@ -1725,7 +1730,7 @@ half_to_float::visit_element (brig_code_entry_handler &caller, tree operand)
 
   tree output = create_tmp_var (const_fp32_type, "fp32out");
   tree casted_result
-    = build_reinterpret_cast (brig_to_generic::s_fp32_type, call);
+    = build_resize_convert_view (brig_to_generic::s_fp32_type, call);
 
   tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted_result);
 

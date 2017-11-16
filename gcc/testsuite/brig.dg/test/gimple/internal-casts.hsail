@@ -1,23 +1,23 @@
 module &module:1:0:$full:$large:$default;
 
-/* Test for casting from/to representation of HSA registers. */
+/* Test for casting from/to representation of HSA registers.          */
 
 /* HSA registers are untyped but in gccbrig they are presented as     */
-/* variables with a type selected by analysis. Currently, each        */
+/* variables with a type selected by analysis.  Currently, each       */
 /* register variable, per function, has a type as it is used at       */
-/* most. Therefore, register variable can be nearly any type. The     */
+/* most.  Therefore, register variable can be nearly any type.  The   */
 /* tests makes sure the generic/tree expressions have the right casts */
 /* from/to the register variables.                                    */
 
 
 /* { dg-do compile } */
-/* { dg-options "-fdump-tree-gimple -fdump-tree-original" } */
+/* { dg-options "-fdump-tree-original" } */
 
 prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 {
         private_u64 %foo;
         private_u64 %bar;
-	private_b128 %baz;
+        private_b128 %baz;
 
         ld_kernarg_u64 $d0, [%input_ptr];
         ld_global_u32 $s0, [$d0];
@@ -112,13 +112,13 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 /* { dg-final { scan-tree-dump "\\\*\\\(<float:32> \\\*\\\) \\\(__private_base_addr.*\\\) \\\+ 4 = VIEW_CONVERT_EXPR<<float:32>>\\\(s1\\\);" "original"} } */
 /* { dg-final { scan-tree-dump "\\\*\\\(<float:32> \\\*\\\) \\\(__private_base_addr.*\\\) \\\+ 8 = VIEW_CONVERT_EXPR<<float:32>>\\\(s2\\\);" "original"} } */
 
-	st_v3_private_f32 ($s0, $s1, $s2), [%baz];
+        st_v3_private_f32 ($s0, $s1, $s2), [%baz];
 
 /* { dg-final { scan-tree-dump "mem_read.\[0-9\]* = \\\*\\\(signed short \\\*\\\) \\\(__private_base_addr.*\\\) \\\+ 0;\[ \n\]*s0 = VIEW_CONVERT_EXPR<<float:32>>\\\(\\\(signed int\\\) mem_read.\[0-9\]*\\\);" "original"} } */
 /* { dg-final { scan-tree-dump "mem_read.\[0-9\]* = \\\*\\\(signed short \\\*\\\) \\\(__private_base_addr.*\\\) \\\+ 2;\[ \n\]*s1 = VIEW_CONVERT_EXPR<unsigned int>\\\(\\\(signed int\\\) mem_read.\[0-9\]*\\\);" "original"} } */
 /* { dg-final { scan-tree-dump "mem_read.\[0-9\]* = \\\*\\\(signed short \\\*\\\) \\\(__private_base_addr.*\\\) \\\+ 4;\[ \n\]*s2 = VIEW_CONVERT_EXPR<vector.4. unsigned char>\\\(\\\(signed int\\\) mem_read.\[0-9\]*\\\);" "original"} } */
 
-	ld_v3_private_s16 ($s0, $s1, $s2), [%baz];
+        ld_v3_private_s16 ($s0, $s1, $s2), [%baz];
 
 /* { dg-final { scan-tree-dump "s5 = .*VIEW_CONVERT_EXPR<unsigned int>\\\(s0\\\) == VIEW_CONVERT_EXPR<unsigned int>\\\(s2\\\)\\\) .*;" "original"} } */
 
@@ -126,14 +126,14 @@ prog kernel &Kernel(kernarg_u64 %input_ptr, kernarg_u64 %output_ptr)
 
 /* { dg-final { scan-tree-dump "s6 = VIEW_CONVERT_EXPR<<float:32>>\\\(.*VIEW_CONVERT_EXPR<vector\\\(2\\\) unsigned short>\\\(s0\\\).*VIEW_CONVERT_EXPR<vector\\\(2\\\) unsigned short>\\\(s2\\\).*;" "original"} } */
 
-	cmp_eq_pp_u16x2_u16x2 $s6, $s0, $s2;
+        cmp_eq_pp_u16x2_u16x2 $s6, $s0, $s2;
 
 /* { dg-final { scan-tree-dump "<float:32> s60;" "original"} } */
 
-	add_f32 $s60, $s6, $s6;
-	add_f32 $s60, $s6, $s6;
-	add_f32 $s60, $s6, $s6;
-	add_f32 $s60, $s6, $s6;
+        add_f32 $s60, $s6, $s6;
+        add_f32 $s60, $s6, $s6;
+        add_f32 $s60, $s6, $s6;
+        add_f32 $s60, $s6, $s6;
 
         ld_kernarg_u64 $d0, [%output_ptr];
         st_global_u32 $s0, [$d0];

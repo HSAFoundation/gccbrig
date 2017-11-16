@@ -218,7 +218,7 @@ protected:
 
 tree call_builtin (tree pdecl, int nargs, tree rettype, ...);
 
-tree build_reinterpret_cast (tree destination_type, tree source);
+tree build_resize_convert_view (tree destination_type, tree source);
 tree build_reinterpret_to_uint (tree source);
 
 tree build_stmt (enum tree_code code, ...);

@@ -155,7 +155,7 @@ brig_mem_inst_handler::operator () (const BrigBase *base)
 				 address_base, ptr_offset);
 
 	  if (is_store && TREE_TYPE (data) != instr_type)
-	    data = build_reinterpret_cast(instr_type, data);
+	    data = build_resize_convert_view (instr_type, data);
 
 	  build_mem_access (brig_inst, address, data);
 

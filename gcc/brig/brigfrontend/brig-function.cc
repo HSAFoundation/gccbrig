@@ -272,14 +272,14 @@ brig_function::add_local_variable (std::string name, tree type)
   return variable;
 }
 
-/* Return tree type for a HSA register.
+/* Return tree type for an HSA register.
 
    The tree type can be anything (scalar, vector, int, float, etc.)
    but its size is guaranteed to match the HSA register size.
 
    HSA registers are untyped but we select a type based on their use
-   to reduce (unoptimizable) VIEW_CONVERT_EXPR nodes (seems to occurs
-   when use or def reaches over current BB).  */
+   to reduce (sometimes unoptimizable) VIEW_CONVERT_EXPR nodes (seems
+   to occur when use or def reaches over current BB).  */
 
 tree
 brig_function::get_tree_type_for_hsa_reg (const BrigOperandRegister *reg) const
@@ -293,7 +293,7 @@ brig_function::get_tree_type_for_hsa_reg (const BrigOperandRegister *reg) const
     return type;
 
   const regs_use_index &index = m_parent->m_fn_regs_use_index[m_name];
-  size_t reg_id = gccbrig_hsa_reg_hash (*reg);
+  size_t reg_id = gccbrig_hsa_reg_id (*reg);
   if (index.count (reg_id) == 0)
     return type;
 
@@ -324,7 +324,7 @@ brig_function::get_tree_type_for_hsa_reg (const BrigOperandRegister *reg) const
 tree
 brig_function::get_m_var_declfor_reg (const BrigOperandRegister *reg)
 {
-  size_t offset = gccbrig_hsa_reg_hash (*reg);
+  size_t offset = gccbrig_hsa_reg_id (*reg);
 
   reg_decl_index_entry *regEntry = m_regs[offset];
   if (regEntry == NULL)

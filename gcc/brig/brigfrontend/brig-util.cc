@@ -475,20 +475,20 @@ gccbrig_tree_type_for_hsa_type (BrigType16_t brig_type)
   return tree_type;
 }
 
-/* Calculates hash for hsa register.
+/* Calculates numeric identifier for the HSA register REG.
 
-   Returned value is bouded to [0, BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT].  */
+   Returned value is bound to [0, BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT].  */
 
 size_t
-gccbrig_hsa_reg_hash (const BrigOperandRegister& reg)
+gccbrig_hsa_reg_id (const BrigOperandRegister &reg)
 {
   size_t offset = reg.regNum;
   switch (reg.regKind)
     {
     case BRIG_REGISTER_KIND_QUAD:
       offset
-	+= BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT +
-	BRIG_2_TREE_HSAIL_C_REG_COUNT;
+	+= BRIG_2_TREE_HSAIL_D_REG_COUNT + BRIG_2_TREE_HSAIL_S_REG_COUNT
+	+ BRIG_2_TREE_HSAIL_C_REG_COUNT;
       break;
     case BRIG_REGISTER_KIND_DOUBLE:
       offset += BRIG_2_TREE_HSAIL_S_REG_COUNT + BRIG_2_TREE_HSAIL_C_REG_COUNT;
@@ -505,7 +505,7 @@ gccbrig_hsa_reg_hash (const BrigOperandRegister& reg)
 }
 
 std::string
-gccbrig_hsa_reg_name_from_hash (size_t reg_hash)
+gccbrig_hsa_reg_name_from_id (size_t reg_hash)
 {
   char reg_name[32];
   if (reg_hash < BRIG_2_TREE_HSAIL_C_REG_COUNT)
@@ -539,26 +539,26 @@ gccbrig_hsa_reg_name_from_hash (size_t reg_hash)
   return "$??";
 }
 
-/* prints statistics of register usage to stdout.  */
+/* Prints statistics of register usage to stdout.  */
 
 void
-gccbrig_print_reg_use_info (const regs_use_index &info)
+gccbrig_print_reg_use_info (FILE *dump, const regs_use_index &info)
 {
   regs_use_index::const_iterator begin_it = info.begin ();
   regs_use_index::const_iterator end_it = info.end ();
   for (regs_use_index::const_iterator it = begin_it; it != end_it; it++)
     {
-      std::string hsa_reg = gccbrig_hsa_reg_name_from_hash (it->first);
+      std::string hsa_reg = gccbrig_hsa_reg_name_from_id (it->first);
       printf ("%s:\n", hsa_reg.c_str ());
-      const reg_use_info& info = it->second;
+      const reg_use_info &info = it->second;
       typedef std::vector<std::pair<tree, size_t> >::const_iterator reg_use_it;
       reg_use_it begin_it2 = info.m_type_refs.begin ();
       reg_use_it end_it2 = info.m_type_refs.end ();
       for (reg_use_it it2 = begin_it2; it2 != end_it2; it2++)
 	{
-	  printf ("(%lu) ", it2->second);
-	  print_node_brief (stdout, "", it2->first, 0);
-	  printf ("\n");
+	  fprintf (dump, "(%lu) ", it2->second);
+	  print_node_brief (dump, "", it2->first, 0);
+	  fprintf (dump, "\n");
 	}
     }
 }

@@ -58,7 +58,7 @@ brig_copy_move_inst_handler::operator () (const BrigBase *base)
     {
       /* For combine, a simple reinterpret cast from the array constructor
 	 works.  */
-      tree casted = build_reinterpret_cast (TREE_TYPE (output), input);
+      tree casted = build_resize_convert_view (TREE_TYPE (output), input);
       tree assign = build2 (MODIFY_EXPR, TREE_TYPE (output), output, casted);
       m_parent.m_cf->append_statement (assign);
     }

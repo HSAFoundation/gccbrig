@@ -298,17 +298,6 @@ brig_to_generic::analyze (const char *brig_blob)
 
   m_total_group_segment_usage += m_module_group_variables.size ();
   m_analyzing = false;
-
-  if (gccbrig_verbose)
-    {
-      typedef std::map<std::string, regs_use_index>::const_iterator rui_it;
-      rui_it end_it = m_fn_regs_use_index.end ();
-      for (rui_it it = m_fn_regs_use_index.begin (); it != end_it; it++)
-	{
-	  printf ("\nbrig: %s register type usage:\n", it->first.c_str ());
-	  gccbrig_print_reg_use_info (it->second);
-	}
-    }
 }
 
 /* Parses the given BRIG blob.  */
@@ -606,7 +595,7 @@ build_stmt (enum tree_code code, ...)
    - to wider type the source value is zero extended.  */
 
 tree
-build_reinterpret_cast (tree destination_type, tree source)
+build_resize_convert_view (tree destination_type, tree source)
 {
 
   gcc_assert (source && destination_type && TREE_TYPE (source) != NULL_TREE
@@ -626,7 +615,7 @@ build_reinterpret_cast (tree destination_type, tree source)
   size_t dst_size = int_size_in_bytes (destination_type);
   if (src_size == dst_size)
     return build1 (VIEW_CONVERT_EXPR, destination_type, source);
-  else /* src_size != dst_size */
+  else /* src_size != dst_size  */
     {
       /* The src_size can be smaller at least with f16 scalars which are
 	 stored to 32b register variables.  First convert to an equivalent
@@ -636,11 +625,11 @@ build_reinterpret_cast (tree destination_type, tree source)
       tree resized = convert (get_scalar_unsigned_int_type (destination_type),
 			      build_reinterpret_to_uint (source));
       gcc_assert ((size_t)int_size_in_bytes (TREE_TYPE (resized)) == dst_size);
-      return build_reinterpret_cast (destination_type, resized);
+      return build_resize_convert_view (destination_type, resized);
     }
 }
 
-/* Reinterprets SOURCE as scalar unsigned int with the size
+/* Reinterprets SOURCE as a scalar unsigned int with the size
    corresponding to the orignal.  */
 
 tree build_reinterpret_to_uint (tree source)
@@ -830,7 +819,7 @@ call_builtin (tree pdecl, int nargs, tree rettype, ...)
     {
       types[i] = va_arg (ap, tree);
       tree arg = va_arg (ap, tree);
-      args[i] = build_reinterpret_cast (types[i], arg);
+      args[i] = build_resize_convert_view (types[i], arg);
       if (types[i] == error_mark_node || args[i] == error_mark_node)
 	{
 	  delete[] types;
@@ -934,7 +923,7 @@ get_unsigned_int_type (tree original_type)
 					   true);
 }
 
-/* Returns an type with unsigned int corresponding to the size
+/* Returns a type with unsigned int corresponding to the size
    ORIGINAL_TYPE.  */
 
 tree
@@ -967,7 +956,7 @@ brig_to_generic::add_reg_used_as_type (const BrigOperandRegister &brig_reg,
 {
   gcc_assert (m_cf);
   reg_use_info &info
-    = m_fn_regs_use_index[m_cf->m_name][gccbrig_hsa_reg_hash (brig_reg)];
+    = m_fn_regs_use_index[m_cf->m_name][gccbrig_hsa_reg_id (brig_reg)];
 
   if (info.m_type_refs_lookup.count (type))
     info.m_type_refs[info.m_type_refs_lookup[type]].second++;
