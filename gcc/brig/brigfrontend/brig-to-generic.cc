@@ -454,7 +454,9 @@ brig_to_generic::add_global_variable (const std::string &name, tree var_decl)
   tree var_addr = build1 (ADDR_EXPR, ptype, var_decl);
 
   DECL_INITIAL (host_def_var) = var_addr;
-  TREE_PUBLIC (host_def_var) = 0;
+  TREE_PUBLIC (host_def_var) = 1;
+
+  set_externally_visible (host_def_var);
 }
 
 /* Adds an indirection pointer for a potential host-defined program scope
@@ -479,6 +481,12 @@ brig_to_generic::add_host_def_var_ptr (const std::string &name, tree var_decl)
 
   append_global (ptr_var);
   m_global_variables[var_name] = ptr_var;
+}
+
+void
+brig_to_generic::add_decl_call (tree call)
+{
+  m_decl_call.push_back (call);
 }
 
 /* Produce a "mangled name" for the given brig function or kernel.
@@ -802,6 +810,29 @@ call_builtin (tree pdecl, int nargs, tree rettype, ...)
 void
 brig_to_generic::write_globals ()
 {
+
+  /* Replace calls to declarations with calls to definitions.  Otherwise
+     inlining will fail to find the definition to inline from.  */
+
+  for (size_t i = 0; i < m_decl_call.size(); ++i)
+    {
+      tree decl_call = m_decl_call.at(i);
+      tree func_decl = get_callee_fndecl (decl_call);
+      brig_function *brig_function = get_finished_function (func_decl);
+
+      if (brig_function && brig_function->m_func_decl
+	  && DECL_EXTERNAL (brig_function->m_func_decl) == 0
+	  && brig_function->m_func_decl != func_decl)
+	{
+
+	  decl_call = CALL_EXPR_FN (decl_call);
+	  STRIP_NOPS (decl_call);
+	  if (TREE_CODE (decl_call) == ADDR_EXPR
+	      && TREE_CODE (TREE_OPERAND (decl_call, 0)) == FUNCTION_DECL)
+	    TREE_OPERAND (decl_call, 0) = brig_function->m_func_decl;
+	}
+    }
+
   /* Now that the whole BRIG module has been processed, build a launcher
      and a metadata section for each built kernel.  */
   for (size_t i = 0; i < m_kernels.size (); ++i)
@@ -878,6 +909,18 @@ get_unsigned_int_type (tree original_type)
 					   * BITS_PER_UNIT,
 					   true);
 }
+
+/* Set the declaration externally visible so it won't get removed by
+   whole program optimizations.  */
+
+void
+set_externally_visible (tree decl)
+{
+  DECL_ATTRIBUTES (decl)
+    = tree_cons (get_identifier ("externally_visible"),
+		 NULL, DECL_ATTRIBUTES (decl));
+}
+
 
 void
 dump_function (FILE *dump_file, brig_function *f)

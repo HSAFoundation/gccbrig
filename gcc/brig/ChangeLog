@@ -1,3 +1,14 @@
+2018-xx-yy  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
+
+	* brig/brig-lang.c: Add support for whole program
+	optimizations by marking the kernels externally visible.
+	* brig/brigfrontend/brig-branch-inst-handler.cc: See above.
+	* brig/brigfrontend/brig-function-handler.cc: See above.
+	* brig/brigfrontend/brig-function.cc: See above.
+	* brig/brigfrontend/brig-to-generic.cc: See above.
+	* brig/brigfrontend/brig-to-generic.h: See above.
+	* brig/brigfrontend/brig-variable-handler.h: See above.
+
 2017-10-09  Pekka Jääskeläinen  <pekka.jaaskelainen@parmance.com>
 
 	* brigfrontend/brig-to-generic.cc: Support BRIG_KIND_NONE

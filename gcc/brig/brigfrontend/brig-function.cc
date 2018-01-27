@@ -562,7 +562,7 @@ brig_function::emit_launcher_and_metadata ()
 
   tree bind_expr = build3 (BIND_EXPR, void_type_node, NULL, stmt_list, NULL);
 
-  TREE_STATIC (launcher) = 0;
+  TREE_STATIC (launcher) = 1;
   TREE_PUBLIC (launcher) = 1;
 
   DECL_SAVED_TREE (launcher) = bind_expr;
@@ -642,6 +642,8 @@ brig_function::emit_launcher_and_metadata ()
   append_to_statement_list_force (restore_ftz_call, &stmt_list);
 
   emit_metadata (stmt_list);
+
+  set_externally_visible (launcher);
 
   return launcher;
 }
