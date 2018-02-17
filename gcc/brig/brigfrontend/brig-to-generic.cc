@@ -52,6 +52,7 @@
 #include "cgraph.h"
 #include "dumpfile.h"
 #include "tree-pretty-print.h"
+#include "attribs.h"
 
 extern int gccbrig_verbose;
 
@@ -983,9 +984,9 @@ get_unsigned_int_type (tree original_type)
 void
 set_externally_visible (tree decl)
 {
-  DECL_ATTRIBUTES (decl)
-    = tree_cons (get_identifier ("externally_visible"),
-		 NULL, DECL_ATTRIBUTES (decl));
+  if (!lookup_attribute ("externally_visible", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("externally_visible"),
+					NULL, DECL_ATTRIBUTES (decl));
 }
 
 /* Returns a type with unsigned int corresponding to the size
@@ -996,6 +997,14 @@ get_scalar_unsigned_int_type (tree original_type)
 {
   return build_nonstandard_integer_type (int_size_in_bytes (original_type)
 					 * BITS_PER_UNIT, true);
+}
+
+void
+set_inline (tree decl)
+{
+  if (!lookup_attribute ("inline", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("inline"),
+					NULL, DECL_ATTRIBUTES (decl));
 }
 
 void
