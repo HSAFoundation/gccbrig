@@ -1,5 +1,5 @@
 /* Loop distribution.
-   Copyright (C) 2006-2017 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
    Contributed by Georges-Andre Silber <Georges-Andre.Silber@ensmp.fr>
    and Sebastian Pop <sebastian.pop@amd.com>.
 
@@ -90,6 +90,7 @@ along with GCC; see the file COPYING3.  If not see
 	data reuse.  */
 
 #include "config.h"
+#define INCLUDE_ALGORITHM /* stable_sort */
 #include "system.h"
 #include "coretypes.h"
 #include "backend.h"
@@ -106,6 +107,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "stor-layout.h"
 #include "tree-cfg.h"
 #include "tree-ssa-loop-manip.h"
+#include "tree-ssa-loop-ivopts.h"
 #include "tree-ssa-loop.h"
 #include "tree-into-ssa.h"
 #include "tree-ssa.h"
@@ -582,7 +584,19 @@ build_rdg (struct loop *loop, control_dependences *cd)
 
 /* Kind of distributed loop.  */
 enum partition_kind {
-    PKIND_NORMAL, PKIND_MEMSET, PKIND_MEMCPY, PKIND_MEMMOVE
+    PKIND_NORMAL,
+    /* Partial memset stands for a paritition can be distributed into a loop
+       of memset calls, rather than a single memset call.  It's handled just
+       like a normal parition, i.e, distributed as separate loop, no memset
+       call is generated.
+
+       Note: This is a hacking fix trying to distribute ZERO-ing stmt in a
+       loop nest as deep as possible.  As a result, parloop achieves better
+       parallelization by parallelizing deeper loop nest.  This hack should
+       be unnecessary and removed once distributed memset can be understood
+       and analyzed in data reference analysis.  See PR82604 for more.  */
+    PKIND_PARTIAL_MEMSET,
+    PKIND_MEMSET, PKIND_MEMCPY, PKIND_MEMMOVE
 };
 
 /* Type of distributed loop.  */
@@ -604,6 +618,10 @@ struct builtin_info
   tree dst_base;
   tree src_base;
   tree size;
+  /* Base and offset part of dst_base after stripping constant offset.  This
+     is only used in memset builtin distribution for now.  */
+  tree dst_base_base;
+  unsigned HOST_WIDE_INT dst_base_offset;
 };
 
 /* Partition for loop distribution.  */
@@ -653,7 +671,7 @@ partition_free (partition *partition)
 static bool
 partition_builtin_p (partition *partition)
 {
-  return partition->kind != PKIND_NORMAL;
+  return partition->kind > PKIND_PARTIAL_MEMSET;
 }
 
 /* Returns true if the partition contains a reduction.  */
@@ -820,7 +838,7 @@ generate_loops_for_partition (struct loop *loop, partition *partition,
   /* Remove stmts not in the PARTITION bitmap.  */
   bbs = get_loop_body_in_dom_order (loop);
 
-  if (MAY_HAVE_DEBUG_STMTS)
+  if (MAY_HAVE_DEBUG_BIND_STMTS)
     for (i = 0; i < loop->num_nodes; i++)
       {
 	basic_block bb = bbs[i];
@@ -938,13 +956,16 @@ const_with_all_bytes_same (tree val)
 	    return 0;
 	  break;
 	case VECTOR_CST:
-	  unsigned int j;
-	  for (j = 0; j < VECTOR_CST_NELTS (val); ++j)
-	    if (const_with_all_bytes_same (VECTOR_CST_ELT (val, j)))
-	      break;
-	  if (j == VECTOR_CST_NELTS (val))
-	    return 0;
-	  break;
+	  {
+	    unsigned int count = vector_cst_encoded_nelts (val);
+	    unsigned int j;
+	    for (j = 0; j < count; ++j)
+	      if (const_with_all_bytes_same (VECTOR_CST_ENCODED_ELT (val, j)))
+		break;
+	    if (j == count)
+	      return 0;
+	    break;
+	  }
 	default:
 	  break;
 	}
@@ -1118,6 +1139,7 @@ generate_code_for_partition (struct loop *loop,
   switch (partition->kind)
     {
     case PKIND_NORMAL:
+    case PKIND_PARTIAL_MEMSET:
       /* Reductions all have to be in the last partition.  */
       gcc_assert (!partition_reduction_p (partition)
 		  || !copy_p);
@@ -1283,12 +1305,12 @@ build_rdg_partition_for_vertex (struct graph *rdg, int v)
   return partition;
 }
 
-/* Given PARTITION of RDG, record single load/store data references for
-   builtin partition in SRC_DR/DST_DR, return false if there is no such
+/* Given PARTITION of LOOP and RDG, record single load/store data references
+   for builtin partition in SRC_DR/DST_DR, return false if there is no such
    data references.  */
 
 static bool
-find_single_drs (struct graph *rdg, partition *partition,
+find_single_drs (struct loop *loop, struct graph *rdg, partition *partition,
 		 data_reference_p *dst_dr, data_reference_p *src_dr)
 {
   unsigned i;
@@ -1344,10 +1366,12 @@ find_single_drs (struct graph *rdg, partition *partition,
       && DECL_BIT_FIELD (TREE_OPERAND (DR_REF (single_st), 1)))
     return false;
 
-  /* Data reference must be executed exactly once per iteration.  */
+  /* Data reference must be executed exactly once per iteration of each
+     loop in the loop nest.  We only need to check dominance information
+     against the outermost one in a perfect loop nest because a bb can't
+     dominate outermost loop's latch without dominating inner loop's.  */
   basic_block bb_st = gimple_bb (DR_STMT (single_st));
-  struct loop *inner = bb_st->loop_father;
-  if (!dominated_by_p (CDI_DOMINATORS, inner->latch, bb_st))
+  if (!dominated_by_p (CDI_DOMINATORS, loop->latch, bb_st))
     return false;
 
   if (single_ld)
@@ -1365,14 +1389,16 @@ find_single_drs (struct graph *rdg, partition *partition,
 
       /* Load and store must be in the same loop nest.  */
       basic_block bb_ld = gimple_bb (DR_STMT (single_ld));
-      if (inner != bb_ld->loop_father)
+      if (bb_st->loop_father != bb_ld->loop_father)
 	return false;
 
-      /* Data reference must be executed exactly once per iteration.  */
-      if (!dominated_by_p (CDI_DOMINATORS, inner->latch, bb_ld))
+      /* Data reference must be executed exactly once per iteration.
+	 Same as single_st, we only need to check against the outermost
+	 loop.  */
+      if (!dominated_by_p (CDI_DOMINATORS, loop->latch, bb_ld))
 	return false;
 
-      edge e = single_exit (inner);
+      edge e = single_exit (bb_st->loop_father);
       bool dom_ld = dominated_by_p (CDI_DOMINATORS, e->src, bb_ld);
       bool dom_st = dominated_by_p (CDI_DOMINATORS, e->src, bb_st);
       if (dom_ld != dom_st)
@@ -1386,17 +1412,22 @@ find_single_drs (struct graph *rdg, partition *partition,
 
 /* Given data reference DR in LOOP_NEST, this function checks the enclosing
    loops from inner to outer to see if loop's step equals to access size at
-   each level of loop.  Return true if yes; record access base and size in
-   BASE and SIZE; save loop's step at each level of loop in STEPS if it is
-   not null.  For example:
+   each level of loop.  Return 2 if we can prove this at all level loops;
+   record access base and size in BASE and SIZE; save loop's step at each
+   level of loop in STEPS if it is not null.  For example:
 
      int arr[100][100][100];
      for (i = 0; i < 100; i++)       ;steps[2] = 40000
        for (j = 100; j > 0; j--)     ;steps[1] = -400
 	 for (k = 0; k < 100; k++)   ;steps[0] = 4
-	   arr[i][j - 1][k] = 0;     ;base = &arr, size = 4000000.  */
+	   arr[i][j - 1][k] = 0;     ;base = &arr, size = 4000000
 
-static bool
+   Return 1 if we can prove the equality at the innermost loop, but not all
+   level loops.  In this case, no information is recorded.
+
+   Return 0 if no equality can be proven at any level loops.  */
+
+static int
 compute_access_range (loop_p loop_nest, data_reference_p dr, tree *base,
 		      tree *size, vec<tree> *steps = NULL)
 {
@@ -1406,24 +1437,25 @@ compute_access_range (loop_p loop_nest, data_reference_p dr, tree *base,
   tree ref = DR_REF (dr);
   tree access_base = build_fold_addr_expr (ref);
   tree access_size = TYPE_SIZE_UNIT (TREE_TYPE (ref));
+  int res = 0;
 
   do {
       tree scev_fn = analyze_scalar_evolution (loop, access_base);
       if (TREE_CODE (scev_fn) != POLYNOMIAL_CHREC)
-	return false;
+	return res;
 
       access_base = CHREC_LEFT (scev_fn);
       if (tree_contains_chrecs (access_base, NULL))
-	return false;
+	return res;
 
       tree scev_step = CHREC_RIGHT (scev_fn);
       /* Only support constant steps.  */
       if (TREE_CODE (scev_step) != INTEGER_CST)
-	return false;
+	return res;
 
       enum ev_direction access_dir = scev_direction (scev_fn);
       if (access_dir == EV_DIR_UNKNOWN)
-	return false;
+	return res;
 
       if (steps != NULL)
 	steps->safe_push (scev_step);
@@ -1436,7 +1468,11 @@ compute_access_range (loop_p loop_nest, data_reference_p dr, tree *base,
       /* At each level of loop, scev step must equal to access size.  In other
 	 words, DR must access consecutive memory between loop iterations.  */
       if (!operand_equal_p (scev_step, access_size, 0))
-	return false;
+	return res;
+
+      /* Access stride can be computed for data reference at least for the
+	 innermost loop.  */
+      res = 1;
 
       /* Compute DR's execution times in loop.  */
       tree niters = number_of_latch_executions (loop);
@@ -1458,7 +1494,8 @@ compute_access_range (loop_p loop_nest, data_reference_p dr, tree *base,
 
   *base = access_base;
   *size = access_size;
-  return true;
+  /* Access stride can be computed for data reference at each level loop.  */
+  return 2;
 }
 
 /* Allocate and return builtin struct.  Record information like DST_DR,
@@ -1497,10 +1534,26 @@ classify_builtin_st (loop_p loop, partition *partition, data_reference_p dr)
       && flow_bb_inside_loop_p (loop, gimple_bb (SSA_NAME_DEF_STMT (rhs))))
     return;
 
-  if (!compute_access_range (loop, dr, &base, &size))
+  int res = compute_access_range (loop, dr, &base, &size);
+  if (res == 0)
+    return;
+  if (res == 1)
+    {
+      partition->kind = PKIND_PARTIAL_MEMSET;
+      return;
+    }
+
+  poly_uint64 base_offset;
+  unsigned HOST_WIDE_INT const_base_offset;
+  tree base_base = strip_offset (base, &base_offset);
+  if (!base_offset.is_constant (&const_base_offset))
     return;
 
-  partition->builtin = alloc_builtin (dr, NULL, base, NULL_TREE, size);
+  struct builtin_info *builtin;
+  builtin = alloc_builtin (dr, NULL, base, NULL_TREE, size);
+  builtin->dst_base_base = base_base;
+  builtin->dst_base_offset = const_base_offset;
+  partition->builtin = builtin;
   partition->kind = PKIND_MEMSET;
 }
 
@@ -1514,11 +1567,16 @@ classify_builtin_ldst (loop_p loop, struct graph *rdg, partition *partition,
   tree base, size, src_base, src_size;
   auto_vec<tree> dst_steps, src_steps;
 
-  /* Compute access range of both load and store.  They much have the same
-     access size.  */
-  if (!compute_access_range (loop, dst_dr, &base, &size, &dst_steps)
-      || !compute_access_range (loop, src_dr, &src_base, &src_size, &src_steps)
-      || !operand_equal_p (size, src_size, 0))
+  /* Compute access range of both load and store.  */
+  int res = compute_access_range (loop, dst_dr, &base, &size, &dst_steps);
+  if (res != 2)
+    return;
+  res = compute_access_range (loop, src_dr, &src_base, &src_size, &src_steps);
+  if (res != 2)
+    return;
+
+  /* They much have the same access size.  */
+  if (!operand_equal_p (size, src_size, 0))
     return;
 
   /* Load and store in loop nest must access memory in the same way, i.e,
@@ -1611,7 +1669,7 @@ classify_partition (loop_p loop, struct graph *rdg, partition *partition,
     return;
 
   /* Find single load/store data references for builtin partition.  */
-  if (!find_single_drs (rdg, partition, &single_st, &single_ld))
+  if (!find_single_drs (loop, rdg, partition, &single_st, &single_ld))
     return;
 
   /* Classify the builtin kind.  */
@@ -2307,16 +2365,12 @@ break_alias_scc_partitions (struct graph *rdg,
 static tree
 data_ref_segment_size (struct data_reference *dr, tree niters)
 {
-  tree segment_length;
-
-  if (integer_zerop (DR_STEP (dr)))
-    segment_length = TYPE_SIZE_UNIT (TREE_TYPE (DR_REF (dr)));
-  else
-    segment_length = size_binop (MULT_EXPR,
-				 fold_convert (sizetype, DR_STEP (dr)),
-				 fold_convert (sizetype, niters));
-
-  return segment_length;
+  niters = size_binop (MINUS_EXPR,
+		       fold_convert (sizetype, niters),
+		       size_one_node);
+  return size_binop (MULT_EXPR,
+		     fold_convert (sizetype, DR_STEP (dr)),
+		     fold_convert (sizetype, niters));
 }
 
 /* Return true if LOOP's latch is dominated by statement for data reference
@@ -2371,9 +2425,16 @@ compute_alias_check_pairs (struct loop *loop, vec<ddr_p> *alias_ddrs,
       else
 	seg_length_b = data_ref_segment_size (dr_b, niters);
 
+      unsigned HOST_WIDE_INT access_size_a
+	= tree_to_uhwi (TYPE_SIZE_UNIT (TREE_TYPE (DR_REF (dr_a))));
+      unsigned HOST_WIDE_INT access_size_b
+	= tree_to_uhwi (TYPE_SIZE_UNIT (TREE_TYPE (DR_REF (dr_b))));
+      unsigned int align_a = TYPE_ALIGN_UNIT (TREE_TYPE (DR_REF (dr_a)));
+      unsigned int align_b = TYPE_ALIGN_UNIT (TREE_TYPE (DR_REF (dr_b)));
+
       dr_with_seg_len_pair_t dr_with_seg_len_pair
-	  (dr_with_seg_len (dr_a, seg_length_a),
-	   dr_with_seg_len (dr_b, seg_length_b));
+	(dr_with_seg_len (dr_a, seg_length_a, access_size_a, align_a),
+	 dr_with_seg_len (dr_b, seg_length_b, access_size_b, align_b));
 
       /* Canonicalize pairs by sorting the two DR members.  */
       if (comp_res > 0)
@@ -2476,6 +2537,113 @@ version_for_distribution_p (vec<struct partition *> *partitions,
   return (alias_ddrs->length () > 0);
 }
 
+/* Compare base offset of builtin mem* partitions P1 and P2.  */
+
+static bool
+offset_cmp (struct partition *p1, struct partition *p2)
+{
+  gcc_assert (p1 != NULL && p1->builtin != NULL);
+  gcc_assert (p2 != NULL && p2->builtin != NULL);
+  return p1->builtin->dst_base_offset < p2->builtin->dst_base_offset;
+}
+
+/* Fuse adjacent memset builtin PARTITIONS if possible.  This is a special
+   case optimization transforming below code:
+
+     __builtin_memset (&obj, 0, 100);
+     _1 = &obj + 100;
+     __builtin_memset (_1, 0, 200);
+     _2 = &obj + 300;
+     __builtin_memset (_2, 0, 100);
+
+   into:
+
+     __builtin_memset (&obj, 0, 400);
+
+   Note we don't have dependence information between different partitions
+   at this point, as a result, we can't handle nonadjacent memset builtin
+   partitions since dependence might be broken.  */
+
+static void
+fuse_memset_builtins (vec<struct partition *> *partitions)
+{
+  unsigned i, j;
+  struct partition *part1, *part2;
+
+  for (i = 0; partitions->iterate (i, &part1);)
+    {
+      if (part1->kind != PKIND_MEMSET)
+	{
+	  i++;
+	  continue;
+	}
+
+      /* Find sub-array of memset builtins of the same base.  Index range
+	 of the sub-array is [i, j) with "j > i".  */
+      for (j = i + 1; partitions->iterate (j, &part2); ++j)
+	{
+	  if (part2->kind != PKIND_MEMSET
+	      || !operand_equal_p (part1->builtin->dst_base_base,
+				   part2->builtin->dst_base_base, 0))
+	    break;
+	}
+
+      /* Stable sort is required in order to avoid breaking dependence.  */
+      std::stable_sort (&(*partitions)[i],
+			&(*partitions)[i] + j - i, offset_cmp);
+      /* Continue with next partition.  */
+      i = j;
+    }
+
+  /* Merge all consecutive memset builtin partitions.  */
+  for (i = 0; i < partitions->length () - 1;)
+    {
+      part1 = (*partitions)[i];
+      if (part1->kind != PKIND_MEMSET)
+	{
+	  i++;
+	  continue;
+	}
+
+      part2 = (*partitions)[i + 1];
+      /* Only merge memset partitions of the same base and with constant
+	 access sizes.  */
+      if (part2->kind != PKIND_MEMSET
+	  || TREE_CODE (part1->builtin->size) != INTEGER_CST
+	  || TREE_CODE (part2->builtin->size) != INTEGER_CST
+	  || !operand_equal_p (part1->builtin->dst_base_base,
+			       part2->builtin->dst_base_base, 0))
+	{
+	  i++;
+	  continue;
+	}
+      tree rhs1 = gimple_assign_rhs1 (DR_STMT (part1->builtin->dst_dr));
+      tree rhs2 = gimple_assign_rhs1 (DR_STMT (part2->builtin->dst_dr));
+      int bytev1 = const_with_all_bytes_same (rhs1);
+      int bytev2 = const_with_all_bytes_same (rhs2);
+      /* Only merge memset partitions of the same value.  */
+      if (bytev1 != bytev2 || bytev1 == -1)
+	{
+	  i++;
+	  continue;
+	}
+      wide_int end1 = wi::add (part1->builtin->dst_base_offset,
+			       wi::to_wide (part1->builtin->size));
+      /* Only merge adjacent memset partitions.  */
+      if (wi::ne_p (end1, part2->builtin->dst_base_offset))
+	{
+	  i++;
+	  continue;
+	}
+      /* Merge partitions[i] and partitions[i+1].  */
+      part1->builtin->size = fold_build2 (PLUS_EXPR, sizetype,
+					  part1->builtin->size,
+					  part2->builtin->size);
+      partition_free (part2);
+      partitions->ordered_remove (i + 1);
+    }
+}
+
 /* Fuse PARTITIONS of LOOP if necessary before finalizing distribution.
    ALIAS_DDRS contains ddrs which need runtime alias check.  */
 
@@ -2490,22 +2658,27 @@ finalize_partitions (struct loop *loop, vec<struct partition *> *partitions,
       || alias_ddrs->length () > 0)
     return;
 
-  unsigned num_builtin = 0, num_normal = 0;
+  unsigned num_builtin = 0, num_normal = 0, num_partial_memset = 0;
   bool same_type_p = true;
   enum partition_type type = ((*partitions)[0])->type;
   for (i = 0; partitions->iterate (i, &partition); ++i)
     {
       same_type_p &= (type == partition->type);
-      if (partition->kind != PKIND_NORMAL)
-	num_builtin++;
-      else
-	num_normal++;
+      if (partition_builtin_p (partition))
+	{
+	  num_builtin++;
+	  continue;
+	}
+      num_normal++;
+      if (partition->kind == PKIND_PARTIAL_MEMSET)
+	num_partial_memset++;
     }
 
   /* Don't distribute current loop into too many loops given we don't have
      memory stream cost model.  Be even more conservative in case of loop
      nest distribution.  */
-  if ((same_type_p && num_builtin == 0)
+  if ((same_type_p && num_builtin == 0
+       && (loop->inner == NULL || num_normal != 2 || num_partial_memset != 1))
       || (loop->inner != NULL
 	  && i >= NUM_PARTITION_THRESHOLD && num_normal > 1)
       || (loop->inner == NULL
@@ -2519,6 +2692,10 @@ finalize_partitions (struct loop *loop, vec<struct partition *> *partitions,
 	}
       partitions->truncate (1);
     }
+
+  /* Fuse memset builtins if possible.  */
+  if (partitions->length () > 1)
+    fuse_memset_builtins (partitions);
 }
 
 /* Distributes the code from LOOP in such a way that producer statements
@@ -2649,7 +2826,7 @@ distribute_loop (struct loop *loop, vec<gimple *> stmts,
   for (i = 0; partitions.iterate (i, &into); ++i)
     {
       bool changed = false;
-      if (partition_builtin_p (into))
+      if (partition_builtin_p (into) || into->kind == PKIND_PARTIAL_MEMSET)
 	continue;
       for (int j = i + 1;
 	   partitions.iterate (j, &partition); ++j)
@@ -2829,10 +3006,12 @@ prepare_perfect_loop_nest (struct loop *loop)
   struct loop *outer = loop_outer (loop);
   tree niters = number_of_latch_executions (loop);
 
-  /* TODO: We only support the innermost 2-level loop nest distribution
+  /* TODO: We only support the innermost 3-level loop nest distribution
      because of compilation time issue for now.  This should be relaxed
-     in the future.  */
-  while (loop->inner == NULL
+     in the future.  Note we only allow 3-level loop nest distribution
+     when parallelizing loops.  */
+  while ((loop->inner == NULL
+	  || (loop->inner->inner == NULL && flag_tree_parallelize_loops > 1))
 	 && loop_outer (outer)
 	 && outer->inner == loop && loop->next == NULL
 	 && single_exit (outer)
@@ -2969,7 +3148,7 @@ pass_loop_distribution::execute (function *fun)
 
   checking_verify_loop_structure ();
 
-  return 0;
+  return changed ? TODO_cleanup_cfg : 0;
 }
 
 } // anon namespace

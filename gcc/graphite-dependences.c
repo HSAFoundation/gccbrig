@@ -1,5 +1,5 @@
 /* Data dependence analysis for Graphite.
-   Copyright (C) 2009-2017 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@amd.com> and
    Konrad Trifunovic <konrad.trifunovic@inria.fr>.
 
@@ -67,9 +67,9 @@ add_pdr_constraints (poly_dr_p pdr, poly_bb_p pbb)
    reads are returned in READS and writes in MUST_WRITES and MAY_WRITES.  */
 
 static void
-scop_get_reads_and_writes (scop_p scop, isl_union_map *reads,
-			   isl_union_map *must_writes,
-			   isl_union_map *may_writes)
+scop_get_reads_and_writes (scop_p scop, isl_union_map *&reads,
+			   isl_union_map *&must_writes,
+			   isl_union_map *&may_writes)
 {
   int i, j;
   poly_bb_p pbb;

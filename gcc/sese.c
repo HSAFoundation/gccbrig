@@ -1,5 +1,5 @@
 /* Single entry single exit control flow regions.
-   Copyright (C) 2008-2017 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
    Contributed by Jan Sjodin <jan.sjodin@amd.com> and
    Sebastian Pop <sebastian.pop@amd.com>.
 
@@ -156,12 +156,8 @@ new_sese_info (edge entry, edge exit)
   region->liveout = NULL;
   region->debug_liveout = NULL;
   region->params.create (3);
-  region->rename_map = new rename_map_t;
-  region->parameter_rename_map = new parameter_rename_map_t;
-  region->copied_bb_map = new bb_map_t;
+  region->rename_map = new hash_map <tree, tree>;
   region->bbs.create (3);
-  region->incomplete_phis.create (3);
-
 
   return region;
 }
@@ -175,24 +171,9 @@ free_sese_info (sese_info_p region)
   BITMAP_FREE (region->liveout);
   BITMAP_FREE (region->debug_liveout);
 
-  for (rename_map_t::iterator it = region->rename_map->begin ();
-       it != region->rename_map->end (); ++it)
-    (*it).second.release ();
-
-  for (bb_map_t::iterator it = region->copied_bb_map->begin ();
-       it != region->copied_bb_map->end (); ++it)
-    (*it).second.release ();
-
   delete region->rename_map;
-  delete region->parameter_rename_map;
-  delete region->copied_bb_map;
-
   region->rename_map = NULL;
-  region->parameter_rename_map = NULL;
-  region->copied_bb_map = NULL;
-
   region->bbs.release ();
-  region->incomplete_phis.release ();
 
   XDELETE (region);
 }
@@ -224,7 +205,7 @@ void
 sese_insert_phis_for_liveouts (sese_info_p region, basic_block bb,
 			       edge false_e, edge true_e)
 {
-  if (MAY_HAVE_DEBUG_STMTS)
+  if (MAY_HAVE_DEBUG_BIND_STMTS)
     sese_reset_debug_liveouts (region);
 
   unsigned i;
@@ -459,41 +440,16 @@ scev_analyzable_p (tree def, sese_l &region)
 tree
 scalar_evolution_in_region (const sese_l &region, loop_p loop, tree t)
 {
-  gimple *def;
-  struct loop *def_loop;
-
   /* SCOP parameters.  */
   if (TREE_CODE (t) == SSA_NAME
       && !defined_in_sese_p (t, region))
     return t;
 
-  if (TREE_CODE (t) != SSA_NAME
-      || loop_in_sese_p (loop, region))
-    /* FIXME: we would need instantiate SCEV to work on a region, and be more
-       flexible wrt. memory loads that may be invariant in the region.  */
-    return instantiate_scev (region.entry, loop,
-			     analyze_scalar_evolution (loop, t));
+  if (!loop_in_sese_p (loop, region))
+    loop = NULL;
 
-  def = SSA_NAME_DEF_STMT (t);
-  def_loop = loop_containing_stmt (def);
-
-  if (loop_in_sese_p (def_loop, region))
-    {
-      t = analyze_scalar_evolution (def_loop, t);
-      def_loop = superloop_at_depth (def_loop, loop_depth (loop) + 1);
-      t = compute_overall_effect_of_inner_loop (def_loop, t);
-      return t;
-    }
-
-  bool has_vdefs = false;
-  if (invariant_in_sese_p_rec (t, region, &has_vdefs))
-    return t;
-
-  /* T variates in REGION.  */
-  if (has_vdefs)
-    return chrec_dont_know;
-
-  return instantiate_scev (region.entry, loop, t);
+  return instantiate_scev (region.entry, loop,
+			   analyze_scalar_evolution (loop, t));
 }
 
 /* Return true if BB is empty, contains only DEBUG_INSNs.  */
@@ -504,7 +460,7 @@ sese_trivially_empty_bb_p (basic_block bb)
   gimple_stmt_iterator gsi;
 
   for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
-    if (gimple_code (gsi_stmt (gsi)) != GIMPLE_DEBUG
+    if (!is_gimple_debug (gsi_stmt (gsi))
 	&& gimple_code (gsi_stmt (gsi)) != GIMPLE_LABEL)
       return false;
 

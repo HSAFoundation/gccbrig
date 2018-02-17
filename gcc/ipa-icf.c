@@ -1,5 +1,5 @@
 /* Interprocedural Identical Code Folding pass
-   Copyright (C) 2014-2017 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    Contributed by Jan Hubicka <hubicka@ucw.cz> and Martin Liska <mliska@suse.cz>
 
@@ -83,6 +83,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "ipa-icf.h"
 #include "stor-layout.h"
 #include "dbgcnt.h"
+#include "tree-vector-builder.h"
 
 using namespace ipa_icf_gimple;
 
@@ -286,11 +287,11 @@ sem_function::get_hash (void)
 
       /* Add common features of declaration itself.  */
       if (DECL_FUNCTION_SPECIFIC_TARGET (decl))
-        hstate.add_wide_int
+        hstate.add_hwi
 	 (cl_target_option_hash
 	   (TREE_TARGET_OPTION (DECL_FUNCTION_SPECIFIC_TARGET (decl))));
       if (DECL_FUNCTION_SPECIFIC_OPTIMIZATION (decl))
-	hstate.add_wide_int
+	hstate.add_hwi
 	 (cl_optimization_hash
 	   (TREE_OPTIMIZATION (DECL_FUNCTION_SPECIFIC_OPTIMIZATION (decl))));
       hstate.add_flag (DECL_CXX_CONSTRUCTOR_P (decl));
@@ -1112,6 +1113,17 @@ sem_function::merge (sem_item *alias_item)
       return false;
     }
 
+  if (!original->in_same_comdat_group_p (alias)
+      || original->comdat_local_p ())
+    {
+      if (dump_file)
+	fprintf (dump_file,
+		 "Not unifying; alias nor wrapper cannot be created; "
+		 "across comdat group boundary\n\n");
+
+      return false;
+    }
+
   /* See if original is in a section that can be discarded if the main
      symbol is not used.  */
 
@@ -1422,6 +1434,7 @@ sem_function::init (void)
 	      }
 	  }
 
+	hstate.commit_flag ();
 	gcode_hash = hstate.end ();
 	bb_sizes.safe_push (nondbg_stmt_count);
 
@@ -1437,8 +1450,8 @@ sem_function::init (void)
     {
       cfg_checksum = 0;
       inchash::hash hstate;
-      hstate.add_wide_int (cnode->thunk.fixed_offset);
-      hstate.add_wide_int (cnode->thunk.virtual_value);
+      hstate.add_hwi (cnode->thunk.fixed_offset);
+      hstate.add_hwi (cnode->thunk.virtual_value);
       hstate.add_flag (cnode->thunk.this_adjusting);
       hstate.add_flag (cnode->thunk.virtual_offset_p);
       hstate.add_flag (cnode->thunk.add_pointer_bounds_args);
@@ -1485,7 +1498,7 @@ sem_item::add_expr (const_tree exp, inchash::hash &hstate)
 	unsigned HOST_WIDE_INT idx;
 	tree value;
 
-	hstate.add_wide_int (int_size_in_bytes (TREE_TYPE (exp)));
+	hstate.add_hwi (int_size_in_bytes (TREE_TYPE (exp)));
 
 	FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (exp), idx, value)
 	  if (value)
@@ -1500,7 +1513,7 @@ sem_item::add_expr (const_tree exp, inchash::hash &hstate)
     case VAR_DECL:
     case CONST_DECL:
     case PARM_DECL:
-      hstate.add_wide_int (int_size_in_bytes (TREE_TYPE (exp)));
+      hstate.add_hwi (int_size_in_bytes (TREE_TYPE (exp)));
       break;
     case MEM_REF:
     case POINTER_PLUS_EXPR:
@@ -1518,7 +1531,7 @@ sem_item::add_expr (const_tree exp, inchash::hash &hstate)
       }
       break;
     CASE_CONVERT:
-      hstate.add_wide_int (int_size_in_bytes (TREE_TYPE (exp)));
+      hstate.add_hwi (int_size_in_bytes (TREE_TYPE (exp)));
       return add_expr (TREE_OPERAND (exp, 0), hstate);
     default:
       break;
@@ -1589,11 +1602,11 @@ sem_item::add_type (const_tree type, inchash::hash &hstate)
 
 	  hstate2.add_int (nf);
 	  hash = hstate2.end ();
-	  hstate.add_wide_int (hash);
+	  hstate.add_hwi (hash);
 	  optimizer->m_type_hash_cache.put (type, hash);
 	}
       else
-        hstate.add_wide_int (*val);
+        hstate.add_hwi (*val);
     }
 }
 
@@ -1644,6 +1657,11 @@ sem_function::hash_stmt (gimple *stmt, inchash::hash &hstate)
 	  if (gimple_op (stmt, i))
 	    add_type (TREE_TYPE (gimple_op (stmt, i)), hstate);
 	}
+      /* Consider nocf_check attribute in hash as it affects code
+ 	 generation.  */
+      if (code == GIMPLE_CALL
+	  && flag_cf_protection & CF_BRANCH)
+	hstate.add_flag (gimple_call_nocf_check_p (as_a <gcall *> (stmt)));
     default:
       break;
     }
@@ -2018,17 +2036,17 @@ sem_variable::equals (tree t1, tree t2)
 						&TREE_REAL_CST (t2)));
     case VECTOR_CST:
       {
-	unsigned i;
+	if (maybe_ne (VECTOR_CST_NELTS (t1), VECTOR_CST_NELTS (t2)))
+	  return return_false_with_msg ("VECTOR_CST nelts mismatch");
 
-        if (VECTOR_CST_NELTS (t1) != VECTOR_CST_NELTS (t2))
-          return return_false_with_msg ("VECTOR_CST nelts mismatch");
+	unsigned int count
+	  = tree_vector_builder::binary_encoded_nelts (t1, t2);
+	for (unsigned int i = 0; i < count; ++i)
+	  if (!sem_variable::equals (VECTOR_CST_ENCODED_ELT (t1, i),
+				     VECTOR_CST_ENCODED_ELT (t2, i)))
+	    return false;
 
-	for (i = 0; i < VECTOR_CST_NELTS (t1); ++i)
-	  if (!sem_variable::equals (VECTOR_CST_ELT (t1, i),
-				     VECTOR_CST_ELT (t2, i)))
-	    return 0;
-
-	return 1;
+	return true;
       }
     case ARRAY_REF:
     case ARRAY_RANGE_REF:
@@ -2108,7 +2126,7 @@ sem_variable::get_hash (void)
 
   hstate.add_int (456346417);
   if (DECL_SIZE (decl) && tree_fits_shwi_p (DECL_SIZE (decl)))
-    hstate.add_wide_int (tree_to_shwi (DECL_SIZE (decl)));
+    hstate.add_hwi (tree_to_shwi (DECL_SIZE (decl)));
   add_expr (ctor, hstate);
   set_hash (hstate.end ());
 
@@ -2720,7 +2738,7 @@ sem_item_optimizer::update_hash_by_addr_refs ()
 
 		if (TYPE_NAME (class_type)
 		     && DECL_ASSEMBLER_NAME_SET_P (TYPE_NAME (class_type)))
-		  hstate.add_wide_int
+		  hstate.add_hwi
 		    (IDENTIFIER_HASH_VALUE
 		       (DECL_ASSEMBLER_NAME (TYPE_NAME (class_type))));
 

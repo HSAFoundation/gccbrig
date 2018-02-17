@@ -50,6 +50,10 @@
     <!-- Section 01.6 : Status C++ TR24733 -->
     <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" parse="xml" href="status_cxxtr24733.xml">
     </xi:include>
+
+    <!-- Section 01.7 : Status C++ IS 24733 -->
+    <xi:include xmlns:xi="http://www.w3.org/2001/XInclude" parse="xml" href="status_cxxis29124.xml">
+    </xi:include>
   </section>
 
   <!-- Section 02 : License -->
@@ -962,6 +966,12 @@ requirements of the license of GCC.
     </term>
     <listitem><para>Use <code>__builtin_addressof</code> and add
     <code>constexpr</code> to <code>addressof</code> for C++17 and later.
+    </para></listitem></varlistentry>
+
+    <varlistentry xml:id="manual.bugs.dr2306"><term><link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="&DR;#2306">2306</link>:
+	<emphasis><code>match_results::reference</code> should be <code>value_type&amp;</code>, not <code>const value_type&amp;</code></emphasis>
+    </term>
+    <listitem><para>Change typedef.
     </para></listitem></varlistentry>
 
     <varlistentry xml:id="manual.bugs.dr2313"><term><link xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="&DR;#2313">2313</link>:

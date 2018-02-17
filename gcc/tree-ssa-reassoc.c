@@ -1,5 +1,5 @@
 /* Reassociation for trees.
-   Copyright (C) 2005-2017 Free Software Foundation, Inc.
+   Copyright (C) 2005-2018 Free Software Foundation, Inc.
    Contributed by Daniel Berlin <dan@dberlin.org>
 
 This file is part of GCC.
@@ -232,7 +232,7 @@ reassoc_remove_stmt (gimple_stmt_iterator *gsi)
 {
   gimple *stmt = gsi_stmt (*gsi);
 
-  if (!MAY_HAVE_DEBUG_STMTS || gimple_code (stmt) == GIMPLE_PHI)
+  if (!MAY_HAVE_DEBUG_BIND_STMTS || gimple_code (stmt) == GIMPLE_PHI)
     return gsi_remove (gsi, true);
 
   gimple_stmt_iterator prev = *gsi;
@@ -543,7 +543,7 @@ sort_by_operand_rank (const void *pa, const void *pb)
 	    return -1;
 	  /* If neither is, compare bb_rank.  */
 	  if (bb_rank[bbb->index] != bb_rank[bba->index])
-	    return bb_rank[bbb->index] - bb_rank[bba->index];
+	    return (bb_rank[bbb->index] >> 16) - (bb_rank[bba->index] >> 16);
 	}
 
       bool da = reassoc_stmt_dominates_stmt_p (stmta, stmtb);
@@ -5625,6 +5625,7 @@ attempt_builtin_copysign (vec<operand_entry *> *ops)
 	      switch (gimple_call_combined_fn (old_call))
 		{
 		CASE_CFN_COPYSIGN:
+		CASE_CFN_COPYSIGN_FN:
 		  arg0 = gimple_call_arg (old_call, 0);
 		  arg1 = gimple_call_arg (old_call, 1);
 		  /* The first argument of copysign must be a constant,
@@ -6033,12 +6034,10 @@ branch_fixup (void)
 
       edge etrue = make_edge (cond_bb, merge_bb, EDGE_TRUE_VALUE);
       etrue->probability = profile_probability::even ();
-      etrue->count = cond_bb->count.apply_scale (1, 2);
       edge efalse = find_edge (cond_bb, then_bb);
       efalse->flags = EDGE_FALSE_VALUE;
       efalse->probability -= etrue->probability;
-      efalse->count -= etrue->count;
-      then_bb->count -= etrue->count;
+      then_bb->count -= etrue->count ();
 
       tree othervar = NULL_TREE;
       if (gimple_assign_rhs1 (use_stmt) == var)
@@ -6132,7 +6131,7 @@ init_reassoc (void)
 
   /* Set up rank for each BB  */
   for (i = 0; i < n_basic_blocks_for_fn (cfun) - NUM_FIXED_BLOCKS; i++)
-    bb_rank[bbs[i]] = ++rank  << 16;
+    bb_rank[bbs[i]] = ++rank << 16;
 
   free (bbs);
   calculate_dominance_info (CDI_POST_DOMINATORS);

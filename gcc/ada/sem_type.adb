@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2017, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -2838,11 +2838,9 @@ package body Sem_Type is
          return False;
 
       elsif Nkind (Par) in N_Declaration then
-         if Nkind (Par) = N_Object_Declaration then
-            return Present (Corresponding_Generic_Association (Par));
-         else
-            return False;
-         end if;
+         return
+           Nkind (Par) = N_Object_Declaration
+             and then Present (Corresponding_Generic_Association (Par));
 
       elsif Nkind (Par) = N_Object_Renaming_Declaration then
          return Present (Corresponding_Generic_Association (Par));

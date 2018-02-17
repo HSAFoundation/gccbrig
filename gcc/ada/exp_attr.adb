@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2017, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2018, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1054,7 +1054,7 @@ package body Exp_Attr is
       Base_Typ  : constant Entity_Id := Base_Type (Etype (Pref));
       Exprs     : constant List_Id   := Expressions (N);
       Aux_Decl  : Node_Id;
-      Blk       : Node_Id;
+      Blk       : Node_Id := Empty;
       Decls     : List_Id;
       Installed : Boolean;
       Loc       : Source_Ptr;
@@ -1756,7 +1756,18 @@ package body Exp_Attr is
       --  and access to it must be passed to the function.
 
       if Is_Build_In_Place_Function_Call (Pref) then
-         Make_Build_In_Place_Call_In_Anonymous_Context (Pref);
+
+         --  If attribute is 'Old, the context is a postcondition, and
+         --  the temporary must go in the corresponding subprogram, not
+         --  the postcondition function or any created blocks, as when
+         --  the attribute appears in a quantified expression. This is
+         --  handled below in the expansion of the attribute.
+
+         if Attribute_Name (Parent (Pref)) = Name_Old then
+            null;
+         else
+            Make_Build_In_Place_Call_In_Anonymous_Context (Pref);
+         end if;
 
       --  Ada 2005 (AI-318-02): Specialization of the previous case for prefix
       --  containing build-in-place function calls whose returned object covers
@@ -8263,7 +8274,7 @@ package body Exp_Attr is
    --  Start of processing for Is_Inline_Floating_Point_Attribute
 
    begin
-      --  Machine and Model can be expanded by the GCC and AAMP back ends only
+      --  Machine and Model can be expanded by the GCC back end only
 
       if Id = Attribute_Machine or else Id = Attribute_Model then
          return Is_GCC_Target;

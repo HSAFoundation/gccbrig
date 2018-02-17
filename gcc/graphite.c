@@ -1,5 +1,5 @@
 /* Gimple Represented as Polyhedra.
-   Copyright (C) 2006-2017 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@inria.fr>.
 
 This file is part of GCC.
@@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "params.h"
 #include "pretty-print.h"
+#include "cfganal.h"
 
 #ifdef HAVE_isl
 #include "cfghooks.h"
@@ -111,7 +112,7 @@ print_global_statistics (FILE* file)
   fprintf (file, "LOOPS:%ld, ", n_loops);
   fprintf (file, "CONDITIONS:%ld, ", n_conditions);
   fprintf (file, "STMTS:%ld)\n", n_stmts);
-  fprintf (file, "\nGlobal profiling statistics (");
+  fprintf (file, "Global profiling statistics (");
   fprintf (file, "BBS:");
   n_p_bbs.dump (file);
   fprintf (file, ", LOOPS:");
@@ -120,7 +121,7 @@ print_global_statistics (FILE* file)
   n_p_conditions.dump (file);
   fprintf (file, ", STMTS:");
   n_p_stmts.dump (file);
-  fprintf (file, ")\n");
+  fprintf (file, ")\n\n");
 }
 
 /* Print statistics for SCOP to FILE.  */
@@ -185,7 +186,7 @@ print_graphite_scop_statistics (FILE* file, scop_p scop)
   fprintf (file, "LOOPS:%ld, ", n_loops);
   fprintf (file, "CONDITIONS:%ld, ", n_conditions);
   fprintf (file, "STMTS:%ld)\n", n_stmts);
-  fprintf (file, "\nSCoP profiling statistics (");
+  fprintf (file, "SCoP profiling statistics (");
   fprintf (file, "BBS:");
   n_p_bbs.dump (file);
   fprintf (file, ", LOOPS:");
@@ -194,7 +195,7 @@ print_graphite_scop_statistics (FILE* file, scop_p scop)
   n_p_conditions.dump (file);
   fprintf (file, ", STMTS:");
   n_p_stmts.dump (file);
-  fprintf (file, ")\n");
+  fprintf (file, ")\n\n");
 }
 
 /* Print statistics for SCOPS to FILE.  */
@@ -203,15 +204,10 @@ static void
 print_graphite_statistics (FILE* file, vec<scop_p> scops)
 {
   int i;
-
   scop_p scop;
 
   FOR_EACH_VEC_ELT (scops, i, scop)
     print_graphite_scop_statistics (file, scop);
-
-  /* Print the loop structure.  */
-  print_loops (file, 2);
-  print_loops (file, 3);
 }
 
 /* Deletes all scops in SCOPS.  */
@@ -231,14 +227,10 @@ free_scops (vec<scop_p> scops)
 /* Transforms LOOP to the canonical loop closed SSA form.  */
 
 static void
-canonicalize_loop_closed_ssa (loop_p loop)
+canonicalize_loop_closed_ssa (loop_p loop, edge e)
 {
-  edge e = single_exit (loop);
   basic_block bb;
   gphi_iterator psi;
-
-  if (!e || (e->flags & EDGE_COMPLEX))
-    return;
 
   bb = e->dest;
 
@@ -318,14 +310,38 @@ canonicalize_loop_closed_ssa (loop_p loop)
    other statements.
 
    - there exist only one phi node per definition in the loop.
+
+   In addition to that we also make sure that loop exit edges are
+   first in the successor edge vector.  This is to make RPO order
+   as computed by pre_and_rev_post_order_compute be consistent with
+   what initial schedule generation expects.
 */
 
 static void
-canonicalize_loop_closed_ssa_form (void)
+canonicalize_loop_form (void)
 {
   loop_p loop;
   FOR_EACH_LOOP (loop, LI_FROM_INNERMOST)
-    canonicalize_loop_closed_ssa (loop);
+    {
+      edge e = single_exit (loop);
+      if (!e || (e->flags & (EDGE_COMPLEX|EDGE_FAKE)))
+	continue;
+
+      canonicalize_loop_closed_ssa (loop, e);
+
+      /* If the exit is not first in the edge vector make it so.  */
+      if (e != EDGE_SUCC (e->src, 0))
+	{
+	  unsigned ei;
+	  for (ei = 0; EDGE_SUCC (e->src, ei) != e; ++ei)
+	    ;
+	  std::swap (EDGE_SUCC (e->src, ei), EDGE_SUCC (e->src, 0));
+	}
+    }
+
+  /* We can end up releasing duplicate exit PHIs and also introduce
+     additional copies so the cached information isn't correct anymore.  */
+  scev_reset ();
 
   checking_verify_loop_closed_ssa (true);
 }
@@ -351,16 +367,31 @@ graphite_transform_loops (void)
 
   calculate_dominance_info (CDI_DOMINATORS);
 
+  /* We rely on post-dominators during merging of SESE regions so those
+     have to be meaningful.  */
+  connect_infinite_loops_to_exit ();
+
   ctx = isl_ctx_alloc ();
   isl_options_set_on_error (ctx, ISL_ON_ERROR_ABORT);
   the_isl_ctx = ctx;
 
   sort_sibling_loops (cfun);
-  canonicalize_loop_closed_ssa_form ();
+  canonicalize_loop_form ();
+
+  /* Print the loop structure.  */
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    {
+      print_loops (dump_file, 2);
+      print_loops (dump_file, 3);
+    }
 
   calculate_dominance_info (CDI_POST_DOMINATORS);
   build_scops (&scops);
   free_dominance_info (CDI_POST_DOMINATORS);
+
+  /* Remove the fake exits before transform given they are not reflected
+     in loop structures we end up verifying.  */
+  remove_fake_exit_edges ();
 
   if (dump_file && (dump_flags & TDF_DETAILS))
     {
@@ -378,16 +409,14 @@ graphite_transform_loops (void)
 	if (!apply_poly_transforms (scop))
 	  continue;
 
-	location_t loc = find_loop_location
-	  (scops[i]->scop_info->region.entry->dest->loop_father);
-
 	changed = true;
-	if (!graphite_regenerate_ast_isl (scop))
-	  dump_printf_loc (MSG_MISSED_OPTIMIZATION, loc,
-			   "loop nest not optimized, code generation error\n");
-	else
-	  dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, loc,
-			   "loop nest optimized\n");
+	if (graphite_regenerate_ast_isl (scop))
+	  {
+	    location_t loc = find_loop_location
+	      (scops[i]->scop_info->region.entry->dest->loop_father);
+	    dump_printf_loc (MSG_OPTIMIZED_LOCATIONS, loc,
+			     "loop nest optimized\n");
+	  }
       }
 
   if (changed)
@@ -424,7 +453,6 @@ graphite_transform_loops (void)
       release_recorded_exits (cfun);
       tree_estimate_probability (false);
     }
-
 }
 
 #else /* If isl is not available: #ifndef HAVE_isl.  */

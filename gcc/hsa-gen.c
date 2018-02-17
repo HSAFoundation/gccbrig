@@ -1,5 +1,5 @@
 /* A pass for lowering gimple to HSAIL
-   Copyright (C) 2013-2017 Free Software Foundation, Inc.
+   Copyright (C) 2013-2018 Free Software Foundation, Inc.
    Contributed by Martin Jambor <mjambor@suse.cz> and
    Martin Liska <mliska@suse.cz>.
 
@@ -211,7 +211,7 @@ hsa_function_representation::hsa_function_representation
     m_seen_error (false), m_temp_symbol_count (0), m_ssa_map (),
     m_modified_cfg (modified_cfg)
 {
-  int sym_init_len = (vec_safe_length (cfun->local_decls) / 2) + 1;;
+  int sym_init_len = (vec_safe_length (cfun->local_decls) / 2) + 1;
   m_local_symbols = new hash_table <hsa_noop_symbol_hasher> (sym_init_len);
   m_ssa_map.safe_grow_cleared (ssa_names_count);
 }
@@ -932,9 +932,13 @@ get_symbol_for_decl (tree decl)
 	  else if (lookup_attribute ("hsa_group_segment",
 				     DECL_ATTRIBUTES (decl)))
 	    segment = BRIG_SEGMENT_GROUP;
-	  else if (TREE_STATIC (decl)
-		   || lookup_attribute ("hsa_global_segment",
-					DECL_ATTRIBUTES (decl)))
+	  else if (TREE_STATIC (decl))
+	    {
+	      segment = BRIG_SEGMENT_GLOBAL;
+	      allocation = BRIG_ALLOCATION_PROGRAM;
+	    }
+	  else if (lookup_attribute ("hsa_global_segment",
+				     DECL_ATTRIBUTES (decl)))
 	    segment = BRIG_SEGMENT_GLOBAL;
 	  else
 	    segment = BRIG_SEGMENT_PRIVATE;
@@ -1959,8 +1963,8 @@ gen_hsa_addr (tree ref, hsa_bb *hbb, HOST_WIDE_INT *output_bitsize = NULL,
       goto out;
     }
   else if (TREE_CODE (ref) == BIT_FIELD_REF
-	   && ((tree_to_uhwi (TREE_OPERAND (ref, 1)) % BITS_PER_UNIT) != 0
-	       || (tree_to_uhwi (TREE_OPERAND (ref, 2)) % BITS_PER_UNIT) != 0))
+	   && (!multiple_p (bit_field_size (ref), BITS_PER_UNIT)
+	       || !multiple_p (bit_field_offset (ref), BITS_PER_UNIT)))
     {
       HSA_SORRY_ATV (EXPR_LOCATION (origref),
 		     "support for HSA does not implement "
@@ -1972,12 +1976,22 @@ gen_hsa_addr (tree ref, hsa_bb *hbb, HOST_WIDE_INT *output_bitsize = NULL,
     {
       machine_mode mode;
       int unsignedp, volatilep, preversep;
+      poly_int64 pbitsize, pbitpos;
+      tree new_ref;
 
-      ref = get_inner_reference (ref, &bitsize, &bitpos, &varoffset, &mode,
-				 &unsignedp, &preversep, &volatilep);
-
-      offset = bitpos;
-      offset = wi::rshift (offset, LOG2_BITS_PER_UNIT, SIGNED);
+      new_ref = get_inner_reference (ref, &pbitsize, &pbitpos, &varoffset,
+				     &mode, &unsignedp, &preversep,
+				     &volatilep);
+      /* When this isn't true, the switch below will report an
+	 appropriate error.  */
+      if (pbitsize.is_constant () && pbitpos.is_constant ())
+	{
+	  bitsize = pbitsize.to_constant ();
+	  bitpos = pbitpos.to_constant ();
+	  ref = new_ref;
+	  offset = bitpos;
+	  offset = wi::rshift (offset, LOG2_BITS_PER_UNIT, SIGNED);
+	}
     }
 
   switch (TREE_CODE (ref))
@@ -4238,12 +4252,11 @@ gen_hsa_alloca (gcall *call, hsa_bb *hbb)
 
   built_in_function fn = DECL_FUNCTION_CODE (gimple_call_fndecl (call));
 
-  gcc_checking_assert (fn == BUILT_IN_ALLOCA
-		       || fn == BUILT_IN_ALLOCA_WITH_ALIGN);
+  gcc_checking_assert (ALLOCA_FUNCTION_CODE_P (fn));
 
   unsigned bit_alignment = 0;
 
-  if (fn == BUILT_IN_ALLOCA_WITH_ALIGN)
+  if (fn != BUILT_IN_ALLOCA)
     {
       tree alignment_tree = gimple_call_arg (call, 1);
       if (TREE_CODE (alignment_tree) != INTEGER_CST)
@@ -5656,8 +5669,7 @@ gen_hsa_insns_for_call (gimple *stmt, hsa_bb *hbb)
 
 	break;
       }
-    case BUILT_IN_ALLOCA:
-    case BUILT_IN_ALLOCA_WITH_ALIGN:
+    CASE_BUILT_IN_ALLOCA:
       {
 	gen_hsa_alloca (call, hbb);
 	break;
@@ -6271,7 +6283,7 @@ convert_switch_statements (void)
 	    tree label = gimple_switch_label (s, i);
 	    basic_block label_bb = label_to_block_fn (func, CASE_LABEL (label));
 	    edge e = find_edge (bb, label_bb);
-	    edge_counts.safe_push (e->count);
+	    edge_counts.safe_push (e->count ());
 	    edge_probabilities.safe_push (e->probability);
 	    gphi_iterator phi_gsi;
 
@@ -6361,7 +6373,6 @@ convert_switch_statements (void)
 	    if (prob_sum.initialized_p ())
 	      new_edge->probability = edge_probabilities[i] / prob_sum;
 
-	    new_edge->count = edge_counts[i];
 	    new_edges.safe_push (new_edge);
 
 	    if (i < labels - 1)
@@ -6377,10 +6388,7 @@ convert_switch_statements (void)
 
 		edge next_edge = make_edge (cur_bb, next_bb, EDGE_FALSE_VALUE);
 		next_edge->probability = new_edge->probability.invert ();
-		next_edge->count = edge_counts[0]
-		  + sum_slice <profile_count> (edge_counts, i, labels,
-					       profile_count::zero ());
-		next_bb->frequency = EDGE_FREQUENCY (next_edge);
+		next_bb->count = next_edge->count ();
 		cur_bb = next_bb;
 	      }
 	    else /* Link last IF statement and default label
@@ -6388,7 +6396,6 @@ convert_switch_statements (void)
 	      {
 		edge e = make_edge (cur_bb, default_label_bb, EDGE_FALSE_VALUE);
 		e->probability = new_edge->probability.invert ();
-		e->count = edge_counts[0];
 		new_edges.safe_insert (0, e);
 	      }
 	  }

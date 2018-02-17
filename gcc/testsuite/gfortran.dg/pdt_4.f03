@@ -26,7 +26,7 @@ end module
   integer, kind :: bad_kind    ! { dg-error "not allowed outside a TYPE definition" }
   integer, len :: bad_len      ! { dg-error "not allowed outside a TYPE definition" }
 
-  type :: bad_pdt (a,b, c, d)
+  type :: bad_pdt (a,b, c, d)  ! { dg-error "does not have a component" }
     real, kind :: a            ! { dg-error "must be INTEGER" }
     INTEGER(8), kind :: b      ! { dg-error "be default integer kind" }
     real, LEN :: c             ! { dg-error "must be INTEGER" }
@@ -96,7 +96,10 @@ contains
   subroutine foo(arg)
     type (mytype(4, *)) :: arg      ! OK
   end subroutine
-  subroutine bar(arg)               ! OK
+  subroutine bar(arg)               ! { dg-error "is neither allocatable nor a pointer" }
     type (thytype(8, :, 4) :: arg
+  end subroutine
+  subroutine foobar(arg)            ! OK
+    type (thytype(8, *, 4) :: arg
   end subroutine
 end

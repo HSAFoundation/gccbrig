@@ -1,5 +1,5 @@
 /* Language-level data type conversion for GNU C++.
-   Copyright (C) 1987-2017 Free Software Foundation, Inc.
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
    Hacked by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -238,6 +238,11 @@ cp_convert_to_pointer (tree type, tree expr, bool dofold,
 	 as a pointer.  */
       gcc_assert (GET_MODE_SIZE (SCALAR_INT_TYPE_MODE (TREE_TYPE (expr)))
 		  == GET_MODE_SIZE (SCALAR_INT_TYPE_MODE (type)));
+
+      /* FIXME needed because convert_to_pointer_maybe_fold still folds
+	 conversion of constants.  */
+      if (!dofold)
+	return build1 (CONVERT_EXPR, type, expr);
 
       return convert_to_pointer_maybe_fold (type, expr, dofold);
     }
@@ -691,7 +696,10 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
 
   /* FIXME remove when moving to c_fully_fold model.  */
   if (!CLASS_TYPE_P (type))
-    e = scalar_constant_value (e);
+    {
+      e = mark_rvalue_use (e);
+      e = scalar_constant_value (e);
+    }
   if (error_operand_p (e))
     return error_mark_node;
 
@@ -1642,7 +1650,7 @@ build_expr_type_conversion (int desires, tree expr, bool complain)
   tree conv = NULL_TREE;
   tree winner = NULL_TREE;
 
-  if (expr == null_node
+  if (null_node_p (expr)
       && (desires & WANT_INT)
       && !(desires & WANT_NULL))
     {
@@ -1834,12 +1842,27 @@ type_promotes_to (tree type)
 	   || type == char32_type_node
 	   || type == wchar_type_node)
     {
+      tree prom = type;
+
+      if (TREE_CODE (type) == ENUMERAL_TYPE)
+	{
+	  prom = ENUM_UNDERLYING_TYPE (prom);
+	  if (!ENUM_IS_SCOPED (type)
+	      && ENUM_FIXED_UNDERLYING_TYPE_P (type))
+	    {
+	      /* ISO C++17, 7.6/4.  A prvalue of an unscoped enumeration type
+		 whose underlying type is fixed (10.2) can be converted to a
+		 prvalue of its underlying type. Moreover, if integral promotion
+		 can be applied to its underlying type, a prvalue of an unscoped
+		 enumeration type whose underlying type is fixed can also be 
+		 converted to a prvalue of the promoted underlying type.  */
+	      return type_promotes_to (prom);
+	    }
+	}
+
       int precision = MAX (TYPE_PRECISION (type),
 			   TYPE_PRECISION (integer_type_node));
       tree totype = c_common_type_for_size (precision, 0);
-      tree prom = type;
-      if (TREE_CODE (prom) == ENUMERAL_TYPE)
-	prom = ENUM_UNDERLYING_TYPE (prom);
       if (TYPE_UNSIGNED (prom)
 	  && ! int_fits_type_p (TYPE_MAX_VALUE (prom), totype))
 	prom = c_common_type_for_size (precision, 1);

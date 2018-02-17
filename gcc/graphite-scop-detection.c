@@ -1,5 +1,5 @@
 /* Detection of Static Control Parts (SCoP) for Graphite.
-   Copyright (C) 2009-2017 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@amd.com> and
    Tobias Grosser <grosser@fim.uni-passau.de>.
 
@@ -81,7 +81,7 @@ public:
 #define DEBUG_PRINT(args) do \
     {								\
       if (dump_file && (dump_flags & TDF_DETAILS)) { args; }	\
-    } while (0);
+    } while (0)
 
 /* Pretty print to FILE all the SCoPs in DOT format and mark them with
    different colors.  If there are not enough colors, paint the
@@ -309,16 +309,6 @@ public:
 
   sese_l get_sese (loop_p loop);
 
-  /* Return the closest dominator with a single entry edge.  In case of a
-     back-loop the back-edge is not counted.  */
-
-  static edge get_nearest_dom_with_single_entry (basic_block dom);
-
-  /* Return the closest post-dominator with a single exit edge.  In case of a
-     back-loop the back-edge is not counted.  */
-
-  static edge get_nearest_pdom_with_single_exit (basic_block dom);
-
   /* Merge scops at same loop depth and returns the new sese.
      Returns a new SESE when merge was successful, INVALID_SESE otherwise.  */
 
@@ -428,96 +418,10 @@ scop_detection::get_sese (loop_p loop)
 
   edge scop_begin = loop_preheader_edge (loop);
   edge scop_end = single_exit (loop);
-  if (!scop_end || (scop_end->flags & EDGE_COMPLEX))
+  if (!scop_end || (scop_end->flags & (EDGE_COMPLEX|EDGE_FAKE)))
     return invalid_sese;
-  /* Include the BB with the loop-closed SSA PHI nodes.
-     canonicalize_loop_closed_ssa makes sure that is in proper shape.  */
-  if (! single_pred_p (scop_end->dest)
-      || ! single_succ_p (scop_end->dest)
-      || ! sese_trivially_empty_bb_p (scop_end->dest))
-    gcc_unreachable ();
-  scop_end = single_succ_edge (scop_end->dest);
 
   return sese_l (scop_begin, scop_end);
-}
-
-/* Return the closest dominator with a single entry edge.  */
-
-edge
-scop_detection::get_nearest_dom_with_single_entry (basic_block dom)
-{
-  if (!dom->preds)
-    return NULL;
-
-  /* If any of the dominators has two predecessors but one of them is a back
-     edge, then that basic block also qualifies as a dominator with single
-     entry.  */
-  if (dom->preds->length () == 2)
-    {
-      /* If e1->src dominates e2->src then e1->src will also dominate dom.  */
-      edge e1 = (*dom->preds)[0];
-      edge e2 = (*dom->preds)[1];
-      loop_p l = dom->loop_father;
-      loop_p l1 = e1->src->loop_father;
-      loop_p l2 = e2->src->loop_father;
-      if (l != l1 && l == l2
-	  && dominated_by_p (CDI_DOMINATORS, e2->src, e1->src))
-	return e1;
-      if (l != l2 && l == l1
-	  && dominated_by_p (CDI_DOMINATORS, e1->src, e2->src))
-	return e2;
-    }
-
-  while (dom->preds->length () != 1)
-    {
-      if (dom->preds->length () < 1)
-	return NULL;
-      dom = get_immediate_dominator (CDI_DOMINATORS, dom);
-      if (!dom->preds)
-	return NULL;
-    }
-  return (*dom->preds)[0];
-}
-
-/* Return the closest post-dominator with a single exit edge.  In case of a
-   back-loop the back-edge is not counted.  */
-
-edge
-scop_detection::get_nearest_pdom_with_single_exit (basic_block pdom)
-{
-  if (!pdom->succs)
-    return NULL;
-
-  /* If any of the post-dominators has two successors but one of them is a back
-     edge, then that basic block also qualifies as a post-dominator with single
-     exit. */
-  if (pdom->succs->length () == 2)
-    {
-      /* If e1->dest post-dominates e2->dest then e1->dest will also
-	 post-dominate pdom.  */
-      edge e1 = (*pdom->succs)[0];
-      edge e2 = (*pdom->succs)[1];
-      loop_p l = pdom->loop_father;
-      loop_p l1 = e1->dest->loop_father;
-      loop_p l2 = e2->dest->loop_father;
-      if (l != l1 && l == l2
-	  && dominated_by_p (CDI_POST_DOMINATORS, e2->dest, e1->dest))
-	return e1;
-      if (l != l2 && l == l1
-	  && dominated_by_p (CDI_POST_DOMINATORS, e1->dest, e2->dest))
-	return e2;
-    }
-
-  while (pdom->succs->length () != 1)
-    {
-      if (pdom->succs->length () < 1)
-	return NULL;
-      pdom = get_immediate_dominator (CDI_POST_DOMINATORS, pdom);
-      if (!pdom->succs)
-	return NULL;
-    }
-
-  return (*pdom->succs)[0];
 }
 
 /* Merge scops at same loop depth and returns the new sese.
@@ -537,73 +441,66 @@ scop_detection::merge_sese (sese_l first, sese_l second) const
 	       dp << "[scop-detection] try merging sese s2: ";
 	       print_sese (dump_file, second));
 
-  /* Assumption: Both the sese's should be at the same loop depth or one scop
-     should subsume the other like in case of nested loops.  */
+  auto_bitmap worklist, in_sese_region;
+  bitmap_set_bit (worklist, get_entry_bb (first)->index);
+  bitmap_set_bit (worklist, get_exit_bb (first)->index);
+  bitmap_set_bit (worklist, get_entry_bb (second)->index);
+  bitmap_set_bit (worklist, get_exit_bb (second)->index);
+  edge entry = NULL, exit = NULL;
 
-  /* Find the common dominators for entry,
-     and common post-dominators for the exit.  */
-  basic_block dom = nearest_common_dominator (CDI_DOMINATORS,
-					      get_entry_bb (first),
-					      get_entry_bb (second));
+  /* We can optimize the case of adding a loop entry dest or exit
+     src to the worklist (for single-exit loops) by skipping
+     directly to the exit dest / entry src.  in_sese_region
+     doesn't have to cover all blocks in the region but merely
+     its border it acts more like a visited bitmap.  */
+  do
+    {
+      int index = bitmap_first_set_bit (worklist);
+      bitmap_clear_bit (worklist, index);
+      basic_block bb = BASIC_BLOCK_FOR_FN (cfun, index);
+      edge_iterator ei;
+      edge e;
 
-  edge entry = get_nearest_dom_with_single_entry (dom);
+      /* With fake exit edges we can end up with no possible exit.  */
+      if (index == EXIT_BLOCK)
+	{
+	  DEBUG_PRINT (dp << "[scop-detection-fail] cannot merge seses.\n");
+	  return invalid_sese;
+	}
 
-  if (!entry || (entry->flags & EDGE_IRREDUCIBLE_LOOP))
-    return invalid_sese;
+      bitmap_set_bit (in_sese_region, bb->index);
+         
+      basic_block dom = get_immediate_dominator (CDI_DOMINATORS, bb);
+      FOR_EACH_EDGE (e, ei, bb->preds)
+	if (e->src == dom
+	    && (! entry
+		|| dominated_by_p (CDI_DOMINATORS, entry->dest, bb)))
+	  {
+	    if (entry
+		&& ! bitmap_bit_p (in_sese_region, entry->src->index))
+	      bitmap_set_bit (worklist, entry->src->index);
+	    entry = e;
+	  }
+	else if (! bitmap_bit_p (in_sese_region, e->src->index))
+	  bitmap_set_bit (worklist, e->src->index);
 
-  basic_block pdom = nearest_common_dominator (CDI_POST_DOMINATORS,
-					       get_exit_bb (first),
-					       get_exit_bb (second));
-  pdom = nearest_common_dominator (CDI_POST_DOMINATORS, dom, pdom);
-
-  edge exit = get_nearest_pdom_with_single_exit (pdom);
-
-  if (!exit || (exit->flags & EDGE_IRREDUCIBLE_LOOP))
-    return invalid_sese;
+      basic_block pdom = get_immediate_dominator (CDI_POST_DOMINATORS, bb);
+      FOR_EACH_EDGE (e, ei, bb->succs)
+	if (e->dest == pdom
+	    && (! exit
+		|| dominated_by_p (CDI_POST_DOMINATORS, exit->src, bb)))
+	  {
+	    if (exit
+		&& ! bitmap_bit_p (in_sese_region, exit->dest->index))
+	      bitmap_set_bit (worklist, exit->dest->index);
+	    exit = e;
+	  }
+	else if (! bitmap_bit_p (in_sese_region, e->dest->index))
+	  bitmap_set_bit (worklist, e->dest->index);
+    }
+  while (! bitmap_empty_p (worklist));
 
   sese_l combined (entry, exit);
-
-  DEBUG_PRINT (dp << "[scop-detection] checking combined sese: ";
-	       print_sese (dump_file, combined));
-
-  /* FIXME: We could iterate to find the dom which dominates pdom, and pdom
-     which post-dominates dom, until it stabilizes.  Also, ENTRY->SRC and
-     EXIT->DEST should be in the same loop nest.  */
-  if (!dominated_by_p (CDI_DOMINATORS, pdom, dom)
-      || loop_depth (entry->src->loop_father)
-	 != loop_depth (exit->dest->loop_father))
-    return invalid_sese;
-
-  /* For now we just bail out when there is a loop exit in the region
-     that is not also the exit of the region.  We could enlarge the
-     region to cover the loop that region exits to.  See PR79977.  */
-  if (loop_outer (entry->src->loop_father))
-    {
-      vec<edge> exits = get_loop_exit_edges (entry->src->loop_father);
-      for (unsigned i = 0; i < exits.length (); ++i)
-	{
-	  if (exits[i] != exit
-	      && bb_in_region (exits[i]->src, entry->dest, exit->src))
-	    {
-	      DEBUG_PRINT (dp << "[scop-detection-fail] cannot merge seses.\n");
-	      exits.release ();
-	      return invalid_sese;
-	    }
-	}
-      exits.release ();
-    }
-
-  /* For now we just want to bail out when exit does not post-dominate entry.
-     TODO: We might just add a basic_block at the exit to make exit
-     post-dominate entry (the entire region).  */
-  if (!dominated_by_p (CDI_POST_DOMINATORS, get_entry_bb (combined),
-		       get_exit_bb (combined))
-      || !dominated_by_p (CDI_DOMINATORS, get_exit_bb (combined),
-			  get_entry_bb (combined)))
-    {
-      DEBUG_PRINT (dp << "[scop-detection-fail] cannot merge seses.\n");
-      return invalid_sese;
-    }
 
   DEBUG_PRINT (dp << "[merged-sese] s1: "; print_sese (dump_file, combined));
 
@@ -693,6 +590,18 @@ scop_detection::add_scop (sese_l s)
 {
   gcc_assert (s);
 
+  /* Include the BB with the loop-closed SSA PHI nodes, we need this
+     block in the region for code-generating out-of-SSA copies.
+     canonicalize_loop_closed_ssa makes sure that is in proper shape.  */
+  if (s.exit->dest != EXIT_BLOCK_PTR_FOR_FN (cfun)
+      && loop_exit_edge_p (s.exit->src->loop_father, s.exit))
+    {
+      gcc_assert (single_pred_p (s.exit->dest)
+		  && single_succ_p (s.exit->dest)
+		  && sese_trivially_empty_bb_p (s.exit->dest));
+      s.exit = single_succ_edge (s.exit->dest);
+    }
+
   /* Do not add scops with only one loop.  */
   if (region_has_one_loop (s))
     {
@@ -768,10 +677,10 @@ scop_detection::harmful_loop_in_region (sese_l scop) const
 	if (!stmt_simple_for_scop_p (scop, gsi_stmt (gsi), bb))
 	  return true;
 
-      if (bb != exit_bb)
-	for (basic_block dom = first_dom_son (CDI_DOMINATORS, bb);
-	     dom;
-	     dom = next_dom_son (CDI_DOMINATORS, dom))
+      for (basic_block dom = first_dom_son (CDI_DOMINATORS, bb);
+	   dom;
+	   dom = next_dom_son (CDI_DOMINATORS, dom))
+	if (dom != scop.exit->dest)
 	  worklist.safe_push (dom);
     }
 
@@ -1005,15 +914,10 @@ scop_detection::graphite_can_represent_expr (sese_l scop, loop_p loop,
 bool
 scop_detection::stmt_has_simple_data_refs_p (sese_l scop, gimple *stmt)
 {
-  edge nest;
+  edge nest = scop.entry;
   loop_p loop = loop_containing_stmt (stmt);
   if (!loop_in_sese_p (loop, scop))
-    {
-      nest = scop.entry;
-      loop = NULL;
-    }
-  else
-    nest = loop_preheader_edge (outermost_loop_in_sese (scop, gimple_bb (stmt)));
+    loop = NULL;
 
   auto_vec<data_reference_p> drs;
   if (! graphite_find_data_references_in_stmt (nest, loop, stmt, &drs))
@@ -1108,7 +1012,7 @@ scop_detection::stmt_simple_for_scop_p (sese_l scop, gimple *stmt,
 	    tree op = gimple_op (stmt, i);
 	    if (!graphite_can_represent_expr (scop, loop, op)
 		/* We can only constrain on integer type.  */
-		|| (TREE_CODE (TREE_TYPE (op)) != INTEGER_TYPE))
+		|| ! INTEGRAL_TYPE_P (TREE_TYPE (op)))
 	      {
 		DEBUG_PRINT (dp << "[scop-detection-fail] "
 				<< "Graphite cannot represent stmt:\n";
@@ -1123,7 +1027,23 @@ scop_detection::stmt_simple_for_scop_p (sese_l scop, gimple *stmt,
 
     case GIMPLE_ASSIGN:
     case GIMPLE_CALL:
-      return true;
+      {
+	tree op;
+	ssa_op_iter i;
+	/* Verify that if we can analyze operands at their def site we
+	   also can represent them when analyzed at their uses.  */
+	FOR_EACH_SSA_TREE_OPERAND (op, stmt, i, SSA_OP_USE)
+	  if (scev_analyzable_p (op, scop)
+	      && !graphite_can_represent_expr (scop, bb->loop_father, op))
+	    {
+	      DEBUG_PRINT (dp << "[scop-detection-fail] "
+			   << "Graphite cannot represent stmt:\n";
+			   print_gimple_stmt (dump_file, stmt, 0,
+					      TDF_VOPS | TDF_MEMSYMS));
+	      return false;
+	    }
+	return true;
+      }
 
     default:
       /* These nodes cut a new scope.  */
@@ -1151,49 +1071,23 @@ scop_detection::nb_pbbs_in_loops (scop_p scop)
   return res;
 }
 
-/* When parameter NAME is in REGION, returns its index in SESE_PARAMS.
-   Otherwise returns -1.  */
+/* Assigns the parameter NAME an index in REGION.  */
 
-static inline int
-parameter_index_in_region_1 (tree name, sese_info_p region)
+static void
+assign_parameter_index_in_region (tree name, sese_info_p region)
 {
+  gcc_assert (TREE_CODE (name) == SSA_NAME
+	      && INTEGRAL_TYPE_P (TREE_TYPE (name))
+	      && ! defined_in_sese_p (name, region->region));
+
   int i;
   tree p;
-
-  gcc_assert (TREE_CODE (name) == SSA_NAME);
-
   FOR_EACH_VEC_ELT (region->params, i, p)
     if (p == name)
-      return i;
-
-  return -1;
-}
-
-/* When the parameter NAME is in REGION, returns its index in
-   SESE_PARAMS.  Otherwise this function inserts NAME in SESE_PARAMS
-   and returns the index of NAME.  */
-
-static int
-parameter_index_in_region (tree name, sese_info_p region)
-{
-  int i;
-
-  gcc_assert (TREE_CODE (name) == SSA_NAME);
-
-  /* Cannot constrain on anything else than INTEGER_TYPE parameters.  */
-  if (TREE_CODE (TREE_TYPE (name)) != INTEGER_TYPE)
-    return -1;
-
-  if (!invariant_in_sese_p_rec (name, region->region, NULL))
-    return -1;
-
-  i = parameter_index_in_region_1 (name, region);
-  if (i != -1)
-    return i;
+      return;
 
   i = region->params.length ();
   region->params.safe_push (name);
-  return i;
 }
 
 /* In the context of sese S, scan the expression E and translate it to
@@ -1235,7 +1129,7 @@ scan_tree_for_params (sese_info_p s, tree e)
       break;
 
     case SSA_NAME:
-      parameter_index_in_region (e, s);
+      assign_parameter_index_in_region (e, s);
       break;
 
     case INTEGER_CST:
@@ -1381,15 +1275,10 @@ try_generate_gimple_bb (scop_p scop, basic_block bb)
   vec<scalar_use> reads = vNULL;
 
   sese_l region = scop->scop_info->region;
-  edge nest;
+  edge nest = region.entry;
   loop_p loop = bb->loop_father;
   if (!loop_in_sese_p (loop, region))
-    {
-      nest = region.entry;
-      loop = NULL;
-    }
-  else
-    nest = loop_preheader_edge (outermost_loop_in_sese (region, bb));
+    loop = NULL;
 
   for (gimple_stmt_iterator gsi = gsi_start_bb (bb); !gsi_end_p (gsi);
        gsi_next (&gsi))
@@ -1551,7 +1440,7 @@ private:
 };
 }
 gather_bbs::gather_bbs (cdi_direction direction, scop_p scop, int *bb_to_rpo)
-  : dom_walker (direction, false, bb_to_rpo), scop (scop)
+  : dom_walker (direction, ALL_BLOCKS, bb_to_rpo), scop (scop)
 {
 }
 
@@ -1580,18 +1469,19 @@ gather_bbs::before_dom_children (basic_block bb)
 	}
     }
 
-  gcond *stmt = single_pred_cond_non_loop_exit (bb);
-
-  if (stmt)
+  if (gcond *stmt = single_pred_cond_non_loop_exit (bb))
     {
       edge e = single_pred_edge (bb);
-
-      conditions.safe_push (stmt);
-
-      if (e->flags & EDGE_TRUE_VALUE)
-	cases.safe_push (stmt);
-      else
-	cases.safe_push (NULL);
+      /* Make sure the condition is in the region and thus was verified
+         to be handled.  */
+      if (e != region->region.entry)
+	{
+	  conditions.safe_push (stmt);
+	  if (e->flags & EDGE_TRUE_VALUE)
+	    cases.safe_push (stmt);
+	  else
+	    cases.safe_push (NULL);
+	}
     }
 
   scop->scop_info->bbs.safe_push (bb);
@@ -1636,8 +1526,12 @@ gather_bbs::after_dom_children (basic_block bb)
 
   if (single_pred_cond_non_loop_exit (bb))
     {
-      conditions.pop ();
-      cases.pop ();
+      edge e = single_pred_edge (bb);
+      if (e != scop->scop_info->region.entry)
+	{
+	  conditions.pop ();
+	  cases.pop ();
+	}
     }
 }
 
@@ -1645,26 +1539,7 @@ gather_bbs::after_dom_children (basic_block bb)
 /* Compute sth like an execution order, dominator order with first executing
    edges that stay inside the current loop, delaying processing exit edges.  */
 
-static vec<unsigned> order;
-
-static void
-get_order (scop_p scop, basic_block bb, vec<unsigned> *order, unsigned *dfs_num)
-{
-  if (! bb_in_sese_p (bb, scop->scop_info->region))
-    return;
-
-  (*order)[bb->index] = (*dfs_num)++;
-  for (basic_block son = first_dom_son (CDI_DOMINATORS, bb);
-       son;
-       son = next_dom_son (CDI_DOMINATORS, son))
-    if (flow_bb_inside_loop_p (bb->loop_father, son))
-      get_order (scop, son, order, dfs_num);
-  for (basic_block son = first_dom_son (CDI_DOMINATORS, bb);
-       son;
-       son = next_dom_son (CDI_DOMINATORS, son))
-    if (! flow_bb_inside_loop_p (bb->loop_father, son))
-      get_order (scop, son, order, dfs_num);
-}
+static int *bb_to_rpo;
 
 /* Helper for qsort, sorting after order above.  */
 
@@ -1673,9 +1548,11 @@ cmp_pbbs (const void *pa, const void *pb)
 {
   poly_bb_p bb1 = *((const poly_bb_p *)pa);
   poly_bb_p bb2 = *((const poly_bb_p *)pb);
-  if (order[bb1->black_box->bb->index] < order[bb2->black_box->bb->index])
+  if (bb_to_rpo[bb1->black_box->bb->index]
+      < bb_to_rpo[bb2->black_box->bb->index])
     return -1;
-  else if (order[bb1->black_box->bb->index] > order[bb2->black_box->bb->index])
+  else if (bb_to_rpo[bb1->black_box->bb->index]
+	   > bb_to_rpo[bb2->black_box->bb->index])
     return 1;
   else
     return 0;
@@ -1699,7 +1576,7 @@ build_scops (vec<scop_p> *scops)
   /* Domwalk needs a bb to RPO mapping.  Compute it once here.  */
   int *postorder = XNEWVEC (int, n_basic_blocks_for_fn (cfun));
   int postorder_num = pre_and_rev_post_order_compute (NULL, postorder, true);
-  int *bb_to_rpo = XNEWVEC (int, last_basic_block_for_fn (cfun));
+  bb_to_rpo = XNEWVEC (int, last_basic_block_for_fn (cfun));
   for (int i = 0; i < postorder_num; ++i)
     bb_to_rpo[postorder[i]] = i;
   free (postorder);
@@ -1708,25 +1585,13 @@ build_scops (vec<scop_p> *scops)
   sese_l *s;
   FOR_EACH_VEC_ELT (scops_l, i, s)
     {
-      /* For our out-of-SSA we need a block on s->entry, similar to how
-         we include the LCSSA block in the region.  */
-      s->entry = single_pred_edge (split_edge (s->entry));
-
       scop_p scop = new_scop (s->entry, s->exit);
 
       /* Record all basic blocks and their conditions in REGION.  */
       gather_bbs (CDI_DOMINATORS, scop, bb_to_rpo).walk (s->entry->dest);
 
-      /* domwalk does not fulfil our code-generations constraints on the
-         order of pbb which is to produce sth like execution order, delaying
-	 exection of loop exit edges.  So compute such order and sort after
-	 that.  */
-      order.create (last_basic_block_for_fn (cfun));
-      order.quick_grow (last_basic_block_for_fn (cfun));
-      unsigned dfs_num = 0;
-      get_order (scop, s->entry->dest, &order, &dfs_num);
+      /* Sort pbbs after execution order for initial schedule generation.  */
       scop->pbbs.qsort (cmp_pbbs);
-      order.release ();
 
       if (! build_alias_set (scop))
 	{
@@ -1773,6 +1638,7 @@ build_scops (vec<scop_p> *scops)
     }
 
   free (bb_to_rpo);
+  bb_to_rpo = NULL;
   DEBUG_PRINT (dp << "number of SCoPs: " << (scops ? scops->length () : 0););
 }
 
