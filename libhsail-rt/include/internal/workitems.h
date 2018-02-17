@@ -96,17 +96,18 @@ typedef struct
 
 typedef struct
 {
+  /* The local id of the current WI.  NOTE: These members should not be moved
+     as they are accessed directly by the code emitted by the BRIG FE.  */
+  uint32_t x;
+  uint32_t y;
+  uint32_t z;
   PHSAKernelLaunchData *launch_data;
   /* Identifies and keeps book of the currently executed WG of the WI swarm.  */
   volatile PHSAWorkGroup *wg;
-  /* The local id of the current WI.  */
-  size_t x;
-  size_t y;
-  size_t z;
 #ifdef HAVE_FIBERS
   fiber_t fiber;
 #endif
-} PHSAWorkItem;
+} __attribute__((packed)) PHSAWorkItem;
 
 
 #endif

@@ -44,6 +44,7 @@
 #include "function.h"
 #include "brig-to-generic.h"
 #include "brig-builtins.h"
+#include "options.h"
 
 brig_function::brig_function (const BrigDirectiveExecutable *exec,
 			      brig_to_generic *parent)
@@ -379,16 +380,29 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   if (m_has_unexpanded_dp_builtins)
     {
-      tree id_set_builtin
-	= builtin_decl_explicit (BUILT_IN_HSAIL_SETWORKITEMID);
-      /* Set the local ID to the current wi-loop iteration variable value to
-	 ensure the builtins see the correct values.  */
-      tree id_set_call
-	= call_builtin (id_set_builtin, 3,
-			void_type_node, uint32_type_node,
-			build_int_cst (uint32_type_node, dim), uint32_type_node,
-			ivar, ptr_type_node, m_context_arg);
-      tsi_link_after (&entry, id_set_call, TSI_NEW_STMT);
+      if (!flag_phsa_wi_context_opt)
+	{
+	  tree id_set_builtin
+	    = builtin_decl_explicit (BUILT_IN_HSAIL_SETWORKITEMID);
+	  /* Set the local ID to the current wi-loop iteration variable value
+	     to ensure the builtins see the correct values.  */
+	  tree id_set_call
+	    = call_builtin (id_set_builtin, 3,
+			    void_type_node, uint32_type_node,
+			    build_int_cst (uint32_type_node, dim),
+			    uint32_type_node, ivar, ptr_type_node,
+			    m_context_arg);
+	  tsi_link_after (&entry, id_set_call, TSI_NEW_STMT);
+	}
+      else
+	{
+	  tree ptr_type = build_pointer_type (uint32_type_node);
+	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
+			     build_int_cst (ptr_type, dim * 4));
+	  tree assign = build2 (MODIFY_EXPR, uint32_type_node, ctx, ivar);
+
+	  tsi_link_after (&entry, assign, TSI_NEW_STMT);
+	}
     }
 
   /* Increment the WI iteration variable.  */
