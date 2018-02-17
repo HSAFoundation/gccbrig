@@ -549,29 +549,36 @@ brig_function::emit_launcher_and_metadata ()
   tree name_identifier
     = get_identifier_with_length (kern_name.c_str (), kern_name.size ());
 
+  tree restrict_void_ptr
+    = build_qualified_type (build_pointer_type (void_type_node),
+			    TYPE_QUAL_RESTRICT);
+  tree restrict_char_ptr
+    = build_qualified_type (build_pointer_type (char_type_node),
+			    TYPE_QUAL_RESTRICT);
   tree launcher
     = build_decl (UNKNOWN_LOCATION, FUNCTION_DECL, name_identifier,
-		  build_function_type_list (void_type_node, ptr_type_node,
-					    ptr_type_node, NULL_TREE));
+		  build_function_type_list (void_type_node, restrict_void_ptr,
+					    restrict_char_ptr, NULL_TREE));
 
   TREE_USED (launcher) = 1;
   DECL_ARTIFICIAL (launcher) = 1;
 
   tree context_arg = build_decl (UNKNOWN_LOCATION, PARM_DECL,
-				 get_identifier ("__context"), ptr_type_node);
+				 get_identifier ("__context"),
+				 restrict_void_ptr);
 
   DECL_ARGUMENTS (launcher) = context_arg;
-  DECL_ARG_TYPE (context_arg) = ptr_type_node;
+  DECL_ARG_TYPE (context_arg) = restrict_void_ptr;
   DECL_CONTEXT (context_arg) = launcher;
   TREE_USED (context_arg) = 1;
   DECL_ARTIFICIAL (context_arg) = 1;
 
   tree group_base_addr_arg
     = build_decl (UNKNOWN_LOCATION, PARM_DECL,
-		  get_identifier ("__group_base_addr"), ptr_type_node);
+		  get_identifier ("__group_base_addr"), restrict_char_ptr);
 
   chainon (DECL_ARGUMENTS (launcher), group_base_addr_arg);
-  DECL_ARG_TYPE (group_base_addr_arg) = ptr_type_node;
+  DECL_ARG_TYPE (group_base_addr_arg) = restrict_char_ptr;
   DECL_CONTEXT (group_base_addr_arg) = launcher;
   TREE_USED (group_base_addr_arg) = 1;
   DECL_ARTIFICIAL (group_base_addr_arg) = 1;
@@ -649,15 +656,15 @@ brig_function::emit_launcher_and_metadata ()
     phsail_launch_kernel_call
       = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_LAUNCH_WG_FUNC),
 		      4, void_type_node,
-		      ptr_type_node, kernel_func_ptr, ptr_type_node,
-		      context_arg, ptr_type_node, group_base_addr_arg,
+		      ptr_type_node, kernel_func_ptr, restrict_void_ptr,
+		      context_arg, restrict_char_ptr, group_base_addr_arg,
 		      uint32_type_node, group_local_offset_arg);
   else
     phsail_launch_kernel_call
       = call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_LAUNCH_KERNEL),
 		      4, void_type_node,
-		      ptr_type_node, kernel_func_ptr, ptr_type_node,
-		      context_arg, ptr_type_node, group_base_addr_arg,
+		      ptr_type_node, kernel_func_ptr, restrict_void_ptr,
+		      context_arg, restrict_char_ptr, group_base_addr_arg,
 		      uint32_type_node, group_local_offset_arg);
 
   append_to_statement_list_force (phsail_launch_kernel_call, &stmt_list);
