@@ -712,8 +712,6 @@ brig_to_generic::finish_function ()
       m_cf->finish ();
       m_cf->emit_metadata (stmts);
       dump_function (m_dump_file, m_cf);
-      gimplify_function_tree (m_cf->m_func_decl);
-      cgraph_node::finalize_function (m_cf->m_func_decl, true);
     }
   else
     /* Emit the kernel only at the very end so we can analyze the total
@@ -878,6 +876,20 @@ brig_to_generic::write_globals ()
 	      && TREE_CODE (TREE_OPERAND (decl_call, 0)) == FUNCTION_DECL)
 	    TREE_OPERAND (decl_call, 0) = brig_function->m_func_decl;
 	}
+    }
+
+  for (std::map<std::string, brig_function *>::iterator i
+	 = m_finished_functions.begin(), e = m_finished_functions.end();
+       i != e; ++i)
+    {
+      brig_function *brig_f = (*i).second;
+      if (brig_f->m_is_kernel)
+	continue;
+
+      /* Finalize only at this point to allow the cgraph analysis to
+	 see definitions to calls to later functions.  */
+      gimplify_function_tree (brig_f->m_func_decl);
+      cgraph_node::finalize_function (brig_f->m_func_decl, true);
     }
 
   /* Now that the whole BRIG module has been processed, build a launcher
