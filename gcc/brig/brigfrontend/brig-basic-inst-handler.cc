@@ -105,7 +105,8 @@ brig_basic_inst_handler::build_shuffle (tree arith_type,
   /* Unpack the tightly packed mask elements to BIT_FIELD_REFs
      from which to construct the mask vector as understood by
      VEC_PERM_EXPR.  */
-  tree mask_operand = add_temp_var ("shuffle_mask", operands[2]);
+  tree mask_operand
+    = m_parent.m_cf->add_temp_var ("shuffle_mask", operands[2]);
 
   tree mask_element_type
     = build_nonstandard_integer_type (input_mask_element_size, true);
@@ -219,10 +220,11 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
   tree wide_type = build_nonstandard_integer_type (vecsize, 1);
 
   tree src_vect = build_resize_convert_view (wide_type, operands[0]);
-  src_vect = add_temp_var ("src_vect", src_vect);
+  src_vect = m_parent.m_cf->add_temp_var ("src_vect", src_vect);
 
   tree scalar = operands[1];
-  scalar = add_temp_var ("scalar", convert_to_integer (wide_type, scalar));
+  scalar = m_parent.m_cf->add_temp_var ("scalar",
+					convert_to_integer (wide_type, scalar));
 
   tree pos = operands[2];
 
@@ -230,21 +232,22 @@ brig_basic_inst_handler::build_pack (tree_stl_vec &operands)
      Zero them for well-defined semantics.  */
   tree t = build2 (BIT_AND_EXPR, TREE_TYPE (pos), operands[2],
 		   build_int_cstu (TREE_TYPE (pos), ecount - 1));
-  pos = add_temp_var ("pos", convert (wide_type, t));
+  pos = m_parent.m_cf->add_temp_var ("pos", convert (wide_type, t));
 
   tree element_type = TREE_TYPE (TREE_TYPE (operands[0]));
   size_t element_width = int_size_in_bytes (element_type) * BITS_PER_UNIT;
   tree ewidth = build_int_cstu (wide_type, element_width);
 
   tree bitoffset = build2 (MULT_EXPR, wide_type, ewidth, pos);
-  bitoffset = add_temp_var ("offset", bitoffset);
+  bitoffset = m_parent.m_cf->add_temp_var ("offset", bitoffset);
 
   uint64_t mask_int
     = element_width == 64 ? (uint64_t) -1 : ((uint64_t) 1 << element_width) - 1;
 
   tree mask = build_int_cstu (wide_type, mask_int);
 
-  mask = add_temp_var ("mask", convert_to_integer (wide_type, mask));
+  mask = m_parent.m_cf->add_temp_var ("mask",
+				      convert_to_integer (wide_type, mask));
 
   tree clearing_mask
     = build1 (BIT_NOT_EXPR, wide_type,
@@ -311,7 +314,8 @@ brig_basic_inst_handler::build_inst_expr (BrigOpcode16_t brig_opcode,
 					  tree arith_type,
 					  tree_stl_vec &operands)
 {
-  tree_code opcode = get_tree_code_for_hsa_opcode (brig_opcode, brig_type);
+  tree_code opcode
+    = brig_function::get_tree_code_for_hsa_opcode (brig_opcode, brig_type);
 
   BrigType16_t inner_type = brig_type & BRIG_TYPE_BASE_MASK;
 
@@ -388,8 +392,8 @@ brig_basic_inst_handler::build_inst_expr (BrigOpcode16_t brig_opcode,
 	     on which cannot be used in general to remain HSAIL compliant.
 	     Perhaps a builtin call would be better option here.  */
 	  return build2 (RDIV_EXPR, arith_type, build_one_cst (arith_type),
-			 expand_or_call_builtin (BRIG_OPCODE_SQRT, brig_type,
-						 arith_type, operands));
+			 m_parent.m_cf->expand_or_call_builtin
+			 (BRIG_OPCODE_SQRT, brig_type, arith_type, operands));
 	}
       else if (brig_opcode == BRIG_OPCODE_NRCP)
 	{
@@ -410,8 +414,8 @@ brig_basic_inst_handler::build_inst_expr (BrigOpcode16_t brig_opcode,
 	gcc_unreachable ();
     }
   else if (opcode == CALL_EXPR)
-    return expand_or_call_builtin (brig_opcode, brig_type, arith_type,
-				   operands);
+    return m_parent.m_cf->expand_or_call_builtin (brig_opcode, brig_type,
+						  arith_type, operands);
   else if (output_count == 1)
     {
       if (input_count == 1)
@@ -520,7 +524,8 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
     in_operands[0] = build_lower_element_broadcast (in_operands[0]);
 
   tree_code opcode
-    = get_tree_code_for_hsa_opcode (brig_inst->opcode, brig_inst_type);
+    = brig_function::get_tree_code_for_hsa_opcode (brig_inst->opcode,
+						   brig_inst_type);
 
   if (p >= BRIG_PACK_PPSAT && p <= BRIG_PACK_PSAT)
     {
@@ -566,11 +571,11 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
       */
       tree_stl_vec operand0_elements;
       if (input_count > 0)
-	unpack (in_operands[0], operand0_elements);
+	m_parent.m_cf->unpack (in_operands[0], operand0_elements);
 
       tree_stl_vec operand1_elements;
       if (input_count > 1)
-	unpack (in_operands[1], operand1_elements);
+	m_parent.m_cf->unpack (in_operands[1], operand1_elements);
 
       tree_stl_vec result_elements;
 
@@ -617,7 +622,7 @@ brig_basic_inst_handler::operator () (const BrigBase *base)
 
 	  result_elements.push_back (convert (scalar_type, scalar_expr));
 	}
-      instr_expr = pack (result_elements);
+      instr_expr = m_parent.m_cf->pack (result_elements);
     }
   else
     {
