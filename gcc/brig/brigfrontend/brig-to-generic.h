@@ -233,6 +233,8 @@ tree get_unsigned_int_type (tree type);
 tree get_scalar_unsigned_int_type (tree type);
 void set_externally_visible (tree decl);
 
+void set_inline (tree decl);
+
 void dump_function (FILE *dump_file, brig_function *f);
 
 #endif
