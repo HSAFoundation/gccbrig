@@ -923,6 +923,17 @@ brig_to_generic::write_globals ()
 
       append_global (launcher);
 
+      if (m_dump_file)
+	{
+	  std::string kern_name = f->m_name.substr (1);
+	  fprintf (m_dump_file, "\n;; Function %s", kern_name.c_str());
+	  fprintf (m_dump_file, "\n;; enabled by -%s\n\n",
+		   dump_flag_name (TDI_original));
+	  print_generic_decl (m_dump_file, launcher, 0);
+	  print_generic_expr (m_dump_file, DECL_SAVED_TREE (launcher), 0);
+	  fprintf (m_dump_file, "\n");
+	}
+
       gimplify_function_tree (launcher);
       cgraph_node::finalize_function (launcher, true);
       pop_cfun ();
