@@ -904,8 +904,7 @@ brig_code_entry_handler::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMABSID:
     case BRIG_OPCODE_WORKGROUPSIZE:
     case BRIG_OPCODE_CURRENTWORKGROUPSIZE:
-      /* TODO: expand more builtins.  */
-      return true;
+      return m_parent.m_cf->m_is_kernel;
     default:
       return false;
     };
@@ -923,7 +922,7 @@ brig_code_entry_handler::expand_or_call_builtin (BrigOpcode16_t brig_opcode,
 						 tree arith_type,
 						 tree_stl_vec &operands)
 {
-  if (m_parent.m_cf->m_is_kernel && can_expand_builtin (brig_opcode))
+  if (can_expand_builtin (brig_opcode))
     return expand_builtin (brig_opcode, operands);
 
   tree built_in
