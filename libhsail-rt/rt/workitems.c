@@ -299,12 +299,19 @@ phsa_execute_wi_gang (PHSAKernelLaunchData *context, void *group_base_ptr,
 	  PHSAWorkItem *wi = &wi_threads[flat_wi_id];
 	  wi->launch_data = context;
 	  wi->wg = &wg;
+
 	  wg.x = wi->group_x = group_x;
 	  wg.y = wi->group_y = group_y;
 	  wg.z = wi->group_z = group_z;
+
 	  wi->wg_size_x = context->dp->workgroup_size_x;
 	  wi->wg_size_y = context->dp->workgroup_size_y;
 	  wi->wg_size_z = context->dp->workgroup_size_z;
+
+	  wi->cur_wg_size_x = __hsail_currentworkgroupsize (0, wi);
+	  wi->cur_wg_size_y = __hsail_currentworkgroupsize (1, wi);
+	  wi->cur_wg_size_z = __hsail_currentworkgroupsize (2, wi);
+
 	  wi->x = x;
 	  wi->y = y;
 	  wi->z = z;
@@ -489,6 +496,10 @@ phsa_execute_work_groups (PHSAKernelLaunchData *context, void *group_base_ptr,
 	  wi.wg_size_x = context->dp->workgroup_size_x;
 	  wi.wg_size_y = context->dp->workgroup_size_y;
 	  wi.wg_size_z = context->dp->workgroup_size_z;
+
+	  wi.cur_wg_size_x = __hsail_currentworkgroupsize (0, &wi);
+	  wi.cur_wg_size_y = __hsail_currentworkgroupsize (1, &wi);
+	  wi.cur_wg_size_z = __hsail_currentworkgroupsize (2, &wi);
 
 	  context->kernel (context->kernarg_addr, &wi, group_base_ptr,
 			   group_local_offset, private_base_ptr);

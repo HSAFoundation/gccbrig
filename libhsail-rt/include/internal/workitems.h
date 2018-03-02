@@ -122,6 +122,12 @@ typedef struct
   uint32_t wg_size_y;
   uint32_t wg_size_z;
 
+  /* The local size of the current WG.  */
+
+  uint32_t cur_wg_size_x;
+  uint32_t cur_wg_size_y;
+  uint32_t cur_wg_size_z;
+
   /* NOTE: Fixed members END here.  */
 
   PHSAKernelLaunchData *launch_data;
