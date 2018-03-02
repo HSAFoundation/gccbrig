@@ -205,14 +205,26 @@ brig_function::add_id_variables ()
 	= add_local_variable (std::string ("__cur_wg_size_") + dim_char,
 			      uint32_type_node);
 
-      tree cwgz_call
-	= call_builtin
-	(builtin_decl_explicit (BUILT_IN_HSAIL_CURRENTWORKGROUPSIZE),
-	 2, uint32_type_node, uint32_type_node,
-	 build_int_cst (uint32_type_node, i), ptr_type_node, m_context_arg);
+      tree cwgz_call;
+      if (flag_phsa_wi_context_opt)
+	{
+	  tree_stl_vec operands
+	    = tree_stl_vec (1, build_int_cst (uint32_type_node, i));
+	  cwgz_call
+	    = expand_or_call_builtin (BRIG_OPCODE_CURRENTWORKGROUPSIZE,
+				      BRIG_TYPE_U32, uint32_type_node,
+				      operands);
+	}
+      else
+	cwgz_call = call_builtin
+	  (builtin_decl_explicit (BUILT_IN_HSAIL_CURRENTWORKGROUPSIZE),
+	   2, uint32_type_node, uint32_type_node,
+	   build_int_cst (uint32_type_node, i), ptr_type_node, m_context_arg);
 
       tree limit_init = build2 (MODIFY_EXPR, TREE_TYPE (m_cur_wg_size_vars[i]),
-				m_cur_wg_size_vars[i], cwgz_call);
+				m_cur_wg_size_vars[i],
+				convert (TREE_TYPE (m_cur_wg_size_vars[i]),
+					 cwgz_call));
 
       append_statement (limit_init);
 

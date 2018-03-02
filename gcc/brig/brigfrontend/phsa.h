@@ -74,5 +74,6 @@ typedef struct __attribute__((__packed__))
 #define PHSA_CONTEXT_OFFS_WI_IDS 0
 #define PHSA_CONTEXT_OFFS_WG_IDS (PHSA_CONTEXT_OFFS_WI_IDS + 3 * 4)
 #define PHSA_CONTEXT_WG_SIZES (PHSA_CONTEXT_OFFS_WG_IDS + 3 * 4)
+#define PHSA_CONTEXT_CURRENT_WG_SIZES (PHSA_CONTEXT_WG_SIZES + 3 * 4)
 
 #endif
