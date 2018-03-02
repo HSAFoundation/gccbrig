@@ -153,6 +153,7 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
       m_parent.m_cf->m_called_functions.push_back (func_ref);
       if (DECL_EXTERNAL (func_ref))
 	m_parent.add_decl_call (call);
+      m_parent.m_cf->start_new_bb ();
 
       return base->byteCount;
     }
@@ -232,5 +233,6 @@ brig_branch_inst_handler::operator () (const BrigBase *base)
     }
   else
     gcc_unreachable ();
+  m_parent.m_cf->start_new_bb ();
   return base->byteCount;
 }

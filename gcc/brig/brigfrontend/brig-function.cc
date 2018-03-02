@@ -1567,3 +1567,54 @@ brig_function::get_tree_code_for_hsa_opcode
     }
   return TREE_LIST; /* Emulate using a chain of nodes.  */
 }
+
+/* Inform of an update to the REG_VAR.  */
+
+void
+brig_function::add_reg_var_update (tree reg_var, tree var)
+{
+  if (var == m_abs_id_vars[0] || var == m_abs_id_vars[1]
+      || var == m_abs_id_vars[2] || var == m_local_id_vars[0]
+      || var == m_local_id_vars[1] || var == m_local_id_vars[2])
+    m_id_val_defs [reg_var] = var;
+  else
+    {
+      /* Possible overwrite of an ID value.  */
+
+      id_val_map::iterator i = m_id_val_defs.find (reg_var);
+      if (i != m_id_val_defs.end())
+	m_id_val_defs.erase (i);
+    }
+}
+
+/* If the REG_VAR is known to contain an ID value at this point in
+   the basic block, return true.  */
+
+bool
+brig_function::is_id_val (tree reg_var)
+{
+  id_val_map::iterator i = m_id_val_defs.find (reg_var);
+  return i != m_id_val_defs.end();
+}
+
+/* Return an ID value for the given REG_VAR if its known to contain
+   one at this point in the BB, NULL_TREE otherwise.  */
+
+tree
+brig_function::id_val (tree reg_var)
+{
+  id_val_map::iterator i = m_id_val_defs.find (reg_var);
+  if (i != m_id_val_defs.end())
+    return (*i).second;
+  else
+    return NULL_TREE;
+}
+
+/* Informs of starting a new basic block.  Called when generating
+   a label, a call, a jump, or a return.  */
+
+void
+brig_function::start_new_bb ()
+{
+  m_id_val_defs.clear ();
+}
