@@ -124,6 +124,11 @@ public:
   static tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
 						 BrigType16_t brig_type);
 
+  void start_new_bb ();
+  void add_reg_var_update (tree reg_var, tree val);
+  bool is_id_val (tree reg_var);
+  tree id_val (tree reg_var);
+
   const BrigDirectiveExecutable *m_brig_def;
 
   bool m_is_kernel;
@@ -238,6 +243,15 @@ private:
   /* Bookkeeping for the different HSA registers and their tree declarations
      for the currently generated function.  */
   reg_decl_index_entry *m_regs[BRIG_2_TREE_HSAIL_TOTAL_REG_COUNT];
+
+  /* Map for keeping book reads of ID variables, which can be propagated
+     to uses in address expressions to produce cleaner indexing functions
+     with unnecessary casts stripped off, etc.  */
+  typedef std::map<tree, tree> id_val_map;
+
+  /* Keeps track of ID values alive in registers in the currently
+     processed BB.  */
+  id_val_map m_id_val_defs;
 
   /* HSAIL-specific builtin functions not yet integrated to gcc.  */
   typedef std::map<std::pair<BrigOpcode16_t, BrigType16_t>, tree> builtin_map;

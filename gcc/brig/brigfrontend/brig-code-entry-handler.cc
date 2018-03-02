@@ -1013,6 +1013,11 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
   bool ftz = false;
   const BrigBase *base = &brig_inst.base;
 
+  if (m_parent.m_cf->is_id_val (inst_expr))
+    inst_expr = m_parent.m_cf->id_val (inst_expr);
+
+  m_parent.m_cf->add_reg_var_update (output, inst_expr);
+
   if (base->kind == BRIG_KIND_INST_MOD)
     {
       const BrigInstMod *mod = (const BrigInstMod *) base;
