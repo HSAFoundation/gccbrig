@@ -207,6 +207,11 @@ public:
   tree m_wg_id_vars[3];
   tree m_wg_size_vars[3];
   tree m_grid_size_vars[3];
+  /* Explicitly computed WG base for the absolute IDs which is used
+     as the initial value when looping that dimension.   We update
+     the abs id with ++ to make it easy for the vectorizer.  */
+  tree m_abs_id_base_vars[3];
+  tree m_abs_id_vars[3];
 
   /* Set to true in case the kernel contains at least one dispatch packet
      (work-item ID-related) builtin call that could not be expanded to
