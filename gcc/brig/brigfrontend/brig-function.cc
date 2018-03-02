@@ -188,7 +188,7 @@ brig_function::add_id_variables ()
 	 to avoid unnecessary casts (the ID functions are 32b).  */
       m_local_id_vars[i]
 	= add_local_variable (std::string ("__local_") + dim_char,
-			      uint32_type_node);
+			      long_long_integer_type_node);
 
       tree workitemid_call
 	= call_builtin (builtin_decl_explicit (BUILT_IN_HSAIL_WORKITEMID), 2,
@@ -197,13 +197,15 @@ brig_function::add_id_variables ()
 			m_context_arg);
 
       tree id_init = build2 (MODIFY_EXPR, TREE_TYPE (m_local_id_vars[i]),
-			     m_local_id_vars[i], workitemid_call);
+			     m_local_id_vars[i],
+			     convert (TREE_TYPE (m_local_id_vars[i]),
+				      workitemid_call));
 
       append_statement (id_init);
 
       m_cur_wg_size_vars[i]
 	= add_local_variable (std::string ("__cur_wg_size_") + dim_char,
-			      uint32_type_node);
+			      long_long_integer_type_node);
 
       tree cwgz_call;
       if (flag_phsa_wi_context_opt)
@@ -292,6 +294,32 @@ brig_function::add_id_variables ()
 				   m_grid_size_vars[i], gridsize_call);
 
       append_statement (gridsize_init);
+
+      m_abs_id_base_vars[i]
+	= add_local_variable (std::string ("__abs_id_base_") + dim_char,
+			      long_long_integer_type_node);
+
+      m_abs_id_vars[i]
+	= add_local_variable (std::string ("__abs_id_") + dim_char,
+			      long_long_integer_type_node);
+
+      tree abs_id_base
+	= build2 (MULT_EXPR, long_long_integer_type_node,
+		  convert (long_long_integer_type_node, m_wg_id_vars[i]),
+		  convert (long_long_integer_type_node, m_wg_size_vars[i]));
+      tree abs_id
+	= build2 (PLUS_EXPR, long_long_integer_type_node, abs_id_base,
+		  convert (long_long_integer_type_node, m_local_id_vars[i]));
+
+      tree abs_id_base_init
+	= build2 (MODIFY_EXPR, TREE_TYPE (m_abs_id_base_vars[i]),
+		  m_abs_id_base_vars[i], abs_id_base);
+      append_statement (abs_id_base_init);
+
+      tree abs_id_init = build2 (MODIFY_EXPR,
+				 TREE_TYPE (m_abs_id_vars[i]),
+				 m_abs_id_vars[i], abs_id);
+      append_statement (abs_id_init);
     }
 }
 
@@ -408,6 +436,8 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 			    tree_stmt_iterator *branch_after)
 {
   tree ivar = m_local_id_vars[dim];
+  tree abs_id_base_var = m_abs_id_base_vars[dim];
+  tree abs_id_var = m_abs_id_vars[dim];
   tree ivar_max = m_cur_wg_size_vars[dim];
   tree_stmt_iterator entry = *header_entry;
 
@@ -420,11 +450,19 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 			   build_zero_cst (TREE_TYPE (ivar)));
   tsi_link_after (&entry, ivar_init, TSI_NEW_STMT);
 
+  tree abs_id_var_init = build2 (MODIFY_EXPR, TREE_TYPE (abs_id_var),
+				 abs_id_var,
+				 convert (TREE_TYPE (abs_id_var),
+					  abs_id_base_var));
+  tsi_link_after (&entry, abs_id_var_init, TSI_NEW_STMT);
+
   tree loop_body_label
     = label (std::string ("__wi_loop_") + (char) ((int) 'x' + dim));
   tree loop_body_label_stmt = build_stmt (LABEL_EXPR, loop_body_label);
 
   tsi_link_after (&entry, loop_body_label_stmt, TSI_NEW_STMT);
+
+  tree_stmt_iterator entry_label_it = entry;
 
   if (m_has_unexpanded_dp_builtins)
     {
@@ -438,8 +476,8 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 	    = call_builtin (id_set_builtin, 3,
 			    void_type_node, uint32_type_node,
 			    build_int_cst (uint32_type_node, dim),
-			    uint32_type_node, ivar, ptr_type_node,
-			    m_context_arg);
+			    uint32_type_node, convert (uint32_type_node, ivar),
+			    ptr_type_node, m_context_arg);
 	  tsi_link_after (&entry, id_set_call, TSI_NEW_STMT);
 	}
       else
@@ -447,7 +485,8 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 	  tree ptr_type = build_pointer_type (uint32_type_node);
 	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
 			     build_int_cst (ptr_type, dim * 4));
-	  tree assign = build2 (MODIFY_EXPR, uint32_type_node, ctx, ivar);
+	  tree assign = build2 (MODIFY_EXPR, uint32_type_node, ctx,
+				convert (uint32_type_node, ivar));
 
 	  tsi_link_after (&entry, assign, TSI_NEW_STMT);
 	}
@@ -459,12 +498,35 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   tsi_link_after (branch_after, incr, TSI_NEW_STMT);
 
+  /* ...and the abs id variable.  */
+  tree abs_id_incr = build2 (PREINCREMENT_EXPR, TREE_TYPE (abs_id_var),
+			     abs_id_var,
+			     build_one_cst (TREE_TYPE (abs_id_var)));
+
+  tsi_link_after (branch_after, abs_id_incr, TSI_NEW_STMT);
+
   /* Append the predicate check with the back edge goto.  */
   tree condition = build2 (LT_EXPR, TREE_TYPE (ivar), ivar, ivar_max);
   tree target_goto = build1 (GOTO_EXPR, void_type_node, loop_body_label);
   tree if_stmt
     = build3 (COND_EXPR, void_type_node, condition, target_goto, NULL_TREE);
   tsi_link_after (branch_after, if_stmt, TSI_NEW_STMT);
+
+  /* Make it a for-loop by branching from the entry
+     header to the loop check.  Even though we know that
+     each dimension loop has at least one iteration, so
+     do ... while would be better here.  It seems SCEV
+     doesn't handle them so well.  */
+
+  tree loop_check_label
+    = label (std::string ("__wi_loop_check_") + (char) ((int) 'x' + dim));
+  tree loop_check_label_stmt = build_stmt (LABEL_EXPR, loop_check_label);
+
+  tsi_link_before (branch_after, loop_check_label_stmt, TSI_NEW_STMT);
+  tree entry_check_goto = build1 (GOTO_EXPR, void_type_node,
+				  loop_check_label);
+
+  tsi_link_before (&entry_label_it, entry_check_goto, TSI_NEW_STMT);
 }
 
 /* Recursively analyzes the function and its callees for barrier usage.  */
@@ -976,19 +1038,7 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_WORKITEMABSID)
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
-
-      tree local_id_var = m_local_id_vars[dim];
-      tree wg_id_var = m_wg_id_vars[dim];
-      tree wg_size_var = m_wg_size_vars[dim];
-
-      tree wg_id_x_wg_size = build2 (MULT_EXPR, uint32_type_node,
-				     convert (uint32_type_node, wg_id_var),
-				     convert (uint32_type_node, wg_size_var));
-      tree sum
-	= build2 (PLUS_EXPR, uint32_type_node, wg_id_x_wg_size, local_id_var);
-
-      return add_temp_var (std::string ("workitemabsid_")
-			   + (char) ((int) 'x' + dim), sum);
+      return m_abs_id_vars[dim];
     }
   else if (brig_opcode == BRIG_OPCODE_WORKITEMFLATID)
     {
@@ -997,19 +1047,23 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
       tree wg_size_y = expand_builtin (BRIG_OPCODE_WORKGROUPSIZE, uint32_1);
       tree z_x_wgsx_wgsy
 	= build2 (MULT_EXPR, uint32_type_node,
-		  expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_2),
+		  convert (uint32_type_node,
+			   expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_2)),
 		  wg_size_x);
       z_x_wgsx_wgsy = build2 (MULT_EXPR, uint32_type_node, z_x_wgsx_wgsy,
 			      wg_size_y);
 
       tree y_x_wgsx
 	= build2 (MULT_EXPR, uint32_type_node,
-		  expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_1),
+		  convert (uint32_type_node,
+			   expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_1)),
 		  wg_size_x);
 
       tree sum = build2 (PLUS_EXPR, uint32_type_node, y_x_wgsx, z_x_wgsx_wgsy);
       sum = build2 (PLUS_EXPR, uint32_type_node,
-		    expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_0), sum);
+		    convert (uint32_type_node,
+			     expand_builtin (BRIG_OPCODE_WORKITEMID, uint32_0)),
+		    sum);
       return add_temp_var ("workitemflatid", sum);
     }
   else if (brig_opcode == BRIG_OPCODE_WORKGROUPSIZE)
@@ -1078,7 +1132,20 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_CURRENTWORKGROUPSIZE)
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
-      return m_cur_wg_size_vars[dim];
+      if (flag_phsa_wi_context_opt)
+	{
+	  tree ptr_type = build_pointer_type (uint32_type_node);
+	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
+			     build_int_cst (ptr_type,
+					    PHSA_CONTEXT_CURRENT_WG_SIZES
+					    + dim * 4));
+	  std::string name ("curwgsize_x");
+	  name [name.length() - 1] += dim;
+	  return add_temp_var (name.c_str(), ctx);
+	} else if (m_is_kernel)
+	return m_cur_wg_size_vars[dim];
+      else
+	gcc_unreachable ();
     }
   else
     gcc_unreachable ();
@@ -1094,6 +1161,7 @@ brig_function::can_expand_builtin (BrigOpcode16_t brig_opcode) const
 {
   switch (brig_opcode)
     {
+    case BRIG_OPCODE_CURRENTWORKGROUPSIZE:
     case BRIG_OPCODE_WORKITEMFLATID:
     case BRIG_OPCODE_WORKITEMID:
     case BRIG_OPCODE_WORKGROUPID:
@@ -1101,7 +1169,6 @@ brig_function::can_expand_builtin (BrigOpcode16_t brig_opcode) const
       return m_is_kernel || flag_phsa_wi_context_opt;
     case BRIG_OPCODE_WORKITEMFLATABSID:
     case BRIG_OPCODE_WORKITEMABSID:
-    case BRIG_OPCODE_CURRENTWORKGROUPSIZE:
       return m_is_kernel;
     default:
       return false;
