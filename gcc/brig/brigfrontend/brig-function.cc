@@ -462,8 +462,6 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   tsi_link_after (&entry, loop_body_label_stmt, TSI_NEW_STMT);
 
-  tree_stmt_iterator entry_label_it = entry;
-
   if (m_has_unexpanded_dp_builtins)
     {
       if (!flag_phsa_wi_context_opt)
@@ -511,22 +509,6 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
   tree if_stmt
     = build3 (COND_EXPR, void_type_node, condition, target_goto, NULL_TREE);
   tsi_link_after (branch_after, if_stmt, TSI_NEW_STMT);
-
-  /* Make it a for-loop by branching from the entry
-     header to the loop check.  Even though we know that
-     each dimension loop has at least one iteration, so
-     do ... while would be better here.  It seems SCEV
-     doesn't handle them so well.  */
-
-  tree loop_check_label
-    = label (std::string ("__wi_loop_check_") + (char) ((int) 'x' + dim));
-  tree loop_check_label_stmt = build_stmt (LABEL_EXPR, loop_check_label);
-
-  tsi_link_before (branch_after, loop_check_label_stmt, TSI_NEW_STMT);
-  tree entry_check_goto = build1 (GOTO_EXPR, void_type_node,
-				  loop_check_label);
-
-  tsi_link_before (&entry_label_it, entry_check_goto, TSI_NEW_STMT);
 }
 
 /* Recursively analyzes the function and its callees for barrier usage.  */
