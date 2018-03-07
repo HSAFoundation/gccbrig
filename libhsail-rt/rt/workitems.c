@@ -112,6 +112,10 @@ phsa_work_item_thread (int arg0, int arg1)
       wi->group_y = wg->y;
       wi->group_z = wg->z;
 
+      wi->cur_wg_size_x = __hsail_currentworkgroupsize (0, wi);
+      wi->cur_wg_size_y = __hsail_currentworkgroupsize (1, wi);
+      wi->cur_wg_size_z = __hsail_currentworkgroupsize (2, wi);
+
 #ifdef DEBUG_PHSA_RT
       printf (
 	"Running work-item %lu/%lu/%lu for wg %lu/%lu/%lu / %lu/%lu/%lu...\n",
@@ -188,6 +192,10 @@ phsa_work_item_thread (int arg0, int arg1)
 	  wi->group_x = wg->x;
 	  wi->group_y = wg->y;
 	  wi->group_z = wg->z;
+
+	  wi->cur_wg_size_x = __hsail_currentworkgroupsize (0, wi);
+	  wi->cur_wg_size_y = __hsail_currentworkgroupsize (1, wi);
+	  wi->cur_wg_size_z = __hsail_currentworkgroupsize (2, wi);
 
 	  /* Reinitialize the work-group barrier according to the new WG's
 	     size, which might not be the same as the previous ones, due
