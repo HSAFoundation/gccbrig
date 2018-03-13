@@ -983,7 +983,6 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
      variable type (can be any type; see get_m_var_declfor_reg @
      brig-function.cc).  */
   tree output_type = TREE_TYPE (output);
-  tree input_type = TREE_TYPE (inst_expr);
   bool is_fp16 = (brig_inst.type & BRIG_TYPE_BASE_MASK) == BRIG_TYPE_F16
 		 && brig_inst.base.kind != BRIG_KIND_INST_MEM
 		 && !gccbrig_is_bit_operation (brig_inst.opcode);
@@ -994,6 +993,8 @@ brig_code_entry_handler::build_output_assignment (const BrigInstBase &brig_inst,
 
   if (m_parent.m_cf->is_id_val (inst_expr))
     inst_expr = m_parent.m_cf->id_val (inst_expr);
+
+  tree input_type = TREE_TYPE (inst_expr);
 
   m_parent.m_cf->add_reg_var_update (output, inst_expr);
 
