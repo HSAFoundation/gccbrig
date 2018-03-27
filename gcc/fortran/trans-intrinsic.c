@@ -1709,12 +1709,13 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 	  gfc_add_expr_to_block (&se->pre, tmp);
 
 	  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get_by_ref,
-				     9, token, image_index, dst_var,
+				     10, token, image_index, dst_var,
 				     caf_reference, lhs_kind, kind,
 				     may_require_tmp,
 				     may_realloc ? boolean_true_node :
 						   boolean_false_node,
-				     stat);
+				     stat, build_int_cst (integer_type_node,
+							  array_expr->ts.type));
 
 	  gfc_add_expr_to_block (&se->pre, tmp);
 
@@ -2100,9 +2101,11 @@ conv_caf_send (gfc_code *code) {
 					     : boolean_false_node;
 	  tmp = build_call_expr_loc (input_location,
 				     gfor_fndecl_caf_send_by_ref,
-				     9, token, image_index, rhs_se.expr,
+				     10, token, image_index, rhs_se.expr,
 				     reference, lhs_kind, rhs_kind,
-				     may_require_tmp, dst_realloc, src_stat);
+				     may_require_tmp, dst_realloc, src_stat,
+				     build_int_cst (integer_type_node,
+						    lhs_expr->ts.type));
 	  }
       else
 	tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 11,
@@ -2147,11 +2150,15 @@ conv_caf_send (gfc_code *code) {
 	  lhs_reference = conv_expr_ref_to_caf_ref (&block, lhs_expr);
 	  rhs_reference = conv_expr_ref_to_caf_ref (&block, rhs_expr);
 	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_sendget_by_ref, 11,
+				     gfor_fndecl_caf_sendget_by_ref, 13,
 				     token, image_index, lhs_reference,
 				     rhs_token, rhs_image_index, rhs_reference,
 				     lhs_kind, rhs_kind, may_require_tmp,
-				     dst_stat, src_stat);
+				     dst_stat, src_stat,
+				     build_int_cst (integer_type_node,
+						    lhs_expr->ts.type),
+				     build_int_cst (integer_type_node,
+						    rhs_expr->ts.type));
 	}
       else
 	{
@@ -7599,6 +7606,11 @@ gfc_conv_allocated (gfc_se *se, gfc_expr *expr)
       tmp = fold_build2_loc (input_location, NE_EXPR, logical_type_node, tmp,
 			     fold_convert (TREE_TYPE (tmp), null_pointer_node));
     }
+
+  /* Components of pointer array references sometimes come back with a pre block.  */
+  if (arg1se.pre.head)
+    gfc_add_block_to_block (&se->pre, &arg1se.pre);
+
   se->expr = convert (gfc_typenode_for_spec (&expr->ts), tmp);
 }
 
@@ -8101,6 +8113,85 @@ gfc_conv_intrinsic_iargc (gfc_se * se, gfc_expr * expr)
 
   se->expr = tmp;
 }
+
+
+/* Generate code for the KILL intrinsic.  */
+
+static void
+conv_intrinsic_kill (gfc_se *se, gfc_expr *expr)
+{
+  tree *args;
+  tree int4_type_node = gfc_get_int_type (4);
+  tree pid;
+  tree sig;
+  tree tmp;
+  unsigned int num_args;
+
+  num_args = gfc_intrinsic_argument_list_length (expr);
+  args = XALLOCAVEC (tree, num_args);
+  gfc_conv_intrinsic_function_args (se, expr, args, num_args);
+
+  /* Convert PID to a INTEGER(4) entity.  */
+  pid = convert (int4_type_node, args[0]);
+
+  /* Convert SIG to a INTEGER(4) entity.  */
+  sig = convert (int4_type_node, args[1]);
+
+  tmp = build_call_expr_loc (input_location, gfor_fndecl_kill, 2, pid, sig);
+
+  se->expr = fold_convert (TREE_TYPE (args[0]), tmp);
+}
+
+
+static tree
+conv_intrinsic_kill_sub (gfc_code *code)
+{
+  stmtblock_t block;
+  gfc_se se, se_stat;
+  tree int4_type_node = gfc_get_int_type (4);
+  tree pid;
+  tree sig;
+  tree statp;
+  tree tmp;
+
+  /* Make the function call.  */
+  gfc_init_block (&block);
+  gfc_init_se (&se, NULL);
+
+  /* Convert PID to a INTEGER(4) entity.  */
+  gfc_conv_expr (&se, code->ext.actual->expr);
+  gfc_add_block_to_block (&block, &se.pre);
+  pid = fold_convert (int4_type_node, gfc_evaluate_now (se.expr, &block));
+  gfc_add_block_to_block (&block, &se.post);
+
+  /* Convert SIG to a INTEGER(4) entity.  */
+  gfc_conv_expr (&se, code->ext.actual->next->expr);
+  gfc_add_block_to_block (&block, &se.pre);
+  sig = fold_convert (int4_type_node, gfc_evaluate_now (se.expr, &block));
+  gfc_add_block_to_block (&block, &se.post);
+
+  /* Deal with an optional STATUS.  */
+  if (code->ext.actual->next->next->expr)
+    {
+      gfc_init_se (&se_stat, NULL);
+      gfc_conv_expr (&se_stat, code->ext.actual->next->next->expr);
+      statp = gfc_create_var (gfc_get_int_type (4), "_statp");
+    }
+  else
+    statp = NULL_TREE;
+
+  tmp = build_call_expr_loc (input_location, gfor_fndecl_kill_sub, 3, pid, sig,
+	statp ? gfc_build_addr_expr (NULL_TREE, statp) : null_pointer_node);
+
+  gfc_add_expr_to_block (&block, tmp);
+
+  if (statp && statp != se_stat.expr)
+    gfc_add_modify (&block, se_stat.expr,
+		    fold_convert (TREE_TYPE (se_stat.expr), statp));
+
+  return gfc_finish_block (&block);
+}
+
 
 
 /* The loc intrinsic returns the address of its argument as
@@ -9056,6 +9147,10 @@ gfc_conv_intrinsic_function (gfc_se * se, gfc_expr * expr)
       gfc_conv_intrinsic_isnan (se, expr);
       break;
 
+    case GFC_ISYM_KILL:
+      conv_intrinsic_kill (se, expr);
+      break;
+
     case GFC_ISYM_LSHIFT:
       gfc_conv_intrinsic_shift (se, expr, false, false);
       break;
@@ -9332,7 +9427,6 @@ gfc_conv_intrinsic_function (gfc_se * se, gfc_expr * expr)
     case GFC_ISYM_GETPID:
     case GFC_ISYM_GETUID:
     case GFC_ISYM_HOSTNM:
-    case GFC_ISYM_KILL:
     case GFC_ISYM_IERRNO:
     case GFC_ISYM_IRAND:
     case GFC_ISYM_ISATTY:
@@ -9817,12 +9911,12 @@ conv_co_collective (gfc_code *code)
       gfc_add_block_to_block (&block, &argse.pre);
       gfc_add_block_to_block (&post_block, &argse.post);
       errmsg = argse.expr;
-      errmsg_len = fold_convert (integer_type_node, argse.string_length);
+      errmsg_len = fold_convert (size_type_node, argse.string_length);
     }
   else
     {
       errmsg = null_pointer_node;
-      errmsg_len = integer_zero_node;
+      errmsg_len = build_zero_cst (size_type_node);
     }
 
   /* Generate the function call.  */
@@ -10807,6 +10901,10 @@ gfc_conv_intrinsic_subroutine (gfc_code *code)
 
     case GFC_ISYM_FREE:
       res = conv_intrinsic_free (code);
+      break;
+
+    case GFC_ISYM_KILL:
+      res = conv_intrinsic_kill_sub (code);
       break;
 
     case GFC_ISYM_SYSTEM_CLOCK:

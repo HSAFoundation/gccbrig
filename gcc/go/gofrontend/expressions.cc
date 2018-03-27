@@ -8224,6 +8224,11 @@ Builtin_call_expression::do_numeric_constant_value(Numeric_constant* nc) const
             return false;
           if (st->named_type() != NULL)
             st->named_type()->convert(this->gogo_);
+          if (st->is_error_type())
+            {
+              go_assert(saw_errors());
+              return false;
+            }
           int64_t offset;
           this->seen_ = true;
           bool ok = st->struct_type()->backend_field_offset(this->gogo_,
@@ -11696,7 +11701,7 @@ Field_reference_expression::do_lower(Gogo* gogo, Named_object* function,
   Location loc = this->location();
 
   std::string s = "fieldtrack \"";
-  Named_type* nt = this->expr_->type()->named_type();
+  Named_type* nt = this->expr_->type()->unalias()->named_type();
   if (nt == NULL || nt->named_object()->package() == NULL)
     s.append(gogo->pkgpath());
   else

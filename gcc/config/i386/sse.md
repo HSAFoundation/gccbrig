@@ -9022,14 +9022,14 @@
 ;; see comment above inline_secondary_memory_needed function in i386.c
 (define_insn "sse2_loadhpd"
   [(set (match_operand:V2DF 0 "nonimmediate_operand"
-	  "=x,v,x,v,o,o ,o")
+	  "=x,v,x,v ,o,o ,o")
 	(vec_concat:V2DF
 	  (vec_select:DF
 	    (match_operand:V2DF 1 "nonimmediate_operand"
-	  " 0,v,0,v,0,0 ,0")
+	  " 0,v,0,v ,0,0 ,0")
 	    (parallel [(const_int 0)]))
 	  (match_operand:DF 2 "nonimmediate_operand"
-	  " m,m,x,v,x,*f,r")))]
+	  " m,m,x,Yv,x,*f,r")))]
   "TARGET_SSE2 && !(MEM_P (operands[1]) && MEM_P (operands[2]))"
   "@
    movhpd\t{%2, %0|%0, %2}
@@ -10090,11 +10090,11 @@
   "TARGET_SSE2 && ix86_binary_operator_ok (<CODE>, <MODE>mode, operands)"
   "@
    p<plusminus_mnemonic><ssemodesuffix>\t{%2, %0|%0, %2}
-   vp<plusminus_mnemonic><ssemodesuffix>\t{%2, %1, %0<mask_operand3>|%0<mask_operand3>, %1, %2}"
+   vp<plusminus_mnemonic><ssemodesuffix>\t{%2, %1, %0|%0, %1, %2}"
   [(set_attr "isa" "noavx,avx")
    (set_attr "type" "sseiadd")
    (set_attr "prefix_data16" "1,*")
-   (set_attr "prefix" "<mask_prefix3>")
+   (set_attr "prefix" "orig,vex")
    (set_attr "mode" "<sseinsnmode>")])
 
 (define_insn "*<plusminus_insn><mode>3_mask"
@@ -11899,7 +11899,7 @@
 	    (eq_attr "mode" "TI"))
        (const_string "1")
        (const_string "*")))
-   (set_attr "prefix" "<mask_prefix3>,evex")
+   (set_attr "prefix" "orig,vex,evex")
    (set (attr "mode")
 	(cond [(and (match_test "<MODE_SIZE> == 16")
 		    (match_test "TARGET_SSE_PACKED_SINGLE_INSN_OPTIMAL"))

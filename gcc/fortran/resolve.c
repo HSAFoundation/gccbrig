@@ -8637,15 +8637,24 @@ resolve_assoc_var (gfc_symbol* sym, bool resolve_target)
       if (!sym->ts.u.cl)
 	sym->ts.u.cl = target->ts.u.cl;
 
-      if (!sym->ts.u.cl->length && !sym->ts.deferred)
+      if (!sym->ts.u.cl->length
+	  && !sym->ts.deferred
+	  && target->expr_type == EXPR_CONSTANT)
 	{
-	  if (target->expr_type == EXPR_CONSTANT)
-	    sym->ts.u.cl->length =
-	      gfc_get_int_expr (gfc_charlen_int_kind, NULL,
-				target->value.character.length);
-	  else
-	    gfc_error ("Not Implemented: Associate target with type character"
-		       " and non-constant length at %L", &target->where);
+	  sym->ts.u.cl->length =
+		gfc_get_int_expr (gfc_charlen_int_kind, NULL,
+				  target->value.character.length);
+	}
+      else if ((!sym->ts.u.cl->length
+		|| sym->ts.u.cl->length->expr_type != EXPR_CONSTANT)
+		&& target->expr_type != EXPR_VARIABLE)
+	{
+	  sym->ts.u.cl = gfc_get_charlen();
+	  sym->ts.deferred = 1;
+
+	  /* This is reset in trans-stmt.c after the assignment
+	     of the target expression to the associate name.  */
+	  sym->attr.allocatable = 1;
 	}
     }
 
@@ -8703,7 +8712,7 @@ build_loc_call (gfc_expr *sym_expr)
   gfc_expr *loc_call;
   loc_call = gfc_get_expr ();
   loc_call->expr_type = EXPR_FUNCTION;
-  gfc_get_sym_tree ("loc", gfc_current_ns, &loc_call->symtree, false);
+  gfc_get_sym_tree ("_loc", gfc_current_ns, &loc_call->symtree, false);
   loc_call->symtree->n.sym->attr.flavor = FL_PROCEDURE;
   loc_call->symtree->n.sym->attr.intrinsic = 1;
   loc_call->symtree->n.sym->result = loc_call->symtree->n.sym;
@@ -8952,7 +8961,7 @@ resolve_select_type (gfc_code *code, gfc_namespace *old_ns)
 	    {
 	      vtab = gfc_find_derived_vtab (c->ts.u.derived);
 	      gcc_assert (vtab);
-	      c->high = gfc_get_int_expr (gfc_default_integer_kind, NULL,
+	      c->high = gfc_get_int_expr (gfc_integer_4_kind, NULL,
 					  c->ts.u.derived->hash_value);
 	    }
 	  else
@@ -8961,6 +8970,13 @@ resolve_select_type (gfc_code *code, gfc_namespace *old_ns)
 	      gcc_assert (vtab && CLASS_DATA (vtab)->initializer);
 	      e = CLASS_DATA (vtab)->initializer;
 	      c->high = gfc_copy_expr (e);
+	      if (c->high->ts.kind != gfc_integer_4_kind)
+		{
+		  gfc_typespec ts;
+		  ts.kind = gfc_integer_4_kind;
+		  ts.type = BT_INTEGER;
+		  gfc_convert_type_warn (c->high, &ts, 2, 0);
+		}
 	    }
 
 	  e = gfc_lval_expr_from_sym (vtab);
@@ -12433,6 +12449,19 @@ resolve_fl_procedure (gfc_symbol *sym, int mp_flag)
 		     sym->name, &sym->declared_at);
 	  return false;
 	}
+    }
+
+  /* F2018, C15100: "The result of an elemental function shall be scalar,
+     and shall not have the POINTER or ALLOCATABLE attribute."  The scalar
+     pointer is tested and caught elsewhere.  */
+  if (sym->attr.elemental && sym->result
+      && (sym->result->attr.allocatable || sym->result->attr.pointer))
+    {
+      gfc_error ("Function result variable %qs at %L of elemental "
+		 "function %qs shall not have an ALLOCATABLE or POINTER "
+		 "attribute", sym->result->name,
+		 &sym->result->declared_at, sym->name);
+      return false;
     }
 
   if (sym->attr.is_bind_c && sym->attr.is_c_interop != 1)

@@ -993,13 +993,10 @@ add_method (tree type, tree method, bool via_using)
   if (method == error_mark_node)
     return false;
 
-  /* Maintain TYPE_HAS_USER_CONSTRUCTOR, etc.  */
-  grok_special_member_properties (method);
-
-  tree *slot = get_member_slot (type, DECL_NAME (method));
-  tree current_fns = *slot;
-
   gcc_assert (!DECL_EXTERN_C_P (method));
+
+  tree *slot = find_member_slot (type, DECL_NAME (method));
+  tree current_fns = slot ? *slot : NULL_TREE;
 
   /* Check to see if we've already got this method.  */
   for (ovl_iterator iter (current_fns); iter; ++iter)
@@ -1146,8 +1143,15 @@ add_method (tree type, tree method, bool via_using)
 
   current_fns = ovl_insert (method, current_fns, via_using);
 
-  if (!DECL_CONV_FN_P (method) && !COMPLETE_TYPE_P (type))
-    push_class_level_binding (DECL_NAME (method), current_fns);
+  if (!COMPLETE_TYPE_P (type) && !DECL_CONV_FN_P (method)
+      && !push_class_level_binding (DECL_NAME (method), current_fns))
+    return false;
+
+  if (!slot)
+    slot = add_member_slot (type, DECL_NAME (method));
+
+  /* Maintain TYPE_HAS_USER_CONSTRUCTOR, etc.  */
+  grok_special_member_properties (method);
 
   *slot = current_fns;
 
@@ -2475,19 +2479,20 @@ update_vtable_entry_for_fn (tree t, tree binfo, tree fn, tree* virtuals,
 	     order.  Of course it is lame that we have to repeat the
 	     search here anyway -- we should really be caching pieces
 	     of the vtable and avoiding this repeated work.  */
-	  tree thunk_binfo, base_binfo;
+	  tree thunk_binfo = NULL_TREE;
+	  tree base_binfo = TYPE_BINFO (base_return);
 
 	  /* Find the base binfo within the overriding function's
 	     return type.  We will always find a thunk_binfo, except
 	     when the covariancy is invalid (which we will have
 	     already diagnosed).  */
-	  for (base_binfo = TYPE_BINFO (base_return),
-	       thunk_binfo = TYPE_BINFO (over_return);
-	       thunk_binfo;
-	       thunk_binfo = TREE_CHAIN (thunk_binfo))
-	    if (SAME_BINFO_TYPE_P (BINFO_TYPE (thunk_binfo),
-				   BINFO_TYPE (base_binfo)))
-	      break;
+	  if (base_binfo)
+	    for (thunk_binfo = TYPE_BINFO (over_return); thunk_binfo;
+		 thunk_binfo = TREE_CHAIN (thunk_binfo))
+	      if (SAME_BINFO_TYPE_P (BINFO_TYPE (thunk_binfo),
+				     BINFO_TYPE (base_binfo)))
+		break;
+	  gcc_assert (thunk_binfo || errorcount);
 
 	  /* See if virtual inheritance is involved.  */
 	  for (virtual_offset = thunk_binfo;
@@ -2865,9 +2870,7 @@ warn_hidden (tree t)
 static void
 finish_struct_anon_r (tree field, bool complain)
 {
-  bool is_union = TREE_CODE (TREE_TYPE (field)) == UNION_TYPE;
-  tree elt = TYPE_FIELDS (TREE_TYPE (field));
-  for (; elt; elt = DECL_CHAIN (elt))
+  for (tree elt = TYPE_FIELDS (TREE_TYPE (field)); elt; elt = DECL_CHAIN (elt))
     {
       /* We're generally only interested in entities the user
 	 declared, but we also find nested classes by noticing
@@ -2881,50 +2884,34 @@ finish_struct_anon_r (tree field, bool complain)
 	      || TYPE_UNNAMED_P (TREE_TYPE (elt))))
 	continue;
 
-      if (TREE_CODE (elt) != FIELD_DECL)
+      if (complain
+	  && (TREE_CODE (elt) != FIELD_DECL
+	      || (TREE_PRIVATE (elt) || TREE_PROTECTED (elt))))
 	{
 	  /* We already complained about static data members in
 	     finish_static_data_member_decl.  */
-	  if (complain && !VAR_P (elt))
+	  if (!VAR_P (elt)
+	      && permerror (DECL_SOURCE_LOCATION (elt),
+			    TREE_CODE (TREE_TYPE (field)) == UNION_TYPE
+			    ? "%q#D invalid; an anonymous union may "
+			    "only have public non-static data members"
+			    : "%q#D invalid; an anonymous struct may "
+			    "only have public non-static data members", elt))
 	    {
-	      if (is_union)
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "%q#D invalid; an anonymous union can "
-			   "only have non-static data members", elt);
-	      else
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "%q#D invalid; an anonymous struct can "
-			   "only have non-static data members", elt);
-	    }
-	  continue;
-	}
-
-      if (complain)
-	{
-	  if (TREE_PRIVATE (elt))
-	    {
-	      if (is_union)
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "private member %q#D in anonymous union", elt);
-	      else
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "private member %q#D in anonymous struct", elt);
-	    }
-	  else if (TREE_PROTECTED (elt))
-	    {
-	      if (is_union)
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "protected member %q#D in anonymous union", elt);
-	      else
-		permerror (DECL_SOURCE_LOCATION (elt),
-			   "protected member %q#D in anonymous struct", elt);
+	      static bool hint;
+	      if (flag_permissive && !hint)
+		{
+		  hint = true;
+		  inform (DECL_SOURCE_LOCATION (elt),
+			  "this flexibility is deprecated and will be removed");
+		}
 	    }
 	}
 
       TREE_PRIVATE (elt) = TREE_PRIVATE (field);
       TREE_PROTECTED (elt) = TREE_PROTECTED (field);
 
-      /* Recurse into the anonymous aggregates to handle correctly
+      /* Recurse into the anonymous aggregates to correctly handle
 	 access control (c++/24926):
 
 	 class A {
@@ -7128,7 +7115,8 @@ fixed_type_or_null (tree instance, int *nonnull, int *cdtorp)
 
     case CALL_EXPR:
       /* This is a call to a constructor, hence it's never zero.  */
-      if (TREE_HAS_CONSTRUCTOR (instance))
+      if (CALL_EXPR_FN (instance)
+	  && TREE_HAS_CONSTRUCTOR (instance))
 	{
 	  if (nonnull)
 	    *nonnull = 1;

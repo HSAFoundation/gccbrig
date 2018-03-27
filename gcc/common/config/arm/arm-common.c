@@ -279,7 +279,8 @@ arm_target_thumb_only (int argc, const char **argv)
   if (arch)
     {
       const arch_option *arch_opt
-	= arm_parse_arch_option_name (all_architectures, "-march", arch);
+	= arm_parse_arch_option_name (all_architectures, "-march", arch,
+				      false);
 
       if (arch_opt && !check_isa_bits_for (arch_opt->common.isa_bits,
 					   isa_bit_notm))
@@ -288,7 +289,7 @@ arm_target_thumb_only (int argc, const char **argv)
   else if (cpu)
     {
       const cpu_option *cpu_opt
-	= arm_parse_cpu_option_name (all_cores, "-mcpu", cpu);
+	= arm_parse_cpu_option_name (all_cores, "-mcpu", cpu, false);
 
       if (cpu_opt && !check_isa_bits_for (cpu_opt->common.isa_bits,
 					  isa_bit_notm))
@@ -309,6 +310,12 @@ arm_print_hint_for_cpu_option (const char *target,
   auto_vec<const char*> candidates;
   for (; list->common.name != NULL; list++)
     candidates.safe_push (list->common.name);
+
+#ifdef HAVE_LOCAL_CPU_DETECT
+  /* Add also "native" as possible value.  */
+  candidates.safe_push ("native");
+#endif
+
   char *s;
   const char *hint = candidates_list_and_hint (target, s, candidates);
   if (hint)
@@ -323,10 +330,11 @@ arm_print_hint_for_cpu_option (const char *target,
 /* Parse the base component of a CPU selection in LIST.  Return a
    pointer to the entry in the architecture table.  OPTNAME is the
    name of the option we are parsing and can be used if a diagnostic
-   is needed.  */
+   is needed.  If COMPLAIN is true (the default) emit error
+   messages and hints on invalid input.  */
 const cpu_option *
 arm_parse_cpu_option_name (const cpu_option *list, const char *optname,
-			   const char *target)
+			   const char *target, bool complain)
 {
   const cpu_option *entry;
   const char *end  = strchr (target, '+');
@@ -339,8 +347,11 @@ arm_parse_cpu_option_name (const cpu_option *list, const char *optname,
 	return entry;
     }
 
-  error_at (input_location, "unrecognized %s target: %s", optname, target);
-  arm_print_hint_for_cpu_option (target, list);
+  if (complain)
+    {
+      error_at (input_location, "unrecognized %s target: %s", optname, target);
+      arm_print_hint_for_cpu_option (target, list);
+    }
   return NULL;
 }
 
@@ -353,6 +364,12 @@ arm_print_hint_for_arch_option (const char *target,
   auto_vec<const char*> candidates;
   for (; list->common.name != NULL; list++)
     candidates.safe_push (list->common.name);
+
+#ifdef HAVE_LOCAL_CPU_DETECT
+  /* Add also "native" as possible value.  */
+  candidates.safe_push ("native");
+#endif
+
   char *s;
   const char *hint = candidates_list_and_hint (target, s, candidates);
   if (hint)
@@ -367,10 +384,11 @@ arm_print_hint_for_arch_option (const char *target,
 /* Parse the base component of a CPU or architecture selection in
    LIST.  Return a pointer to the entry in the architecture table.
    OPTNAME is the name of the option we are parsing and can be used if
-   a diagnostic is needed.  */
+   a diagnostic is needed.  If COMPLAIN is true (the default) emit error
+   messages and hints on invalid input.  */
 const arch_option *
 arm_parse_arch_option_name (const arch_option *list, const char *optname,
-			    const char *target)
+			    const char *target, bool complain)
 {
   const arch_option *entry;
   const char *end  = strchr (target, '+');
@@ -383,8 +401,11 @@ arm_parse_arch_option_name (const arch_option *list, const char *optname,
 	return entry;
     }
 
-  error_at (input_location, "unrecognized %s target: %s", optname, target);
-  arm_print_hint_for_arch_option (target, list);
+  if (complain)
+    {
+      error_at (input_location, "unrecognized %s target: %s", optname, target);
+      arm_print_hint_for_arch_option (target, list);
+    }
   return NULL;
 }
 

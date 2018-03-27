@@ -6080,17 +6080,17 @@ types (@pxref{Common Function Attributes},
 @item nonstring
 @cindex @code{nonstring} variable attribute
 The @code{nonstring} variable attribute specifies that an object or member
-declaration with type array of @code{char} or pointer to @code{char} is
-intended to store character arrays that do not necessarily contain
-a terminating @code{NUL} character.  This is useful in detecting uses
-of such arrays or pointers with functions that expect NUL-terminated
-strings, and to avoid warnings when such an array or pointer is used
-as an argument to a bounded string manipulation function such as
-@code{strncpy}.  For example, without the attribute, GCC will issue
-a warning for the @code{strncpy} call below because it may truncate
-the copy without appending the terminating @code{NUL} character.  Using
-the attribute makes it possible to suppress the warning.  However, when
-the array is declared with the attribute the call to @code{strlen} is
+declaration with type array of @code{char}, @code{signed char}, or
+@code{unsigned char}, or pointer to such a type is intended to store
+character arrays that do not necessarily contain a terminating @code{NUL}.
+This is useful in detecting uses of such arrays or pointers with functions
+that expect @code{NUL}-terminated strings, and to avoid warnings when such
+an array or pointer is used as an argument to a bounded string manipulation
+function such as @code{strncpy}.  For example, without the attribute, GCC
+will issue a warning for the @code{strncpy} call below because it may
+truncate the copy without appending the terminating @code{NUL} character.
+Using the attribute makes it possible to suppress the warning.  However,
+when the array is declared with the attribute the call to @code{strlen} is
 diagnosed because when the array doesn't contain a @code{NUL}-terminated
 string the call is undefined.  To copy, compare, of search non-string
 character arrays use the @code{memcpy}, @code{memcmp}, @code{memchr},
@@ -11042,6 +11042,7 @@ the built-in function returns -1.
 @findex __builtin_alloca_with_align
 @findex __builtin_alloca_with_align_and_max
 @findex __builtin_call_with_static_chain
+@findex __builtin_extend_pointer
 @findex __builtin_fpclassify
 @findex __builtin_isfinite
 @findex __builtin_isnormal
@@ -11847,7 +11848,9 @@ corresponding to @var{t} for each function.
 The standard rules for @code{<tgmath.h>} macros are used to find a
 common type @var{u} from the types of the arguments for parameters
 whose types vary between the functions; complex integer types (a GNU
-extension) are treated like @code{_Complex double} for this purpose.
+extension) are treated like @code{_Complex double} for this purpose
+(or @code{_Complex _Float64} if all the function return types are the
+same @code{_Float@var{n}} or @code{_Float@var{n}x} type).
 If the function return types vary, or are all the same integer type,
 the function called is the one for which @var{t} is @var{u}, and it is
 an error if there is no such function.  If the function return types
@@ -12417,6 +12420,14 @@ are 32 bit.
 @deftypefn {Built-in Function} uint64_t __builtin_bswap64 (uint64_t x)
 Similar to @code{__builtin_bswap32}, except the argument and return types
 are 64 bit.
+@end deftypefn
+
+@deftypefn {Built-in Function} Pmode __builtin_extend_pointer (void * x)
+On targets where the user visible pointer size is smaller than the size
+of an actual hardware address this function returns the extended user
+pointer.  Targets where this is true included ILP32 mode on x86_64 or
+Aarch64.  This function is mainly useful when writing inline assembly
+code.
 @end deftypefn
 
 @node Target Builtins
@@ -18386,6 +18397,10 @@ vector double vec_div (vector double, vector double);
 vector long vec_div (vector long, vector long);
 vector unsigned long vec_div (vector unsigned long, vector unsigned long);
 vector double vec_floor (vector double);
+vector __int128 vec_ld (int, const vector __int128 *);
+vector unsigned __int128 vec_ld (int, const vector unsigned __int128 *);
+vector __int128 vec_ld (int, const __int128 *);
+vector unsigned __int128 vec_ld (int, const unsigned __int128 *);
 vector double vec_ld (int, const vector double *);
 vector double vec_ld (int, const double *);
 vector double vec_ldl (int, const vector double *);
@@ -18438,6 +18453,12 @@ vector double vec_perm (vector double, vector double, vector unsigned char);
 vector long vec_perm (vector long, vector long, vector unsigned char);
 vector unsigned long vec_perm (vector unsigned long, vector unsigned long,
                                vector unsigned char);
+vector bool char vec_permxor (vector bool char, vector bool char,
+                              vector bool char);
+vector unsigned char vec_permxor (vector signed char, vector signed char,
+                                  vector signed char);
+vector unsigned char vec_permxor (vector unsigned char, vector unsigned char,
+                                  vector unsigned char);
 vector double vec_rint (vector double);
 vector double vec_recip (vector double, vector double);
 vector double vec_rsqrt (vector double);
@@ -23808,46 +23829,21 @@ some cases that the feature will be dropped in the future.  In other
 cases, the feature might be gone already.
 
 While the list below is not exhaustive, it documents some of the options
-that are now deprecated:
+that are now deprecated or have been removed:
 
 @table @code
-@item -fexternal-templates
-@itemx -falt-external-templates
-These are two of the many ways for G++ to implement template
-instantiation.  @xref{Template Instantiation}.  The C++ standard clearly
-defines how template definitions have to be organized across
-implementation units.  G++ has an implicit instantiation mechanism that
-should work just fine for standard-conforming code.
 
-@item -fstrict-prototype
-@itemx -fno-strict-prototype
-Previously it was possible to use an empty prototype parameter list to
-indicate an unspecified number of parameters (like C), rather than no
-parameters, as C++ demands.  This feature has been removed, except where
-it is required for backwards compatibility.   @xref{Backwards Compatibility}.
+@item -fno-for-scope
+@itemx -ffriend-injection
+These two options provide compatibility with pre-standard C++.
+@xref{Backwards Compatibility}.
+
 @end table
 
 G++ allows a virtual function returning @samp{void *} to be overridden
 by one returning a different pointer type.  This extension to the
 covariant return type rules is now deprecated and will be removed from a
 future version.
-
-The G++ minimum and maximum operators (@samp{<?} and @samp{>?}) and
-their compound forms (@samp{<?=}) and @samp{>?=}) have been deprecated
-and are now removed from G++.  Code using these operators should be
-modified to use @code{std::min} and @code{std::max} instead.
-
-The named return value extension has been deprecated, and is now
-removed from G++.
-
-The use of initializer lists with new expressions has been deprecated,
-and is now removed from G++.
-
-Floating and complex non-type template parameters have been deprecated,
-and are now removed from G++.
-
-The implicit typename extension has been deprecated and is now
-removed from G++.
 
 The use of default arguments in function pointers, function typedefs
 and other places where they are not permitted by the standard is
@@ -23862,6 +23858,14 @@ with an initializer in a class definition. The standard only allows
 initializers for static members of const integral types and const
 enumeration types so this extension has been deprecated and will be removed
 from a future version.
+
+G++ allows attributes to follow a parenthesized direct initializer,
+e.g.@: @samp{ int f (0) __attribute__ ((something)); } This extension
+has been ignored since G++ 3.3 and is deprecated.
+
+G++ allows anonymous structs and unions to have members that are not
+public non-static data members (i.e.@: fields).  These extensions are
+deprecated.
 
 @node Backwards Compatibility
 @section Backwards Compatibility

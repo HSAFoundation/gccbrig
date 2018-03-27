@@ -1094,15 +1094,16 @@ aarch64_min_divisions_for_recip_mul (machine_mode mode)
   return aarch64_tune_params.min_div_recip_mul_df;
 }
 
+/* Return the reassociation width of treeop OPC with mode MODE.  */
 static int
-aarch64_reassociation_width (unsigned opc ATTRIBUTE_UNUSED,
-			     machine_mode mode)
+aarch64_reassociation_width (unsigned opc, machine_mode mode)
 {
   if (VECTOR_MODE_P (mode))
     return aarch64_tune_params.vec_reassoc_width;
   if (INTEGRAL_MODE_P (mode))
     return aarch64_tune_params.int_reassoc_width;
-  if (FLOAT_MODE_P (mode))
+  /* Avoid reassociating floating point addition so we emit more FMAs.  */
+  if (FLOAT_MODE_P (mode) && opc != PLUS_EXPR)
     return aarch64_tune_params.fp_reassoc_width;
   return 1;
 }
@@ -3852,11 +3853,9 @@ aarch64_emit_probe_stack_range (HOST_WIDE_INT first, poly_int64 poly_size)
 	  emit_set_insn (reg2, gen_rtx_PLUS (Pmode, stack_pointer_rtx, reg2));
 	}
       else
-	{
-	  emit_set_insn (reg2,
-			 plus_constant (Pmode, stack_pointer_rtx, adjustment));
-	}
-	  	
+	emit_set_insn (reg2,
+		       plus_constant (Pmode, stack_pointer_rtx, adjustment));
+
       /* Step 3: the loop
 
 	 do
@@ -7059,7 +7058,8 @@ aarch64_print_address_internal (FILE *f, machine_mode mode, rtx x,
   unsigned int size;
 
   /* Check all addresses are Pmode - including ILP32.  */
-  gcc_assert (GET_MODE (x) == Pmode);
+  if (GET_MODE (x) != Pmode)
+    output_operand_lossage ("invalid address mode");
 
   if (aarch64_classify_address (&addr, x, mode, true, type))
     switch (addr.type)
@@ -7733,11 +7733,9 @@ aarch64_can_use_per_function_literal_pools_p (void)
 static bool
 aarch64_use_blocks_for_constant_p (machine_mode, const_rtx)
 {
-  /* Fixme:: In an ideal world this would work similar
-     to the logic in aarch64_select_rtx_section but this
-     breaks bootstrap in gcc go.  For now we workaround
-     this by returning false here.  */
-  return false;
+  /* We can't use blocks for constants when we're using a per-function
+     constant pool.  */
+  return !aarch64_can_use_per_function_literal_pools_p ();
 }
 
 /* Select appropriate section for constants depending
@@ -10628,11 +10626,21 @@ aarch64_print_hint_for_core_or_arch (const char *str, bool arch)
   const struct processor *entry = arch ? all_architectures : all_cores;
   for (; entry->name != NULL; entry++)
     candidates.safe_push (entry->name);
+
+#ifdef HAVE_LOCAL_CPU_DETECT
+  /* Add also "native" as possible value.  */
+  if (arch)
+    candidates.safe_push ("native");
+#endif
+
   char *s;
   const char *hint = candidates_list_and_hint (str, s, candidates);
   if (hint)
     inform (input_location, "valid arguments are: %s;"
 			     " did you mean %qs?", s, hint);
+  else
+    inform (input_location, "valid arguments are: %s", s);
+
   XDELETEVEC (s);
 }
 

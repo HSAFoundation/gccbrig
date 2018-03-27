@@ -1940,7 +1940,7 @@ vague_linkage_p (tree decl)
       if ((DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (decl)
 	   || DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (decl))
 	  && DECL_CHAIN (decl)
-	  && DECL_CLONED_FUNCTION (DECL_CHAIN (decl)))
+	  && DECL_CLONED_FUNCTION_P (DECL_CHAIN (decl)))
 	return vague_linkage_p (DECL_CHAIN (decl));
 
       gcc_checking_assert (!DECL_COMDAT (decl));
@@ -3337,7 +3337,8 @@ get_tls_init_fn (tree var)
 	  /* If the variable is defined somewhere else and might have static
 	     initialization, make the init function a weak reference.  */
 	  if ((!TYPE_NEEDS_CONSTRUCTING (obtype)
-	       || TYPE_HAS_CONSTEXPR_CTOR (obtype))
+	       || TYPE_HAS_CONSTEXPR_CTOR (obtype)
+	       || TYPE_HAS_TRIVIAL_DFLT (obtype))
 	      && TYPE_HAS_TRIVIAL_DESTRUCTOR (obtype)
 	      && DECL_EXTERNAL (var))
 	    declare_weak (fn);

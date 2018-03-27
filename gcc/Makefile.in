@@ -1116,6 +1116,10 @@ endif
 
 LANG_MAKEFRAGS = @all_lang_makefrags@
 
+# Used by gcc/jit/Make-lang.in
+LD_VERSION_SCRIPT_OPTION = @ld_version_script_option@
+LD_SONAME_OPTION = @ld_soname_option@
+
 # Flags to pass to recursive makes.
 # CC is set by configure.
 # ??? The choices here will need some experimenting with.
@@ -2151,7 +2155,7 @@ CFLAGS-collect2.o += -DTARGET_MACHINE=\"$(target_noncanonical)\" \
 
 LTO_WRAPPER_OBJS = lto-wrapper.o collect-utils.o ggc-none.o
 lto-wrapper$(exeext): $(LTO_WRAPPER_OBJS) libcommon-target.a $(LIBDEPS)
-	+$(LINKER) $(ALL_COMPILERFLAGS) $(LDFLAGS) -o T$@ \
+	+$(LINKER) $(ALL_LINKERFLAGS) $(LDFLAGS) -o T$@ \
 	   $(LTO_WRAPPER_OBJS) libcommon-target.a $(LIBS)
 	mv -f T$@ $@
 

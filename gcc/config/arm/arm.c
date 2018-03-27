@@ -16556,16 +16556,6 @@ create_fix_barrier (Mfix *fix, HOST_WIDE_INT max_address)
   /* Make sure that we found a place to insert the jump.  */
   gcc_assert (selected);
 
-  /* Make sure we do not split a call and its corresponding
-     CALL_ARG_LOCATION note.  */
-  if (CALL_P (selected))
-    {
-      rtx_insn *next = NEXT_INSN (selected);
-      if (next && NOTE_P (next)
-	  && NOTE_KIND (next) == NOTE_INSN_CALL_ARG_LOCATION)
-	  selected = next;
-    }
-
   /* Create a new JUMP_INSN that branches around a barrier.  */
   from = emit_jump_insn_after (gen_jump (label), selected);
   JUMP_LABEL (from) = label;
@@ -19402,6 +19392,11 @@ arm_r3_live_at_start_p (void)
 static int
 arm_compute_static_chain_stack_bytes (void)
 {
+  /* Once the value is updated from the init value of -1, do not
+     re-compute.  */
+  if (cfun->machine->static_chain_stack_bytes != -1)
+    return cfun->machine->static_chain_stack_bytes;
+
   /* See the defining assertion in arm_expand_prologue.  */
   if (IS_NESTED (arm_current_func_type ())
       && ((TARGET_APCS_FRAME && frame_pointer_needed && TARGET_ARM)
@@ -21708,6 +21703,11 @@ arm_expand_prologue (void)
 	 handling of SP as restoring from the CFA.  */
       emit_insn (gen_movsi (stack_pointer_rtx, r1));
     }
+
+  /* Let's compute the static_chain_stack_bytes required and store it.  Right
+     now the value must be -1 as stored by arm_init_machine_status ().  */
+  cfun->machine->static_chain_stack_bytes
+    = arm_compute_static_chain_stack_bytes ();
 
   /* The static chain register is the same as the IP register.  If it is
      clobbered when creating the frame, we need to save and restore it.  */
@@ -24885,6 +24885,7 @@ arm_init_machine_status (void)
 #if ARM_FT_UNKNOWN != 0
   machine->func_type = ARM_FT_UNKNOWN;
 #endif
+  machine->static_chain_stack_bytes = -1;
   return machine;
 }
 
@@ -27172,7 +27173,10 @@ static bool
 arm_array_mode_supported_p (machine_mode mode,
 			    unsigned HOST_WIDE_INT nelems)
 {
-  if (TARGET_NEON
+  /* We don't want to enable interleaved loads and stores for BYTES_BIG_ENDIAN
+     for now, as the lane-swapping logic needs to be extended in the expanders.
+     See PR target/82518.  */
+  if (TARGET_NEON && !BYTES_BIG_ENDIAN
       && (VALID_NEON_DREG_MODE (mode) || VALID_NEON_QREG_MODE (mode))
       && (nelems >= 2 && nelems <= 4))
     return true;

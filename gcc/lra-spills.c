@@ -294,6 +294,8 @@ assign_spill_hard_regs (int *pseudo_regnos, int n)
 	}
       if (lra_dump_file != NULL)
 	fprintf (lra_dump_file, "  Spill r%d into hr%d\n", regno, hard_regno);
+      add_to_hard_reg_set (&hard_regs_spilled_into,
+			   lra_reg_info[regno].biggest_mode, hard_regno);
       /* Update reserved_hard_regs.  */
       for (r = lra_reg_info[regno].live_ranges; r != NULL; r = r->next)
 	for (p = r->start; p <= r->finish; p++)
@@ -517,7 +519,7 @@ spill_pseudos (void)
 			 INSN_UID (insn));
 	      lra_push_insn (insn);
 	      if (lra_reg_spill_p || targetm.different_addr_displacement_p ())
-		lra_set_used_insn_alternative (insn, -1);
+		lra_set_used_insn_alternative (insn, LRA_UNKNOWN_ALT);
 	    }
 	  else if (CALL_P (insn)
 		   /* Presence of any pseudo in CALL_INSN_FUNCTION_USAGE

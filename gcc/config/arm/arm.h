@@ -1384,6 +1384,9 @@ typedef struct GTY(()) machine_function
   machine_mode thumb1_cc_mode;
   /* Set to 1 after arm_reorg has started.  */
   int after_arm_reorg;
+  /* The number of bytes used to store the static chain register on the
+     stack, above the stack frame.  */
+  int static_chain_stack_bytes;
 }
 machine_function;
 #endif
@@ -2194,6 +2197,7 @@ extern const char *arm_target_thumb_only (int argc, const char **argv);
    an ARM chip.  */
 #if defined(__arm__)
 extern const char *host_detect_local_cpu (int argc, const char **argv);
+#define HAVE_LOCAL_CPU_DETECT
 # define MCPU_MTUNE_NATIVE_FUNCTIONS			\
   { "local_cpu_detect", host_detect_local_cpu },
 # define MCPU_MTUNE_NATIVE_SPECS				\

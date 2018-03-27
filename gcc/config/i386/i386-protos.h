@@ -256,6 +256,7 @@ extern void i386_pe_asm_output_aligned_decl_common (FILE *, tree,
 extern void i386_pe_file_end (void);
 extern void i386_pe_start_function (FILE *, const char *, tree);
 extern void i386_pe_end_function (FILE *, const char *, tree);
+extern void i386_pe_end_cold_function (FILE *, const char *, tree);
 extern void i386_pe_assemble_visibility (tree, int);
 extern tree i386_pe_mangle_decl_assembler_name (tree, tree);
 extern tree i386_pe_mangle_assembler_name (const char *);
@@ -263,6 +264,7 @@ extern void i386_pe_record_stub (const char *);
 
 extern void i386_pe_seh_init (FILE *);
 extern void i386_pe_seh_end_prologue (FILE *);
+extern void i386_pe_seh_cold_init (FILE *, const char *);
 extern void i386_pe_seh_unwind_emit (FILE *, rtx_insn *);
 extern void i386_pe_seh_emit_except_personality (rtx);
 extern void i386_pe_seh_init_sections (void);
@@ -305,8 +307,10 @@ extern enum attr_cpu ix86_schedule;
 #endif
 
 extern const char * ix86_output_call_insn (rtx_insn *insn, rtx call_op);
-extern const char * ix86_output_indirect_jmp (rtx call_op, bool ret_p);
+extern const char * ix86_output_indirect_jmp (rtx call_op);
 extern const char * ix86_output_function_return (bool long_p);
+extern const char * ix86_output_indirect_function_return (rtx ret_op);
+extern void ix86_split_simple_return_pop_internal (rtx);
 extern bool ix86_operands_ok_for_move_multiple (rtx *operands, bool load,
 						machine_mode mode);
 extern int ix86_min_insn_size (rtx_insn *);
