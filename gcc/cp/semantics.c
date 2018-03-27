@@ -733,7 +733,10 @@ finish_if_stmt_cond (tree cond, tree if_stmt)
   if (IF_STMT_CONSTEXPR_P (if_stmt)
       && !type_dependent_expression_p (cond)
       && require_constant_expression (cond)
-      && !value_dependent_expression_p (cond))
+      && !value_dependent_expression_p (cond)
+      /* Wait until instantiation time, since only then COND has been
+	 converted to bool.  */
+      && TREE_TYPE (cond) == boolean_type_node)
     {
       cond = instantiate_non_dependent_expr (cond);
       cond = cxx_constant_value (cond, NULL_TREE);
@@ -1512,6 +1515,21 @@ finish_asm_stmt (int volatile_p, tree string, tree output_operands,
 		      && C_TYPE_FIELDS_READONLY (TREE_TYPE (operand)))))
 	    cxx_readonly_error (operand, lv_asm);
 
+	  tree *op = &operand;
+	  while (TREE_CODE (*op) == COMPOUND_EXPR)
+	    op = &TREE_OPERAND (*op, 1);
+	  switch (TREE_CODE (*op))
+	    {
+	    case PREINCREMENT_EXPR:
+	    case PREDECREMENT_EXPR:
+	    case MODIFY_EXPR:
+	      *op = genericize_compound_lvalue (*op);
+	      op = &TREE_OPERAND (*op, 1);
+	      break;
+	    default:
+	      break;
+	    }
+
 	  constraint = TREE_STRING_POINTER (TREE_VALUE (TREE_PURPOSE (t)));
 	  oconstraints[i] = constraint;
 
@@ -1520,7 +1538,7 @@ finish_asm_stmt (int volatile_p, tree string, tree output_operands,
 	    {
 	      /* If the operand is going to end up in memory,
 		 mark it addressable.  */
-	      if (!allows_reg && !cxx_mark_addressable (operand))
+	      if (!allows_reg && !cxx_mark_addressable (*op))
 		operand = error_mark_node;
 	    }
 	  else
@@ -1562,7 +1580,23 @@ finish_asm_stmt (int volatile_p, tree string, tree output_operands,
 		  /* Strip the nops as we allow this case.  FIXME, this really
 		     should be rejected or made deprecated.  */
 		  STRIP_NOPS (operand);
-		  if (!cxx_mark_addressable (operand))
+
+		  tree *op = &operand;
+		  while (TREE_CODE (*op) == COMPOUND_EXPR)
+		    op = &TREE_OPERAND (*op, 1);
+		  switch (TREE_CODE (*op))
+		    {
+		    case PREINCREMENT_EXPR:
+		    case PREDECREMENT_EXPR:
+		    case MODIFY_EXPR:
+		      *op = genericize_compound_lvalue (*op);
+		      op = &TREE_OPERAND (*op, 1);
+		      break;
+		    default:
+		      break;
+		    }
+
+		  if (!cxx_mark_addressable (*op))
 		    operand = error_mark_node;
 		}
 	      else if (!allows_reg && !allows_mem)
@@ -1693,7 +1727,7 @@ force_paren_expr (tree expr)
   if (TREE_CODE (expr) == COMPONENT_REF
       || TREE_CODE (expr) == SCOPE_REF)
     REF_PARENTHESIZED_P (expr) = true;
-  else if (type_dependent_expression_p (expr))
+  else if (processing_template_decl)
     expr = build1 (PAREN_EXPR, TREE_TYPE (expr), expr);
   else if (VAR_P (expr) && DECL_HARD_REGISTER (expr))
     /* We can't bind a hard register variable to a reference.  */;
@@ -1724,9 +1758,10 @@ force_paren_expr (tree expr)
 tree
 maybe_undo_parenthesized_ref (tree t)
 {
-  if (cxx_dialect >= cxx14
-      && INDIRECT_REF_P (t)
-      && REF_PARENTHESIZED_P (t))
+  if (cxx_dialect < cxx14)
+    return t;
+
+  if (INDIRECT_REF_P (t) && REF_PARENTHESIZED_P (t))
     {
       t = TREE_OPERAND (t, 0);
       while (TREE_CODE (t) == NON_LVALUE_EXPR
@@ -1737,6 +1772,8 @@ maybe_undo_parenthesized_ref (tree t)
 		  || TREE_CODE (t) == STATIC_CAST_EXPR);
       t = TREE_OPERAND (t, 0);
     }
+  else if (TREE_CODE (t) == PAREN_EXPR)
+    t = TREE_OPERAND (t, 0);
 
   return t;
 }
@@ -2111,7 +2148,14 @@ finish_stmt_expr_expr (tree expr, tree stmt_expr)
     {
       tree type = TREE_TYPE (expr);
 
-      if (processing_template_decl)
+      if (type && type_unknown_p (type))
+	{
+	  error ("a statement expression is an insufficient context"
+		 " for overload resolution");
+	  TREE_TYPE (stmt_expr) = error_mark_node;
+	  return error_mark_node;
+	}
+      else if (processing_template_decl)
 	{
 	  expr = build_stmt (input_location, EXPR_STMT, expr);
 	  expr = add_stmt (expr);
@@ -3322,7 +3366,7 @@ process_outer_var_ref (tree decl, tsubst_flags_t complain, bool odr_use)
     {
       /* Check whether we've already built a proxy.  */
       tree var = decl;
-      while (is_capture_proxy_with_ref (var))
+      while (is_normal_capture_proxy (var))
 	var = DECL_CAPTURED_VARIABLE (var);
       tree d = retrieve_local_specialization (var);
 
@@ -4026,6 +4070,11 @@ finish_offsetof (tree object_ptr, tree expr, location_t loc)
 	    expr = TREE_OPERAND (expr, 1);
 	  error ("cannot apply %<offsetof%> to member function %qD", expr);
 	}
+      return error_mark_node;
+    }
+  if (TREE_CODE (expr) == CONST_DECL)
+    {
+      error ("cannot apply %<offsetof%> to an enumerator %qD", expr);
       return error_mark_node;
     }
   if (REFERENCE_REF_P (expr))
@@ -8620,8 +8669,7 @@ finish_static_assert (tree condition, tree message, location_t location,
   if (check_for_bare_parameter_packs (condition))
     condition = error_mark_node;
 
-  if (type_dependent_expression_p (condition) 
-      || value_dependent_expression_p (condition))
+  if (instantiation_dependent_expression_p (condition))
     {
       /* We're in a template; build a STATIC_ASSERT and put it in
          the right place. */
@@ -8671,7 +8719,7 @@ finish_static_assert (tree condition, tree message, location_t location,
       else if (condition && condition != error_mark_node)
 	{
 	  error ("non-constant condition for static assertion");
-	  if (require_potential_rvalue_constant_expression (condition))
+	  if (require_rvalue_constant_expression (condition))
 	    cxx_constant_value (condition);
 	}
       input_location = saved_loc;

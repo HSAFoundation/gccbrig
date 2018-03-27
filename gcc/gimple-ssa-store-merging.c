@@ -1891,12 +1891,11 @@ merged_store_group::do_merge (store_immediate_info *info)
 void
 merged_store_group::merge_into (store_immediate_info *info)
 {
-  unsigned HOST_WIDE_INT wid = info->bitsize;
   /* Make sure we're inserting in the position we think we're inserting.  */
   gcc_assert (info->bitpos >= start + width
 	      && info->bitregion_start <= bitregion_end);
 
-  width += wid;
+  width = info->bitpos + info->bitsize - start;
   do_merge (info);
 }
 
@@ -1909,7 +1908,7 @@ merged_store_group::merge_overlapping (store_immediate_info *info)
 {
   /* If the store extends the size of the group, extend the width.  */
   if (info->bitpos + info->bitsize > start + width)
-    width += info->bitpos + info->bitsize - (start + width);
+    width = info->bitpos + info->bitsize - start;
 
   do_merge (info);
 }
@@ -2304,6 +2303,55 @@ gather_bswap_load_refs (vec<tree> *refs, tree val)
     }
 }
 
+/* Check if there are any stores in M_STORE_INFO after index I
+   (where M_STORE_INFO must be sorted by sort_by_bitpos) that overlap
+   a potential group ending with END that have their order
+   smaller than LAST_ORDER.  RHS_CODE is the kind of store in the
+   group.  Return true if there are no such stores.
+   Consider:
+     MEM[(long long int *)p_28] = 0;
+     MEM[(long long int *)p_28 + 8B] = 0;
+     MEM[(long long int *)p_28 + 16B] = 0;
+     MEM[(long long int *)p_28 + 24B] = 0;
+     _129 = (int) _130;
+     MEM[(int *)p_28 + 8B] = _129;
+     MEM[(int *)p_28].a = -1;
+   We already have
+     MEM[(long long int *)p_28] = 0;
+     MEM[(int *)p_28].a = -1;
+   stmts in the current group and need to consider if it is safe to
+   add MEM[(long long int *)p_28 + 8B] = 0; store into the same group.
+   There is an overlap between that store and the MEM[(int *)p_28 + 8B] = _129;
+   store though, so if we add the MEM[(long long int *)p_28 + 8B] = 0;
+   into the group and merging of those 3 stores is successful, merged
+   stmts will be emitted at the latest store from that group, i.e.
+   LAST_ORDER, which is the MEM[(int *)p_28].a = -1; store.
+   The MEM[(int *)p_28 + 8B] = _129; store that originally follows
+   the MEM[(long long int *)p_28 + 8B] = 0; would now be before it,
+   so we need to refuse merging MEM[(long long int *)p_28 + 8B] = 0;
+   into the group.  That way it will be its own store group and will
+   not be touched.  If RHS_CODE is INTEGER_CST and there are overlapping
+   INTEGER_CST stores, those are mergeable using merge_overlapping,
+   so don't return false for those.  */
+
+static bool
+check_no_overlap (vec<store_immediate_info *> m_store_info, unsigned int i,
+		  enum tree_code rhs_code, unsigned int last_order,
+		  unsigned HOST_WIDE_INT end)
+{
+  unsigned int len = m_store_info.length ();
+  for (++i; i < len; ++i)
+    {
+      store_immediate_info *info = m_store_info[i];
+      if (info->bitpos >= end)
+	break;
+      if (info->order < last_order
+	  && (rhs_code != INTEGER_CST || info->rhs_code != INTEGER_CST))
+	return false;
+    }
+  return true;
+}
+
 /* Return true if m_store_info[first] and at least one following store
    form a group which store try_size bitsize value which is byte swapped
    from a memory load or some value, or identity from some value.
@@ -2375,6 +2423,7 @@ imm_store_chain_info::try_coalesce_bswap (merged_store_group *merged_store,
   unsigned int last_order = merged_store->last_order;
   gimple *first_stmt = merged_store->first_stmt;
   gimple *last_stmt = merged_store->last_stmt;
+  unsigned HOST_WIDE_INT end = merged_store->start + merged_store->width;
   store_immediate_info *infof = m_store_info[first];
 
   for (unsigned int i = first; i <= last; ++i)
@@ -2413,25 +2462,23 @@ imm_store_chain_info::try_coalesce_bswap (merged_store_group *merged_store,
 	}
       else
 	{
-	  if (n.base_addr)
+	  if (n.base_addr && n.vuse != this_n.vuse)
 	    {
-	      if (n.vuse != this_n.vuse)
-		{
-		  if (vuse_store == 0)
-		    return false;
-		  vuse_store = 1;
-		}
-	      if (info->order > last_order)
-		{
-		  last_order = info->order;
-		  last_stmt = info->stmt;
-		}
-	      else if (info->order < first_order)
-		{
-		  first_order = info->order;
-		  first_stmt = info->stmt;
-		}
+	      if (vuse_store == 0)
+		return false;
+	      vuse_store = 1;
 	    }
+	  if (info->order > last_order)
+	    {
+	      last_order = info->order;
+	      last_stmt = info->stmt;
+	    }
+	  else if (info->order < first_order)
+	    {
+	      first_order = info->order;
+	      first_stmt = info->stmt;
+	    }
+	  end = MAX (end, info->bitpos + info->bitsize);
 
 	  ins_stmt = perform_symbolic_merge (ins_stmt, &n, info->ins_stmt,
 					     &this_n, &n);
@@ -2450,6 +2497,9 @@ imm_store_chain_info::try_coalesce_bswap (merged_store_group *merged_store,
     return false;
 
   if (n.base_addr == NULL_TREE && !is_gimple_val (n.src))
+    return false;
+
+  if (!check_no_overlap (m_store_info, last, LROTATE_EXPR, last_order, end))
     return false;
 
   /* Don't handle memory copy this way if normal non-bswap processing
@@ -2633,7 +2683,13 @@ imm_store_chain_info::coalesce_immediate_stores ()
 	       : !info->ops[0].base_addr)
 	      && (infof->ops[1].base_addr
 		  ? compatible_load_p (merged_store, info, base_addr, 1)
-		  : !info->ops[1].base_addr))
+		  : !info->ops[1].base_addr)
+	      && check_no_overlap (m_store_info, i, info->rhs_code,
+				   MAX (merged_store->last_order,
+					info->order),
+				   MAX (merged_store->start
+					+ merged_store->width,
+					info->bitpos + info->bitsize)))
 	    {
 	      merged_store->merge_into (info);
 	      continue;
@@ -3192,16 +3248,23 @@ invert_op (split_store *split_store, int idx, tree int_type, tree &mask)
   unsigned int i;
   store_immediate_info *info;
   unsigned int cnt = 0;
+  bool any_paddings = false;
   FOR_EACH_VEC_ELT (split_store->orig_stores, i, info)
     {
       bool bit_not_p = idx < 2 ? info->ops[idx].bit_not_p : info->bit_not_p;
       if (bit_not_p)
-	++cnt;
+	{
+	  ++cnt;
+	  tree lhs = gimple_assign_lhs (info->stmt);
+	  if (INTEGRAL_TYPE_P (TREE_TYPE (lhs))
+	      && TYPE_PRECISION (TREE_TYPE (lhs)) < info->bitsize)
+	    any_paddings = true;
+	}
     }
   mask = NULL_TREE;
   if (cnt == 0)
     return NOP_EXPR;
-  if (cnt == split_store->orig_stores.length ())
+  if (cnt == split_store->orig_stores.length () && !any_paddings)
     return BIT_NOT_EXPR;
 
   unsigned HOST_WIDE_INT try_bitpos = split_store->bytepos * BITS_PER_UNIT;
@@ -3218,14 +3281,42 @@ invert_op (split_store *split_store, int idx, tree int_type, tree &mask)
 	 clear regions with !bit_not_p, so that gaps in between stores aren't
 	 set in the mask.  */
       unsigned HOST_WIDE_INT bitsize = info->bitsize;
+      unsigned HOST_WIDE_INT prec = bitsize;
       unsigned int pos_in_buffer = 0;
+      if (any_paddings)
+	{
+	  tree lhs = gimple_assign_lhs (info->stmt);
+	  if (INTEGRAL_TYPE_P (TREE_TYPE (lhs))
+	      && TYPE_PRECISION (TREE_TYPE (lhs)) < bitsize)
+	    prec = TYPE_PRECISION (TREE_TYPE (lhs));
+	}
       if (info->bitpos < try_bitpos)
 	{
 	  gcc_assert (info->bitpos + bitsize > try_bitpos);
-	  bitsize -= (try_bitpos - info->bitpos);
+	  if (!BYTES_BIG_ENDIAN)
+	    {
+	      if (prec <= try_bitpos - info->bitpos)
+		continue;
+	      prec -= try_bitpos - info->bitpos;
+	    }
+	  bitsize -= try_bitpos - info->bitpos;
+	  if (BYTES_BIG_ENDIAN && prec > bitsize)
+	    prec = bitsize;
 	}
       else
 	pos_in_buffer = info->bitpos - try_bitpos;
+      if (prec < bitsize)
+	{
+	  /* If this is a bool inversion, invert just the least significant
+	     prec bits rather than all bits of it.  */
+	  if (BYTES_BIG_ENDIAN)
+	    {
+	      pos_in_buffer += bitsize - prec;
+	      if (pos_in_buffer >= split_store->size)
+		continue;
+	    }
+	  bitsize = prec;
+	}
       if (pos_in_buffer + bitsize > split_store->size)
 	bitsize = split_store->size - pos_in_buffer;
       unsigned char *p = buf + (pos_in_buffer / BITS_PER_UNIT);
@@ -3892,7 +3983,8 @@ mem_valid_for_store_merging (tree mem, poly_uint64 *pbitsize,
   if (known_eq (bitregion_end, 0U))
     {
       bitregion_start = round_down_to_byte_boundary (bitpos);
-      bitregion_end = round_up_to_byte_boundary (bitpos + bitsize);
+      bitregion_end = bitpos;
+      bitregion_end = round_up_to_byte_boundary (bitregion_end + bitsize);
     }
 
   if (offset != NULL_TREE)

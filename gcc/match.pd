@@ -3568,16 +3568,18 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 (simplify
  (cond
   (ne (bit_and @0 integer_pow2p@1) integer_zerop)
-  integer_pow2p@2 integer_zerop)
- (with {
-    int shift = (wi::exact_log2 (wi::to_wide (@2))
-		 - wi::exact_log2 (wi::to_wide (@1)));
-  }
-  (if (shift > 0)
-   (bit_and
-    (lshift (convert @0) { build_int_cst (integer_type_node, shift); }) @2)
-   (bit_and
-    (convert (rshift @0 { build_int_cst (integer_type_node, -shift); })) @2))))
+  INTEGER_CST@2 integer_zerop)
+ (if (integer_pow2p (@2))
+  (with {
+     int shift = (wi::exact_log2 (wi::to_wide (@2))
+		  - wi::exact_log2 (wi::to_wide (@1)));
+   }
+   (if (shift > 0)
+    (bit_and
+     (lshift (convert @0) { build_int_cst (integer_type_node, shift); }) @2)
+    (bit_and
+     (convert (rshift @0 { build_int_cst (integer_type_node, -shift); }))
+     @2)))))
 
 /* If we have (A & C) != 0 where C is the sign bit of A, convert
    this into A < 0.  Similarly for (A & C) == 0 into A >= 0.  */
@@ -3597,8 +3599,9 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
 (simplify
  (cond
   (lt @0 integer_zerop)
-  integer_pow2p@1 integer_zerop)
- (if (!TYPE_UNSIGNED (TREE_TYPE (@0)))
+  INTEGER_CST@1 integer_zerop)
+ (if (integer_pow2p (@1)
+      && !TYPE_UNSIGNED (TREE_TYPE (@0)))
   (with {
     int shift = element_precision (@0) - wi::exact_log2 (wi::to_wide (@1)) - 1;
    }
@@ -4008,7 +4011,14 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
   (simplify
    (pows REAL_CST@0 @1)
    (if (real_compare (GT_EXPR, TREE_REAL_CST_PTR (@0), &dconst0)
-	&& real_isfinite (TREE_REAL_CST_PTR (@0)))
+	&& real_isfinite (TREE_REAL_CST_PTR (@0))
+	/* As libmvec doesn't have a vectorized exp2, defer optimizing
+	   the use_exp2 case until after vectorization.  It seems actually
+	   beneficial for all constants to postpone this until later,
+	   because exp(log(C)*x), while faster, will have worse precision
+	   and if x folds into a constant too, that is unnecessary
+	   pessimization.  */
+	&& canonicalize_math_after_vectorization_p ())
     (with {
        const REAL_VALUE_TYPE *const value = TREE_REAL_CST_PTR (@0);
        bool use_exp2 = false;
@@ -4023,10 +4033,17 @@ DEFINE_INT_AND_FLOAT_ROUND_FN (RINT)
      }
      (if (!use_exp2)
       (exps (mult (logs @0) @1))
-      /* As libmvec doesn't have a vectorized exp2, defer optimizing
-	 this until after vectorization.  */
-      (if (canonicalize_math_after_vectorization_p ())
-	(exp2s (mult (log2s @0) @1))))))))
+      (exp2s (mult (log2s @0) @1)))))))
+
+ /* pow(C,x)*expN(y) -> expN(logN(C)*x+y) if C > 0.  */
+ (for pows (POW)
+      exps (EXP EXP2 EXP10 POW10)
+      logs (LOG LOG2 LOG10 LOG10)
+  (simplify
+   (mult:c (pows:s REAL_CST@0 @1) (exps:s @2))
+   (if (real_compare (GT_EXPR, TREE_REAL_CST_PTR (@0), &dconst0)
+	&& real_isfinite (TREE_REAL_CST_PTR (@0)))
+    (exps (plus (mult (logs @0) @1) @2)))))
 
  (for sqrts (SQRT)
       cbrts (CBRT)

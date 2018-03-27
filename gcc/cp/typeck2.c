@@ -822,7 +822,7 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
   if (decl_maybe_constant_var_p (decl) || TREE_STATIC (decl))
     {
       bool const_init;
-      value = instantiate_non_dependent_expr (value);
+      value = fold_non_dependent_expr (value);
       if (DECL_DECLARED_CONSTEXPR_P (decl)
 	  || (DECL_IN_AGGR_P (decl) && !DECL_VAR_DECLARED_INLINE_P (decl)))
 	{
@@ -830,9 +830,10 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
 	  if (!require_constant_expression (value))
 	    value = error_mark_node;
 	  else
-	    value = cxx_constant_value (value, decl);
+	    value = cxx_constant_init (value, decl);
 	}
-      value = maybe_constant_init (value, decl);
+      else
+	value = maybe_constant_init (value, decl);
       if (TREE_CODE (value) == CONSTRUCTOR && cp_has_mutable_p (type))
 	/* Poison this CONSTRUCTOR so it can't be copied to another
 	   constexpr variable.  */
@@ -1469,6 +1470,9 @@ process_init_constructor_record (tree type, tree init, int nested,
 	    }
 	  /* C++14 aggregate NSDMI.  */
 	  next = get_nsdmi (field, /*ctor*/false, complain);
+	  if (!CONSTRUCTOR_PLACEHOLDER_BOUNDARY (init)
+	      && find_placeholders (next))
+	    CONSTRUCTOR_PLACEHOLDER_BOUNDARY (init) = 1;
 	}
       else if (type_build_ctor_call (TREE_TYPE (field)))
 	{
@@ -1607,10 +1611,11 @@ process_init_constructor_union (tree type, tree init, int nested,
 	  if (TREE_CODE (field) == FIELD_DECL
 	      && DECL_INITIAL (field) != NULL_TREE)
 	    {
-	      CONSTRUCTOR_APPEND_ELT (CONSTRUCTOR_ELTS (init),
-				      field,
-				      get_nsdmi (field, /*in_ctor=*/false,
-						 complain));
+	      tree val = get_nsdmi (field, /*in_ctor=*/false, complain);
+	      if (!CONSTRUCTOR_PLACEHOLDER_BOUNDARY (init)
+		  && find_placeholders (val))
+		CONSTRUCTOR_PLACEHOLDER_BOUNDARY (init) = 1;
+	      CONSTRUCTOR_APPEND_ELT (CONSTRUCTOR_ELTS (init), field, val);
 	      break;
 	    }
 	}
@@ -2056,7 +2061,7 @@ build_functional_cast (tree exp, tree parms, tsubst_flags_t complain)
       if (complain & tf_warning
 	  && TREE_DEPRECATED (type)
 	  && DECL_ARTIFICIAL (exp))
-	warn_deprecated_use (type, NULL_TREE);
+	cp_warn_deprecated_use (type);
     }
   else
     type = exp;

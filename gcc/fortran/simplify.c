@@ -25,6 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gfortran.h"
 #include "arith.h"
 #include "intrinsic.h"
+#include "match.h"
 #include "target-memory.h"
 #include "constructor.h"
 #include "version.h"	/* For version_string.  */
@@ -255,6 +256,31 @@ is_constant_array_expr (gfc_expr *e)
       return false;
 
   return true;
+}
+
+/* Test for a size zero array.  */
+bool
+gfc_is_size_zero_array (gfc_expr *array)
+{
+
+  if (array->rank == 0)
+    return false;
+
+  if (array->expr_type == EXPR_VARIABLE && array->rank > 0
+      && array->symtree->n.sym->attr.flavor == FL_PARAMETER
+      && array->shape != NULL)
+    {
+      for (int i = 0; i < array->rank; i++)
+	if (mpz_cmp_si (array->shape[i], 0) <= 0)
+	  return true;
+
+      return false;
+    }
+
+  if (array->expr_type == EXPR_ARRAY)
+    return array->value.constructor == NULL;
+
+  return false;
 }
 
 
@@ -663,8 +689,11 @@ simplify_transformation (gfc_expr *array, gfc_expr *dim, gfc_expr *mask,
 			 int init_val, transformational_op op)
 {
   gfc_expr *result;
+  bool size_zero;
 
-  if (!is_constant_array_expr (array)
+  size_zero = gfc_is_size_zero_array (array);
+
+  if (!(is_constant_array_expr (array) || size_zero)
       || !gfc_is_constant_expr (dim))
     return NULL;
 
@@ -676,6 +705,9 @@ simplify_transformation (gfc_expr *array, gfc_expr *dim, gfc_expr *mask,
   result = transformational_result (array, dim, array->ts.type,
 				    array->ts.kind, &array->where);
   init_result_expr (result, init_val, array);
+
+  if (size_zero)
+    return result;
 
   return !dim || array->rank == 1 ?
     simplify_transformation_to_scalar (result, array, mask, op) :
@@ -1934,8 +1966,11 @@ gfc_expr *
 gfc_simplify_count (gfc_expr *mask, gfc_expr *dim, gfc_expr *kind)
 {
   gfc_expr *result;
+  bool size_zero;
 
-  if (!is_constant_array_expr (mask)
+  size_zero = gfc_is_size_zero_array (mask);
+
+  if (!(is_constant_array_expr (mask) || size_zero)
       || !gfc_is_constant_expr (dim)
       || !gfc_is_constant_expr (kind))
     return NULL;
@@ -1947,6 +1982,9 @@ gfc_simplify_count (gfc_expr *mask, gfc_expr *dim, gfc_expr *kind)
 				    &mask->where);
 
   init_result_expr (result, 0, NULL);
+
+  if (size_zero)
+    return result;
 
   /* Passing MASK twice, once as data array, once as mask.
      Whenever gfc_count is called, '1' is added to the result.  */
@@ -5656,13 +5694,19 @@ gfc_expr *
 gfc_simplify_norm2 (gfc_expr *e, gfc_expr *dim)
 {
   gfc_expr *result;
+  bool size_zero;
 
-  if (!is_constant_array_expr (e)
+  size_zero = gfc_is_size_zero_array (e);
+
+  if (!(is_constant_array_expr (e) || size_zero)
       || (dim != NULL && !gfc_is_constant_expr (dim)))
     return NULL;
 
   result = transformational_result (e, dim, e->ts.type, e->ts.kind, &e->where);
   init_result_expr (result, 0, NULL);
+
+  if (size_zero)
+    return result;
 
   if (!dim || e->rank == 1)
     {
@@ -7370,10 +7414,12 @@ gfc_simplify_transfer (gfc_expr *source, gfc_expr *mold, gfc_expr *size)
   unsigned char *buffer;
   size_t result_length;
 
+  if (!gfc_is_constant_expr (source) || !gfc_is_constant_expr (size))
+    return NULL;
 
-  if (!gfc_is_constant_expr (source)
-	|| (gfc_init_expr_flag && !gfc_is_constant_expr (mold))
-	|| !gfc_is_constant_expr (size))
+  if (!gfc_resolve_expr (mold))
+    return NULL;
+  if (gfc_init_expr_flag && !gfc_is_constant_expr (mold))
     return NULL;
 
   if (!gfc_calculate_transfer_sizes (source, mold, size, &source_size,
@@ -7970,26 +8016,32 @@ gfc_convert_constant (gfc_expr *e, bt type, int kind)
 	{
 	  gfc_expr *tmp;
 	  if (c->iterator == NULL)
-	    tmp = f (c->expr, kind);
+	    {
+	      tmp = f (c->expr, kind);
+	      if (tmp == NULL)
+		{
+		  gfc_free_expr (result);
+		  return NULL;
+		}
+
+	      gfc_constructor_append_expr (&result->value.constructor,
+					   tmp, &c->where);
+	    }
 	  else
 	    {
+	      gfc_constructor *n;
 	      g = gfc_convert_constant (c->expr, type, kind);
-	      if (g == &gfc_bad_expr)
+	      if (g == NULL || g == &gfc_bad_expr)
 	        {
 		  gfc_free_expr (result);
 		  return g;
 		}
-	      tmp = g;
+	      n = gfc_constructor_get ();
+	      n->expr = g;
+	      n->iterator = gfc_copy_iterator (c->iterator);
+	      n->where = c->where;
+	      gfc_constructor_append (&result->value.constructor, n);
 	    }
-
-	  if (tmp == NULL)
-	    {
-	      gfc_free_expr (result);
-	      return NULL;
-	    }
-
-	  gfc_constructor_append_expr (&result->value.constructor,
-				       tmp, &c->where);
 	}
 
       break;

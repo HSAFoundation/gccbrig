@@ -194,6 +194,21 @@ lvalue_kind (const_tree ref)
       break;
 
     case COND_EXPR:
+      if (processing_template_decl)
+	{
+	  /* Within templates, a REFERENCE_TYPE will indicate whether
+	     the COND_EXPR result is an ordinary lvalue or rvalueref.
+	     Since REFERENCE_TYPEs are handled above, if we reach this
+	     point, we know we got a plain rvalue.  Unless we have a
+	     type-dependent expr, that is, but we shouldn't be testing
+	     lvalueness if we can't even tell the types yet!  */
+	  gcc_assert (!type_dependent_expression_p (CONST_CAST_TREE (ref)));
+	  if (CLASS_TYPE_P (TREE_TYPE (ref))
+	      || TREE_CODE (TREE_TYPE (ref)) == ARRAY_TYPE)
+	    return clk_class;
+	  else
+	    return clk_none;
+	}
       op1_lvalue_kind = lvalue_kind (TREE_OPERAND (ref, 1)
 				    ? TREE_OPERAND (ref, 1)
 				    : TREE_OPERAND (ref, 0));
@@ -239,6 +254,7 @@ lvalue_kind (const_tree ref)
       return lvalue_kind (BASELINK_FUNCTIONS (CONST_CAST_TREE (ref)));
 
     case NON_DEPENDENT_EXPR:
+    case PAREN_EXPR:
       return lvalue_kind (TREE_OPERAND (ref, 0));
 
     case VIEW_CONVERT_EXPR:
@@ -1042,6 +1058,8 @@ bool
 array_of_runtime_bound_p (tree t)
 {
   if (!t || TREE_CODE (t) != ARRAY_TYPE)
+    return false;
+  if (variably_modified_type_p (TREE_TYPE (t), NULL_TREE))
     return false;
   tree dom = TYPE_DOMAIN (t);
   if (!dom)
@@ -2418,6 +2436,20 @@ lookup_keep (tree lookup, bool keep)
     ovl_used (lookup);
 }
 
+/* LIST is a TREE_LIST whose TREE_VALUEs may be OVERLOADS that need
+   keeping, or may be ignored.  */
+
+void
+lookup_list_keep (tree list, bool keep)
+{
+  for (; list; list = TREE_CHAIN (list))
+    {
+      tree v = TREE_VALUE (list);
+      if (TREE_CODE (v) == OVERLOAD)
+	lookup_keep (v, keep);
+    }
+}
+
 /* Returns nonzero if X is an expression for a (possibly overloaded)
    function.  If "f" is a function or function template, "f", "c->f",
    "c.f", "C::f", and "f<int>" will all be considered possibly
@@ -2896,6 +2928,8 @@ bot_manip (tree* tp, int* walk_subtrees, void* data)
 	{
 	  u = build_cplus_new (TREE_TYPE (t), TREE_OPERAND (t, 1),
 			       tf_warning_or_error);
+	  if (u == error_mark_node)
+	    return u;
 	  if (AGGR_INIT_ZERO_FIRST (TREE_OPERAND (t, 1)))
 	    AGGR_INIT_ZERO_FIRST (TREE_OPERAND (u, 1)) = true;
 	}
@@ -2913,6 +2947,8 @@ bot_manip (tree* tp, int* walk_subtrees, void* data)
 			 (splay_tree_value) TREE_OPERAND (u, 0));
 
       TREE_OPERAND (u, 1) = break_out_target_exprs (TREE_OPERAND (u, 1));
+      if (TREE_OPERAND (u, 1) == error_mark_node)
+	return error_mark_node;
 
       /* Replace the old expression with the new version.  */
       *tp = u;
@@ -3025,7 +3061,8 @@ break_out_target_exprs (tree t)
     target_remap = splay_tree_new (splay_tree_compare_pointers,
 				   /*splay_tree_delete_key_fn=*/NULL,
 				   /*splay_tree_delete_value_fn=*/NULL);
-  cp_walk_tree (&t, bot_manip, target_remap, NULL);
+  if (cp_walk_tree (&t, bot_manip, target_remap, NULL) == error_mark_node)
+    t = error_mark_node;
   cp_walk_tree (&t, bot_replace, target_remap, NULL);
 
   if (!--target_remap_count)
@@ -3073,6 +3110,7 @@ build_ctor_subob_ref (tree index, tree type, tree obj)
 struct replace_placeholders_t
 {
   tree obj;	    /* The object to be substituted for a PLACEHOLDER_EXPR.  */
+  tree exp;	    /* The outermost exp.  */
   bool seen;	    /* Whether we've encountered a PLACEHOLDER_EXPR.  */
   hash_set<tree> *pset;	/* To avoid walking same trees multiple times.  */
 };
@@ -3086,7 +3124,7 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
   replace_placeholders_t *d = static_cast<replace_placeholders_t*>(data_);
   tree obj = d->obj;
 
-  if (TREE_CONSTANT (*t))
+  if (TYPE_P (*t) || TREE_CONSTANT (*t))
     {
       *walk_subtrees = false;
       return NULL_TREE;
@@ -3101,7 +3139,7 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 							   TREE_TYPE (x));
 	     x = TREE_OPERAND (x, 0))
 	  gcc_assert (TREE_CODE (x) == COMPONENT_REF);
-	*t = x;
+	*t = unshare_expr (x);
 	*walk_subtrees = false;
 	d->seen = true;
       }
@@ -3111,7 +3149,12 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
       {
 	constructor_elt *ce;
 	vec<constructor_elt,va_gc> *v = CONSTRUCTOR_ELTS (*t);
-	if (d->pset->add (*t))
+	/* Don't walk into CONSTRUCTOR_PLACEHOLDER_BOUNDARY ctors
+	   other than the d->exp one, those have PLACEHOLDER_EXPRs
+	   related to another object.  */
+	if ((CONSTRUCTOR_PLACEHOLDER_BOUNDARY (*t)
+	     && *t != d->exp)
+	    || d->pset->add (*t))
 	  {
 	    *walk_subtrees = false;
 	    return NULL_TREE;
@@ -3169,14 +3212,55 @@ replace_placeholders (tree exp, tree obj, bool *seen_p)
     return exp;
 
   tree *tp = &exp;
-  hash_set<tree> pset;
-  replace_placeholders_t data = { obj, false, &pset };
   if (TREE_CODE (exp) == TARGET_EXPR)
     tp = &TARGET_EXPR_INITIAL (exp);
+  hash_set<tree> pset;
+  replace_placeholders_t data = { obj, *tp, false, &pset };
   cp_walk_tree (tp, replace_placeholders_r, &data, NULL);
   if (seen_p)
     *seen_p = data.seen;
   return exp;
+}
+
+/* Callback function for find_placeholders.  */
+
+static tree
+find_placeholders_r (tree *t, int *walk_subtrees, void *)
+{
+  if (TYPE_P (*t) || TREE_CONSTANT (*t))
+    {
+      *walk_subtrees = false;
+      return NULL_TREE;
+    }
+
+  switch (TREE_CODE (*t))
+    {
+    case PLACEHOLDER_EXPR:
+      return *t;
+
+    case CONSTRUCTOR:
+      if (CONSTRUCTOR_PLACEHOLDER_BOUNDARY (*t))
+	*walk_subtrees = false;
+      break;
+
+    default:
+      break;
+    }
+
+  return NULL_TREE;
+}
+
+/* Return true if EXP contains a PLACEHOLDER_EXPR.  Don't walk into
+   ctors with CONSTRUCTOR_PLACEHOLDER_BOUNDARY flag set.  */
+
+bool
+find_placeholders (tree exp)
+{
+  /* This is only relevant for C++14.  */
+  if (cxx_dialect < cxx14)
+    return false;
+
+  return cp_walk_tree_without_duplicates (&exp, find_placeholders_r, NULL);
 }
 
 /* Similar to `build_nt', but for template definitions of dependent
@@ -3245,9 +3329,7 @@ build_min (enum tree_code code, tree tt, ...)
 
   if (code == CAST_EXPR)
     /* The single operand is a TREE_LIST, which we have to check.  */
-    for (tree v = TREE_OPERAND (t, 0); v; v = TREE_CHAIN (v))
-      if (TREE_CODE (TREE_VALUE (v)) == OVERLOAD)
-	lookup_keep (TREE_VALUE (v), true);
+    lookup_list_keep (TREE_OPERAND (t, 0), true);
 
   return t;
 }
@@ -4940,7 +5022,7 @@ decl_linkage (tree decl)
   if ((DECL_MAYBE_IN_CHARGE_DESTRUCTOR_P (decl)
        || DECL_MAYBE_IN_CHARGE_CONSTRUCTOR_P (decl))
       && DECL_CHAIN (decl)
-      && DECL_CLONED_FUNCTION (DECL_CHAIN (decl)))
+      && DECL_CLONED_FUNCTION_P (DECL_CHAIN (decl)))
     return decl_linkage (DECL_CHAIN (decl));
 
   if (TREE_CODE (decl) == NAMESPACE_DECL)
@@ -5322,6 +5404,19 @@ cp_tree_code_length (enum tree_code code)
     default:
       return TREE_CODE_LENGTH (code);
     }
+}
+
+/* Wrapper around warn_deprecated_use that doesn't warn for
+   current_class_type.  */
+
+void
+cp_warn_deprecated_use (tree node)
+{
+  if (TYPE_P (node)
+      && current_class_type
+      && TYPE_MAIN_VARIANT (node) == current_class_type)
+    return;
+  warn_deprecated_use (node, NULL_TREE);
 }
 
 /* Implement -Wzero_as_null_pointer_constant.  Return true if the

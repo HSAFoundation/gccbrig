@@ -1384,16 +1384,10 @@ vect_compute_single_scalar_iteration_cost (loop_vec_info loop_vinfo)
 {
   struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
   basic_block *bbs = LOOP_VINFO_BBS (loop_vinfo);
-  int nbbs = loop->num_nodes, factor, scalar_single_iter_cost = 0;
+  int nbbs = loop->num_nodes, factor;
   int innerloop_iters, i;
 
-  /* Count statements in scalar loop.  Using this as scalar cost for a single
-     iteration for now.
-
-     TODO: Add outer loop support.
-
-     TODO: Consider assigning different costs to different scalar
-     statements.  */
+  /* Gather costs for statements in the scalar loop.  */
 
   /* FORNOW.  */
   innerloop_iters = 1;
@@ -1437,13 +1431,28 @@ vect_compute_single_scalar_iteration_cost (loop_vec_info loop_vinfo)
           else
             kind = scalar_stmt;
 
-	  scalar_single_iter_cost
-	    += record_stmt_cost (&LOOP_VINFO_SCALAR_ITERATION_COST (loop_vinfo),
-				 factor, kind, stmt_info, 0, vect_prologue);
+	  record_stmt_cost (&LOOP_VINFO_SCALAR_ITERATION_COST (loop_vinfo),
+			    factor, kind, stmt_info, 0, vect_prologue);
         }
     }
-  LOOP_VINFO_SINGLE_SCALAR_ITERATION_COST (loop_vinfo)
-    = scalar_single_iter_cost;
+
+  /* Now accumulate cost.  */
+  void *target_cost_data = init_cost (loop);
+  stmt_info_for_cost *si;
+  int j;
+  FOR_EACH_VEC_ELT (LOOP_VINFO_SCALAR_ITERATION_COST (loop_vinfo),
+		    j, si)
+    {
+      struct _stmt_vec_info *stmt_info
+	= si->stmt ? vinfo_for_stmt (si->stmt) : NULL;
+      (void) add_stmt_cost (target_cost_data, si->count,
+			    si->kind, stmt_info, si->misalign,
+			    vect_body);
+    }
+  unsigned dummy, body_cost = 0;
+  finish_cost (target_cost_data, &dummy, &body_cost, &dummy);
+  destroy_cost_data (target_cost_data);
+  LOOP_VINFO_SINGLE_SCALAR_ITERATION_COST (loop_vinfo) = body_cost;
 }
 
 
@@ -6779,6 +6788,30 @@ vectorizable_reduction (gimple *stmt, gimple_stmt_iterator *gsi,
   /* If we have a condition reduction, see if we can simplify it further.  */
   if (v_reduc_type == COND_REDUCTION)
     {
+      /* TODO: We can't yet handle reduction chains, since we need to treat
+	 each COND_EXPR in the chain specially, not just the last one.
+	 E.g. for:
+
+	    x_1 = PHI <x_3, ...>
+	    x_2 = a_2 ? ... : x_1;
+	    x_3 = a_3 ? ... : x_2;
+
+	 we're interested in the last element in x_3 for which a_2 || a_3
+	 is true, whereas the current reduction chain handling would
+	 vectorize x_2 as a normal VEC_COND_EXPR and only treat x_3
+	 as a reduction operation.  */
+      if (reduc_index == -1)
+	{
+	  if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "conditional reduction chains not supported\n");
+	  return false;
+	}
+
+      /* vect_is_simple_reduction ensured that operand 2 is the
+	 loop-carried operand.  */
+      gcc_assert (reduc_index == 2);
+
       /* Loop peeling modifies initial value of reduction PHI, which
 	 makes the reduction stmt to be transformed different to the
 	 original stmt analyzed.  We need to record reduction code for

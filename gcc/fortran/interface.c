@@ -1268,7 +1268,7 @@ symbol_rank (gfc_symbol *sym)
 {
   gfc_array_spec *as = NULL;
 
-  if (sym->ts.type == BT_CLASS && CLASS_DATA (sym) && CLASS_DATA (sym)->as)
+  if (sym->ts.type == BT_CLASS && CLASS_DATA (sym))
     as = CLASS_DATA (sym)->as;
   else
     as = sym->as;
@@ -2865,6 +2865,13 @@ compare_actual_formal (gfc_actual_arglist **ap, gfc_formal_arglist *formal,
 
   for (a = actual; a; a = a->next, f = f->next)
     {
+      if (a->name != NULL && in_statement_function)
+	{
+	  gfc_error ("Keyword argument %qs at %L is invalid in "
+		     "a statement function", a->name, &a->expr->where);
+	  return false;
+	}
+
       /* Look for keywords but ignore g77 extensions like %VAL.  */
       if (a->name != NULL && a->name[0] != '%')
 	{

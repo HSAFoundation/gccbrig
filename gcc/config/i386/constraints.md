@@ -99,7 +99,6 @@
 
 ;; We use the Y prefix to denote any number of conditional register sets:
 ;;  z	First SSE register.
-;;  c	SSE inter-unit conversions enabled
 ;;  i	SSE2 inter-unit moves to SSE register enabled
 ;;  j	SSE2 inter-unit moves from SSE register enabled
 ;;  d	any EVEX encodable SSE register for AVX512BW target or any SSE register
@@ -123,10 +122,6 @@
 
 (define_register_constraint "Yz" "TARGET_SSE ? SSE_FIRST_REG : NO_REGS"
  "First SSE register (@code{%xmm0}).")
-
-(define_register_constraint "Yc"
- "TARGET_SSE && TARGET_INTER_UNIT_CONVERSIONS ? ALL_SSE_REGS : NO_REGS"
- "@internal Any SSE register, when SSE and inter-unit conversions are enabled.")
 
 (define_register_constraint "Yi"
  "TARGET_SSE2 && TARGET_INTER_UNIT_MOVES_TO_VEC ? ALL_SSE_REGS : NO_REGS"
@@ -225,7 +220,7 @@
 
 (define_constraint "Bs"
   "@internal Sibcall memory operand."
-  (ior (and (not (match_test "ix86_indirect_branch_register"))
+  (ior (and (not (match_test "TARGET_INDIRECT_BRANCH_REGISTER"))
 	    (not (match_test "TARGET_X32"))
 	    (match_operand 0 "sibcall_memory_operand"))
        (and (match_test "TARGET_X32 && Pmode == DImode")
@@ -233,7 +228,7 @@
 
 (define_constraint "Bw"
   "@internal Call memory operand."
-  (ior (and (not (match_test "ix86_indirect_branch_register"))
+  (ior (and (not (match_test "TARGET_INDIRECT_BRANCH_REGISTER"))
 	    (not (match_test "TARGET_X32"))
 	    (match_operand 0 "memory_operand"))
        (and (match_test "TARGET_X32 && Pmode == DImode")
