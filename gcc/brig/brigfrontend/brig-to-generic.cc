@@ -52,6 +52,7 @@
 #include "cgraph.h"
 #include "dumpfile.h"
 #include "tree-pretty-print.h"
+#include "attribs.h"
 
 extern int gccbrig_verbose;
 
@@ -709,8 +710,6 @@ brig_to_generic::finish_function ()
       m_cf->finish ();
       m_cf->emit_metadata (stmts);
       dump_function (m_dump_file, m_cf);
-      gimplify_function_tree (m_cf->m_func_decl);
-      cgraph_node::finalize_function (m_cf->m_func_decl, true);
     }
   else
     /* Emit the kernel only at the very end so we can analyze the total
@@ -877,6 +876,20 @@ brig_to_generic::write_globals ()
 	}
     }
 
+  for (std::map<std::string, brig_function *>::iterator i
+	 = m_finished_functions.begin(), e = m_finished_functions.end();
+       i != e; ++i)
+    {
+      brig_function *brig_f = (*i).second;
+      if (brig_f->m_is_kernel)
+	continue;
+
+      /* Finalize only at this point to allow the cgraph analysis to
+	 see definitions to calls to later functions.  */
+      gimplify_function_tree (brig_f->m_func_decl);
+      cgraph_node::finalize_function (brig_f->m_func_decl, true);
+    }
+
   /* Now that the whole BRIG module has been processed, build a launcher
      and a metadata section for each built kernel.  */
   for (size_t i = 0; i < m_kernels.size (); ++i)
@@ -910,6 +923,17 @@ brig_to_generic::write_globals ()
       tree launcher = f->emit_launcher_and_metadata ();
 
       append_global (launcher);
+
+      if (m_dump_file)
+	{
+	  std::string kern_name = f->m_name.substr (1);
+	  fprintf (m_dump_file, "\n;; Function %s", kern_name.c_str());
+	  fprintf (m_dump_file, "\n;; enabled by -%s\n\n",
+		   dump_flag_name (TDI_original));
+	  print_generic_decl (m_dump_file, launcher, 0);
+	  print_generic_expr (m_dump_file, DECL_SAVED_TREE (launcher), 0);
+	  fprintf (m_dump_file, "\n");
+	}
 
       gimplify_function_tree (launcher);
       cgraph_node::finalize_function (launcher, true);
@@ -960,9 +984,9 @@ get_unsigned_int_type (tree original_type)
 void
 set_externally_visible (tree decl)
 {
-  DECL_ATTRIBUTES (decl)
-    = tree_cons (get_identifier ("externally_visible"),
-		 NULL, DECL_ATTRIBUTES (decl));
+  if (!lookup_attribute ("externally_visible", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("externally_visible"),
+					NULL, DECL_ATTRIBUTES (decl));
 }
 
 /* Returns a type with unsigned int corresponding to the size
@@ -973,6 +997,14 @@ get_scalar_unsigned_int_type (tree original_type)
 {
   return build_nonstandard_integer_type (int_size_in_bytes (original_type)
 					 * BITS_PER_UNIT, true);
+}
+
+void
+set_inline (tree decl)
+{
+  if (!lookup_attribute ("inline", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("inline"),
+					NULL, DECL_ATTRIBUTES (decl));
 }
 
 void
