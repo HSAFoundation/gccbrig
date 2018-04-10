@@ -899,14 +899,14 @@ merge_types (tree t1, tree t2)
       return t1;
 
     default:;
+      if (attribute_list_equal (TYPE_ATTRIBUTES (t1), attributes))
+	return t1;
+      else if (attribute_list_equal (TYPE_ATTRIBUTES (t2), attributes))
+	return t2;
+      break;
     }
 
-  if (attribute_list_equal (TYPE_ATTRIBUTES (t1), attributes))
-    return t1;
-  else if (attribute_list_equal (TYPE_ATTRIBUTES (t2), attributes))
-    return t2;
-  else
-    return cp_build_type_attribute_variant (t1, attributes);
+  return cp_build_type_attribute_variant (t1, attributes);
 }
 
 /* Return the ARRAY_TYPE type without its domain.  */
@@ -5971,6 +5971,9 @@ cp_build_addr_expr_1 (tree arg, bool strict_lvalue, tsubst_flags_t complain)
      so we can just form an ADDR_EXPR with the correct type.  */
   if (processing_template_decl || TREE_CODE (arg) != COMPONENT_REF)
     {
+      if (TREE_CODE (arg) == FUNCTION_DECL
+	  && !mark_used (arg, complain) && !(complain & tf_error))
+	return error_mark_node;
       val = build_address (arg);
       if (TREE_CODE (arg) == OFFSET_REF)
 	PTRMEM_OK_P (val) = PTRMEM_OK_P (arg);
@@ -8080,7 +8083,7 @@ cp_build_modify_expr (location_t loc, tree lhs, enum tree_code modifycode,
 	     side effect associated with any single compound assignment
 	     operator. -- end note ]  */
 	  lhs = cp_stabilize_reference (lhs);
-	  rhs = rvalue (rhs);
+	  rhs = decay_conversion (rhs, complain);
 	  if (rhs == error_mark_node)
 	    return error_mark_node;
 	  rhs = stabilize_expr (rhs, &init);
@@ -8782,8 +8785,9 @@ convert_for_assignment (tree type, tree rhs,
 						   parmnum, complain, flags);
 		}
 	      else if (fndecl)
-		error ("cannot convert %qH to %qI for argument %qP to %qD",
-		       rhstype, type, parmnum, fndecl);
+		error_at (EXPR_LOC_OR_LOC (rhs, input_location),
+			  "cannot convert %qH to %qI for argument %qP to %qD",
+			  rhstype, type, parmnum, fndecl);
 	      else
 		switch (errtype)
 		  {

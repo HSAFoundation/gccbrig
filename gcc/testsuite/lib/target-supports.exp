@@ -5828,8 +5828,8 @@ proc check_effective_target_vect_perm_short { } {
 		 && ![check_effective_target_vect_variable_length])
 	     || [istarget powerpc*-*-*]
 	     || [istarget spu-*-*]
-	     || (([istarget i?86-*-*] || [istarget x86_64-*-*]
-	         && [check_ssse3_available]))
+	     || (([istarget i?86-*-*] || [istarget x86_64-*-*])
+	         && [check_ssse3_available])
 	     || ([istarget mips*-*-*]
 		  && [et-is-effective-target mips_msa])
 	     || ([istarget s390*-*-*]
@@ -6362,31 +6362,6 @@ proc check_effective_target_unaligned_stack { } {
     }
     verbose "check_effective_target_unaligned_stack: returning $et_unaligned_stack_saved" 2
     return $et_unaligned_stack_saved
-}
-
-# Return 1 if the target plus current options does not have
-# slow unaligned access when using word size accesses.
-#
-# This won't change for different subtargets so cache the result.
-
-proc check_effective_target_word_mode_no_slow_unalign { } {
-    global et_word_mode_no_slow_unalign_saved
-    global et_index
-
-    if [info exists et_word_mode_no_slow_unalign_saved($et_index)] {
-        verbose "check_effective_target_word_mode_no_slow_unalign: \
-                 using cached result" 2
-    } else {
-        set et_word_mode_no_slow_unalign_saved($et_index) 0
-        if { [is-effective-target non_strict_align]
-	     && !([istarget arm*-*-*])
-           } {
-            set et_word_mode_no_slow_unalign_saved($et_index) 1
-        }
-    }
-    verbose "check_effective_target_word_mode_no_slow_unalign:\
-             returning $et_word_mode_no_slow_unalign_saved($et_index)" 2
-    return $et_word_mode_no_slow_unalign_saved($et_index)
 }
 
 # Return 1 if the target plus current options does not support a vector

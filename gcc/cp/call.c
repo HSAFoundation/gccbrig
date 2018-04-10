@@ -3274,10 +3274,10 @@ add_template_conv_candidate (struct z_candidate **candidates, tree tmpl,
 			     tree return_type, tree access_path,
 			     tree conversion_path, tsubst_flags_t complain)
 {
-  /* Making this work broke PR 71117, so until the committee resolves core
-     issue 2189, let's disable this candidate if there are any viable call
+  /* Making this work broke PR 71117 and 85118, so until the committee resolves
+     core issue 2189, let's disable this candidate if there are any call
      operators.  */
-  if (any_strictly_viable (*candidates))
+  if (*candidates)
     return NULL;
 
   return
@@ -3641,6 +3641,12 @@ merge_conversion_sequences (conversion *user_seq, conversion *std_seq)
       if (bad)
 	(*t)->bad_p = true;
     }
+
+  if ((*t)->rvaluedness_matches_p)
+    /* We're binding a reference directly to the result of the conversion.
+       build_user_type_conversion_1 stripped the REFERENCE_TYPE from the return
+       type, but we want it back.  */
+    user_seq->type = TREE_TYPE (TREE_TYPE (user_seq->cand->fn));
 
   /* Replace the identity conversion with the user conversion
      sequence.  */
@@ -6874,8 +6880,12 @@ convert_like_real (conversion *convs, tree expr, tree fn, int argnum,
 	if (array == error_mark_node)
 	  return error_mark_node;
 
-	/* Build up the initializer_list object.  */
-	totype = complete_type (totype);
+	/* Build up the initializer_list object.  Note: fail gracefully
+	   if the object cannot be completed because, for example, no
+	   definition is provided (c++/80956).  */
+	totype = complete_type_or_maybe_complain (totype, NULL_TREE, complain);
+	if (!totype)
+	  return error_mark_node;
 	field = next_initializable_field (TYPE_FIELDS (totype));
 	CONSTRUCTOR_APPEND_ELT (vec, field, array);
 	field = next_initializable_field (DECL_CHAIN (field));
@@ -7610,6 +7620,9 @@ conv_binds_ref_to_prvalue (conversion *c)
   if (c->kind == ck_rvalue)
     return true;
   if (c->kind == ck_user && TREE_CODE (c->type) != REFERENCE_TYPE)
+    return true;
+  if (c->kind == ck_identity && c->u.expr
+      && TREE_CODE (c->u.expr) == TARGET_EXPR)
     return true;
 
   return false;
@@ -9091,14 +9104,6 @@ build_new_method_call_1 (tree instance, tree fns, vec<tree, va_gc> **args,
   basetype = TYPE_MAIN_VARIANT (TREE_TYPE (instance));
   gcc_assert (CLASS_TYPE_P (basetype));
 
-  if (processing_template_decl)
-    {
-      orig_args = args == NULL ? NULL : make_tree_vector_copy (*args);
-      instance = build_non_dependent_expr (instance);
-      if (args != NULL)
-	make_args_non_dependent (*args);
-    }
-
   user_args = args == NULL ? NULL : *args;
   /* Under DR 147 A::A() is an invalid constructor call,
      not a functional cast.  */
@@ -9119,12 +9124,21 @@ build_new_method_call_1 (tree instance, tree fns, vec<tree, va_gc> **args,
       return call;
     }
 
+  if (processing_template_decl)
+    {
+      orig_args = args == NULL ? NULL : make_tree_vector_copy (*args);
+      instance = build_non_dependent_expr (instance);
+      if (args != NULL)
+	make_args_non_dependent (*args);
+    }
+
   /* Process the argument list.  */
   if (args != NULL && *args != NULL)
     {
       *args = resolve_args (*args, complain);
       if (*args == NULL)
 	return error_mark_node;
+      user_args = *args;
     }
 
   /* Consider the object argument to be used even if we end up selecting a
@@ -10866,6 +10880,8 @@ set_up_extended_ref_temp (tree decl, tree expr, vec<tree, va_gc> **cleanups,
   /* If the initializer is constant, put it in DECL_INITIAL so we get
      static initialization and use in constant expressions.  */
   init = maybe_constant_init (expr);
+  /* As in store_init_value.  */
+  init = cp_fully_fold (init);
   if (TREE_CONSTANT (init))
     {
       if (literal_type_p (type) && CP_TYPE_CONST_NON_VOLATILE_P (type))

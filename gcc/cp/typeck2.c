@@ -1319,9 +1319,11 @@ process_init_constructor_array (tree type, tree init, int nested,
       ce->value
 	= massage_init_elt (TREE_TYPE (type), ce->value, nested, complain);
 
-      if (ce->value != error_mark_node)
-	gcc_assert (same_type_ignoring_top_level_qualifiers_p
-		      (TREE_TYPE (type), TREE_TYPE (ce->value)));
+      gcc_checking_assert
+	(ce->value == error_mark_node
+	 || (same_type_ignoring_top_level_qualifiers_p
+	     (strip_array_types (TREE_TYPE (type)),
+	      strip_array_types (TREE_TYPE (ce->value)))));
 
       flags |= picflag_from_initializer (ce->value);
     }
@@ -1435,7 +1437,8 @@ process_init_constructor_record (tree type, tree init, int nested,
 		   designated-initializer-list { D }, where D is the
 		   designated-initializer-clause naming a member of the
 		   anonymous union object.  */
-		next = build_constructor_single (type, ce->index, ce->value);
+		next = build_constructor_single (init_list_type_node,
+						 ce->index, ce->value);
 	      else
 		{
 		  ce = NULL;
@@ -2080,7 +2083,8 @@ build_functional_cast (tree exp, tree parms, tsubst_flags_t complain)
       if (!CLASS_PLACEHOLDER_TEMPLATE (anode))
 	{
 	  if (complain & tf_error)
-	    error ("invalid use of %qT", anode);
+	    error_at (DECL_SOURCE_LOCATION (TEMPLATE_TYPE_DECL (anode)),
+		      "invalid use of %qT", anode);
 	  return error_mark_node;
 	}
       else if (!parms)

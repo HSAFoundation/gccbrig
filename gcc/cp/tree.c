@@ -1078,6 +1078,9 @@ cp_build_reference_type (tree to_type, bool rval)
 {
   tree lvalue_ref, t;
 
+  if (to_type == error_mark_node)
+    return error_mark_node;
+
   if (TREE_CODE (to_type) == REFERENCE_TYPE)
     {
       rval = rval && TYPE_REF_IS_RVALUE (to_type);
@@ -1783,6 +1786,10 @@ strip_typedefs_expr (tree t, bool *remove_attributes)
 
     case LAMBDA_EXPR:
       error ("lambda-expression in a constant expression");
+      return error_mark_node;
+
+    case STATEMENT_LIST:
+      error ("statement-expression in a constant expression");
       return error_mark_node;
 
     default:
@@ -3138,7 +3145,7 @@ replace_placeholders_r (tree* t, int* walk_subtrees, void* data_)
 	for (; !same_type_ignoring_top_level_qualifiers_p (TREE_TYPE (*t),
 							   TREE_TYPE (x));
 	     x = TREE_OPERAND (x, 0))
-	  gcc_assert (TREE_CODE (x) == COMPONENT_REF);
+	  gcc_assert (handled_component_p (x));
 	*t = unshare_expr (x);
 	*walk_subtrees = false;
 	d->seen = true;
@@ -4887,10 +4894,12 @@ cp_walk_subtrees (tree *tp, int *walk_subtrees_p, walk_tree_fn func,
       /* User variables should be mentioned in BIND_EXPR_VARS
 	 and their initializers and sizes walked when walking
 	 the containing BIND_EXPR.  Compiler temporaries are
-	 handled here.  */
+	 handled here.  And also normal variables in templates,
+	 since do_poplevel doesn't build a BIND_EXPR then.  */
       if (VAR_P (TREE_OPERAND (*tp, 0))
-	  && DECL_ARTIFICIAL (TREE_OPERAND (*tp, 0))
-	  && !TREE_STATIC (TREE_OPERAND (*tp, 0)))
+	  && (processing_template_decl
+	      || (DECL_ARTIFICIAL (TREE_OPERAND (*tp, 0))
+		  && !TREE_STATIC (TREE_OPERAND (*tp, 0)))))
 	{
 	  tree decl = TREE_OPERAND (*tp, 0);
 	  WALK_SUBTREE (DECL_INITIAL (decl));

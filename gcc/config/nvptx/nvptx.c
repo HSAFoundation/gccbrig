@@ -2033,6 +2033,9 @@ static void
 nvptx_assemble_decl_begin (FILE *file, const char *name, const char *section,
 			   const_tree type, HOST_WIDE_INT size, unsigned align)
 {
+  bool atype = (TREE_CODE (type) == ARRAY_TYPE)
+    && (TYPE_DOMAIN (type) == NULL_TREE);
+
   while (TREE_CODE (type) == ARRAY_TYPE)
     type = TREE_TYPE (type);
 
@@ -2072,6 +2075,8 @@ nvptx_assemble_decl_begin (FILE *file, const char *name, const char *section,
     /* We make everything an array, to simplify any initialization
        emission.  */
     fprintf (file, "[" HOST_WIDE_INT_PRINT_DEC "]", init_frag.remaining);
+  else if (atype)
+    fprintf (file, "[]");
 }
 
 /* Called when the initializer for a decl has been completely output through
@@ -4043,6 +4048,7 @@ nvptx_single (unsigned mask, basic_block from, basic_block to)
   /* Insert the vector test inside the worker test.  */
   unsigned mode;
   rtx_insn *before = tail;
+  rtx_insn *neuter_start = NULL;
   for (mode = GOMP_DIM_WORKER; mode <= GOMP_DIM_VECTOR; mode++)
     if (GOMP_DIM_MASK (mode) & skip_mask)
       {
@@ -4060,7 +4066,10 @@ nvptx_single (unsigned mask, basic_block from, basic_block to)
 	  br = gen_br_true (pred, label);
 	else
 	  br = gen_br_true_uni (pred, label);
-	emit_insn_before (br, head);
+	if (neuter_start)
+	  neuter_start = emit_insn_after (br, neuter_start);
+	else
+	  neuter_start = emit_insn_before (br, head);
 
 	LABEL_NUSES (label)++;
 	if (tail_branch)

@@ -1,3 +1,391 @@
+2018-04-09  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/85227
+	* decl.c (cp_finish_decomp): In a template, if the type is incomplete
+	issue a pedwarn and defer trying to do bindings.
+
+2018-04-09  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85279 - dump_expr doesn't understand decltype.
+	* error.c (dump_expr): Handle DECLTYPE_TYPE.
+
+	PR c++/85262 - ICE with redundant qualification on constructor.
+	* call.c (build_new_method_call_1): Move make_args_non_dependent
+	after A::A() handling.
+
+	PR c++/85277 - ICE with invalid offsetof.
+	* semantics.c (finish_offsetof): Avoid passing non-DECL to %qD.
+	Adjust -Winvalid-offsetof diagnostic to say conditionally supported.
+
+	PR c++/85264 - ICE with excess template-parameter-list.
+	* parser.c (cp_parser_check_template_parameters): Add template_id_p
+	parameter.  Don't allow an extra template header if true.
+	(cp_parser_class_head): Pass template_id_p.
+	(cp_parser_elaborated_type_specifier): Likewise.
+	(cp_parser_alias_declaration): Likewise.
+	(cp_parser_check_declarator_template_parameters): Likewise.
+
+2018-04-09  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85194
+	* parser.c (cp_parser_simple_declaration): For structured bindings,
+	if *maybe_range_for_decl is NULL after parsing it, set it to
+	error_mark_node.
+
+2018-04-09  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85256 - ICE capturing pointer to VLA.
+	* lambda.c (add_capture): Distinguish between variable-size and
+	variably-modified types.
+
+2018-04-06  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85214 - ICE with alias, generic lambda, constexpr if.
+	* pt.c (extract_locals_r): Remember local typedefs.
+
+2018-04-06  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/84269
+	* name-lookup.c (struct std_name_hint): Move out of
+	get_std_name_hint; add field "min_dialect".
+	(get_std_name_hint): Add min_dialect values to all initializers.
+	Add <any>, <atomic>, <bitset>, <condition_variable>, <functional>,
+	<future>, <istream>, <iterator>, <ostream>, <mutex>, <optional>,
+	<shared_mutex>, <string_view>, <thread>, and <variant>.
+	Add fstream, ifstream, and ofstream to <fstream>.
+	Add istringstream, ostringstream, and stringstream to <sstream>.
+	Add basic_string to <string>.
+	Add tuple_element and tuple_size to <tuple>.
+	Add declval to <utility>.
+	Fix ordering of <queue> and <tuple>.
+	Return a std_name_hint, rather than a const char *.
+	(get_cxx_dialect_name): New function.
+	(maybe_suggest_missing_std_header): Detect names that aren't yet
+	available in the current dialect, and instead of suggesting a
+	missing #include, warn about the dialect.
+
+2018-04-06  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85210
+	* pt.c (tsubst_decomp_names): Return error_mark_node and assert
+	errorcount is set if tsubst doesn't return a VAR_DECL.
+
+2018-04-06  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85021
+	* name-lookup.c (using_directives_contain_std_p): New function.
+	(has_using_namespace_std_directive_p): New function.
+	(suggest_alternatives_for): Simplify if/else logic using early
+	returns.  If no candidates were found, and there's a
+	"using namespace std;" directive, call
+	maybe_suggest_missing_std_header.
+	(maybe_suggest_missing_header): Split later part of the function
+	into..
+	(maybe_suggest_missing_std_header): New.
+
+2018-04-06  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85242 - ICE with class definition in template parm.
+	* cp-tree.h (PROCESSING_REAL_TEMPLATE_DECL_P): False if
+	processing_template_parmlist.
+
+	PR c++/85240 - LTO ICE with using of undeduced auto fn.
+	* cp-gimplify.c (cp_genericize_r): Discard using of undeduced auto.
+
+2018-04-05  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85209
+	* pt.c (tsubst_decomp_names): Don't fail or ICE if DECL_CHAIN (decl3)
+	is not prev, if prev == decl.
+
+	PR c++/85208
+	* decl.c (start_decl): For DECL_DECOMPOSITION_P decls, don't call
+	maybe_apply_pragma_weak here...
+	(cp_maybe_mangle_decomp): ... but call it here instead.
+
+2018-04-05  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85136 - ICE with designated init in template.
+	* decl.c (maybe_deduce_size_from_array_init): Handle dependent
+	designated initializer.
+	(check_array_designated_initializer): Update ce->index with the
+	constant value.
+
+	PR c++/83808 - ICE with VLA initialization.
+	* typeck2.c (process_init_constructor_array): Don't require a VLA
+	initializer to have VLA type.
+
+2018-04-05  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/80956
+	* call.c (convert_like_real): Fail gracefully for a broken
+	std::initializer_list, missing a definition.
+
+	* name-lookup.c (do_pushtag): Tweak message, use %< and %>.
+
+2018-04-05  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/84792
+	* decl.c (grokdeclarator): Fix diagnostic about typedef name used
+	as nested-name-specifier, keep type and TREE_TYPE (decl) in sync.
+
+2018-04-05  Jason Merrill  <jason@redhat.com>
+
+	PR c++/82152 - ICE with class deduction and inherited ctor.
+	* pt.c (do_class_deduction): Ignore inherited ctors.
+
+	PR c++/84665 - ICE with array of empty class.
+	* decl2.c (cp_check_const_attributes): Use fold_non_dependent_expr.
+
+	PR c++/85228 - ICE with lambda in enumerator in template.
+	* pt.c (bt_instantiate_type_proc): Don't assume
+	CLASSTYPE_TEMPLATE_INFO is non-null.
+
+2018-04-05  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement P0969
+	* decl.c (find_decomp_class_base): Check accessibility instead
+	of declared access, adjust diagnostic.
+
+2018-04-05  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	Implement P0961
+	* decl.c (get_tuple_decomp_init): Check the templatedness
+	of a member get.
+
+2018-04-05  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85200 - ICE with constexpr if in generic lambda.
+	* pt.c (extract_locals_r): Don't record the local specs of variables
+	declared within the pattern.
+
+2018-04-05  Alexandre Oliva <aoliva@redhat.com>
+
+	PR c++/84979
+	* pt.c (check_auto_in_tmpl_args): New.
+	(tsubst_qualified_id): Use it to reject template args
+	referencing auto for non-type templates.
+	* parser.c (cp_parser_template_id): Likewise.
+	* cp-tree.h (check_auto_in_tmpl_args): Declare.
+	* typeck2.c (build_functional_cast): Report correct location
+	for invalid use of auto.
+
+2018-04-04  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85215 - ICE with copy-init from conversion.
+	* call.c (merge_conversion_sequences): Fix type of direct binding
+	sequence.
+
+	PR c++/84938 - ICE with division by ~-1.
+	* call.c (set_up_extended_ref_temp): Call cp_fully_fold.
+
+	PR c++/84936 - ICE with unexpanded pack in mem-initializer.
+	* parser.c (cp_parser_mem_initializer_list): Call
+	check_for_bare_parameter_packs.
+
+2018-04-04  Jakub Jelinek  <jakub@redhat.com>
+
+	PR inline-asm/85172
+	* constexpr.c (cxx_eval_builtin_function_call): For calls to
+	builtin_valid_in_constant_expr_p functions, don't call
+	cxx_eval_constant_expression if argument is not
+	potential_constant_expression.
+
+	PR c++/85146
+	* cp-tree.h (calculate_bases, calculate_direct_bases): Add complain
+	argument.
+	* semantics.c (calculate_bases): Add complain argument.  Use
+	complete_type_or_maybe_complain instead of just complete_type and
+	return an empty vector if it fails.  Move make_tree_vector () call
+	after early return.  Formatting fixes.
+	(calculate_direct_bases): Likewise.  Call release_tree_vector at the
+	end.
+	(dfs_calculate_bases_post, calculate_bases_helper): Formatting fixes.
+	* pt.c (tsubst_pack_expansion): Adjust calculate_bases and
+	calculate_direct_bases callers, formatting fixes.
+
+2018-04-04  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85006 - -fconcepts ICE with A<auto...> return type
+	* pt.c (tsubst_pack_expansion): Allow unsubstituted auto pack.
+
+	PR c++/85200 - ICE with constexpr if in generic lambda.
+	* tree.c (cp_walk_subtrees): Walk into DECL_EXPR in templates.
+
+	PR c++/84221 - bogus -Wunused with attribute and template.
+	* decl2.c (is_late_template_attribute): Handle unused and used
+	normally on non-TYPE_DECL.
+
+	PR c++/85135 - ICE with omitted template arguments.
+	* decl.c (grokdeclarator): Catch deduced class type in trailing
+	return type.
+
+	PR c++/85133 - ICE with missing concept initializer.
+	* decl.c (cp_finish_decl): If a concept initializer is missing, use
+	true.
+
+	PR c++/85118 - wrong error with generic lambda and std::bind.
+	* call.c (add_template_conv_candidate): Disable if there are any
+	call operators.
+
+	PR c++/85141 - ICE with compound assignment and static member fn.
+	* typeck.c (cp_build_modify_expr): Call decay_conversion for RHS of
+	compound assignment.
+
+	PR c++/85148 - ICE with 'this' in array NSDMI.
+	* tree.c (replace_placeholders_r): Use handled_component_p.
+
+2018-04-04  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	PR c++/65923
+	* decl.c (grokfndecl): Handle standard UDL diagnostics here..
+	* parser.c (cp_parser_unqualified_id): ..not here.
+
+2018-04-04  Alexandre Oliva <aoliva@redhat.com>
+
+	PR c++/84943
+	* typeck.c (cp_build_addr_expr_1): Mark FUNCTION_DECL as
+	used.
+	* decl2.c (mark_used): Return without effects if tf_conv.
+
+2018-04-03  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85092 - C++17 ICE with unused list constructor.
+	* call.c (conv_binds_ref_to_prvalue): Also count ck_identity
+	from a TARGET_EXPR.
+
+	PR c++/85113 - ICE with constexpr and __builtin_constant_p.
+	* constexpr.c (cxx_eval_builtin_function_call): Only defer
+	__builtin_constant_p if ctx->quiet.
+
+2018-04-03  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/84768
+	* pt.c (rewrite_template_parm): If the first argument is
+	error_mark_node return it immediately.
+	(build_deduction_guide): Check the return value of the
+	latter for error_mark_node.
+	(do_class_deduction): Check the return value of the latter.
+
+2018-04-03  Jason Merrill  <jason@redhat.com>
+
+	* semantics.c (finish_if_stmt_cond): Use
+	instantiation_dependent_expression_p.
+
+	PR c++/85149 - generic lambda and constexpr if.
+	* pt.c (build_extra_args, add_extra_args): Split from
+	tsubst_pack_expansion.
+	(tsubst_expr) [IF_STMT]: Use them.
+	* cp-tree.h (IF_STMT_EXTRA_ARGS): New.
+
+	* typeck.c (merge_types): Limit matching attribute shortcut to
+	the default case.
+
+2018-04-03  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85147
+	* pt.c (fixed_parameter_pack_p_1): Punt if parm is error_mark_node.
+
+	PR c++/85140
+	* name-lookup.c (handle_namespace_attrs): Return early if attributes
+	is error_mark_node.
+
+	PR c++/85134
+	* decl.c (cp_finish_decl): If ensure_literal_type_for_constexpr_object
+	fails, after clearing DECL_DECLARED_CONSTEXPR_P don't return early,
+	instead for static data members clear init and set DECL_EXTERNAL.
+
+2018-04-02  Jason Merrill  <jason@redhat.com>
+
+	PR c++/64095 - auto... parameter pack.
+	* parser.c (cp_parser_parameter_declaration): Handle turning autos
+	into packs here.
+	(cp_parser_parameter_declaration_list): Not here.
+
+2018-03-31  Alexandre Oliva <aoliva@redhat.com>
+
+	PR c++/85027
+	* class.c (instantiate_type): Peel off SAVE_EXPR before
+	BASELINK.
+
+2018-03-30  Jason Merrill  <jason@redhat.com>
+
+	* typeck2.c (process_init_constructor_record): Use
+	init_list_type_node for the CONSTRUCTOR around an anonymous union
+	designated initializer.
+
+2018-03-30  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/84791
+	* semantics.c (finish_omp_reduction_clause): If
+	OMP_CLAUSE_REDUCTION_PLACEHOLDER is error_mark_node, return true
+	even if processing_template_decl.
+
+2018-03-29  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/84269
+	* name-lookup.c (get_std_name_hint): Add names from <memory>,
+	<tuple>, and <utility>.
+
+2018-03-29  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85093 - too many template args with pack expansion.
+	* pt.c (coerce_template_parms): Keep pack expansion args that will
+	need to be empty.
+
+2018-03-29  Jason Merrill  <jason@redhat.com>
+
+	* pt.c (build_non_dependent_expr): Propagate expr location.
+
+2018-03-27  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85060 - wrong-code with call to base member in template.
+	* search.c (any_dependent_bases_p): Check uses_template_parms
+	rather than processing_template_decl.
+
+2018-03-29  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85110
+	* typeck.c (convert_for_assignment): When complaining due to
+	conversions for an argument, attempt to use the location of the
+	argument.
+
+2018-03-28  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/85028
+	* pt.c (tsubst_default_argument): Early return if the type of the
+	parameter is erroneous.
+
+2018-03-28  Alexandre Oliva <aoliva@redhat.com>
+
+	PR c++/84973
+	* decl2.c (note_vague_linkage_fn): Don't defer uninstantiated
+	templates.
+
+	PR c++/84968
+	* tree.c (strip_typedefs_expr): Reject STATEMENT_LISTs.
+
+2018-03-27  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/85067
+	* method.c (defaulted_late_check): Partially revert r253321 changes,
+	do not early return upon error.
+
+2018-03-27  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85077
+	* cp-gimplify.c (cp_fold) <case CONSTRUCTOR>: For ctors with vector
+	type call fold to generate VECTOR_CSTs when possible.
+
+	PR c++/85076
+	* tree.c (cp_build_reference_type): If to_type is error_mark_node,
+	return it right away.
+
+2018-03-27  Volker Reichelt  <v.reichelt@netcologne.de>
+
+	* search.c (check_final_overrider): Use inform instead of error
+	for the diagnostics of the overridden functions.  Tweak wording.
+
 2018-03-27  Jakub Jelinek  <jakub@redhat.com>
 
 	PR c++/85068

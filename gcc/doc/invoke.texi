@@ -6825,13 +6825,16 @@ the call writes the terminating NUL into @code{a[4]}, the copies overlap and
 the call is diagnosed.
 
 @smallexample
-struct foo
+void foo (void)
 @{
   char a[] = "abcd1234";
   strcpy (a, a + 4);
-@};
+  @dots{}
+@}
 @end smallexample
-The @option{-Wrestrict} is included in @option{-Wall}.
+The @option{-Wrestrict} option detects some instances of simple overlap
+even without optimization but works best at @option{-O2} and above.  It
+is included in @option{-Wall}.
 
 @item -Wnested-externs @r{(C and Objective-C only)}
 @opindex Wnested-externs
@@ -7777,7 +7780,7 @@ heuristically decides which functions are simple enough to be worth integrating
 in this way.  This inlining applies to all functions, even those not declared
 inline.
 
-Enabled at level @option{-O2}.
+Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -findirect-inlining
 @opindex findirect-inlining
@@ -7786,7 +7789,7 @@ time thanks to previous inlining.  This option has any effect only
 when inlining itself is turned on by the @option{-finline-functions}
 or @option{-finline-small-functions} options.
 
-Enabled at level @option{-O2}.
+Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -finline-functions
 @opindex finline-functions
@@ -7798,7 +7801,7 @@ If all calls to a given function are integrated, and the function is
 declared @code{static}, then the function is normally not output as
 assembler code in its own right.
 
-Enabled at level @option{-O3}.
+Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -finline-functions-called-once
 @opindex finline-functions-called-once
@@ -8999,7 +9002,7 @@ Inline parts of functions.  This option has any effect only
 when inlining itself is turned on by the @option{-finline-functions}
 or @option{-finline-small-functions} options.
 
-Enabled at level @option{-O2}.
+Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -fpredictive-commoning
 @opindex fpredictive-commoning
@@ -9040,9 +9043,9 @@ if (snprintf (buf, "%08x", i) >= sizeof buf)
 @end smallexample
 
 The @option{-fprintf-return-value} option relies on other optimizations
-and yields best results with @option{-O2}.  It works in tandem with the
-@option{-Wformat-overflow} and @option{-Wformat-truncation} options.
-The @option{-fprintf-return-value} option is enabled by default.
+and yields best results with @option{-O2} and above.  It works in tandem
+with the @option{-Wformat-overflow} and @option{-Wformat-truncation}
+options.  The @option{-fprintf-return-value} option is enabled by default.
 
 @item -fno-peephole
 @itemx -fno-peephole2
@@ -9106,7 +9109,7 @@ sections.  When @option{-fsplit-stack} is used this option is not
 enabled by default (to avoid linker errors), but may be enabled
 explicitly (if using a working linker).
 
-Enabled for x86 at levels @option{-O2}, @option{-O3}.
+Enabled for x86 at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -freorder-functions
 @opindex freorder-functions
@@ -9483,9 +9486,8 @@ strict version check, so bytecode files generated in one version of
 GCC do not work with an older or newer version of GCC.
 
 Link-time optimization does not work well with generation of debugging
-information.  Combining @option{-flto} with
-@option{-g} is currently experimental and expected to produce unexpected
-results.
+information on systems other than those using a combination of ELF and
+DWARF.
 
 If you specify the optional @var{n}, the optimization and code
 generation done at link time is executed in parallel using @var{n}
@@ -9564,6 +9566,11 @@ need to support linker plugins to allow a full-featured build environment
 (capable of building static libraries etc).  GCC provides the @command{gcc-ar},
 @command{gcc-nm}, @command{gcc-ranlib} wrappers to pass the right options
 to these tools. With non fat LTO makefiles need to be modified to use them.
+
+Note that modern binutils provide plugin auto-load mechanism.
+Installing the linker plugin into @file{$libdir/bfd-plugins} has the same
+effect as usage of the command wrappers (@command{gcc-ar}, @command{gcc-nm} and
+@command{gcc-ranlib}).
 
 The default is @option{-fno-fat-lto-objects} on targets with linker plugin
 support.
@@ -26450,6 +26457,9 @@ enables all instruction subsets supported by the local machine (hence
 the result might not run on different machines).  Using @option{-mtune=native}
 produces code optimized for the local machine under the constraints
 of the selected instruction set.  
+
+@item x86-64
+A generic CPU with 64-bit extensions.
 
 @item i386
 Original Intel i386 CPU@.

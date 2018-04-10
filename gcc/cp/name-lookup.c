@@ -41,6 +41,7 @@ static cxx_binding *cxx_binding_make (tree value, tree type);
 static cp_binding_level *innermost_nonclass_level (void);
 static void set_identifier_type_value_with_scope (tree id, tree decl,
 						  cp_binding_level *b);
+static bool maybe_suggest_missing_std_header (location_t location, tree name);
 
 /* Create an overload suitable for recording an artificial TYPE_DECL
    and another decl.  We use this machanism to implement the struct
@@ -5044,6 +5045,9 @@ handle_namespace_attrs (tree ns, tree attributes)
   tree d;
   bool saw_vis = false;
 
+  if (attributes == error_mark_node)
+    return false;
+
   for (d = attributes; d; d = TREE_CHAIN (d))
     {
       tree name = get_attribute_name (d);
@@ -5327,6 +5331,48 @@ qualify_lookup (tree val, int flags)
   return true;
 }
 
+/* Is there a "using namespace std;" directive within USINGS?  */
+
+static bool
+using_directives_contain_std_p (vec<tree, va_gc> *usings)
+{
+  if (!usings)
+    return false;
+
+  for (unsigned ix = usings->length (); ix--;)
+    if ((*usings)[ix] == std_node)
+      return true;
+
+  return false;
+}
+
+/* Is there a "using namespace std;" directive within the current
+   namespace (or its ancestors)?
+   Compare with name_lookup::search_unqualified.  */
+
+static bool
+has_using_namespace_std_directive_p ()
+{
+  /* Look at local using-directives.  */
+  for (cp_binding_level *level = current_binding_level;
+       level->kind != sk_namespace;
+       level = level->level_chain)
+    if (using_directives_contain_std_p (level->using_directives))
+      return true;
+
+  /* Look at this namespace and its ancestors.  */
+  for (tree scope = current_namespace; scope; scope = CP_DECL_CONTEXT (scope))
+    {
+      if (using_directives_contain_std_p (DECL_NAMESPACE_USING (scope)))
+	return true;
+
+      if (scope == global_namespace)
+	break;
+    }
+
+  return false;
+}
+
 /* Suggest alternatives for NAME, an IDENTIFIER_NODE for which name
    lookup failed.  Search through all available namespaces and print out
    possible candidates.  If no exact matches are found, and
@@ -5397,11 +5443,23 @@ suggest_alternatives_for (location_t location, tree name,
 	  inform (location_of (val), "  %qE", val);
 	}
       candidates.release ();
+      return;
     }
-  else if (!suggest_misspellings)
-    ;
-  else if (name_hint hint = lookup_name_fuzzy (name, FUZZY_LOOKUP_NAME,
-					       location))
+
+  /* No candidates were found in the available namespaces.  */
+
+  /* If there's a "using namespace std;" active, and this
+     is one of the most common "std::" names, then it's probably a
+     missing #include.  */
+  if (has_using_namespace_std_directive_p ())
+    if (maybe_suggest_missing_std_header (location, name))
+      return;
+
+  /* Otherwise, consider misspellings.  */
+  if (!suggest_misspellings)
+    return;
+  if (name_hint hint = lookup_name_fuzzy (name, FUZZY_LOOKUP_NAME,
+					  location))
     {
       /* Show a spelling correction.  */
       gcc_rich_location richloc (location);
@@ -5411,88 +5469,245 @@ suggest_alternatives_for (location_t location, tree name,
     }
 }
 
+/* A well-known name within the C++ standard library, returned by
+   get_std_name_hint.  */
+
+struct std_name_hint
+{
+  /* A name within "std::".  */
+  const char *name;
+
+  /* The header name defining it within the C++ Standard Library
+     (with '<' and '>').  */
+  const char *header;
+
+  /* The dialect of C++ in which this was added.  */
+  enum cxx_dialect min_dialect;
+};
+
 /* Subroutine of maybe_suggest_missing_header for handling unrecognized names
    for some of the most common names within "std::".
-   Given non-NULL NAME, a name for lookup within "std::", return the header
-   name defining it within the C++ Standard Library (with '<' and '>'),
-   or NULL.  */
+   Given non-NULL NAME, return the std_name_hint for it, or NULL.  */
 
-static const char *
+static const std_name_hint *
 get_std_name_hint (const char *name)
 {
-  struct std_name_hint
-  {
-    const char *name;
-    const char *header;
-  };
   static const std_name_hint hints[] = {
+    /* <any>.  */
+    {"any", "<any>", cxx17},
+    {"any_cast", "<any>", cxx17},
+    {"make_any", "<any>", cxx17},
     /* <array>.  */
-    {"array", "<array>"}, // C++11
+    {"array", "<array>", cxx11},
+    /* <atomic>.  */
+    {"atomic", "<atomic>", cxx11},
+    {"atomic_flag", "<atomic>", cxx11},
+    /* <bitset>.  */
+    {"bitset", "<bitset>", cxx11},
     /* <complex>.  */
-    {"complex", "<complex>"},
-    {"complex_literals", "<complex>"},
+    {"complex", "<complex>", cxx98},
+    {"complex_literals", "<complex>", cxx98},
+    /* <condition_variable>. */
+    {"condition_variable", "<condition_variable>", cxx11},
+    {"condition_variable_any", "<condition_variable>", cxx11},
     /* <deque>.  */
-    {"deque", "<deque>"},
+    {"deque", "<deque>", cxx98},
     /* <forward_list>.  */
-    {"forward_list", "<forward_list>"},  // C++11
+    {"forward_list", "<forward_list>", cxx11},
     /* <fstream>.  */
-    {"basic_filebuf", "<fstream>"},
-    {"basic_ifstream", "<fstream>"},
-    {"basic_ofstream", "<fstream>"},
-    {"basic_fstream", "<fstream>"},
+    {"basic_filebuf", "<fstream>", cxx98},
+    {"basic_ifstream", "<fstream>", cxx98},
+    {"basic_ofstream", "<fstream>", cxx98},
+    {"basic_fstream", "<fstream>", cxx98},
+    {"fstream", "<fstream>", cxx98},
+    {"ifstream", "<fstream>", cxx98},
+    {"ofstream", "<fstream>", cxx98},
+    /* <functional>.  */
+    {"bind", "<functional>", cxx11},
+    {"function", "<functional>", cxx11},
+    {"hash", "<functional>", cxx11},
+    {"mem_fn", "<functional>", cxx11},
+    /* <future>. */
+    {"async", "<future>", cxx11},
+    {"future", "<future>", cxx11},
+    {"packaged_task", "<future>", cxx11},
+    {"promise", "<future>", cxx11},
     /* <iostream>.  */
-    {"cin", "<iostream>"},
-    {"cout", "<iostream>"},
-    {"cerr", "<iostream>"},
-    {"clog", "<iostream>"},
-    {"wcin", "<iostream>"},
-    {"wcout", "<iostream>"},
-    {"wclog", "<iostream>"},
-    /* <list>.  */
-    {"list", "<list>"},
-    /* <map>.  */
-    {"map", "<map>"},
-    {"multimap", "<map>"},
-    /* <queue>.  */
-    {"queue", "<queue>"},
-    {"priority_queue", "<queue>"},
+    {"cin", "<iostream>", cxx98},
+    {"cout", "<iostream>", cxx98},
+    {"cerr", "<iostream>", cxx98},
+    {"clog", "<iostream>", cxx98},
+    {"wcin", "<iostream>", cxx98},
+    {"wcout", "<iostream>", cxx98},
+    {"wclog", "<iostream>", cxx98},
+    /* <istream>.  */
+    {"istream", "<istream>", cxx98},
+    /* <iterator>.  */
+    {"advance", "<iterator>", cxx98},
+    {"back_inserter", "<iterator>", cxx98},
+    {"begin", "<iterator>", cxx11},
+    {"distance", "<iterator>", cxx98},
+    {"end", "<iterator>", cxx11},
+    {"front_inserter", "<iterator>", cxx98},
+    {"inserter", "<iterator>", cxx98},
+    {"istream_iterator", "<iterator>", cxx98},
+    {"istreambuf_iterator", "<iterator>", cxx98},
+    {"iterator_traits", "<iterator>", cxx98},
+    {"move_iterator", "<iterator>", cxx11},
+    {"next", "<iterator>", cxx11},
+    {"ostream_iterator", "<iterator>", cxx98},
+    {"ostreambuf_iterator", "<iterator>", cxx98},
+    {"prev", "<iterator>", cxx11},
+    {"reverse_iterator", "<iterator>", cxx98},
     /* <ostream>.  */
-    {"ostream", "<ostream>"},
-    {"wostream", "<ostream>"},
-    {"ends", "<ostream>"},
-    {"flush", "<ostream>"},
-    {"endl", "<ostream>"},
+    {"ostream", "<ostream>", cxx98},
+    /* <list>.  */
+    {"list", "<list>", cxx98},
+    /* <map>.  */
+    {"map", "<map>", cxx98},
+    {"multimap", "<map>", cxx98},
+    /* <memory>.  */
+    {"make_shared", "<memory>", cxx11},
+    {"make_unique", "<memory>", cxx11},
+    {"shared_ptr", "<memory>", cxx11},
+    {"unique_ptr", "<memory>", cxx11},
+    {"weak_ptr", "<memory>", cxx11},
+    /* <mutex>.  */
+    {"mutex", "<mutex>", cxx11},
+    {"timed_mutex", "<mutex>", cxx11},
+    {"recursive_mutex", "<mutex>", cxx11},
+    {"recursive_timed_mutex", "<mutex>", cxx11},
+    {"once_flag", "<mutex>", cxx11},
+    {"call_once,", "<mutex>", cxx11},
+    {"lock", "<mutex>", cxx11},
+    {"scoped_lock", "<mutex>", cxx17},
+    {"try_lock", "<mutex>", cxx11},
+    {"lock_guard", "<mutex>", cxx11},
+    {"unique_lock", "<mutex>", cxx11},
+    /* <optional>. */
+    {"optional", "<optional>", cxx17},
+    {"make_optional", "<optional>", cxx17},
+    /* <ostream>.  */
+    {"ostream", "<ostream>", cxx98},
+    {"wostream", "<ostream>", cxx98},
+    {"ends", "<ostream>", cxx98},
+    {"flush", "<ostream>", cxx98},
+    {"endl", "<ostream>", cxx98},
+    /* <queue>.  */
+    {"queue", "<queue>", cxx98},
+    {"priority_queue", "<queue>", cxx98},
     /* <set>.  */
-    {"set", "<set>"},
-    {"multiset", "<set>"},
+    {"set", "<set>", cxx98},
+    {"multiset", "<set>", cxx98},
+    /* <shared_mutex>.  */
+    {"shared_lock", "<shared_mutex>", cxx14},
+    {"shared_mutex", "<shared_mutex>", cxx17},
+    {"shared_timed_mutex", "<shared_mutex>", cxx14},
     /* <sstream>.  */
-    {"basic_stringbuf", "<sstream>"},
-    {"basic_istringstream", "<sstream>"},
-    {"basic_ostringstream", "<sstream>"},
-    {"basic_stringstream", "<sstream>"},
+    {"basic_stringbuf", "<sstream>", cxx98},
+    {"basic_istringstream", "<sstream>", cxx98},
+    {"basic_ostringstream", "<sstream>", cxx98},
+    {"basic_stringstream", "<sstream>", cxx98},
+    {"istringstream", "<sstream>", cxx98},
+    {"ostringstream", "<sstream>", cxx98},
+    {"stringstream", "<sstream>", cxx98},
     /* <stack>.  */
-    {"stack", "<stack>"},
+    {"stack", "<stack>", cxx98},
     /* <string>.  */
-    {"string", "<string>"},
-    {"wstring", "<string>"},
-    {"u16string", "<string>"},
-    {"u32string", "<string>"},
+    {"basic_string", "<string>", cxx98},
+    {"string", "<string>", cxx98},
+    {"wstring", "<string>", cxx98},
+    {"u16string", "<string>", cxx11},
+    {"u32string", "<string>", cxx11},
+    /* <string_view>.  */
+    {"string_view", "<string_view>", cxx17},
+    /* <thread>.  */
+    {"thread", "<thread>", cxx11},
+    /* <tuple>.  */
+    {"make_tuple", "<tuple>", cxx11},
+    {"tuple", "<tuple>", cxx11},
+    {"tuple_element", "<tuple>", cxx11},
+    {"tuple_size", "<tuple>", cxx11},
     /* <unordered_map>.  */
-    {"unordered_map", "<unordered_map>"}, // C++11
-    {"unordered_multimap", "<unordered_map>"}, // C++11
+    {"unordered_map", "<unordered_map>", cxx11},
+    {"unordered_multimap", "<unordered_map>", cxx11},
     /* <unordered_set>.  */
-    {"unordered_set", "<unordered_set>"}, // C++11
-    {"unordered_multiset", "<unordered_set>"}, // C++11
+    {"unordered_set", "<unordered_set>", cxx11},
+    {"unordered_multiset", "<unordered_set>", cxx11},
+    /* <utility>.  */
+    {"declval", "<utility>", cxx11},
+    {"forward", "<utility>", cxx11},
+    {"make_pair", "<utility>", cxx98},
+    {"move", "<utility>", cxx11},
+    {"pair", "<utility>", cxx98},
+    /* <variant>.  */
+    {"variant", "<variant>", cxx17},
+    {"visit", "<variant>", cxx17},
     /* <vector>.  */
-    {"vector", "<vector>"},
+    {"vector", "<vector>", cxx98},
   };
   const size_t num_hints = sizeof (hints) / sizeof (hints[0]);
   for (size_t i = 0; i < num_hints; i++)
     {
       if (strcmp (name, hints[i].name) == 0)
-	return hints[i].header;
+	return &hints[i];
     }
   return NULL;
+}
+
+/* Describe DIALECT.  */
+
+static const char *
+get_cxx_dialect_name (enum cxx_dialect dialect)
+{
+  switch (dialect)
+    {
+    default:
+      gcc_unreachable ();
+    case cxx98:
+      return "C++98";
+    case cxx11:
+      return "C++11";
+    case cxx14:
+      return "C++14";
+    case cxx17:
+      return "C++17";
+    case cxx2a:
+      return "C++2a";
+    }
+}
+
+/* Suggest pertinent header files for NAME at LOCATION, for common
+   names within the "std" namespace.
+   Return true iff a suggestion was offered.  */
+
+static bool
+maybe_suggest_missing_std_header (location_t location, tree name)
+{
+  gcc_assert (TREE_CODE (name) == IDENTIFIER_NODE);
+
+  const char *name_str = IDENTIFIER_POINTER (name);
+  const std_name_hint *header_hint = get_std_name_hint (name_str);
+  if (!header_hint)
+    return false;
+
+  gcc_rich_location richloc (location);
+  if (cxx_dialect >= header_hint->min_dialect)
+    {
+      const char *header = header_hint->header;
+      maybe_add_include_fixit (&richloc, header);
+      inform (&richloc,
+	      "%<std::%s%> is defined in header %qs;"
+	      " did you forget to %<#include %s%>?",
+	      name_str, header, header);
+    }
+  else
+    {
+      inform (&richloc,
+	      "%<std::%s%> is only available from %s onwards",
+	      name_str, get_cxx_dialect_name (header_hint->min_dialect));
+    }
+  return true;
 }
 
 /* If SCOPE is the "std" namespace, then suggest pertinent header
@@ -5509,20 +5724,7 @@ maybe_suggest_missing_header (location_t location, tree name, tree scope)
   /* We only offer suggestions for the "std" namespace.  */
   if (scope != std_node)
     return false;
-  gcc_assert (TREE_CODE (name) == IDENTIFIER_NODE);
-
-  const char *name_str = IDENTIFIER_POINTER (name);
-  const char *header_hint = get_std_name_hint (name_str);
-  if (!header_hint)
-    return false;
-
-  gcc_rich_location richloc (location);
-  maybe_add_include_fixit (&richloc, header_hint);
-  inform (&richloc,
-	  "%<std::%s%> is defined in header %qs;"
-	  " did you forget to %<#include %s%>?",
-	  name_str, header_hint, header_hint);
-  return true;
+  return maybe_suggest_missing_std_header (location, name);
 }
 
 /* Look for alternatives for NAME, an IDENTIFIER_NODE for which name
@@ -6459,8 +6661,8 @@ do_pushtag (tree name, tree type, tag_scope scope)
 	      && init_list_identifier == DECL_NAME (TYPE_NAME (type))
 	      && !CLASSTYPE_TEMPLATE_INFO (type))
 	    {
-	      error ("declaration of std::initializer_list does not match "
-		     "#include <initializer_list>, isn't a template");
+	      error ("declaration of %<std::initializer_list%> does not match "
+		     "%<#include <initializer_list>%>, isn't a template");
 	      return error_mark_node;
 	    }
 	}
