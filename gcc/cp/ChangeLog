@@ -1,3 +1,77 @@
+2018-04-12  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85385
+	* name-lookup.c (macro_use_before_def::maybe_make): New function,
+	checking that the use is indeed before the definition.
+	(macro_use_before_def::macro_use_before_def): Make private.
+	(macro_use_before_def::~macro_use_before_def): Make private.  Move
+	check for UNKNOWN_LOCATION to macro_use_before_def::maybe_make.
+	(lookup_name_fuzzy): Call macro_use_before_def::maybe_make rather
+	than using new directly.
+
+2018-04-12  Jason Merrill  <jason@redhat.com>
+
+	PR c++/85356 - ICE with pointer to member function.
+	* pt.c (maybe_instantiate_noexcept): Do instantiate in templates if
+	flag_noexcept_type.  Build the new spec within the function context.
+	* except.c (build_noexcept_spec): Do get constant value in templates
+	if flag_noexcept_type.
+	* decl.c (check_redeclaration_exception_specification): Don't
+	instantiate noexcept on a dependent declaration.
+
+2018-04-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/85258
+	* constexpr.c (reduced_constant_expression_p): Return false for null
+	trees.
+
+2018-04-11  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/85032
+	* constexpr.c (potential_constant_expression_1): Consider conversions
+	from classes to literal types potentially constant.
+
+2018-04-10  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/70808
+	* init.c (build_zero_init_1): Handle NULLPTR_TYPE_P being true of
+	the type like TYPE_PTR_OR_PTRMEM_P.
+
+2018-04-10  Jason Merrill  <jason@redhat.com>
+
+	PR debug/65821 - wrong location for main().
+	* call.c (clear_location_r, convert_default_arg): Revert.
+	* tree.c (break_out_target_exprs): Add clear_location parm.
+	(struct bot_data): New.
+	(bot_manip): Clear location if requested.
+	* init.c (get_nsdmi): Pass clear_location.
+
+2018-04-10  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85110
+	* call.c (get_fndecl_argument_location): Make non-static.
+	* cp-tree.h (get_fndecl_argument_location): New decl.
+	* typeck.c (convert_for_assignment): When complaining due to
+	conversions for an argument, show the location of the parameter
+	within the decl.
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/85312 - P0962 cleanup
+	* parser.c (cp_parser_perform_range_for_lookup): Remove unreachable
+	diagnostics.
+
+2018-04-10  Jason Merrill  <jason@redhat.com>
+
+	PR debug/65821 - wrong location for main().
+	* call.c (clear_location_r): New.
+	(convert_default_arg): Use it.
+	* tree.c (bot_manip): Remove builtin_LINE/FILE handling.
+
+	PR c++/85285 - ICE with flexible array after substitution.
+	* pt.c (instantiate_class_template_1): Check for flexible array in
+	union.
+
 2018-04-09  Paolo Carlini  <paolo.carlini@oracle.com>
 
 	PR c++/85227

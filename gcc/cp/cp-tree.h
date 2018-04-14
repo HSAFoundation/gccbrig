@@ -5995,6 +5995,8 @@ extern bool can_convert_arg			(tree, tree, tree, int,
 						 tsubst_flags_t);
 extern bool can_convert_arg_bad			(tree, tree, tree, int,
 						 tsubst_flags_t);
+extern location_t get_fndecl_argument_location  (tree, int);
+
 
 /* A class for recording information about access failures (e.g. private
    fields), so that we can potentially supply a fix-it hint about
@@ -7058,7 +7060,7 @@ extern tree build_exception_variant		(tree, tree);
 extern tree bind_template_template_parm		(tree, tree);
 extern tree array_type_nelts_total		(tree);
 extern tree array_type_nelts_top		(tree);
-extern tree break_out_target_exprs		(tree);
+extern tree break_out_target_exprs		(tree, bool = false);
 extern tree build_ctor_subob_ref		(tree, tree, tree);
 extern tree replace_placeholders		(tree, tree, bool * = NULL);
 extern bool find_placeholders			(tree);

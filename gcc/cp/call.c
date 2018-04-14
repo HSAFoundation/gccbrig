@@ -6595,7 +6595,7 @@ maybe_print_user_conv_context (conversion *convs)
    ARGNUM is zero based, -1 indicates the `this' argument of a method.
    Return the location of the FNDECL itself if there are problems.  */
 
-static location_t
+location_t
 get_fndecl_argument_location (tree fndecl, int argnum)
 {
   int i;
@@ -7359,7 +7359,8 @@ convert_default_arg (tree type, tree arg, tree fn, int parmnum,
   push_deferring_access_checks (dk_no_check);
   /* We must make a copy of ARG, in case subsequent processing
      alters any part of it.  */
-  arg = break_out_target_exprs (arg);
+  arg = break_out_target_exprs (arg, /*clear location*/true);
+
   arg = convert_for_initialization (0, type, arg, LOOKUP_IMPLICIT,
 				    ICR_DEFAULT_ARGUMENT, fn, parmnum,
 				    complain);

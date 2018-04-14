@@ -10904,6 +10904,14 @@ instantiate_class_template_1 (tree type)
 			      cxx_incomplete_type_error (r, rtype);
 			      TREE_TYPE (r) = error_mark_node;
 			    }
+			  else if (TREE_CODE (rtype) == ARRAY_TYPE
+				   && TYPE_DOMAIN (rtype) == NULL_TREE
+				   && (TREE_CODE (type) == UNION_TYPE
+				       || TREE_CODE (type) == QUAL_UNION_TYPE))
+			    {
+			      error ("flexible array member %qD in union", r);
+			      TREE_TYPE (r) = error_mark_node;
+			    }
 			}
 
 		      /* If it is a TYPE_DECL for a class-scoped ENUMERAL_TYPE,
@@ -23226,7 +23234,8 @@ maybe_instantiate_noexcept (tree fn, tsubst_flags_t complain)
   tree fntype, spec, noex, clone;
 
   /* Don't instantiate a noexcept-specification from template context.  */
-  if (processing_template_decl)
+  if (processing_template_decl
+      && (!flag_noexcept_type || type_dependent_expression_p (fn)))
     return true;
 
   if (DECL_CLONED_FUNCTION_P (fn))
@@ -23265,10 +23274,10 @@ maybe_instantiate_noexcept (tree fn, tsubst_flags_t complain)
 					tf_warning_or_error, fn,
 					/*function_p=*/false,
 					/*integral_constant_expression_p=*/true);
+	  spec = build_noexcept_spec (noex, tf_warning_or_error);
 	  pop_deferring_access_checks ();
 	  pop_access_scope (fn);
 	  pop_tinst_level ();
-	  spec = build_noexcept_spec (noex, tf_warning_or_error);
 	  if (spec == error_mark_node)
 	    spec = noexcept_false_spec;
 	}

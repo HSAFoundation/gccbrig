@@ -10610,7 +10610,9 @@ rs6000_emit_move (rtx dest, rtx source, machine_mode mode)
       if (regno >= FIRST_PSEUDO_REGISTER)
 	{
 	  cl = reg_preferred_class (regno);
-	  regno = cl == NO_REGS ? -1 : ira_class_hard_regs[cl][1];
+	  regno = reg_renumber[regno];
+	  if (regno < 0)
+	    regno = cl == NO_REGS ? -1 : ira_class_hard_regs[cl][1];
 	}
       if (regno >= 0 && ! FP_REGNO_P (regno))
 	{
@@ -10635,7 +10637,9 @@ rs6000_emit_move (rtx dest, rtx source, machine_mode mode)
 	{
 	  cl = reg_preferred_class (regno);
 	  gcc_assert (cl != NO_REGS);
-	  regno = ira_class_hard_regs[cl][0];
+	  regno = reg_renumber[regno];
+	  if (regno < 0)
+	    regno = ira_class_hard_regs[cl][0];
 	}
       if (FP_REGNO_P (regno))
 	{
@@ -10664,7 +10668,9 @@ rs6000_emit_move (rtx dest, rtx source, machine_mode mode)
       if (regno >= FIRST_PSEUDO_REGISTER)
 	{
 	  cl = reg_preferred_class (regno);
-	  regno = cl == NO_REGS ? -1 : ira_class_hard_regs[cl][0];
+	  regno = reg_renumber[regno];
+	  if (regno < 0)
+	    regno = cl == NO_REGS ? -1 : ira_class_hard_regs[cl][0];
 	}
       if (regno >= 0 && ! FP_REGNO_P (regno))
 	{
@@ -10689,7 +10695,9 @@ rs6000_emit_move (rtx dest, rtx source, machine_mode mode)
 	{
 	  cl = reg_preferred_class (regno);
 	  gcc_assert (cl != NO_REGS);
-	  regno = ira_class_hard_regs[cl][0];
+	  regno = reg_renumber[regno];
+	  if (regno < 0)
+	    regno = ira_class_hard_regs[cl][0];
 	}
       if (FP_REGNO_P (regno))
 	{
@@ -16953,7 +16961,7 @@ rs6000_init_builtins (void)
   bool_char_type_node = build_distinct_type_copy (unsigned_intQI_type_node);
   bool_short_type_node = build_distinct_type_copy (unsigned_intHI_type_node);
   bool_int_type_node = build_distinct_type_copy (unsigned_intSI_type_node);
-  bool_long_type_node = build_distinct_type_copy (unsigned_intDI_type_node);
+  bool_long_long_type_node = build_distinct_type_copy (unsigned_intDI_type_node);
   pixel_type_node = build_distinct_type_copy (unsigned_intHI_type_node);
 
   long_integer_type_internal_node = long_integer_type_node;
@@ -17070,7 +17078,7 @@ rs6000_init_builtins (void)
   bool_V2DI_type_node = rs6000_vector_type (TARGET_POWERPC64
 					    ? "__vector __bool long"
 					    : "__vector __bool long long",
-					    bool_long_type_node, 2);
+					    bool_long_long_type_node, 2);
   pixel_V8HI_type_node = rs6000_vector_type ("__vector __pixel",
 					     pixel_type_node, 8);
 
@@ -32900,7 +32908,7 @@ rs6000_mangle_type (const_tree type)
   if (type == bool_short_type_node) return "U6__bools";
   if (type == pixel_type_node) return "u7__pixel";
   if (type == bool_int_type_node) return "U6__booli";
-  if (type == bool_long_type_node) return "U6__booll";
+  if (type == bool_long_long_type_node) return "U6__boolx";
 
   /* Use a unique name for __float128 rather than trying to use "e" or "g". Use
      "g" for IBM extended double, no matter whether it is long double (using

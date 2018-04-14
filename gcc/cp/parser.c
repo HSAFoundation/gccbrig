@@ -12041,17 +12041,8 @@ cp_parser_perform_range_for_lookup (tree range, tree *begin, tree *end)
       if (member_begin != NULL_TREE && member_end != NULL_TREE)
 	{
 	  /* Use the member functions.  */
-	  if (member_begin != NULL_TREE)
-	    *begin = cp_parser_range_for_member_function (range, id_begin);
-	  else
-	    error ("range-based %<for%> expression of type %qT has an "
-		   "%<end%> member but not a %<begin%>", TREE_TYPE (range));
-
-	  if (member_end != NULL_TREE)
-	    *end = cp_parser_range_for_member_function (range, id_end);
-	  else
-	    error ("range-based %<for%> expression of type %qT has a "
-		   "%<begin%> member but not an %<end%>", TREE_TYPE (range));
+	  *begin = cp_parser_range_for_member_function (range, id_begin);
+	  *end = cp_parser_range_for_member_function (range, id_end);
 	}
       else
 	{
@@ -26452,8 +26443,8 @@ cp_parser_check_template_parameters (cp_parser* parser,
      lists, that's OK.  */
   if (parser->num_template_parameter_lists == num_templates)
     return true;
-  /* If there are more, but only one more, then we are referring to a
-     member template.  That's OK too.  */
+  /* If there are more, but only one more, and the name ends in an identifier,
+     then we are declaring a primary template.  That's OK too.  */
   if (!template_id_p
       && parser->num_template_parameter_lists == num_templates + 1)
     return true;

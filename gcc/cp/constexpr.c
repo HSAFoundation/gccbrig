@@ -1773,6 +1773,9 @@ cxx_eval_call_expression (const constexpr_ctx *ctx, tree t,
 bool
 reduced_constant_expression_p (tree t)
 {
+  if (t == NULL_TREE)
+    return false;
+
   switch (TREE_CODE (t))
     {
     case PTRMEM_CST:
@@ -1794,9 +1797,8 @@ reduced_constant_expression_p (tree t)
 	field = NULL_TREE;
       FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (t), i, idx, val)
 	{
-	  if (!val)
-	    /* We're in the middle of initializing this element.  */
-	    return false;
+	  /* If VAL is null, we're in the middle of initializing this
+	     element.  */
 	  if (!reduced_constant_expression_p (val))
 	    return false;
 	  if (field)
@@ -5776,6 +5778,25 @@ potential_constant_expression_1 (tree t, bool want_rval, bool strict, bool now,
 		      "cast to non-integral type %qT in a constant expression",
 		      TREE_TYPE (t));
 	  return false;
+	}
+      /* This might be a conversion from a class to a (potentially) literal
+	 type.  Let's consider it potentially constant since the conversion
+	 might be a constexpr user-defined conversion.  */
+      else if (cxx_dialect >= cxx11
+	       && (dependent_type_p (TREE_TYPE (t))
+		   || !COMPLETE_TYPE_P (TREE_TYPE (t))
+		   || literal_type_p (TREE_TYPE (t)))
+	       && TREE_OPERAND (t, 0))
+	{
+	  tree type = TREE_TYPE (TREE_OPERAND (t, 0));
+	  /* If this is a dependent type, it could end up being a class
+	     with conversions.  */
+	  if (type == NULL_TREE || WILDCARD_TYPE_P (type))
+	    return true;
+	  /* Or a non-dependent class which has conversions.  */
+	  else if (CLASS_TYPE_P (type)
+		   && (TYPE_HAS_CONVERSION (type) || dependent_scope_p (type)))
+	    return true;
 	}
 
       return (RECUR (TREE_OPERAND (t, 0),

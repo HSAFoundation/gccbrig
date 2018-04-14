@@ -1,3 +1,326 @@
+2018-04-13  Paul A. Clarke  <pc@us.ibm.com>
+
+	PR target/83402
+	* config/rs6000/emmintrin.h (_mm_slli_epi{16,32,64}):
+	Ensure that vec_splat_s32 is only called with 0 <= shift < 16.
+	Ensure negative shifts result in {0}.
+
+2018-04-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	PR rtl-optimization/79916
+	* config/rs6000/rs6000.c (rs6000_emit_move): Use assigned hard
+	regs (if any) to define how to gnerate SD moves when LRA is in
+	progress.
+
+2018-04-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85393
+	* except.h (expand_dw2_landing_pad_for_region): Remove declaration.
+	* except.c (expand_dw2_landing_pad_for_region): Make static.
+	* bb-reorder.c (fix_up_crossing_landing_pad): In new_bb emit just
+	a label and unconditional jump to old_bb, rather than
+	expand_dw2_landing_pad_for_region insn(s) and jump to single_succ
+	basic block.
+
+	PR rtl-optimization/85376
+	* simplify-rtx.c (simplify_const_unary_operation): For CLZ and CTZ and
+	zero op0, if C?Z_DEFINED_VALUE_AT_ZERO is false, return NULL_RTX
+	instead of a specific value.
+
+2018-04-13  Jan Hubicka  <hubicka@ucw.cz>
+	    Bin Cheng  <bin.cheng@arm.com>
+
+	PR tree-optimization/82965
+	PR tree-optimization/83991
+	* cfgloopanal.c (expected_loop_iterations_unbounded): Add
+	by_profile_only parameter.
+	* cfgloopmanip.c (scale_loop_profile): Further scale loop's profile
+        information if the loop was predicted to iterate too many times.
+	* cfgloop.h (expected_loop_iterations_unbounded): Update prototype
+
+2018-04-13  Jan Hubicka  <hubicka@ucw.cz>
+
+	PR lto/71991
+	* config/i386/i386.c (ix86_can_inline_p): Allow safe transitions for
+	always inline.
+
+2018-04-13  Martin Liska  <mliska@suse.cz>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/81657
+	* expr.h (enum block_op_methods): Add BLOCK_OP_NO_LIBCALL_RET.
+	* expr.c (emit_block_move_hints): Handle BLOCK_OP_NO_LIBCALL_RET.
+	* builtins.c (expand_builtin_memory_copy_args): Use
+	BLOCK_OP_NO_LIBCALL_RET method for mempcpy with non-ignored target,
+	handle dest_addr == pc_rtx.
+
+2018-04-12  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR target/85291
+	* config/rs6000/rs6000.md (fix_trunc<mode>si2): Use legacy code if
+	asked to not generate direct moves.
+	(fix_trunc<mode>si2_stfiwx): Similar.
+	(fix_trunc<mode>si2_internal): Similar.
+
+2018-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR debug/83157
+	* var-tracking.c (add_stores): Handle STRICT_LOW_PART SET_DEST.
+	* cselib.c (cselib_record_sets): For STRICT_LOW_PART dest,
+	lookup if dest in some wider mode is known to be const0_rtx and
+	if so, record permanent equivalence for it to be ZERO_EXTEND of
+	the narrower mode destination.
+
+2018-04-12  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* lto-streamer-out.c (output_function): Revert 259346.
+	* omp-expand.c (expand_oacc_for): Likewise.
+
+2018-04-12  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR rtl-optimization/85354
+	* sel-sched-ir.c (sel_init_pipelining): Move cfg_cleanup call...
+	* sel-sched.c (sel_global_init): ... here.
+
+2018-04-12  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR target/85238
+	* lto-wrapper.c (debug_objcopy): Open the files in binary mode.
+	* dwarf2out.c (dwarf2out_early_finish): Do not generate assembly in LTO
+	mode for PE-COFF targets.
+	* config/i386/i386-protos.h (i386_pe_asm_lto_start): Declare.
+	(i386_pe_asm_lto_end): Likewise.
+	* config/i386/cygming.h (TARGET_ASM_LTO_START): Define.
+	(TARGET_ASM_LTO_END): Likewise.
+	* config/i386/winnt.c (saved_debug_info_level): New static variable.
+	(i386_pe_asm_lto_start): New function.
+	(i386_pe_asm_lto_end): Likewise.
+
+2018-04-12  Cesar Philippidis  <cesar@codesourcery.com>
+	    Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/84955
+	* lto-streamer-out.c (output_function): Fix CFG loop state before
+	streaming out.
+	* omp-expand.c (expand_oacc_for): Handle calls to internal
+	functions like regular functions.
+
+2018-04-12  Richard Biener  <rguenther@suse.de>
+
+	PR lto/85371
+	* dwarf2out.c (init_sections_and_labels): Use debug_line_section[_label]
+	for the early LTO debug to properly generate references to it
+	during DIE emission.  Do not re-use that for the skeleton for
+	split-dwarf.
+	(dwarf2out_early_finish): Likewise.
+
+2018-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85328
+	* config/i386/sse.md
+	(<mask_codefor>avx512dq_vextract<shuffletype>64x2_1<mask_name> split,
+	<mask_codefor>avx512f_vextract<shuffletype>32x4_1<mask_name> split,
+	vec_extract_lo_<mode><mask_name> split, vec_extract_lo_v32hi,
+	vec_extract_lo_v64qi): For non-AVX512VL if input is xmm16+ reg
+	and output is a reg, avoid creating invalid lowpart subreg, but
+	instead split into a 512-bit move.  Don't split if not AVX512VL,
+	input is xmm16+ reg and output is a mem.
+	(vec_extract_lo_<mode><mask_name>, vec_extract_lo_v32hi,
+	vec_extract_lo_v64qi): Don't require split if not AVX512VL, input is
+	xmm16+ reg and output is a mem.
+
+2018-04-12  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* config/s390/s390.c (s390_output_indirect_thunk_function): Check
+	also for flag_dwarf2_cfi_asm.
+
+2018-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85342
+	* regcprop.c (copyprop_hardreg_forward_1): Remove replaced array, use
+	a bool scalar var inside of the loop instead.  Don't try to update
+	recog_data.operand after failed apply_change_group.
+
+2018-04-12  Tom de Vries  <tom@codesourcery.com>
+
+	PR target/85296
+	* config/nvptx/nvptx.c (flexible_array_member_type_p): New function.
+	(nvptx_assemble_decl_begin): Add undefined param.  Declare undefined
+	array with flexible array member as array without given dimension.
+	(nvptx_assemble_undefined_decl): Set nvptx_assemble_decl_begin call
+	argument for undefined param to true.
+
+2018-04-11  Aaron Sawdey  <acsawdey@linux.ibm.com>
+
+	PR target/85321
+	* doc/invoke.texi (RS/6000 and PowerPC Options): Document options
+	-mcall- and -mtraceback=. Remove options -mabi=spe and -mabi=no-spe
+	from PowerPC section.
+	* config/rs6000/sysv4.opt (mcall-): Improve help text.
+	* config/rs6000/rs6000.opt (mblock-compare-inline-limit=): Trim
+	help text that is too long.
+	* config/rs6000/rs6000.opt (mblock-compare-inline-loop-limit=): Trim
+	help text that is too long.
+	* config/rs6000/rs6000.opt (mstring-compare-inline-limit=): Trim
+	help text that is too long.
+
+2018-04-11  Uros Bizjak  <ubizjak@gmail.com>
+
+	* config/alpha/alpha.md (stack_probe_internal): Rename
+	from "probe_stack".  Update all callers.
+
+2018-04-11  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR rtl-optimization/84566
+	* sched-deps.c (sched_analyze_insn): Check deps->readonly when invoking
+	sched_macro_fuse_insns.
+
+2018-04-11  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR target/84301
+	* sched-rgn.c (add_branch_dependences): Move sel_sched_p check here...
+	(compute_block_dependences): ... from here.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/85331
+	* vec-perm-indices.h (vec_perm_indices::clamp): Change input type
+	from int to HOST_WIDE_INT.
+
+2018-04-11  Martin Jambor  <mjambor@suse.cz>
+
+	PR ipa/84149
+	* ipa-cp.c (propagate_vals_across_pass_through): Expand comment.
+	(cgraph_edge_brings_value_p): New parameter dest_val, check if it is
+	not the same as the source val.
+	(cgraph_edge_brings_value_p): New parameter.
+	(gather_edges_for_value): Pass destination value to
+	cgraph_edge_brings_value_p.
+	(perhaps_add_new_callers): Likewise.
+	(get_info_about_necessary_edges): Likewise and exclude values brought
+	only by self-recursive edges.
+	(create_specialized_node): Redirect only clones of self-calling edges.
+	(+self_recursive_pass_through_p): New function.
+	(find_more_scalar_values_for_callers_subset): Use it.
+	(find_aggregate_values_for_callers_subset): Likewise.
+	(known_aggs_to_agg_replacement_list): Removed.
+	(decide_whether_version_node): Re-calculate known constants for all
+	remaining context clones.
+
+2018-04-11  Richard Biener  <rguenther@suse.de>
+
+	PR lto/85339
+	* dwarf2out.c (dwarf2out_finish): Remove DW_AT_stmt_list attribute
+	from early DWARF output.
+	(dwarf2out_early_finish): Output line info unconditionally into
+	early DWARF and add reference to it.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85281
+	* config/i386/sse.md (iptr): Add V16SFmode and V8DFmode cases.
+	(<avx512>_vec_dup<mode><mask_name>): Use a single pattern for modes
+	other than V2DFmode using iptr mode attribute.
+	(<avx512>_vec_dup<mode><mask_name>): Use iptr mode attribute.
+
+2018-04-11  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR rtl-optimization/84659
+	* sel-sched-ir.c (sel_init_pipelining): Invoke cleanup_cfg.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR debug/85302
+	* dwarf2out.c (skip_loc_list_entry): Don't call size_of_locs if
+	SIZEP is NULL.
+	(output_loc_list): Pass address of a dummy size variable even in the
+	locview handling loop.
+	(index_location_lists): Add comment on why skip_loc_list_entry can't
+	call size_of_locs.
+
+2018-04-11  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	PR target/85261
+	* config/arm/arm-builtins.c (arm_expand_builtin): Force input operand
+	into register.
+
+2018-04-10  Aaron Sawdey  <acsawdey@linux.ibm.com>
+
+	PR target/85321
+	* doc/invoke.texi (RS/6000 and PowerPC Options): Document options
+	-mblock-compare-inline-limit, -mblock-compare-inline-loop-limit,
+	and -mstring-compare-inline-limit.
+
+2018-04-10  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR target/85287
+	* gcc/config/rs6000/rs6000.md (allocate_stack): Put the residual size
+	for stack clash protection in a register whenever we need it to be in
+	a register.
+
+2018-04-10  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	* common/config/rs6000/rs6000-common.c (rs6000_option_init_struct):
+	Enable -fasynchronous-unwind-tables by default if OBJECT_FORMAT_ELF.
+
+2018-04-10  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	PR target/85321
+	* config/rs6000/rs6000.opt (mtraceback=): Show the allowed values in
+	the help text.
+	(mlong-double-): Ditto.
+	* config/rs6000/sysv4.opt (msdata=): Ditto.
+	(mtls-size=): Ditto.
+
+2018-04-10  Kelvin Nilsen  <kelvin@gcc.gnu.org>
+
+	* config/rs6000/rs6000-c.c (altivec_overloaded_builtins): Remove
+	erroneous entries for
+	"vector int vec_ldl (int, long int *)", and
+	"vector unsigned int vec_ldl (int, unsigned long int *)".
+	Add comments and entries for
+	"vector bool char vec_ldl (int, bool char *)",
+	"vector bool short vec_ldl (int, bool short *)",
+	"vector bool int vec_ldl (int, bool int *)",
+	"vector bool long long vec_ldl (int, bool long long *)",
+	"vector pixel vec_ldl (int, pixel *)",
+	"vector long long vec_ldl (int, long long *)",
+	"vector unsigned long long vec_ldl (int, unsigned long long *)".
+	* config/rs6000/rs6000.c (rs6000_init_builtins): Initialize new
+	type tree bool_long_long_type_node and correct definition of
+	bool_V2DI_type_node to make reference to this new type tree.
+	(rs6000_mangle_type): Replace erroneous reference to
+	bool_long_type_node with bool_long_long_type_node.
+	* config/rs6000/rs6000.h (enum rs6000_builtin_type_index): Add
+	comments to emphasize sign distinctions for char and int types and
+	replace RS6000_BTI_bool_long constant with
+	RS6000_BTI_bool_long_long constant.  Also add comment to restrict
+	use of RS6000_BTI_pixel.
+	(bool_long_type_node): Remove this macro definition.
+	(bool_long_long_type_node): New macro definition
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85300
+	* combine.c (subst): Handle subst of CONST_SCALAR_INT_P new_rtx also
+	into FLOAT and UNSIGNED_FLOAT like ZERO_EXTEND, return a CLOBBER if
+	simplify_unary_operation fails.
+
+2018-04-10  Martin Liska  <mliska@suse.cz>
+
+	* gdbhooks.py: Add pretty-printers for varpool_node, symtab_node,
+	cgraph_edge and ipa_ref.
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85177
+	PR target/85255
+	* config/i386/sse.md
+	(<extract_type>_vinsert<shuffletype><extract_suf>_mask): Fix
+	computation of the VEC_MERGE selector from mask.
+	(<extract_type>_vinsert<shuffletype><extract_suf>_1<mask_name>):
+	Fix decoding of the VEC_MERGE selector into mask.
+
 2018-04-10  Richard Sandiford  <richard.sandiford@linaro.org>
 
 	PR tree-optimization/85286

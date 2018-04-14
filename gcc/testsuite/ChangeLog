@@ -1,3 +1,215 @@
+2018-04-13  Paul A. Clarke  <pc@us.ibm.com>
+
+	PR target/83402
+	* gcc.target/powerpc/sse2-psllw-1.c: Refactor and add tests for
+	several values:  positive, negative, and zero.
+	* gcc.target/powerpc/sse2-pslld-1.c: Same.
+	* gcc.target/powerpc/sse2-psllq-1.c: Same.
+
+2018-04-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	PR rtl-optimization/79916
+	* gcc.target/powerpc/pr79916.c: New.
+
+2018-04-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85393
+	* g++.dg/opt/pr85393.C: New test.
+	* g++.dg/opt/pr85393-aux.cc: New file.
+
+	PR rtl-optimization/85376
+	* gcc.dg/pr85376.c: New test.
+
+2018-04-13  Andrey Belevantsev  <abel@ispras.ru>
+
+	PR rtl-optimization/83852
+	* gcc.dg/pr83852.c: New testcase.
+
+2018-04-13  Andreas Krebbel  <krebbel@linux.ibm.com>
+
+        PR testsuite/85326
+        * gcc.target/s390/pr77822-1.C: Rename to ...
+        * gcc.target/s390/pr77822-1.c: ... this. Add asm scan check.
+        * gcc.target/s390/pr77822-2.c: Add asm scan check.
+        * gcc.target/s390/s390.exp: Remove C from testcase regexps.
+
+2018-04-13  Jan Hubicka  <hubicka@ucw.cz>
+
+	PR lto/71991
+	* gcc.target/i386/pr71991.c: New testcase.
+
+2018-04-13  Martin Liska  <mliska@suse.cz>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/81657
+	* gcc.dg/string-opt-1.c: Remove bogus comment.  Expect a mempcpy
+	call.
+
+2018-04-12  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85385
+	* g++.dg/diagnostic/macro-arg-count.C: New test.
+
+2018-04-12  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	PR fortran/83064
+	PR testsuite/85346
+	* gfortran.dg/do_concurrent_5.f90: Dynamically allocate main work
+	array and move test to libgomp/testsuite/libgomp.fortran.
+	* gfortran.dg/do_concurrent_6.f90: New test.
+
+2018-04-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/85258
+	* g++.dg/parse/error61.C: New test.
+
+2018-04-12  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* testsuite/libgomp.oacc-c-c++-common/pr84955.c: Revert 259346.
+	* testsuite/libgomp.oacc-fortran/pr84955.f90: Likewise.
+
+2018-04-12  Kelvin Nilsen  <kelvin@gcc.gnu.org>
+
+	PR target/85347
+	* gcc.target/powerpc/vec-ldl-1.c: Change dejagnu directives to
+	specify -mvsx on gcc command line.
+
+2018-04-12  Cesar Philippidis  <cesar@codesourcery.com>
+
+	PR middle-end/84955
+	* testsuite/libgomp.oacc-c-c++-common/pr84955.c: New test.
+	* testsuite/libgomp.oacc-fortran/pr84955.f90: New test.
+
+2018-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85328
+	* gcc.target/i386/pr85328.c: New test.
+
+2018-04-12  Andreas Krebbel  <krebbel@linux.vnet.ibm.com>
+
+	* gcc.target/s390/nobp-no-dwarf2-cfi.c: New test.
+
+2018-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85342
+	* gcc.target/i386/pr85342.c: New test.
+
+2018-04-11  Jason Merrill  <jason@redhat.com>
+
+	* lib/asan-dg.exp (check_effective_target_fsanitize_address): False
+	if ulimit -v is set.
+
+2018-04-11  Bin Cheng  <bin.cheng@arm.com>
+
+	PR testsuite/85190
+	* gcc.dg/vect/pr81196.c: Remove function with undefined behavior.
+
+2018-04-11  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* g++.dg/warn/Wzero-as-null-pointer-constant-7.C: Move...
+	* g++.dg/cpp0x/Wzero-as-null-pointer-constant-3.C: ... here.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/70808
+	* g++.dg/warn/Wzero-as-null-pointer-constant-7.C: Require c++11
+	effective target.
+
+2018-04-11  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR target/84301
+	* gcc.target/i386/pr84301.c: New test.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/85331
+	* gcc.c-torture/execute/pr85331.c: New test.
+
+2018-04-11  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/85032
+	* g++.dg/cpp0x/pr51225.C: Adjust error message.
+	* g++.dg/cpp1z/constexpr-if21.C: New test.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85281
+	* gcc.target/i386/pr85281.c: New test.
+
+2018-04-11  Alexander Monakov  <amonakov@ispras.ru>
+
+	PR rtl-optimization/84659
+	* gcc.dg/pr84659.c: New test.
+
+2018-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR debug/85302
+	* g++.dg/debug/dwarf2/pr85302.C: New test.
+
+2018-04-11  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	PR target/85261
+	* config/arm/arm-builtins.c (arm_expand_builtin): Force input operand
+	into register.
+
+2018-04-10  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/70808
+	* g++.dg/warn/Wzero-as-null-pointer-constant-7.C: New.
+
+2018-04-10  Segher Boessenkool  <segher@kernel.crashing.org>
+
+	* gcc.target/powerpc/dfmode_off.c: Add -fno-asynchronous-unwind-tables.
+	* gcc.target/powerpc/dimode_off.c: Ditto.
+	* gcc.target/powerpc/tfmode_off.c: Ditto.
+	* gcc.target/powerpc/timode_off.c: Ditto.
+
+2018-04-10  Kelvin Nilsen  <kelvin@gcc.gnu.org>
+
+	* gcc.target/powerpc/vec-ldl-1.c: New test.
+	* gcc.dg/vmx/ops-long-1.c: Correct test programs to reflect
+	corrections to ABI implementation.
+
+2018-04-10  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR target/85056
+	* gcc.target/nvptx/pr85056.c (main): Initialize "sum".
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/85300
+	* gcc.dg/pr85300.c: New test.
+
+2018-04-10  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/85110
+	* g++.dg/cpp1z/direct-enum-init1.C: Update for the cases
+	where we now show the pertinent parameter.
+	* g++.dg/diagnostic/aka2.C: Likewise.
+	* g++.dg/diagnostic/param-type-mismatch-2.C: Likewise.
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/85313
+	* gfortran.dg/gomp/pr85313.f90: New test.
+
+2018-04-10  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/24314
+	* g++.dg/parse/template29.C: New.
+
+2018-04-10  Bin Cheng  <bin.cheng@arm.com>
+
+	PR testsuite/85190
+	* gcc.dg/vect/pr81196.c: Adjust pointer for aligned access.
+
+2018-04-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/85177
+	PR target/85255
+	* gcc.target/i386/avx512f-pr85177.c: New test.
+	* gcc.target/i386/avx512f-pr85255.c: New test.
+
 2018-04-10  Richard Sandiford  <richard.sandiford@linaro.org>
 
 	PR tree-optimization/85286
