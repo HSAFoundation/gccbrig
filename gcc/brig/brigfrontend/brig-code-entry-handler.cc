@@ -849,26 +849,6 @@ build_or_analyze_operands (const BrigInstBase &brig_inst, bool analyze)
 			     ? gccbrig_tree_type_for_hsa_type (brig_inst.type)
 			     : uint32_type_node;
 
-  /* If flush-to-zero mode is supported for the target only few cases
-     need slow flush-to-zero emulation code on the
-     operands. Otherwise, the code is emitted for all operands. */
-  bool needs_ftz = !target_supports_ftz_mode ();
-  if (ftz_mod)
-    {
-      tree_code opcode
-	= brig_function::get_tree_code_for_hsa_opcode(brig_inst.opcode,
-						      brig_inst.type);
-      BrigType16_t brig_inner_type = brig_inst.type & BRIG_TYPE_BASE_MASK;
-      if (opcode == CALL_EXPR
-	  && gccbrig_is_float_type (brig_inner_type)
-	  /* Needs ftz as the functions have code paths that do not
-	     cause subnormal operands to be flushed. */
-	  && (brig_inst.opcode == BRIG_OPCODE_MIN
-	      || brig_inst.opcode == BRIG_OPCODE_MAX
-	      || brig_inst.opcode == BRIG_OPCODE_FRACT))
-	needs_ftz |= true;
-    }
-
   const BrigData *operand_entries
     = m_parent.get_brig_data_entry (brig_inst.operands);
   std::vector<tree> operands;

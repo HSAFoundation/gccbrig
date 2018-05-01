@@ -86,10 +86,6 @@ protected:
 
   tree extend_int (tree input, tree dest_type, tree src_type);
 
-  /* HSAIL-specific builtin functions not yet integrated to gcc.  */
-
-  static builtin_map s_custom_builtins;
-
 private:
 
   tree_stl_vec build_or_analyze_operands (const BrigInstBase &brig_inst,
@@ -285,9 +281,6 @@ private:
 
   tree build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode, tree arith_type,
 			      tree_stl_vec &operands);
-
-  tree_code get_tree_code_for_hsa_opcode (BrigOpcode16_t brig_opcode,
-					  BrigType16_t brig_type) const;
 };
 
 class brig_cvt_inst_handler : public brig_inst_mod_handler
