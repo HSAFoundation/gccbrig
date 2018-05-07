@@ -230,11 +230,8 @@ tree build_stmt (enum tree_code code, ...);
 
 tree get_unsigned_int_type (tree type);
 
-void set_externally_visible (tree decl);
 tree get_scalar_unsigned_int_type (tree type);
 void set_externally_visible (tree decl);
-
-void set_inline (tree decl);
 
 void set_inline (tree decl);
 

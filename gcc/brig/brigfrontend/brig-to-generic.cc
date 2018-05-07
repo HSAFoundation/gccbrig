@@ -980,17 +980,6 @@ get_unsigned_int_type (tree original_type)
 					   true);
 }
 
-/* Set the declaration externally visible so it won't get removed by
-   whole program optimizations.  */
-
-void
-set_externally_visible (tree decl)
-{
-  if (!lookup_attribute ("externally_visible", DECL_ATTRIBUTES (decl)))
-    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("externally_visible"),
-					NULL, DECL_ATTRIBUTES (decl));
-}
-
 /* Returns a type with unsigned int corresponding to the size
    ORIGINAL_TYPE.  */
 
@@ -1009,14 +998,6 @@ set_externally_visible (tree decl)
 {
   if (!lookup_attribute ("externally_visible", DECL_ATTRIBUTES (decl)))
     DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("externally_visible"),
-					NULL, DECL_ATTRIBUTES (decl));
-}
-
-void
-set_inline (tree decl)
-{
-  if (!lookup_attribute ("inline", DECL_ATTRIBUTES (decl)))
-    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("inline"),
 					NULL, DECL_ATTRIBUTES (decl));
 }
 
