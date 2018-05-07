@@ -2243,7 +2243,7 @@ static tree cp_parser_default_argument
 static void cp_parser_function_body
   (cp_parser *, bool);
 static tree cp_parser_initializer
-  (cp_parser *, bool *, bool *);
+  (cp_parser *, bool *, bool *, bool = false);
 static cp_expr cp_parser_initializer_clause
   (cp_parser *, bool *);
 static cp_expr cp_parser_braced_list
@@ -7993,19 +7993,22 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
 	    location_t start_loc = token->location;
 
 	    op = keyword == RID_ALIGNOF ? ALIGNOF_EXPR : SIZEOF_EXPR;
+	    bool std_alignof = id_equal (token->u.value, "alignof");
+
 	    /* Consume the token.  */
 	    cp_lexer_consume_token (parser->lexer);
 	    /* Parse the operand.  */
 	    operand = cp_parser_sizeof_operand (parser, keyword);
 
 	    if (TYPE_P (operand))
-	      ret = cxx_sizeof_or_alignof_type (operand, op, true);
+	      ret = cxx_sizeof_or_alignof_type (operand, op, std_alignof,
+						true);
 	    else
 	      {
 		/* ISO C++ defines alignof only with types, not with
 		   expressions. So pedwarn if alignof is used with a non-
 		   type expression. However, __alignof__ is ok.  */
-		if (id_equal (token->u.value, "alignof"))
+		if (std_alignof)
 		  pedwarn (token->location, OPT_Wpedantic,
 			   "ISO C++ does not allow %<alignof%> "
 			   "with a non-type");
@@ -9823,7 +9826,13 @@ cp_parser_builtin_offsetof (cp_parser *parser)
   parens.require_open (parser);
   /* Parse the type-id.  */
   location_t loc = cp_lexer_peek_token (parser->lexer)->location;
-  type = cp_parser_type_id (parser);
+  {
+    const char *saved_message = parser->type_definition_forbidden_message;
+    parser->type_definition_forbidden_message
+      = G_("types may not be defined within __builtin_offsetof");
+    type = cp_parser_type_id (parser);
+    parser->type_definition_forbidden_message = saved_message;
+  }
   /* Look for the `,'.  */
   cp_parser_require (parser, CPP_COMMA, RT_COMMA);
   token = cp_lexer_peek_token (parser->lexer);
@@ -10349,7 +10358,7 @@ cp_parser_lambda_introducer (cp_parser* parser, tree lambda_expr)
 		     "lambda capture initializers "
 		     "only available with -std=c++14 or -std=gnu++14");
 	  capture_init_expr = cp_parser_initializer (parser, &direct,
-						     &non_constant);
+						     &non_constant, true);
 	  explicit_init_p = true;
 	  if (capture_init_expr == NULL_TREE)
 	    {
@@ -21851,7 +21860,7 @@ cp_parser_ctor_initializer_opt_and_function_body (cp_parser *parser,
 
 static tree
 cp_parser_initializer (cp_parser* parser, bool* is_direct_init,
-		       bool* non_constant_p)
+		       bool* non_constant_p, bool subexpression_p)
 {
   cp_token *token;
   tree init;
@@ -21898,7 +21907,7 @@ cp_parser_initializer (cp_parser* parser, bool* is_direct_init,
       init = error_mark_node;
     }
 
-  if (check_for_bare_parameter_packs (init))
+  if (!subexpression_p && check_for_bare_parameter_packs (init))
     init = error_mark_node;
 
   return init;

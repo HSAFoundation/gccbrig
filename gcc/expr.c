@@ -233,7 +233,10 @@ convert_move (rtx to, rtx from, int unsignedp)
       && (GET_MODE_PRECISION (subreg_promoted_mode (from))
 	  >= GET_MODE_PRECISION (to_int_mode))
       && SUBREG_CHECK_PROMOTED_SIGN (from, unsignedp))
-    from = gen_lowpart (to_int_mode, from), from_mode = to_int_mode;
+    {
+      from = gen_lowpart (to_int_mode, SUBREG_REG (from));
+      from_mode = to_int_mode;
+    }
 
   gcc_assert (GET_CODE (to) != SUBREG || !SUBREG_PROMOTED_VAR_P (to));
 
@@ -6989,8 +6992,9 @@ store_field (rtx target, poly_int64 bitsize, poly_int64 bitpos,
       if (GET_CODE (temp) == PARALLEL)
 	{
 	  HOST_WIDE_INT size = int_size_in_bytes (TREE_TYPE (exp));
-	  scalar_int_mode temp_mode
-	    = smallest_int_mode_for_size (size * BITS_PER_UNIT);
+	  machine_mode temp_mode = GET_MODE (temp);
+	  if (temp_mode == BLKmode || temp_mode == VOIDmode)
+	    temp_mode = smallest_int_mode_for_size (size * BITS_PER_UNIT);
 	  rtx temp_target = gen_reg_rtx (temp_mode);
 	  emit_group_store (temp_target, temp, TREE_TYPE (exp), size);
 	  temp = temp_target;

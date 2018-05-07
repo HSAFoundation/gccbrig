@@ -136,9 +136,7 @@
   UNSPEC_ARC_VMPY2H
   UNSPEC_ARC_VMPY2HU
   UNSPEC_ARC_STKTIE
-  ])
 
-(define_c_enum "vunspec" [
   VUNSPEC_ARC_RTIE
   VUNSPEC_ARC_SYNC
   VUNSPEC_ARC_BRK
@@ -726,7 +724,9 @@
        /* Don't use a LIMM that we could load with a single insn - we loose
 	  delay-slot filling opportunities.  */
        && !satisfies_constraint_I (operands[1])
-       && satisfies_constraint_Usc (operands[0]))"
+       && satisfies_constraint_Usc (operands[0]))
+   || (satisfies_constraint_Cm3 (operands[1])
+      && memory_operand (operands[0], SImode))"
   "@
    mov%? %0,%1%&	;0
    mov%? %0,%1%&	;1
@@ -1223,10 +1223,12 @@
   ")
 
 (define_insn_and_split "*movdi_insn"
-  [(set (match_operand:DI 0 "move_dest_operand"      "=w, w,r,m")
-	(match_operand:DI 1 "move_double_src_operand" "c,Hi,m,c"))]
+  [(set (match_operand:DI 0 "move_dest_operand"      "=w, w,r,   m")
+	(match_operand:DI 1 "move_double_src_operand" "c,Hi,m,cCm3"))]
   "register_operand (operands[0], DImode)
-   || register_operand (operands[1], DImode)"
+   || register_operand (operands[1], DImode)
+   || (satisfies_constraint_Cm3 (operands[1])
+      && memory_operand (operands[0], DImode))"
   "*
 {
   switch (which_alternative)
@@ -1236,19 +1238,16 @@
 
     case 2:
     if (TARGET_LL64
-	&& ((even_register_operand (operands[0], DImode)
-	     && memory_operand (operands[1], DImode))
-	    || (memory_operand (operands[0], DImode)
-	        && even_register_operand (operands[1], DImode))))
+        && memory_operand (operands[1], DImode)
+	&& even_register_operand (operands[0], DImode))
       return \"ldd%U1%V1 %0,%1%&\";
     return \"#\";
 
     case 3:
     if (TARGET_LL64
-	&& ((even_register_operand (operands[0], DImode)
-	     && memory_operand (operands[1], DImode))
-	    || (memory_operand (operands[0], DImode)
-	        && even_register_operand (operands[1], DImode))))
+	&& memory_operand (operands[0], DImode)
+	&& (even_register_operand (operands[1], DImode)
+	    || satisfies_constraint_Cm3 (operands[1])))
      return \"std%U0%V0 %1,%0\";
     return \"#\";
     }
@@ -1756,7 +1755,7 @@
   [(set (match_operand:HI 0 "dest_reg_operand" "")
 	(zero_extend:HI (match_operand:QI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, ZERO_EXTEND, HImode)) DONE;"
+  ""
 )
 
 (define_insn "*zero_extendqisi2_ac"
@@ -1780,7 +1779,7 @@
   [(set (match_operand:SI 0 "dest_reg_operand" "")
 	(zero_extend:SI (match_operand:QI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, ZERO_EXTEND, SImode)) DONE;"
+  ""
 )
 
 (define_insn "*zero_extendhisi2_i"
@@ -1805,7 +1804,7 @@
   [(set (match_operand:SI 0 "dest_reg_operand" "")
 	(zero_extend:SI (match_operand:HI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, ZERO_EXTEND, SImode)) DONE;"
+  ""
 )
 
 ;; Sign extension instructions.
@@ -1828,7 +1827,7 @@
   [(set (match_operand:HI 0 "dest_reg_operand" "")
 	(sign_extend:HI (match_operand:QI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, SIGN_EXTEND, HImode)) DONE;"
+  ""
 )
 
 (define_insn "*extendqisi2_ac"
@@ -1848,7 +1847,7 @@
   [(set (match_operand:SI 0 "dest_reg_operand" "")
 	(sign_extend:SI (match_operand:QI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, SIGN_EXTEND, SImode)) DONE;"
+  ""
 )
 
 (define_insn "*extendhisi2_i"
@@ -1869,7 +1868,7 @@
   [(set (match_operand:SI 0 "dest_reg_operand" "")
 	(sign_extend:SI (match_operand:HI 1 "nonvol_nonimm_operand" "")))]
   ""
-  "if (prepare_extend_operands (operands, SIGN_EXTEND, SImode)) DONE;"
+  ""
 )
 
 ;; Unary arithmetic insns
@@ -2762,11 +2761,6 @@
      {
        operands[2]=force_reg(SImode, operands[2]);
      }
-  else if (!TARGET_NO_SDATA_SET && small_data_pattern (operands[2], Pmode))
-   {
-      operands[2] = force_reg (SImode, arc_rewrite_small_data (operands[2]));
-   }
-
   ")
 
 (define_expand "adddi3"
@@ -2970,8 +2964,6 @@
     }
   if (flag_pic && arc_raw_symbolic_reference_mentioned_p (operands[c], false))
     operands[c] = force_reg (SImode, operands[c]);
-  else if (!TARGET_NO_SDATA_SET && small_data_pattern (operands[c], Pmode))
-      operands[c] = force_reg (SImode, arc_rewrite_small_data (operands[c]));
 }")
 
 ; the casesi expander might generate a sub of zero, so we have to recognize it.
@@ -3327,8 +3319,7 @@
   ""
   "if (!satisfies_constraint_Cux (operands[2]))
      operands[1] = force_reg (SImode, operands[1]);
-   else if (!TARGET_NO_SDATA_SET && small_data_pattern (operands[1], Pmode))
-     operands[1] = arc_rewrite_small_data (operands[1]);")
+  ")
 
 (define_insn "andsi3_i"
   [(set (match_operand:SI 0 "dest_reg_operand"          "=Rcqq,Rcq,Rcqq,Rcqq,Rcqq,Rcw,Rcw,   Rcw,Rcw,Rcw,Rcw, w,     w,  w,  w,Rrq,w,Rcw,  w,W")
@@ -4778,9 +4769,9 @@
 
 
 (define_insn "sleep"
-  [(unspec_volatile [(match_operand:SI 0 "immediate_operand" "L")]
+  [(unspec_volatile [(match_operand:SI 0 "nonmemory_operand" "Lr")]
 		   VUNSPEC_ARC_SLEEP)]
-  "check_if_valid_sleep_operand(operands,0)"
+  ""
   "sleep %0"
   [(set_attr "length" "4")
   (set_attr "type" "misc")])
@@ -5802,21 +5793,19 @@
    })
 
 (define_insn "fls"
-  [(set (match_operand:SI  0 "dest_reg_operand" "=w,w")
-	(unspec:SI [(match_operand:SI 1 "general_operand" "cL,Cal")]
+  [(set (match_operand:SI  0 "register_operand" "=r,r")
+	(unspec:SI [(match_operand:SI 1 "nonmemory_operand" "rL,Cal")]
 			    UNSPEC_ARC_FLS))]
   "TARGET_NORM && TARGET_V2"
-  "@
-   fls \t%0, %1
-   fls \t%0, %1"
+  "fls\\t%0,%1"
   [(set_attr "length" "4,8")
    (set_attr "type" "two_cycle_core,two_cycle_core")])
 
 (define_insn "seti"
-  [(unspec_volatile:SI [(match_operand:SI 0 "general_operand" "rL")]
+  [(unspec_volatile:SI [(match_operand:SI 0 "nonmemory_operand" "rL")]
 		       VUNSPEC_ARC_SETI)]
   "TARGET_V2"
-  "seti  %0"
+  "seti\\t%0"
   [(set_attr "length" "4")
    (set_attr "type" "misc")])
 

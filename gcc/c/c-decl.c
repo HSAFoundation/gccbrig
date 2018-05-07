@@ -952,6 +952,17 @@ global_bindings_p (void)
   return current_scope == file_scope;
 }
 
+/* Return true if we're declaring parameters in an old-style function
+   declaration.  */
+
+bool
+old_style_parameter_scope (void)
+{
+  /* If processing parameters and there is no function statement list, we
+   * have an old-style function declaration.  */
+  return (current_scope->parm_flag && !DECL_SAVED_TREE (current_function_decl));
+}
+
 void
 keep_next_level (void)
 {
@@ -5348,6 +5359,8 @@ build_compound_literal (location_t loc, tree type, tree init, bool non_const,
       pushdecl (decl);
       rest_of_decl_compilation (decl, 1, 0);
     }
+  else
+    pushdecl (decl);
 
   if (non_const)
     {

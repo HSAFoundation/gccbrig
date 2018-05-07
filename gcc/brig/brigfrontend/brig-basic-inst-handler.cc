@@ -732,3 +732,4 @@ brig_basic_inst_handler::build_lower_element_broadcast (tree vec_operand)
   return build3 (VEC_PERM_EXPR, TREE_TYPE (vec_operand), vec_operand,
 		 vec_operand, mask);
 }
+

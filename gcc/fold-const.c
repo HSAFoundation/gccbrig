@@ -474,12 +474,15 @@ negate_expr_p (tree t)
     case EXACT_DIV_EXPR:
       if (TYPE_UNSIGNED (type))
 	break;
-      if (negate_expr_p (TREE_OPERAND (t, 0)))
+      /* In general we can't negate A in A / B, because if A is INT_MIN and
+         B is not 1 we change the sign of the result.  */
+      if (TREE_CODE (TREE_OPERAND (t, 0)) == INTEGER_CST
+	  && negate_expr_p (TREE_OPERAND (t, 0)))
 	return true;
       /* In general we can't negate B in A / B, because if A is INT_MIN and
 	 B is 1, we may turn this into INT_MIN / -1 which is undefined
 	 and actually traps on some architectures.  */
-      if (! INTEGRAL_TYPE_P (TREE_TYPE (t))
+      if (! ANY_INTEGRAL_TYPE_P (TREE_TYPE (t))
 	  || TYPE_OVERFLOW_WRAPS (TREE_TYPE (t))
 	  || (TREE_CODE (TREE_OPERAND (t, 1)) == INTEGER_CST
 	      && ! integer_onep (TREE_OPERAND (t, 1))))
@@ -652,14 +655,17 @@ fold_negate_expr_1 (location_t loc, tree t)
     case EXACT_DIV_EXPR:
       if (TYPE_UNSIGNED (type))
 	break;
-      if (negate_expr_p (TREE_OPERAND (t, 0)))
+      /* In general we can't negate A in A / B, because if A is INT_MIN and
+	 B is not 1 we change the sign of the result.  */
+      if (TREE_CODE (TREE_OPERAND (t, 0)) == INTEGER_CST
+	  && negate_expr_p (TREE_OPERAND (t, 0)))
 	return fold_build2_loc (loc, TREE_CODE (t), type,
 				negate_expr (TREE_OPERAND (t, 0)),
 				TREE_OPERAND (t, 1));
       /* In general we can't negate B in A / B, because if A is INT_MIN and
 	 B is 1, we may turn this into INT_MIN / -1 which is undefined
 	 and actually traps on some architectures.  */
-      if ((! INTEGRAL_TYPE_P (TREE_TYPE (t))
+      if ((! ANY_INTEGRAL_TYPE_P (TREE_TYPE (t))
 	   || TYPE_OVERFLOW_WRAPS (TREE_TYPE (t))
 	   || (TREE_CODE (TREE_OPERAND (t, 1)) == INTEGER_CST
 	       && ! integer_onep (TREE_OPERAND (t, 1))))
@@ -11631,7 +11637,7 @@ fold_ternary_loc (location_t loc, enum tree_code code, tree type,
     case BIT_FIELD_REF:
       if (TREE_CODE (arg0) == VECTOR_CST
 	  && (type == TREE_TYPE (TREE_TYPE (arg0))
-	      || (TREE_CODE (type) == VECTOR_TYPE
+	      || (VECTOR_TYPE_P (type)
 		  && TREE_TYPE (type) == TREE_TYPE (TREE_TYPE (arg0))))
 	  && tree_fits_uhwi_p (op1)
 	  && tree_fits_uhwi_p (op2))
@@ -11653,7 +11659,12 @@ fold_ternary_loc (location_t loc, enum tree_code code, tree type,
 	      if (TREE_CODE (arg0) == VECTOR_CST)
 		{
 		  if (n == 1)
-		    return VECTOR_CST_ELT (arg0, idx);
+		    {
+		      tem = VECTOR_CST_ELT (arg0, idx);
+		      if (VECTOR_TYPE_P (type))
+			tem = fold_build1 (VIEW_CONVERT_EXPR, type, tem);
+		      return tem;
+		    }
 
 		  tree_vector_builder vals (type, n, 1);
 		  for (unsigned i = 0; i < n; ++i)

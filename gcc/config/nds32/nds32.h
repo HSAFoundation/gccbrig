@@ -512,6 +512,10 @@ enum nds32_builtins
   NDS32_BUILTIN_SET_TRIG_LEVEL,
   NDS32_BUILTIN_SET_TRIG_EDGE,
   NDS32_BUILTIN_GET_TRIG_TYPE,
+
+  NDS32_BUILTIN_UNALIGNED_FEATURE,
+  NDS32_BUILTIN_ENABLE_UNALIGNED,
+  NDS32_BUILTIN_DISABLE_UNALIGNED,
   NDS32_BUILTIN_COUNT
 };
 
@@ -683,6 +687,12 @@ enum nds32_builtins
   ((NDS32_ALIGN_P () || TARGET_ALIGN_FUNCTION) ? 32 : 16)
 
 #define BIGGEST_ALIGNMENT 64
+
+#define DATA_ALIGNMENT(constant, basic_align) \
+  nds32_data_alignment (constant, basic_align)
+
+#define LOCAL_ALIGNMENT(type, basic_align) \
+  nds32_local_alignment (type, basic_align)
 
 #define EMPTY_FIELD_BOUNDARY 32
 
@@ -1073,6 +1083,12 @@ enum reg_class
 /* We have "LW.bi   Rt, [Ra], Rb" instruction form.  */
 #define HAVE_POST_MODIFY_REG  1
 
+#define USE_LOAD_POST_INCREMENT(mode) \
+  nds32_use_load_post_increment(mode)
+#define USE_LOAD_POST_DECREMENT(mode) USE_LOAD_POST_INCREMENT(mode)
+#define USE_STORE_POST_DECREMENT(mode) USE_LOAD_POST_DECREMENT(mode)
+#define USE_STORE_POST_INCREMENT(mode) USE_LOAD_POST_INCREMENT(mode)
+
 #define CONSTANT_ADDRESS_P(x) (CONSTANT_P (x) && GET_CODE (x) != CONST_DOUBLE)
 
 #define MAX_REGS_PER_ADDRESS 3
@@ -1128,7 +1144,7 @@ enum reg_class
 
 #define ASM_COMMENT_START "!"
 
-#define ASM_APP_ON "! #APP"
+#define ASM_APP_ON "! #APP\n"
 
 #define ASM_APP_OFF "! #NO_APP\n"
 
@@ -1321,9 +1337,7 @@ enum reg_class
 /* Return the preferred mode for and addr_diff_vec when the mininum
    and maximum offset are known.  */
 #define CASE_VECTOR_SHORTEN_MODE(min_offset, max_offset, body)  \
-   ((min_offset < 0 || max_offset >= 0x2000 ) ? SImode          \
-   : (max_offset >= 100) ? HImode                               \
-   : QImode)
+  nds32_case_vector_shorten_mode (min_offset, max_offset, body)
 
 /* Generate pc relative jump table when -fpic or -Os.  */
 #define CASE_VECTOR_PC_RELATIVE (flag_pic || optimize_size)

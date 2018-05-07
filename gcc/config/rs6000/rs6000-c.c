@@ -490,21 +490,17 @@ rs6000_target_modify_macros (bool define_p, HOST_WIDE_INT flags,
      the following conditions:
      1. The operating system does not support saving of AltiVec
 	registers (OS_MISSING_ALTIVEC).
-     2. If any of the options TARGET_HARD_FLOAT, TARGET_SINGLE_FLOAT,
-	or TARGET_DOUBLE_FLOAT are turned off.  Hereafter, the
+     2. If the option TARGET_HARD_FLOAT is turned off.  Hereafter, the
 	OPTION_MASK_VSX flag is considered to have been turned off
 	explicitly.
-     3. If TARGET_PAIRED_FLOAT was enabled.  Hereafter, the
-	OPTION_MASK_VSX flag is considered to have been turned off
-	explicitly.
-     4. If TARGET_AVOID_XFORM is turned on explicitly at the outermost
+     3. If TARGET_AVOID_XFORM is turned on explicitly at the outermost
 	compilation context, or if it is turned on by any means in an
 	inner compilation context.  Hereafter, the OPTION_MASK_VSX
 	flag is considered to have been turned off explicitly.
-     5. If TARGET_ALTIVEC was explicitly disabled.  Hereafter, the
+     4. If TARGET_ALTIVEC was explicitly disabled.  Hereafter, the
 	OPTION_MASK_VSX flag is considered to have been turned off
 	explicitly.
-     6. If an inner context (as introduced by
+     5. If an inner context (as introduced by
 	__attribute__((__target__())) or #pragma GCC target()
 	requests a target that normally enables the
 	OPTION_MASK_VSX flag but the outer-most "main target"
@@ -590,10 +586,6 @@ rs6000_target_modify_macros (bool define_p, HOST_WIDE_INT flags,
     rs6000_define_or_undefine_macro (define_p, "__FLOAT128_HARDWARE__");
 
   /* options from the builtin masks.  */
-  /* Note that RS6000_BTM_PAIRED is enabled only if
-     TARGET_PAIRED_FLOAT is enabled (e.g. -mpaired).  */
-  if ((bu_mask & RS6000_BTM_PAIRED) != 0)
-    rs6000_define_or_undefine_macro (define_p, "__PAIRED__");
   /* Note that RS6000_BTM_CELL is enabled only if (rs6000_cpu ==
      PROCESSOR_CELL) (e.g. -mcpu=cell).  */
   if ((bu_mask & RS6000_BTM_CELL) != 0)
@@ -642,7 +634,7 @@ rs6000_cpu_cpp_builtins (cpp_reader *pfile)
 	  cpp_get_callbacks (pfile)->macro_to_expand = rs6000_macro_to_expand;
 	}
     }
-  if (!TARGET_HARD_FLOAT || !TARGET_DOUBLE_FLOAT)
+  if (!TARGET_HARD_FLOAT)
     builtin_define ("_SOFT_DOUBLE");
   /* Used by lwarx/stwcx. errata work-around.  */
   if (rs6000_cpu == PROCESSOR_PPC405)
@@ -773,26 +765,6 @@ rs6000_cpu_cpp_builtins (cpp_reader *pfile)
       || DEFAULT_ABI == ABI_ELFv2
       || (DEFAULT_ABI == ABI_AIX && !rs6000_compat_align_parm))
     builtin_define ("__STRUCT_PARM_ALIGN__=16");
-
-  /* Generate defines for Xilinx FPU. */
-  if (rs6000_xilinx_fpu) 
-    {
-      builtin_define ("_XFPU");
-      if (rs6000_single_float && ! rs6000_double_float)
-	{
-	  if (rs6000_simple_fpu) 
-	    builtin_define ("_XFPU_SP_LITE"); 
-	  else 
-	    builtin_define ("_XFPU_SP_FULL");
-	}
-      if (rs6000_double_float)
-	{
-	  if (rs6000_simple_fpu) 
-	    builtin_define ("_XFPU_DP_LITE");
-	  else
-	    builtin_define ("_XFPU_DP_FULL");
-        }
-    }
 }
 
 
@@ -6705,6 +6677,15 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
       stmt = build_binary_op (loc, PLUS_EXPR, stmt, arg2, 1);
       stmt = build_indirect_ref (loc, stmt, RO_NULL);
 
+      /* PR83660: We mark this as having side effects so that
+	 downstream in fold_build_cleanup_point_expr () it will get a
+	 CLEANUP_POINT_EXPR.  If it does not we can run into an ICE
+	 later in gimplify_cleanup_point_expr ().  Potentially this
+	 causes missed optimization because the actually is no side
+	 effect.  */
+      if (c_dialect_cxx ())
+	TREE_SIDE_EFFECTS (stmt) = 1;
+
       return stmt;
     }
 
@@ -6885,6 +6866,8 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
 
   {
     bool unsupported_builtin = false;
+    enum rs6000_builtins overloaded_code;
+    tree result = NULL;
     for (desc = altivec_overloaded_builtins;
 	 desc->code && desc->code != fcode; desc++)
       continue;
@@ -6897,7 +6880,6 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
        discrimination between the desired forms of the function.  */
     if (fcode == P6_OV_BUILTIN_CMPB)
       {
-	int overloaded_code;
 	machine_mode arg1_mode = TYPE_MODE (types[0]);
 	machine_mode arg2_mode = TYPE_MODE (types[1]);
 
@@ -6932,14 +6914,20 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
 	    && rs6000_builtin_type_compatible (types[1], desc->op2))
 	  {
 	    if (rs6000_builtin_decls[desc->overloaded_code] != NULL_TREE)
-	      return altivec_build_resolved_builtin (args, n, desc);
+	      {
+		result = altivec_build_resolved_builtin (args, n, desc);
+		/* overloaded_code is set above */
+		if (!rs6000_builtin_is_supported_p (overloaded_code))
+		  unsupported_builtin = true;
+		else
+		  return result;
+	      }
 	    else
 	      unsupported_builtin = true;
 	  }
       }
     else if (fcode == P9V_BUILTIN_VEC_VSIEDP)
       {
-	int overloaded_code;
 	machine_mode arg1_mode = TYPE_MODE (types[0]);
 
 	if (nargs != 2)
@@ -6974,12 +6962,20 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
 	while (desc->code && desc->code == fcode
 	       && desc->overloaded_code != overloaded_code)
 	  desc++;
+
 	if (desc->code && (desc->code == fcode)
 	    && rs6000_builtin_type_compatible (types[0], desc->op1)
 	    && rs6000_builtin_type_compatible (types[1], desc->op2))
 	  {
 	    if (rs6000_builtin_decls[desc->overloaded_code] != NULL_TREE)
-	      return altivec_build_resolved_builtin (args, n, desc);
+	      {
+		result = altivec_build_resolved_builtin (args, n, desc);
+		/* overloaded_code is set above.  */
+		if (!rs6000_builtin_is_supported_p (overloaded_code))
+		  unsupported_builtin = true;
+		else
+		  return result;
+	      }
 	    else
 	      unsupported_builtin = true;
 	  }
@@ -6998,7 +6994,18 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
 		    || rs6000_builtin_type_compatible (types[2], desc->op3)))
 	      {
 		if (rs6000_builtin_decls[desc->overloaded_code] != NULL_TREE)
-		  return altivec_build_resolved_builtin (args, n, desc);
+		  {
+		    result = altivec_build_resolved_builtin (args, n, desc);
+		    if (!rs6000_builtin_is_supported_p (desc->overloaded_code))
+		      {
+			/* Allow loop to continue in case a different
+			   definition is supported.  */
+			overloaded_code = desc->overloaded_code;
+			unsupported_builtin = true;
+		      }
+		    else
+		      return result;
+		  }
 		else
 		  unsupported_builtin = true;
 	      }
@@ -7008,9 +7015,23 @@ altivec_resolve_overloaded_builtin (location_t loc, tree fndecl,
     if (unsupported_builtin)
       {
 	const char *name = rs6000_overloaded_builtin_name (fcode);
-	error ("builtin function %qs not supported in this compiler "
-	       "configuration", name);
-	return error_mark_node;
+	if (result != NULL)
+	  {
+	    const char *internal_name
+	      = rs6000_overloaded_builtin_name (overloaded_code);
+	    /* An error message making reference to the name of the
+	       non-overloaded function has already been issued.  Add
+	       clarification of the previous message.  */
+	    rich_location richloc (line_table, input_location);
+	    inform (&richloc, "builtin %qs requires builtin %qs",
+		    name, internal_name);
+	  }
+	else
+	  error ("builtin function %qs not supported in this compiler "
+		 "configuration", name);
+	/* If an error-representing  result tree was returned from
+	   altivec_build_resolved_builtin above, use it.  */
+	return (result != NULL) ? result : error_mark_node;
       }
   }
  bad:

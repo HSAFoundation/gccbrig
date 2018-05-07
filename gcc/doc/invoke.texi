@@ -193,7 +193,6 @@ in the following sections.
 @gccoptlist{-fabi-version=@var{n}  -fno-access-control @gol
 -faligned-new=@var{n}  -fargs-in-order=@var{n}  -fcheck-new @gol
 -fconstexpr-depth=@var{n}  -fconstexpr-loop-limit=@var{n} @gol
--ffriend-injection @gol
 -fno-elide-constructors @gol
 -fno-enforce-eh-specs @gol
 -ffor-scope  -fno-for-scope  -fno-gnu-keywords @gol
@@ -867,7 +866,8 @@ Objective-C and Objective-C++ Dialects}.
 -mmemcpy  -mxl-soft-mul  -mxl-soft-div  -mxl-barrel-shift @gol
 -mxl-pattern-compare  -mxl-stack-check  -mxl-gp-opt  -mno-clearbss @gol
 -mxl-multiply-high  -mxl-float-convert  -mxl-float-sqrt @gol
--mbig-endian  -mlittle-endian  -mxl-reorder  -mxl-mode-@var{app-model}}
+-mbig-endian  -mlittle-endian  -mxl-reorder  -mxl-mode-@var{app-model}
+-mpic-data-is-text-relative}
 
 @emph{MIPS Options}
 @gccoptlist{-EL  -EB  -march=@var{arch}  -mtune=@var{arch} @gol
@@ -1065,7 +1065,6 @@ See RS/6000 and PowerPC Options.
 -m64  -m32  -mxl-compat  -mno-xl-compat  -mpe @gol
 -malign-power  -malign-natural @gol
 -msoft-float  -mhard-float  -mmultiple  -mno-multiple @gol
--msingle-float  -mdouble-float  -msimple-fpu @gol
 -mupdate  -mno-update @gol
 -mavoid-indexed-addresses  -mno-avoid-indexed-addresses @gol
 -mfused-madd  -mno-fused-madd  -mbit-align  -mno-bit-align @gol
@@ -1088,7 +1087,6 @@ See RS/6000 and PowerPC Options.
 -mstring-compare-inline-limit=@var{num} @gol
 -misel  -mno-isel @gol
 -misel=yes  -misel=no @gol
--mpaired @gol
 -mvrsave  -mno-vrsave @gol
 -mmulhw  -mno-mulhw @gol
 -mdlmzb  -mno-dlmzb @gol
@@ -1101,7 +1099,7 @@ See RS/6000 and PowerPC Options.
 -mpointers-to-nested-functions  -mno-pointers-to-nested-functions @gol
 -msave-toc-indirect  -mno-save-toc-indirect @gol
 -mpower8-fusion  -mno-mpower8-fusion  -mpower8-vector  -mno-power8-vector @gol
--mcrypto  -mno-crypto  -mhtm  -mno-htm  -mdirect-move  -mno-direct-move @gol
+-mcrypto  -mno-crypto  -mhtm  -mno-htm @gol
 -mquad-memory  -mno-quad-memory @gol
 -mquad-memory-atomic  -mno-quad-memory-atomic @gol
 -mcompat-align-parm  -mno-compat-align-parm @gol
@@ -1261,8 +1259,8 @@ See RS/6000 and PowerPC Options.
 -msse4a  -m3dnow  -m3dnowa  -mpopcnt  -mabm  -mbmi  -mtbm  -mfma4  -mxop @gol
 -mlzcnt  -mbmi2  -mfxsr  -mxsave  -mxsaveopt  -mrtm  -mlwp  -mmpx  @gol
 -mmwaitx  -mclzero  -mpku  -mthreads -mgfni  -mvaes  @gol
--mcet -mibt -mshstk -mforce-indirect-call -mavx512vbmi2 @gol
--mvpclmulqdq -mavx512bitalg -mavx512vpopcntdq @gol
+-mshstk -mforce-indirect-call -mavx512vbmi2 @gol
+-mvpclmulqdq -mavx512bitalg -mmovdiri -mmovdir64b -mavx512vpopcntdq @gol
 -mms-bitfields  -mno-align-stringops  -minline-all-stringops @gol
 -minline-stringops-dynamically  -mstringop-strategy=@var{alg} @gol
 -mmemcpy-strategy=@var{strategy}  -mmemset-strategy=@var{strategy} @gol
@@ -2447,18 +2445,6 @@ This deduction was implemented as a possible extension to the
 originally proposed semantics for the C++11 standard, but was not part
 of the final standard, so it is disabled by default.  This option is
 deprecated, and may be removed in a future version of G++.
-
-@item -ffriend-injection
-@opindex ffriend-injection
-Inject friend functions into the enclosing namespace, so that they are
-visible outside the scope of the class in which they are declared.
-Friend functions were documented to work this way in the old Annotated
-C++ Reference Manual.  
-However, in ISO C++ a friend function that is not declared
-in an enclosing scope can only be found using argument dependent
-lookup.  GCC defaults to the standard behavior.
-
-This option is deprecated and will be removed.
 
 @item -fno-elide-constructors
 @opindex fno-elide-constructors
@@ -4783,7 +4769,7 @@ For C++, a function without return type always produces a diagnostic
 message, even when @option{-Wno-return-type} is specified.  The only
 exceptions are @code{main} and functions defined in system headers.
 
-This warning is enabled by @option{-Wall}.
+This warning is enabled by default for C++ and is enabled by @option{-Wall}.
 
 @item -Wshift-count-negative
 @opindex Wshift-count-negative
@@ -7252,7 +7238,7 @@ with a linker that can produce GDB@ index version 7.
 When using DWARF Version 4 or higher, type DIEs can be put into
 their own @code{.debug_types} section instead of making them part of the
 @code{.debug_info} section.  It is more efficient to put them in a separate
-comdat sections since the linker can then remove duplicates.
+comdat section since the linker can then remove duplicates.
 But not all DWARF consumers support @code{.debug_types} sections yet
 and on some objects @code{.debug_types} produces larger instead of smaller
 debugging information.
@@ -7652,6 +7638,7 @@ by @option{-O2} and also turns on the following optimization flags:
 -ftree-loop-distribution @gol
 -ftree-loop-distribute-patterns @gol
 -floop-interchange @gol
+-floop-unroll-and-jam @gol
 -fsplit-paths @gol
 -ftree-slp-vectorize @gol
 -fvect-cost-model @gol
@@ -11839,14 +11826,17 @@ function.  The value @code{full} is an alias for specifying both
 @code{branch} and @code{return}. The value @code{none} turns off
 instrumentation.
 
+The macro @code{__CET__} is defined when @option{-fcf-protection} is
+used.  The first bit of @code{__CET__} is set to 1 for the value
+@code{branch} and the second bit of @code{__CET__} is set to 1 for
+the @code{return}.
+
 You can also use the @code{nocf_check} attribute to identify
 which functions and calls should be skipped from instrumentation
 (@pxref{Function Attributes}).
 
 Currently the x86 GNU/Linux target provides an implementation based
-on Intel Control-flow Enforcement Technology (CET).  Instrumentation
-for x86 is controlled by target-specific options @option{-mcet},
-@option{-mibt} and @option{-mshstk} (@pxref{x86 Options}).
+on Intel Control-flow Enforcement Technology (CET).
 
 @item -fstack-protector
 @opindex fstack-protector
@@ -13100,10 +13090,10 @@ are defined to 2.
 @itemx -fPIE
 @opindex fpie
 @opindex fPIE
-These options are similar to @option{-fpic} and @option{-fPIC}, but
-generated position independent code can be only linked into executables.
-Usually these options are used when @option{-pie} GCC option is
-used during linking.
+These options are similar to @option{-fpic} and @option{-fPIC}, but the
+generated position-independent code can be only linked into executables.
+Usually these options are used to compile code that will be linked using
+the @option{-pie} GCC option.
 
 @option{-fpie} and @option{-fPIE} both define the macros
 @code{__pie__} and @code{__PIE__}.  The macros have the value 1
@@ -13364,6 +13354,26 @@ configuration, such as where it searches for libraries.  You should
 rarely need to use any of these options for ordinary compilation and
 linking tasks.
 
+Many developer options that cause GCC to dump output to a file take an
+optional @samp{=@var{filename}} suffix. You can specify @samp{stdout}
+or @samp{-} to dump to standard output, and @samp{stderr} for standard
+error.
+
+If @samp{=@var{filename}} is omitted, a default dump file name is
+constructed by concatenating the base dump file name, a pass number,
+phase letter, and pass name.  The base dump file name is the name of
+output file produced by the compiler if explicitly specified and not
+an executable; otherwise it is the source file name.
+The pass number is determined by the order passes are registered with
+the compiler's pass manager. 
+This is generally the same as the order of execution, but passes
+registered by plugins, target-specific passes, or passes that are
+otherwise registered late are numbered higher than the pass named
+@samp{final}, even if they are executed earlier.  The phase letter is
+one of @samp{i} (inter-procedural analysis), @samp{l}
+(language-specific), @samp{r} (RTL), or @samp{t} (tree). 
+The files are created in the directory of the output file. 
+
 @table @gcctabopt
 
 @item -d@var{letters}
@@ -13373,20 +13383,7 @@ linking tasks.
 @opindex fdump-rtl-@var{pass}
 Says to make debugging dumps during compilation at times specified by
 @var{letters}.  This is used for debugging the RTL-based passes of the
-compiler.  The file names for most of the dumps are made by appending
-a pass number and a word to the @var{dumpname}, and the files are
-created in the directory of the output file.  In case of
-@option{=@var{filename}} option, the dump is output on the given file
-instead of the pass numbered dump files.  Note that the pass number is
-assigned as passes are registered into the pass manager.  Most passes
-are registered in the order that they will execute and for these passes
-the number corresponds to the pass execution order.  However, passes
-registered by plugins, passes specific to compilation targets, or
-passes that are otherwise registered after all the other passes are
-numbered higher than a pass named "final", even if they are executed
-earlier.  @var{dumpname} is generated from the name of the output
-file if explicitly specified and not an executable, otherwise it is
-the basename of the source file.  
+compiler.
 
 Some @option{-d@var{letters}} switches have different meaning when
 @option{-E} is used for preprocessing.  @xref{Preprocessor Options},
@@ -13774,11 +13771,7 @@ counters for each function compiled.
 @opindex fdump-tree-all
 @opindex fdump-tree
 Control the dumping at various stages of processing the intermediate
-language tree to a file.  The file name is generated by appending a
-switch-specific suffix to the source file name, and the file is
-created in the same directory as the output file. In case of
-@option{=@var{filename}} option, the dump is output on the given file
-instead of the auto named dump files.  If the @samp{-@var{options}}
+language tree to a file.  If the @samp{-@var{options}}
 form is used, @var{options} is a list of @samp{-} separated options
 which control the details of the dump.  Not all options are applicable
 to all dumps; those that are not meaningful are ignored.  The
@@ -13845,26 +13838,9 @@ passes).
 @item note
 Enable other detailed optimization information (only available in
 certain passes).
-@item =@var{filename}
-Instead of an auto named dump file, output into the given file
-name. The file names @file{stdout} and @file{stderr} are treated
-specially and are considered already open standard streams. For
-example,
-
-@smallexample
-gcc -O2 -ftree-vectorize -fdump-tree-vect-blocks=foo.dump
-     -fdump-tree-pre=/dev/stderr file.c
-@end smallexample
-
-outputs vectorizer dump into @file{foo.dump}, while the PRE dump is
-output on to @file{stderr}. If two conflicting dump filenames are
-given for the same pass, then the latter option overrides the earlier
-one.
-
 @item all
 Turn on all options, except @option{raw}, @option{slim}, @option{verbose}
 and @option{lineno}.
-
 @item optall
 Turn on all optimization options, i.e., @option{optimized},
 @option{missed}, and @option{note}.
@@ -20120,6 +20096,12 @@ Select application model @var{app-model}.  Valid models are
 @item executable
 normal executable (default), uses startup code @file{crt0.o}.
 
+@item -mpic-data-is-text-relative
+@opindex mpic-data-is-text-relative
+Assume that the displacement between the text and data segments is fixed
+at static link time.  This allows data to be referenced by offset from start of
+text address instead of GOT since PC-relative addressing is not supported.
+
 @item xmdstub
 for use with Xilinx Microprocessor Debugger (XMD) based
 software intrusive debug agent called xmdstub. This uses startup file
@@ -23368,9 +23350,9 @@ following options:
 
 @gccoptlist{-maltivec  -mfprnd  -mhard-float  -mmfcrf  -mmultiple @gol
 -mpopcntb -mpopcntd  -mpowerpc64 @gol
--mpowerpc-gpopt  -mpowerpc-gfxopt  -msingle-float -mdouble-float @gol
--msimple-fpu  -mmulhw  -mdlmzb  -mmfpgpr -mvsx @gol
--mcrypto -mdirect-move -mhtm -mpower8-fusion -mpower8-vector @gol
+-mpowerpc-gpopt  -mpowerpc-gfxopt @gol
+-mmulhw  -mdlmzb  -mmfpgpr -mvsx @gol
+-mcrypto -mhtm -mpower8-fusion -mpower8-vector @gol
 -mquad-memory -mquad-memory-atomic -mfloat128 -mfloat128-hardware}
 
 The particular options set for any particular CPU varies between
@@ -23489,13 +23471,6 @@ This switch enables or disables the generation of ISEL instructions.
 This switch has been deprecated.  Use @option{-misel} and
 @option{-mno-isel} instead.
 
-@item -mpaired
-@itemx -mno-paired
-@opindex mpaired
-@opindex mno-paired
-This switch enables or disables the generation of PAIRED simd
-instructions.
-
 @item -mvsx
 @itemx -mno-vsx
 @opindex mvsx
@@ -23511,14 +23486,6 @@ more direct access to the VSX instruction set.
 Enable the use (disable) of the built-in functions that allow direct
 access to the cryptographic instructions that were added in version
 2.07 of the PowerPC ISA.
-
-@item -mdirect-move
-@itemx -mno-direct-move
-@opindex mdirect-move
-@opindex mno-direct-move
-Generate code that uses (does not use) the instructions to move data
-between the general purpose registers and the vector/scalar (VSX)
-registers that were added in version 2.07 of the PowerPC ISA.
 
 @item -mhtm
 @itemx -mno-htm
@@ -23702,30 +23669,6 @@ is not supported.
 Generate code that does not use (uses) the floating-point register set.
 Software floating-point emulation is provided if you use the
 @option{-msoft-float} option, and pass the option to GCC when linking.
-
-@item -msingle-float
-@itemx -mdouble-float
-@opindex msingle-float
-@opindex mdouble-float
-Generate code for single- or double-precision floating-point operations.
-@option{-mdouble-float} implies @option{-msingle-float}.
-
-@item -msimple-fpu
-@opindex msimple-fpu
-Do not generate @code{sqrt} and @code{div} instructions for hardware
-floating-point unit.
-
-@item -mfpu=@var{name}
-@opindex mfpu
-Specify type of floating-point unit.  Valid values for @var{name} are
-@samp{sp_lite} (equivalent to @option{-msingle-float -msimple-fpu}),
-@samp{dp_lite} (equivalent to @option{-mdouble-float -msimple-fpu}),
-@samp{sp_full} (equivalent to @option{-msingle-float}),
-and @samp{dp_full} (equivalent to @option{-mdouble-float}).
-
-@item -mxilinx-fpu
-@opindex mxilinx-fpu
-Perform optimizations for the floating-point unit on Xilinx PPC 405/440.
 
 @item -mmultiple
 @itemx -mno-multiple
@@ -27315,9 +27258,6 @@ preferred alignment to @option{-mpreferred-stack-boundary=2}.
 @itemx -mpku
 @opindex mpku
 @need 200
-@itemx -mcet
-@opindex mcet
-@need 200
 @itemx -mavx512vbmi2
 @opindex mavx512vbmi2
 @need 200
@@ -27333,6 +27273,12 @@ preferred alignment to @option{-mpreferred-stack-boundary=2}.
 @itemx -mavx512bitalg
 @opindex mavx512bitalg
 @need 200
+@itemx -mmovdiri
+@opindex mmovdiri
+@need 200
+@itemx -mmovdir64b
+@opindex mmovdir64b
+@need 200
 @itemx -mavx512vpopcntdq
 @opindex mavx512vpopcntdq
 These switches enable the use of instructions in the MMX, SSE,
@@ -27340,8 +27286,8 @@ SSE2, SSE3, SSSE3, SSE4.1, AVX, AVX2, AVX512F, AVX512PF, AVX512ER, AVX512CD,
 SHA, AES, PCLMUL, FSGSBASE, RDRND, F16C, FMA, SSE4A, FMA4, XOP, LWP, ABM,
 AVX512VL, AVX512BW, AVX512DQ, AVX512IFMA, AVX512VBMI, BMI, BMI2, VAES,
 FXSR, XSAVE, XSAVEOPT, LZCNT, RTM, MPX, MWAITX, PKU, IBT, SHSTK, AVX512VBMI2,
-GFNI, VPCLMULQDQ, AVX512BITALG, AVX512VPOPCNTDQ3DNow!@: or enhanced 3DNow!@:
-extended instruction sets.
+GFNI, VPCLMULQDQ, AVX512BITALG, MOVDIRI, MOVDIR64B,
+AVX512VPOPCNTDQ3DNow!@: or enhanced 3DNow!@: extended instruction sets.
 Each has a corresponding @option{-mno-} option to disable use of these
 instructions.
 
@@ -27362,13 +27308,6 @@ perform run-time CPU detection must compile separate files for each
 supported architecture, using the appropriate flags.  In particular,
 the file containing the CPU detection code should be compiled without
 these options.
-
-The @option{-mcet} option turns on the @option{-mibt} and @option{-mshstk}
-options.  The @option{-mibt} option enables indirect branch tracking support
-and the @option{-mshstk} option enables shadow stack support from
-Intel Control-flow Enforcement Technology (CET).  The compiler also provides
-a number of built-in functions for fine-grained control in a CET-based
-application.  See @xref{x86 Built-in Functions}, for more information.
 
 @item -mdump-tune-features
 @opindex mdump-tune-features
@@ -27462,23 +27401,10 @@ see @ref{Other Builtins} for details.
 This option enables use of the @code{movbe} instruction to implement
 @code{__builtin_bswap32} and @code{__builtin_bswap64}.
 
-@item -mibt
-@opindex mibt
-This option tells the compiler to use indirect branch tracking support
-(for indirect calls and jumps) from x86 Control-flow Enforcement
-Technology (CET).  The option has effect only if the
-@option{-fcf-protection=full} or @option{-fcf-protection=branch} option
-is specified. The option @option{-mibt} is on by default when the
-@code{-mcet} option is specified.
-
 @item -mshstk
 @opindex mshstk
-This option tells the compiler to use shadow stack support (return
-address tracking) from x86 Control-flow Enforcement Technology (CET).
-The option has effect only if the @option{-fcf-protection=full} or
-@option{-fcf-protection=return} option is specified.  The option
-@option{-mshstk} is on by default when the @option{-mcet} option is
-specified.
+The @option{-mshstk} option enables shadow stack built-in functions
+from x86 Control-flow Enforcement Technology (CET).
 
 @item -mcrc32
 @opindex mcrc32

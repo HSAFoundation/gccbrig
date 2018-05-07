@@ -2527,6 +2527,10 @@ check_extern_c_conflict (tree decl)
   if (DECL_ARTIFICIAL (decl) || DECL_IN_SYSTEM_HEADER (decl))
     return;
 
+  /* This only applies to decls at namespace scope.  */
+  if (!DECL_NAMESPACE_SCOPE_P (decl))
+    return;
+
   if (!extern_c_decls)
     extern_c_decls = hash_table<named_decl_hash>::create_ggc (127);
 
@@ -2638,6 +2642,7 @@ check_local_shadow (tree decl)
 	  || (TREE_CODE (old) == TYPE_DECL
 	      && (!DECL_ARTIFICIAL (old)
 		  || TREE_CODE (decl) == TYPE_DECL)))
+      && DECL_FUNCTION_SCOPE_P (old)
       && (!DECL_ARTIFICIAL (decl)
 	  || DECL_IMPLICIT_TYPEDEF_P (decl)
 	  || (VAR_P (decl) && DECL_ANON_UNION_VAR_P (decl))))
@@ -3050,7 +3055,6 @@ do_pushdecl (tree decl, bool is_friend)
 	old = OVL_CHAIN (old);
 
       check_template_shadow (decl);
-      bool visible_injection = false;
 
       if (DECL_DECLARES_FUNCTION_P (decl))
 	{
@@ -3068,11 +3072,8 @@ do_pushdecl (tree decl, bool is_friend)
 		  /* Don't attempt to push it.  */
 		  return error_mark_node;
 		}
-	      if (!flag_friend_injection)
-		/* Hide it from ordinary lookup.  */
-		DECL_ANTICIPATED (decl) = DECL_HIDDEN_FRIEND_P (decl) = true;
-	      else
-		visible_injection = true;
+	      /* Hide it from ordinary lookup.  */
+	      DECL_ANTICIPATED (decl) = DECL_HIDDEN_FRIEND_P (decl) = true;
 	    }
 	}
 
@@ -3124,9 +3125,6 @@ do_pushdecl (tree decl, bool is_friend)
 	}
       else if (VAR_P (decl))
 	maybe_register_incomplete_var (decl);
-      else if (visible_injection)
-	warning (0, "injected friend %qD is visible"
-		" due to %<-ffriend-injection%>", decl);
 
       if ((VAR_P (decl) || TREE_CODE (decl) == FUNCTION_DECL)
 	  && DECL_EXTERN_C_P (decl))
@@ -3742,7 +3740,7 @@ debug (cp_binding_level *ptr)
 }
 
 
-void
+static void
 print_other_binding_stack (cp_binding_level *stack)
 {
   cp_binding_level *level;
@@ -5858,6 +5856,12 @@ consider_binding_level (tree name, best_match <tree, const char *> &bm,
       if (TREE_CODE (d) == FUNCTION_DECL
 	  && DECL_BUILT_IN (d)
 	  && DECL_ANTICIPATED (d))
+	continue;
+
+      /* Skip compiler-generated variables (e.g. __for_begin/__for_end
+	 within range for).  */
+      if (TREE_CODE (d) == VAR_DECL
+	  && DECL_ARTIFICIAL (d))
 	continue;
 
       tree suggestion = DECL_NAME (d);

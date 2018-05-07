@@ -236,7 +236,8 @@ md_file=
 
 # Obsolete configurations.
 case ${target} in
- nothing				\
+  powerpc*-*-*spe*			\
+  | tile*-*-*				\
  )
     if test "x$enable_obsolete" != xyes; then
       echo "*** Configuration ${target} is obsolete." >&2
@@ -383,7 +384,7 @@ i[34567]86-*-*)
 		       avx512vbmi2vlintrin.h avx512vnniintrin.h
 		       avx512vnnivlintrin.h vaesintrin.h vpclmulqdqintrin.h
 		       avx512vpopcntdqvlintrin.h avx512bitalgintrin.h
-		       pconfigintrin.h wbnoinvdintrin.h"
+		       pconfigintrin.h wbnoinvdintrin.h movdirintrin.h"
 	;;
 x86_64-*-*)
 	cpu_type=i386
@@ -412,7 +413,7 @@ x86_64-*-*)
 		       avx512vbmi2vlintrin.h avx512vnniintrin.h
 		       avx512vnnivlintrin.h vaesintrin.h vpclmulqdqintrin.h
 		       avx512vpopcntdqvlintrin.h avx512bitalgintrin.h
-		       pconfigintrin.h wbnoinvdintrin.h"
+		       pconfigintrin.h wbnoinvdintrin.h movdirintrin.h"
 	;;
 ia64-*-*)
 	extra_headers=ia64intrin.h
@@ -472,7 +473,6 @@ powerpc*-*-*)
 	extra_headers="${extra_headers} xmmintrin.h mm_malloc.h emmintrin.h"
 	extra_headers="${extra_headers} mmintrin.h x86intrin.h"
 	extra_headers="${extra_headers} ppu_intrinsics.h spu2vmx.h vec_types.h si2vmx.h"
-	extra_headers="${extra_headers} paired.h"
 	extra_headers="${extra_headers} amo.h"
 	case x$with_cpu in
 	    xpowerpc64|xdefault64|x6[23]0|x970|xG5|xpower[3456789]|xpower6x|xrs64a|xcell|xa2|xe500mc64|xe5500|xe6500)
@@ -637,7 +637,7 @@ x86_64_archs="amdfam10 athlon64 athlon64-sse3 barcelona bdver1 bdver2 \
 bdver3 bdver4 znver1 btver1 btver2 k8 k8-sse3 opteron opteron-sse3 nocona \
 core2 corei7 corei7-avx core-avx-i core-avx2 atom slm nehalem westmere \
 sandybridge ivybridge haswell broadwell bonnell silvermont knl knm \
-skylake-avx512 cannonlake icelake-client icelake-server x86-64 native"
+skylake-avx512 cannonlake icelake-client icelake-server skylake x86-64 native"
 
 # Additional x86 processors supported by --with-cpu=.  Each processor
 # MUST be separated by exactly one space.
@@ -2451,12 +2451,6 @@ powerpc-*-eabialtivec*)
 	tmake_file="rs6000/t-fprules rs6000/t-ppcendian rs6000/t-ppccomm"
 	use_gcc_stdint=wrap
 	;;
-powerpc-xilinx-eabi*)
-	tm_file="${tm_file} dbxelf.h elfos.h usegas.h freebsd-spec.h newlib-stdint.h rs6000/sysv4.h rs6000/eabi.h rs6000/singlefp.h rs6000/xfpu.h rs6000/xilinx.h"
-	extra_options="${extra_options} rs6000/sysv4.opt rs6000/xilinx.opt"
-	tmake_file="rs6000/t-fprules rs6000/t-ppcgas rs6000/t-ppccomm rs6000/t-xilinx"
-	use_gcc_stdint=wrap
-	;;
 powerpc-*-eabi*)
 	tm_file="${tm_file} dbxelf.h elfos.h usegas.h freebsd-spec.h newlib-stdint.h rs6000/sysv4.h rs6000/eabi.h"
 	extra_options="${extra_options} rs6000/sysv4.opt"
@@ -2501,11 +2495,11 @@ powerpc*-*-linux*)
 	    all) maybe_biarch=yes ;;
 	esac
 	case ${target} in
-	    powerpc64*-*-linux*spe* | powerpc64*-*-linux*paired*)
+	    powerpc64*-*-linux*spe* | powerpc*-*-linux*paired*)
 		echo "*** Configuration ${target} not supported" 1>&2
 		exit 1
 		;;
-	    powerpc*-*-linux*spe* | powerpc*-*-linux*paired*)
+	    powerpc*-*-linux*spe*)
 		maybe_biarch=
 		;;
 	esac
@@ -2551,8 +2545,6 @@ powerpc*-*-linux*)
 		tm_file="${tm_file} rs6000/linuxaltivec.h" ;;
 	    powerpc*-*-linux*spe*)
 		tm_file="${tm_file} ${cpu_type}/linuxspe.h ${cpu_type}/e500.h" ;;
-	    powerpc*-*-linux*paired*)
-		tm_file="${tm_file} rs6000/750cl.h" ;;
 	esac
 	case ${target} in
 	    *-linux*-musl*)

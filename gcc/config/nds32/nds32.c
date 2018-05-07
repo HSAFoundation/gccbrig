@@ -436,7 +436,8 @@ nds32_compute_stack_frame (void)
 
   /* If $lp value is required to be saved on stack, it needs 4 bytes space.
      Check whether $lp is ever live.  */
-  cfun->machine->lp_size = (df_regs_ever_live_p (LP_REGNUM)) ? 4 : 0;
+  cfun->machine->lp_size
+    = (flag_always_save_lp || df_regs_ever_live_p (LP_REGNUM)) ? 4 : 0;
 
   /* Initially there is no padding bytes.  */
   cfun->machine->callee_saved_area_gpr_padding_bytes = 0;
@@ -611,10 +612,12 @@ nds32_compute_stack_frame (void)
     {
       block_size = cfun->machine->fp_size
 		   + cfun->machine->gp_size
-		   + cfun->machine->lp_size
-		   + (4 * (cfun->machine->callee_saved_last_gpr_regno
-			   - cfun->machine->callee_saved_first_gpr_regno
-			   + 1));
+		   + cfun->machine->lp_size;
+
+      if (cfun->machine->callee_saved_last_gpr_regno != SP_REGNUM)
+	block_size += (4 * (cfun->machine->callee_saved_last_gpr_regno
+			    - cfun->machine->callee_saved_first_gpr_regno
+			    + 1));
 
       if (!NDS32_DOUBLE_WORD_ALIGN_P (block_size))
 	{
@@ -1350,6 +1353,14 @@ nds32_naked_function_p (tree func)
   t = lookup_attribute ("naked", DECL_ATTRIBUTES (func));
 
   return (t != NULL_TREE);
+}
+
+/* Function that determine whether a load postincrement is a good thing to use
+   for a given mode.  */
+bool
+nds32_use_load_post_increment (machine_mode mode)
+{
+  return (GET_MODE_SIZE (mode) <= GET_MODE_SIZE(E_DImode));
 }
 
 /* Function that check if 'X' is a valid address register.
@@ -2885,10 +2896,18 @@ nds32_asm_file_start (void)
 			 ((TARGET_REDUCED_REGS) ? "Yes"
 						: "No"));
 
+  fprintf (asm_out_file, "\t! Support unaligned access\t\t: %s\n",
+			 (flag_unaligned_access ? "Yes"
+						: "No"));
+
   fprintf (asm_out_file, "\t! ------------------------------------\n");
 
   if (optimize_size)
     fprintf (asm_out_file, "\t! Optimization level\t: -Os\n");
+  else if (optimize_fast)
+    fprintf (asm_out_file, "\t! Optimization level\t: -Ofast\n");
+  else if (optimize_debug)
+    fprintf (asm_out_file, "\t! Optimization level\t: -Og\n");
   else
     fprintf (asm_out_file, "\t! Optimization level\t: -O%d\n", optimize);
 
@@ -2925,13 +2944,15 @@ nds32_asm_globalize_label (FILE *stream, const char *name)
 static void
 nds32_print_operand (FILE *stream, rtx x, int code)
 {
+  HOST_WIDE_INT op_value = 0;
   HOST_WIDE_INT one_position;
   HOST_WIDE_INT zero_position;
   bool pick_lsb_p = false;
   bool pick_msb_p = false;
   int regno;
 
-  int op_value;
+  if (CONST_INT_P (x))
+    op_value = INTVAL (x);
 
   switch (code)
     {
@@ -2984,7 +3005,6 @@ nds32_print_operand (FILE *stream, rtx x, int code)
     case 'V':
       /* 'x' is supposed to be CONST_INT, get the value.  */
       gcc_assert (CONST_INT_P (x));
-      op_value = INTVAL (x);
 
       /* According to the Andes architecture,
 	 the system/user register index range is 0 ~ 1023.
@@ -3835,9 +3855,6 @@ nds32_hard_regno_mode_ok (unsigned int regno, machine_mode mode)
   return false;
 }
 
-#undef TARGET_HARD_REGNO_MODE_OK
-#define TARGET_HARD_REGNO_MODE_OK nds32_hard_regno_mode_ok
-
 /* Implement TARGET_MODES_TIEABLE_P.  We can use general registers to
    tie QI/HI/SI modes together.  */
 
@@ -3861,9 +3878,6 @@ nds32_modes_tieable_p (machine_mode mode1, machine_mode mode2)
 
   return false;
 }
-
-#undef TARGET_MODES_TIEABLE_P
-#define TARGET_MODES_TIEABLE_P nds32_modes_tieable_p
 
 /* Register Classes.  */
 
@@ -4764,29 +4778,24 @@ nds32_can_use_return_insn (void)
   return (cfun->machine->naked_p && (cfun->machine->va_args_size == 0));
 }
 
-/* ------------------------------------------------------------------------ */
-
-/* Function to test 333-form for load/store instructions.
-   This is auxiliary extern function for auxiliary macro in nds32.h.
-   Because it is a little complicated, we use function instead of macro.  */
-bool
-nds32_ls_333_p (rtx rt, rtx ra, rtx imm, machine_mode mode)
+scalar_int_mode
+nds32_case_vector_shorten_mode (int min_offset, int max_offset,
+				rtx body ATTRIBUTE_UNUSED)
 {
-  if (REGNO_REG_CLASS (REGNO (rt)) == LOW_REGS
-      && REGNO_REG_CLASS (REGNO (ra)) == LOW_REGS)
+  if (min_offset < 0 || max_offset >= 0x2000)
+    return SImode;
+  else
     {
-      if (GET_MODE_SIZE (mode) == 4)
-	return satisfies_constraint_Iu05 (imm);
-
-      if (GET_MODE_SIZE (mode) == 2)
-	return satisfies_constraint_Iu04 (imm);
-
-      if (GET_MODE_SIZE (mode) == 1)
-	return satisfies_constraint_Iu03 (imm);
+      /* The jump table maybe need to 2 byte alignment,
+	 so reserved 1 byte for check max_offset.  */
+      if (max_offset >= 0xff)
+	return HImode;
+      else
+	return QImode;
     }
-
-  return false;
 }
+
+/* ------------------------------------------------------------------------ */
 
 /* Return alignment for the label.  */
 int
@@ -4808,6 +4817,63 @@ nds32_target_alignment (rtx_insn *label)
     return 0;
   else
     return 2;
+}
+
+/* Return alignment for data.  */
+unsigned int
+nds32_data_alignment (tree data,
+		      unsigned int basic_align)
+{
+  if ((basic_align < BITS_PER_WORD)
+      && (TREE_CODE (data) == ARRAY_TYPE
+	 || TREE_CODE (data) == UNION_TYPE
+	 || TREE_CODE (data) == RECORD_TYPE))
+    return BITS_PER_WORD;
+  else
+    return basic_align;
+}
+
+/* Return alignment for constant value.  */
+static HOST_WIDE_INT
+nds32_constant_alignment (const_tree constant,
+			  HOST_WIDE_INT basic_align)
+{
+  /* Make string literal and constant for constructor to word align.  */
+  if (((TREE_CODE (constant) == STRING_CST
+	|| TREE_CODE (constant) == CONSTRUCTOR
+	|| TREE_CODE (constant) == UNION_TYPE
+	|| TREE_CODE (constant) == RECORD_TYPE
+	|| TREE_CODE (constant) == ARRAY_TYPE)
+       && basic_align < BITS_PER_WORD))
+    return BITS_PER_WORD;
+  else
+    return basic_align;
+}
+
+/* Return alignment for local variable.  */
+unsigned int
+nds32_local_alignment (tree local ATTRIBUTE_UNUSED,
+		       unsigned int basic_align)
+{
+  bool at_least_align_to_word = false;
+  /* Make local array, struct and union at least align to word for make
+     sure it can unroll memcpy when initialize by constant.  */
+  switch (TREE_CODE (local))
+    {
+    case ARRAY_TYPE:
+    case RECORD_TYPE:
+    case UNION_TYPE:
+      at_least_align_to_word = true;
+      break;
+    default:
+      at_least_align_to_word = false;
+      break;
+    }
+  if (at_least_align_to_word
+      && (basic_align < BITS_PER_WORD))
+    return BITS_PER_WORD;
+  else
+    return basic_align;
 }
 
 bool
@@ -4863,6 +4929,9 @@ nds32_use_blocks_for_constant_p (machine_mode mode,
 #undef TARGET_EXPAND_TO_RTL_HOOK
 #define TARGET_EXPAND_TO_RTL_HOOK nds32_expand_to_rtl_hook
 
+#undef TARGET_CONSTANT_ALIGNMENT
+#define TARGET_CONSTANT_ALIGNMENT nds32_constant_alignment
+
 
 /* Layout of Source Language Data Types.  */
 
@@ -4880,6 +4949,12 @@ nds32_use_blocks_for_constant_p (machine_mode mode,
 
 #undef TARGET_HARD_REGNO_NREGS
 #define TARGET_HARD_REGNO_NREGS nds32_hard_regno_nregs
+
+#undef TARGET_HARD_REGNO_MODE_OK
+#define TARGET_HARD_REGNO_MODE_OK nds32_hard_regno_mode_ok
+
+#undef TARGET_MODES_TIEABLE_P
+#define TARGET_MODES_TIEABLE_P nds32_modes_tieable_p
 
 /* -- Handling Leaf Functions.  */
 

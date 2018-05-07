@@ -31,9 +31,10 @@ BRIG Separate Alias(d)
 -dump=
 BRIG Joined Alias(d)
 
-fphsa-wi-context-opt
-BRIG Report Var(flag_phsa_wi_context_opt) Init(1) Optimization
-Assume the work-item context object is the one defined by phsa-runtime (default).
+fassume-phsa
+BRIG Report Var(flag_assume_phsa) Init(1) Optimization
+Assume we are finalizing for phsa and its libhsail-rt.  Enables additional
+phsa-specific optimizations (default).
 
 L
 BRIG Joined Separate

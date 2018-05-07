@@ -513,6 +513,8 @@ brig_to_generic::add_host_def_var_ptr (const std::string &name, tree var_decl)
   TREE_ADDRESSABLE (ptr_var) = 1;
   TREE_STATIC (ptr_var) = 1;
 
+  set_externally_visible (ptr_var);
+
   append_global (ptr_var);
   m_global_variables[var_name] = ptr_var;
 }
@@ -997,6 +999,25 @@ get_scalar_unsigned_int_type (tree original_type)
 {
   return build_nonstandard_integer_type (int_size_in_bytes (original_type)
 					 * BITS_PER_UNIT, true);
+}
+
+/* Set the declaration externally visible so it won't get removed by
+   whole program optimizations.  */
+
+void
+set_externally_visible (tree decl)
+{
+  if (!lookup_attribute ("externally_visible", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("externally_visible"),
+					NULL, DECL_ATTRIBUTES (decl));
+}
+
+void
+set_inline (tree decl)
+{
+  if (!lookup_attribute ("inline", DECL_ATTRIBUTES (decl)))
+    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("inline"),
+					NULL, DECL_ATTRIBUTES (decl));
 }
 
 void

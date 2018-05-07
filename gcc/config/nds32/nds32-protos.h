@@ -69,10 +69,6 @@ extern unsigned int nds32_dbx_register_number (unsigned int);
 
 /* ------------------------------------------------------------------------ */
 
-/* Auxiliary functions for auxiliary macros in nds32.h.  */
-
-extern bool nds32_ls_333_p (rtx, rtx, rtx, machine_mode);
-
 /* Auxiliary functions for lwm/smw.  */
 
 extern bool nds32_valid_smw_lwm_base_p (rtx);
@@ -219,10 +215,13 @@ extern void nds32_expand_constant (machine_mode,
 /* Auxiliary functions to check using return with null epilogue.  */
 
 extern int nds32_can_use_return_insn (void);
+extern scalar_int_mode nds32_case_vector_shorten_mode (int, int, rtx);
 
 /* Auxiliary functions to decide output alignment or not.  */
 
 extern int nds32_target_alignment (rtx_insn *);
+extern unsigned int nds32_data_alignment (tree, unsigned int);
+extern unsigned int nds32_local_alignment (tree, unsigned int);
 
 /* Auxiliary functions to expand builtin functions.  */
 
@@ -275,6 +274,8 @@ rtx extract_mac_non_acc_rtx (rtx_insn *);
 rtx extract_branch_target_rtx (rtx_insn *);
 rtx extract_branch_condition_rtx (rtx_insn *);
 } // namespace nds32
+
+extern bool nds32_use_load_post_increment(machine_mode);
 
 /* Functions for create nds32 specific optimization pass.  */
 extern rtl_opt_pass *make_pass_nds32_relax_opt (gcc::context *);

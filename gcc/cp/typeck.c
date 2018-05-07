@@ -1597,10 +1597,13 @@ compparms (const_tree parms1, const_tree parms2)
 
 
 /* Process a sizeof or alignof expression where the operand is a
-   type.  */
+   type. STD_ALIGNOF indicates whether an alignof has C++11 (minimum alignment)
+   or GNU (preferred alignment) semantics; it is ignored if op is
+   SIZEOF_EXPR.  */
 
 tree
-cxx_sizeof_or_alignof_type (tree type, enum tree_code op, bool complain)
+cxx_sizeof_or_alignof_type (tree type, enum tree_code op, bool std_alignof,
+			    bool complain)
 {
   tree value;
   bool dependent_p;
@@ -1637,11 +1640,13 @@ cxx_sizeof_or_alignof_type (tree type, enum tree_code op, bool complain)
     {
       value = build_min (op, size_type_node, type);
       TREE_READONLY (value) = 1;
+      if (op == ALIGNOF_EXPR && std_alignof)
+	ALIGNOF_EXPR_STD_P (value) = true;
       return value;
     }
 
   return c_sizeof_or_alignof_type (input_location, complete_type (type),
-				   op == SIZEOF_EXPR, false,
+				   op == SIZEOF_EXPR, std_alignof,
 				   complain);
 }
 
@@ -1659,7 +1664,7 @@ cxx_sizeof_nowarn (tree type)
   else if (!COMPLETE_TYPE_P (type))
     return size_zero_node;
   else
-    return cxx_sizeof_or_alignof_type (type, SIZEOF_EXPR, false);
+    return cxx_sizeof_or_alignof_type (type, SIZEOF_EXPR, false, false);
 }
 
 /* Process a sizeof expression where the operand is an expression.  */
@@ -1725,7 +1730,7 @@ cxx_sizeof_expr (tree e, tsubst_flags_t complain)
   else
     e = TREE_TYPE (e);
 
-  return cxx_sizeof_or_alignof_type (e, SIZEOF_EXPR, complain & tf_error);
+  return cxx_sizeof_or_alignof_type (e, SIZEOF_EXPR, false, complain & tf_error);
 }
 
 /* Implement the __alignof keyword: Return the minimum required
@@ -1786,7 +1791,7 @@ cxx_alignof_expr (tree e, tsubst_flags_t complain)
       t = size_one_node;
     }
   else
-    return cxx_sizeof_or_alignof_type (TREE_TYPE (e), ALIGNOF_EXPR, 
+    return cxx_sizeof_or_alignof_type (TREE_TYPE (e), ALIGNOF_EXPR, false,
                                        complain & tf_error);
 
   return fold_convert (size_type_node, t);
@@ -1825,7 +1830,7 @@ cxx_alignas_expr (tree e)
 	   alignas(type-id ), it shall have the same effect as
 	   alignas(alignof(type-id )).  */
 
-    return cxx_sizeof_or_alignof_type (e, ALIGNOF_EXPR, false);
+    return cxx_sizeof_or_alignof_type (e, ALIGNOF_EXPR, true, false);
   
   /* If we reach this point, it means the alignas expression if of
      the form "alignas(assignment-expression)", so we should follow
@@ -3036,6 +3041,17 @@ build_ptrmemfunc_access_expr (tree ptrmem, tree member_name)
 {
   tree ptrmem_type;
   tree member;
+
+  if (TREE_CODE (ptrmem) == CONSTRUCTOR)
+    {
+      unsigned int ix;
+      tree index, value;
+      FOR_EACH_CONSTRUCTOR_ELT (CONSTRUCTOR_ELTS (ptrmem),
+				ix, index, value)
+	if (index && DECL_P (index) && DECL_NAME (index) == member_name)
+	  return value;
+      gcc_unreachable ();
+    }
 
   /* This code is a stripped down version of
      build_class_member_access_expr.  It does not work to use that
@@ -5893,19 +5909,6 @@ cp_build_addr_expr_1 (tree arg, bool strict_lvalue, tsubst_flags_t complain)
       return arg;
     }
 
-  /* ??? Cope with user tricks that amount to offsetof.  */
-  if (TREE_CODE (argtype) != FUNCTION_TYPE
-      && TREE_CODE (argtype) != METHOD_TYPE
-      && argtype != unknown_type_node
-      && (val = get_base_address (arg))
-      && COMPLETE_TYPE_P (TREE_TYPE (val))
-      && INDIRECT_REF_P (val)
-      && TREE_CONSTANT (TREE_OPERAND (val, 0)))
-    {
-      tree type = build_pointer_type (argtype);
-      return fold_convert (type, fold_offsetof_1 (arg));
-    }
-
   /* Handle complex lvalues (when permitted)
      by reduction to simpler cases.  */
   val = unary_complex_lvalue (ADDR_EXPR, arg);
@@ -6841,34 +6844,29 @@ convert_ptrmem (tree type, tree expr, bool allow_inverse_p,
 
   if (TYPE_PTRDATAMEM_P (type))
     {
-      tree delta;
+      tree obase = TYPE_PTRMEM_CLASS_TYPE (TREE_TYPE (expr));
+      tree nbase = TYPE_PTRMEM_CLASS_TYPE (type);
+      tree delta = (get_delta_difference
+		    (obase, nbase,
+		     allow_inverse_p, c_cast_p, complain));
 
-      delta = get_delta_difference (TYPE_PTRMEM_CLASS_TYPE (TREE_TYPE (expr)),
-				    TYPE_PTRMEM_CLASS_TYPE (type),
-				    allow_inverse_p,
-				    c_cast_p, complain);
       if (delta == error_mark_node)
 	return error_mark_node;
 
-      if (!integer_zerop (delta))
+      if (!same_type_p (obase, nbase))
 	{
-	  tree cond, op1, op2;
-
 	  if (TREE_CODE (expr) == PTRMEM_CST)
 	    expr = cplus_expand_constant (expr);
-	  cond = cp_build_binary_op (input_location,
-				     EQ_EXPR,
-				     expr,
-				     build_int_cst (TREE_TYPE (expr), -1),
-				     complain);
-	  op1 = build_nop (ptrdiff_type_node, expr);
-	  op2 = cp_build_binary_op (input_location,
-				    PLUS_EXPR, op1, delta,
-				    complain);
+
+	  tree cond = cp_build_binary_op (input_location, EQ_EXPR, expr,
+					  build_int_cst (TREE_TYPE (expr), -1),
+					  complain);
+	  tree op1 = build_nop (ptrdiff_type_node, expr);
+	  tree op2 = cp_build_binary_op (input_location, PLUS_EXPR, op1, delta,
+					 complain);
 
 	  expr = fold_build3_loc (input_location,
-			      COND_EXPR, ptrdiff_type_node, cond, op1, op2);
-			 
+				  COND_EXPR, ptrdiff_type_node, cond, op1, op2);
 	}
 
       return build_nop (type, expr);
@@ -7288,6 +7286,18 @@ convert_member_func_to_ptr (tree type, tree expr, tsubst_flags_t complain)
   return build_nop (type, expr);
 }
 
+/* Build a NOP_EXPR to TYPE, but mark it as a reinterpret_cast so that
+   constexpr evaluation knows to reject it.  */
+
+static tree
+build_nop_reinterpret (tree type, tree expr)
+{
+  tree ret = build_nop (type, expr);
+  if (ret != expr)
+    REINTERPRET_CAST_P (ret) = true;
+  return ret;
+}
+
 /* Return a representation for a reinterpret_cast from EXPR to TYPE.
    If C_CAST_P is true, this reinterpret cast is being done as part of
    a C-style cast.  If VALID_P is non-NULL, *VALID_P is set to
@@ -7422,7 +7432,7 @@ build_reinterpret_cast_1 (tree type, tree expr, bool c_cast_p,
 	warning (OPT_Wcast_function_type,
 		 "cast between incompatible function types"
 		 " from %qH to %qI", intype, type);
-      return build_nop (type, expr);
+      return build_nop_reinterpret (type, expr);
     }
   else if (TYPE_PTRMEMFUNC_P (type) && TYPE_PTRMEMFUNC_P (intype))
     {
@@ -7433,7 +7443,7 @@ build_reinterpret_cast_1 (tree type, tree expr, bool c_cast_p,
 	warning (OPT_Wcast_function_type,
 		 "cast between incompatible pointer to member types"
 		 " from %qH to %qI", intype, type);
-      return build_nop (type, expr);
+      return build_nop_reinterpret (type, expr);
     }
   else if ((TYPE_PTRDATAMEM_P (type) && TYPE_PTRDATAMEM_P (intype))
 	   || (TYPE_PTROBV_P (type) && TYPE_PTROBV_P (intype)))
@@ -7459,7 +7469,7 @@ build_reinterpret_cast_1 (tree type, tree expr, bool c_cast_p,
 	/* strict_aliasing_warning STRIP_NOPs its expr.  */
 	strict_aliasing_warning (EXPR_LOCATION (expr), type, expr);
 
-      return build_nop (type, expr);
+      return build_nop_reinterpret (type, expr);
     }
   else if ((TYPE_PTRFN_P (type) && TYPE_PTROBV_P (intype))
 	   || (TYPE_PTRFN_P (intype) && TYPE_PTROBV_P (type)))
@@ -7470,7 +7480,7 @@ build_reinterpret_cast_1 (tree type, tree expr, bool c_cast_p,
 	warning (OPT_Wconditionally_supported,
 		 "casting between pointer-to-function and pointer-to-object "
 		 "is conditionally-supported");
-      return build_nop (type, expr);
+      return build_nop_reinterpret (type, expr);
     }
   else if (VECTOR_TYPE_P (type))
     return convert_to_vector (type, expr);
@@ -7486,7 +7496,11 @@ build_reinterpret_cast_1 (tree type, tree expr, bool c_cast_p,
       return error_mark_node;
     }
 
-  return cp_convert (type, expr, complain);
+  expr = cp_convert (type, expr, complain);
+  if (TREE_CODE (expr) == NOP_EXPR)
+    /* Mark any nop_expr that created as a reintepret_cast.  */
+    REINTERPRET_CAST_P (expr) = true;
+  return expr;
 }
 
 tree
@@ -8509,7 +8523,7 @@ build_ptrmemfunc (tree type, tree pfn, int force, bool c_cast_p,
 	{
 	  if (same_type_p (to_type, pfn_type))
 	    return pfn;
-	  else if (integer_zerop (n))
+	  else if (integer_zerop (n) && TREE_CODE (pfn) != CONSTRUCTOR)
 	    return build_reinterpret_cast (to_type, pfn, 
                                            complain);
 	}
@@ -8529,12 +8543,15 @@ build_ptrmemfunc (tree type, tree pfn, int force, bool c_cast_p,
       /* Just adjust the DELTA field.  */
       gcc_assert  (same_type_ignoring_top_level_qualifiers_p
 		   (TREE_TYPE (delta), ptrdiff_type_node));
-      if (TARGET_PTRMEMFUNC_VBIT_LOCATION == ptrmemfunc_vbit_in_delta)
-	n = cp_build_binary_op (input_location,
-				LSHIFT_EXPR, n, integer_one_node,
-				complain);
-      delta = cp_build_binary_op (input_location,
-				  PLUS_EXPR, delta, n, complain);
+      if (!integer_zerop (n))
+	{
+	  if (TARGET_PTRMEMFUNC_VBIT_LOCATION == ptrmemfunc_vbit_in_delta)
+	    n = cp_build_binary_op (input_location,
+				    LSHIFT_EXPR, n, integer_one_node,
+				    complain);
+	  delta = cp_build_binary_op (input_location,
+				      PLUS_EXPR, delta, n, complain);
+	}
       return build_ptrmemfunc1 (to_type, delta, npfn);
     }
 

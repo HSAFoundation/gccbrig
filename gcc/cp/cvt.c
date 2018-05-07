@@ -601,11 +601,19 @@ cp_fold_convert (tree type, tree expr)
   tree conv;
   if (TREE_TYPE (expr) == type)
     conv = expr;
-  else if (TREE_CODE (expr) == PTRMEM_CST)
+  else if (TREE_CODE (expr) == PTRMEM_CST
+	   && same_type_p (TYPE_PTRMEM_CLASS_TYPE (type),
+			   PTRMEM_CST_CLASS (expr)))
     {
       /* Avoid wrapping a PTRMEM_CST in NOP_EXPR.  */
       conv = copy_node (expr);
       TREE_TYPE (conv) = type;
+    }
+  else if (TYPE_PTRMEM_P (type))
+    {
+      conv = convert_ptrmem (type, expr, true, false,
+			     tf_warning_or_error);
+      conv = cp_fully_fold (conv);
     }
   else
     {
@@ -702,6 +710,15 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
     }
   if (error_operand_p (e))
     return error_mark_node;
+
+  if (NULLPTR_TYPE_P (type) && null_ptr_cst_p (e))
+    {
+      if (complain & tf_warning)
+	maybe_warn_zero_as_null_pointer_constant (e, loc);
+
+      if (!TREE_SIDE_EFFECTS (e))
+	return nullptr_node;
+    }
 
   if (MAYBE_CLASS_TYPE_P (type) && (convtype & CONV_FORCE_TEMP))
     /* We need a new temporary; don't take this shortcut.  */;
@@ -823,12 +840,6 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
 
       /* Ignore any integer overflow caused by the conversion.  */
       return ignore_overflows (converted, e);
-    }
-  if (NULLPTR_TYPE_P (type) && e && null_ptr_cst_p (e))
-    {
-      if (complain & tf_warning)
-	maybe_warn_zero_as_null_pointer_constant (e, loc);
-      return nullptr_node;
     }
   if (POINTER_TYPE_P (type) || TYPE_PTRMEM_P (type))
     return cp_convert_to_pointer (type, e, dofold, complain);

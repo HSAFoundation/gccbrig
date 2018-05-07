@@ -71,6 +71,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-fold.h"
 #include "intl.h"
 #include "file-prefix-map.h" /* remap_macro_filename()  */
+#include "gomp-constants.h"
+#include "omp-general.h"
 
 struct target_builtins default_target_builtins;
 #if SWITCHABLE_TARGET
@@ -5072,18 +5074,24 @@ expand_builtin_alloca (tree exp)
   return result;
 }
 
-/* Emit a call to __asan_allocas_unpoison call in EXP.  Replace second argument
-   of the call with virtual_stack_dynamic_rtx because in asan pass we emit a
-   dummy value into second parameter relying on this function to perform the
-   change.  See motivation for this in comment to handle_builtin_stack_restore
-   function.  */
+/* Emit a call to __asan_allocas_unpoison call in EXP.  Add to second argument
+   of the call virtual_stack_dynamic_rtx - stack_pointer_rtx, which is the
+   STACK_DYNAMIC_OFFSET value.  See motivation for this in comment to
+   handle_builtin_stack_restore function.  */
 
 static rtx
 expand_asan_emit_allocas_unpoison (tree exp)
 {
   tree arg0 = CALL_EXPR_ARG (exp, 0);
+  tree arg1 = CALL_EXPR_ARG (exp, 1);
   rtx top = expand_expr (arg0, NULL_RTX, ptr_mode, EXPAND_NORMAL);
-  rtx bot = convert_memory_address (ptr_mode, virtual_stack_dynamic_rtx);
+  rtx bot = expand_expr (arg1, NULL_RTX, ptr_mode, EXPAND_NORMAL);
+  rtx off = expand_simple_binop (Pmode, MINUS, virtual_stack_dynamic_rtx,
+				 stack_pointer_rtx, NULL_RTX, 0,
+				 OPTAB_LIB_WIDEN);
+  off = convert_modes (ptr_mode, Pmode, off, 0);
+  bot = expand_simple_binop (ptr_mode, PLUS, bot, off, NULL_RTX, 0,
+			     OPTAB_LIB_WIDEN);
   rtx ret = init_one_libfunc ("__asan_allocas_unpoison");
   ret = emit_library_call_value (ret, NULL_RTX, LCT_NORMAL, ptr_mode,
 				 top, ptr_mode, bot, ptr_mode);
@@ -6622,6 +6630,74 @@ expand_stack_save (void)
   return ret;
 }
 
+/* Emit code to get the openacc gang, worker or vector id or size.  */
+
+static rtx
+expand_builtin_goacc_parlevel_id_size (tree exp, rtx target, int ignore)
+{
+  const char *name;
+  rtx fallback_retval;
+  rtx_insn *(*gen_fn) (rtx, rtx);
+  switch (DECL_FUNCTION_CODE (get_callee_fndecl (exp)))
+    {
+    case BUILT_IN_GOACC_PARLEVEL_ID:
+      name = "__builtin_goacc_parlevel_id";
+      fallback_retval = const0_rtx;
+      gen_fn = targetm.gen_oacc_dim_pos;
+      break;
+    case BUILT_IN_GOACC_PARLEVEL_SIZE:
+      name = "__builtin_goacc_parlevel_size";
+      fallback_retval = const1_rtx;
+      gen_fn = targetm.gen_oacc_dim_size;
+      break;
+    default:
+      gcc_unreachable ();
+    }
+
+  if (oacc_get_fn_attrib (current_function_decl) == NULL_TREE)
+    {
+      error ("%qs only supported in OpenACC code", name);
+      return const0_rtx;
+    }
+
+  tree arg = CALL_EXPR_ARG (exp, 0);
+  if (TREE_CODE (arg) != INTEGER_CST)
+    {
+      error ("non-constant argument 0 to %qs", name);
+      return const0_rtx;
+    }
+
+  int dim = TREE_INT_CST_LOW (arg);
+  switch (dim)
+    {
+    case GOMP_DIM_GANG:
+    case GOMP_DIM_WORKER:
+    case GOMP_DIM_VECTOR:
+      break;
+    default:
+      error ("illegal argument 0 to %qs", name);
+      return const0_rtx;
+    }
+
+  if (ignore)
+    return target;
+
+  if (target == NULL_RTX)
+    target = gen_reg_rtx (TYPE_MODE (TREE_TYPE (exp)));
+
+  if (!targetm.have_oacc_dim_size ())
+    {
+      emit_move_insn (target, fallback_retval);
+      return target;
+    }
+
+  rtx reg = MEM_P (target) ? gen_reg_rtx (GET_MODE (target)) : target;
+  emit_insn (gen_fn (reg, GEN_INT (dim)));
+  if (reg != target)
+    emit_move_insn (target, reg);
+
+  return target;
+}
 
 /* Expand an expression EXP that calls a built-in function,
    with result going to TARGET if that's convenient
@@ -7751,6 +7827,10 @@ expand_builtin (tree exp, rtx target, rtx subtarget, machine_mode mode,
       /* Do library call, if we failed to expand the builtin when
 	 folding.  */
       break;
+
+    case BUILT_IN_GOACC_PARLEVEL_ID:
+    case BUILT_IN_GOACC_PARLEVEL_SIZE:
+      return expand_builtin_goacc_parlevel_id_size (exp, target, ignore);
 
     default:	/* just do library call, if unknown builtin */
       break;

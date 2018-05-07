@@ -281,7 +281,6 @@ private:
 
   tree build_unpack_lo_or_hi (BrigOpcode16_t brig_opcode, tree arith_type,
 			      tree_stl_vec &operands);
-
 };
 
 class brig_cvt_inst_handler : public brig_inst_mod_handler

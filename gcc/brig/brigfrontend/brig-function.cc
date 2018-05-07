@@ -208,7 +208,7 @@ brig_function::add_id_variables ()
 			      long_long_integer_type_node);
 
       tree cwgz_call;
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree_stl_vec operands
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, i));
@@ -235,7 +235,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgid_call;
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree_stl_vec operands
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, i));
@@ -260,7 +260,7 @@ brig_function::add_id_variables ()
 			      uint32_type_node);
 
       tree wgsize_call;
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree_stl_vec operands
 	    = tree_stl_vec (1, build_int_cst (uint32_type_node, i));
@@ -464,7 +464,7 @@ brig_function::add_wi_loop (int dim, tree_stmt_iterator *header_entry,
 
   if (m_has_unexpanded_dp_builtins)
     {
-      if (!flag_phsa_wi_context_opt)
+      if (!flag_assume_phsa)
 	{
 	  tree id_set_builtin
 	    = builtin_decl_explicit (BUILT_IN_HSAIL_SETWORKITEMID);
@@ -1088,7 +1088,7 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_WORKGROUPSIZE)
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree ptr_type = build_pointer_type (uint32_type_node);
 	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
@@ -1116,7 +1116,7 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
 	{
 	  return m_local_id_vars [dim];
 	}
-      else if (flag_phsa_wi_context_opt)
+      else if (flag_assume_phsa)
 	{
 	  tree ptr_type = build_pointer_type (uint32_type_node);
 	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
@@ -1133,7 +1133,7 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_WORKGROUPID)
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree ptr_type = build_pointer_type (uint32_type_node);
 	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
@@ -1151,7 +1151,7 @@ brig_function::expand_builtin (BrigOpcode16_t brig_opcode,
   else if (brig_opcode == BRIG_OPCODE_CURRENTWORKGROUPSIZE)
     {
       HOST_WIDE_INT dim = int_constant_value (operands[0]);
-      if (flag_phsa_wi_context_opt)
+      if (flag_assume_phsa)
 	{
 	  tree ptr_type = build_pointer_type (uint32_type_node);
 	  tree ctx = build2 (MEM_REF, uint32_type_node, m_context_arg,
@@ -1185,7 +1185,7 @@ brig_function::can_expand_builtin (BrigOpcode16_t brig_opcode) const
     case BRIG_OPCODE_WORKITEMID:
     case BRIG_OPCODE_WORKGROUPID:
     case BRIG_OPCODE_WORKGROUPSIZE:
-      return m_is_kernel || flag_phsa_wi_context_opt;
+      return m_is_kernel || flag_assume_phsa;
     case BRIG_OPCODE_WORKITEMFLATABSID:
     case BRIG_OPCODE_WORKITEMABSID:
       return m_is_kernel;

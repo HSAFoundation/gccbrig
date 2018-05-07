@@ -12437,6 +12437,16 @@ Aarch64.  This function is mainly useful when writing inline assembly
 code.
 @end deftypefn
 
+@deftypefn {Built-in Function} int __builtin_goacc_parlevel_id (int x)
+Returns the openacc gang, worker or vector id depending on whether @var{x} is
+0, 1 or 2.
+@end deftypefn
+
+@deftypefn {Built-in Function} int __builtin_goacc_parlevel_size (int x)
+Returns the openacc gang, worker or vector size depending on whether @var{x} is
+0, 1 or 2.
+@end deftypefn
+
 @node Target Builtins
 @section Built-in Functions Specific to Particular Target Machines
 
@@ -23836,8 +23846,7 @@ that are now deprecated or have been removed:
 @table @code
 
 @item -fno-for-scope
-@itemx -ffriend-injection
-These two options provide compatibility with pre-standard C++.
+This option provides compatibility with pre-standard C++.
 @xref{Backwards Compatibility}.
 
 @end table
@@ -23896,11 +23905,6 @@ The behavior is deprecated, only available with @option{-std=c++98}
 @option{-std=gnu++98} languages and you must use the
 @option{-fpermissive} option to enable it.  The behavior will be
 removed.
-
-@item Friend Injection
-The @option{-ffriend-injection} option makes injected friends visible
-to regular name lookup, unlike standard C++.  This option is
-deprecated and will be removed.
 
 @item Implicit C language
 Old C system header files did not contain an @code{extern "C" @{@dots{}@}}
